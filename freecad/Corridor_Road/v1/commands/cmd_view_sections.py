@@ -188,6 +188,8 @@ def _build_source_inspector(
     subassembly_id = focused_id or str(getattr(selected_subassembly, "subassembly_id", "") or "").strip()
     subassembly_kind = focused_kind or str(getattr(selected_subassembly, "kind", "") or "").strip()
     subassembly_side = focused_side or str(getattr(selected_subassembly, "side", "") or "").strip()
+    subassembly_definition_ref = str(getattr(selected_subassembly, "definition_ref", "") or "").strip()
+    subassembly_parameters = dict(getattr(selected_subassembly, "parameters", {}) or {})
     applied_section_set_label = str(
         getattr(applied_section_set, "label", "")
         or getattr(applied_section_set, "applied_section_set_id", "")
@@ -302,6 +304,10 @@ def _build_source_inspector(
         "subassembly_id": subassembly_id,
         "subassembly_kind": subassembly_kind,
         "subassembly_side": subassembly_side,
+        "subassembly_definition_ref": subassembly_definition_ref,
+        "subassembly_effective_parameters": _compact_parameter_summary(subassembly_parameters),
+        "subassembly_bench_mode": str(subassembly_parameters.get("bench_mode", "") or "").strip(),
+        "subassembly_bench_rows": str(subassembly_parameters.get("bench_rows", "") or "").strip(),
         "owner_template": owner_template,
         "owner_region": owner_region,
         "owner_structure": owner_structure,
@@ -1827,6 +1833,9 @@ def format_section_preview(preview: dict[str, object]) -> str:
     intersection_line = _section_output_intersection_summary(section_output)
     if intersection_line:
         lines.append(intersection_line)
+    bench_line = _section_output_bench_summary(section_output)
+    if bench_line:
+        lines.append(bench_line)
     unresolved_fields = [
         str(value)
         for value in list(source_inspector.get("unresolved_fields", []) or [])
@@ -1899,6 +1908,47 @@ def _section_output_intersection_summary(section_output) -> str:
     if grading_policy:
         pieces.append(f"Grading {grading_policy}")
     return " | ".join(pieces)
+
+
+def _section_output_bench_summary(section_output) -> str:
+    rows = {
+        str(getattr(row, "kind", "") or ""): row
+        for row in list(getattr(section_output, "summary_rows", []) or [])
+    }
+    if "bench_point_count" not in rows and "side_slope_effective_parameters" not in rows:
+        return ""
+    points = getattr(rows.get("bench_point_count"), "value", 0) or 0
+    links = getattr(rows.get("bench_link_count"), "value", 0) or 0
+    effective = str(getattr(rows.get("side_slope_effective_parameters"), "value", "") or "").strip()
+    pieces = [f"Bench: points={points}", f"links={links}"]
+    if effective and effective != "(none)":
+        pieces.append(effective)
+    return " | ".join(pieces)
+
+
+def _compact_parameter_summary(parameters: dict[str, object]) -> str:
+    if not parameters:
+        return ""
+    preferred = [
+        "side_slope_width",
+        "default_slope",
+        "cut_slope",
+        "fill_slope",
+        "bench_mode",
+        "bench_rows",
+        "daylight_mode",
+    ]
+    pieces = []
+    for key in preferred:
+        if key not in parameters:
+            continue
+        value = parameters.get(key)
+        if value in (None, ""):
+            continue
+        pieces.append(f"{key}={value}")
+    if pieces:
+        return "; ".join(pieces)
+    return "; ".join(f"{key}={value}" for key, value in sorted(parameters.items()) if value not in (None, ""))
 
 
 def show_v1_section_preview(

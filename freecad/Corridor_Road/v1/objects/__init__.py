@@ -20,6 +20,20 @@ from .obj_subassembly_assembly import (
     list_v1_assembly_subassembly_models,
     to_assembly_subassembly_model,
 )
+from .obj_subassembly_library import (
+    V1SubassemblyLibraryObject,
+    create_or_update_v1_subassembly_library_object,
+    find_v1_subassembly_library,
+    list_v1_subassembly_libraries,
+    to_subassembly_library,
+)
+from .obj_subassembly_preset_library import (
+    V1SubassemblyPresetLibraryObject,
+    create_or_update_v1_subassembly_preset_library_object,
+    find_v1_subassembly_preset_library,
+    list_v1_subassembly_preset_libraries,
+    to_subassembly_preset_library,
+)
 from .obj_corridor import (
     V1CorridorModelObject,
     create_or_update_v1_corridor_model_object,
@@ -130,6 +144,8 @@ __all__ = [
     "V1StationingObject",
     "V1SuperelevationSourceObject",
     "V1StructureModelObject",
+    "V1SubassemblyLibraryObject",
+    "V1SubassemblyPresetLibraryObject",
     "V1SurfaceModelObject",
     "V1SurfaceTransitionModelObject",
     "V1SimulationPackageOutputObject",
@@ -140,6 +156,8 @@ __all__ = [
     "create_or_update_v1_applied_section_set_object",
     "create_or_update_v1_region_model_object",
     "create_or_update_v1_structure_model_object",
+    "create_or_update_v1_subassembly_library_object",
+    "create_or_update_v1_subassembly_preset_library_object",
     "create_or_update_v1_corridor_model_object",
     "create_or_update_v1_drainage_model_object",
     "create_or_update_v1_exchange_package_object",
@@ -172,8 +190,12 @@ __all__ = [
     "find_v1_region_model",
     "find_v1_stationing",
     "find_v1_structure_model",
+    "find_v1_subassembly_library",
+    "find_v1_subassembly_preset_library",
     "find_v1_superelevation_source",
     "list_v1_assembly_subassembly_models",
+    "list_v1_subassembly_libraries",
+    "list_v1_subassembly_preset_libraries",
     "station_value_rows",
     "to_alignment_model",
     "to_applied_section_set",
@@ -190,6 +212,8 @@ __all__ = [
     "to_profile_model",
     "to_region_model",
     "to_structure_model",
+    "to_subassembly_library",
+    "to_subassembly_preset_library",
     "to_superelevation_model",
     "update_v1_stationing_from_alignment",
 ]

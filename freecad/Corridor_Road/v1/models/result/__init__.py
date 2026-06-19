@@ -15,6 +15,12 @@ from .applied_section_solid_profile import (
     SolidProfileNode,
 )
 from .applied_section_set import AppliedSectionSet
+from .alignment_curve_preview import (
+    AlignmentCurvePreviewAnnotationRow,
+    AlignmentCurvePreviewElementRow,
+    AlignmentCurvePreviewPointRow,
+    AlignmentCurvePreviewResult,
+)
 from .corridor_model import CorridorModel
 from .centerline3d import Centerline3DPointRow, Centerline3DResult
 from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
@@ -38,6 +44,12 @@ from .intersection_trim_boundary import IntersectionTrimBoundaryPair, Intersecti
 from .mass_haul_model import MassHaulModel
 from .quantity_model import QuantityModel
 from .region_context import RegionContextReviewItem, RegionContextSummary
+from .profile_curve_preview import (
+    ProfileCurvePreviewAnnotationRow,
+    ProfileCurvePreviewCurveRow,
+    ProfileCurvePreviewPointRow,
+    ProfileCurvePreviewResult,
+)
 from .solid_edge_network import SolidEdgeNetwork, SolidFaceRow, SolidTopologyEdgeRow
 from .surface_model import SurfaceModel, SurfaceSpanRow
 from .tin_surface import TINSurface
@@ -52,6 +64,10 @@ __all__ = [
     "AppliedSectionSolidProfile",
     "AppliedSectionSolidProfileSet",
     "AppliedSectionSet",
+    "AlignmentCurvePreviewAnnotationRow",
+    "AlignmentCurvePreviewElementRow",
+    "AlignmentCurvePreviewPointRow",
+    "AlignmentCurvePreviewResult",
     "Centerline3DPointRow",
     "Centerline3DResult",
     "CorridorModel",
@@ -85,6 +101,10 @@ __all__ = [
     "IntersectionTrimBoundaryResult",
     "MassHaulModel",
     "QuantityModel",
+    "ProfileCurvePreviewAnnotationRow",
+    "ProfileCurvePreviewCurveRow",
+    "ProfileCurvePreviewPointRow",
+    "ProfileCurvePreviewResult",
     "RegionContextReviewItem",
     "RegionContextSummary",
     "SolidEdgeNetwork",

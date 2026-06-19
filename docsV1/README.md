@@ -19,9 +19,11 @@ Baseline document:
 - [V1_1_0_1_MANUAL_SMOKE_QA.md](./V1_1_0_1_MANUAL_SMOKE_QA.md)
 - [V1_WIKI_1_0_0_UPDATE_CHECKLIST.md](./V1_WIKI_1_0_0_UPDATE_CHECKLIST.md)
 - [wiki/WIKI_TOC.md](./wiki/WIKI_TOC.md)
+- [wiki/SubAssembly-Designer.md](./wiki/SubAssembly-Designer.md)
 - [wiki/Intersections.md](./wiki/Intersections.md)
 - [V1_ARCHITECTURE.md](./V1_ARCHITECTURE.md)
 - [V1_ALIGNMENT_MODEL.md](./V1_ALIGNMENT_MODEL.md)
+- [V1_ALIGNMENT_PROFILE_CURVE_PREVIEW_PLAN.md](./V1_ALIGNMENT_PROFILE_CURVE_PREVIEW_PLAN.md)
 - [V1_RAMP_MODEL.md](./V1_RAMP_MODEL.md)
 - [V1_INTERSECTION_MODEL.md](./V1_INTERSECTION_MODEL.md)
 - [V1_INTERSECTION_IMPLEMENTATION_PLAN.md](./V1_INTERSECTION_IMPLEMENTATION_PLAN.md)
@@ -30,12 +32,17 @@ Baseline document:
 - [V1_INTERSECTION_PRESET_DATA_PLAN.md](./V1_INTERSECTION_PRESET_DATA_PLAN.md)
 - [V1_INTERSECTION_MANUAL_QA.md](./V1_INTERSECTION_MANUAL_QA.md)
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
+- [V1_PROFILE_VERTICAL_CURVE_AUTO_K_VALUE_PLAN.md](./V1_PROFILE_VERTICAL_CURVE_AUTO_K_VALUE_PLAN.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
 - [V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md](./V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md)
 - [V1_SUPERELEVATION_AUTO_CALCULATION_PLAN.md](./V1_SUPERELEVATION_AUTO_CALCULATION_PLAN.md)
 - [V1_SUPERELEVATION_MANUAL_QA.md](./V1_SUPERELEVATION_MANUAL_QA.md)
 - [V1_ASSEMBLY_MODEL.md](./V1_ASSEMBLY_MODEL.md)
 - [V1_SUBASSEMBLY_FULL_ADOPTION_PLAN.md](./V1_SUBASSEMBLY_FULL_ADOPTION_PLAN.md)
+- [V1_SUBASSEMBLY_DESIGNER_PLAN.md](./V1_SUBASSEMBLY_DESIGNER_PLAN.md)
+- [V1_SUBASSEMBLY_PRESET_INTEGRATION_PLAN.md](./V1_SUBASSEMBLY_PRESET_INTEGRATION_PLAN.md)
+- [V1_SUBASSEMBLY_DESIGNER_UX_SIMPLIFICATION_PLAN.md](./V1_SUBASSEMBLY_DESIGNER_UX_SIMPLIFICATION_PLAN.md)
+- [V1_SUBASSEMBLY_SIDE_SLOPE_BENCH_PLAN.md](./V1_SUBASSEMBLY_SIDE_SLOPE_BENCH_PLAN.md)
 - [V1_ASSEMBLY_SLOPE_BENCH_PLAN.md](./V1_ASSEMBLY_SLOPE_BENCH_PLAN.md)
 - [V1_REGION_MODEL.md](./V1_REGION_MODEL.md)
 - [V1_REGION_IMPLEMENTATION_PLAN.md](./V1_REGION_IMPLEMENTATION_PLAN.md)
@@ -60,8 +67,11 @@ Baseline document:
 - [V1_CORRIDOR_MODEL.md](./V1_CORRIDOR_MODEL.md)
 - [V1_BUILD_PARAMETRIC_STABILIZATION_PLAN.md](./V1_BUILD_PARAMETRIC_STABILIZATION_PLAN.md)
 - [V1_BUILD_CORRIDOR_PERFORMANCE_PLAN.md](./V1_BUILD_CORRIDOR_PERFORMANCE_PLAN.md)
+- [V1_SUPPLEMENTAL_FRAME_SAMPLING_PLAN.md](./V1_SUPPLEMENTAL_FRAME_SAMPLING_PLAN.md)
+- [V1_APPLIED_SECTION_SUPPLEMENTAL_SAMPLING_REDESIGN_PLAN.md](./V1_APPLIED_SECTION_SUPPLEMENTAL_SAMPLING_REDESIGN_PLAN.md)
 - [V1_SECTION_MODEL.md](./V1_SECTION_MODEL.md)
 - [V1_APPLIED_SECTIONS_PERFORMANCE_PLAN.md](./V1_APPLIED_SECTIONS_PERFORMANCE_PLAN.md)
+- [V1_APPLIED_SECTION_SUPPLEMENTAL_SAMPLING_MANUAL_QA.md](./V1_APPLIED_SECTION_SUPPLEMENTAL_SAMPLING_MANUAL_QA.md)
 - [V1_TIN_ENGINE_PLAN.md](./V1_TIN_ENGINE_PLAN.md)
 - [V1_TIN_DATA_SCHEMA.md](./V1_TIN_DATA_SCHEMA.md)
 - [V1_TIN_SAMPLING_CONTRACT.md](./V1_TIN_SAMPLING_CONTRACT.md)
@@ -79,6 +89,7 @@ Baseline document:
 - [V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md](./V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md)
 - [V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md](./V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md)
 - [V1_3D_CENTERLINE_TOOLBAR_PLAN.md](./V1_3D_CENTERLINE_TOOLBAR_PLAN.md)
+- [V1_3D_CENTERLINE_SOURCE_GEOMETRY_DISPLAY_PLAN.md](./V1_3D_CENTERLINE_SOURCE_GEOMETRY_DISPLAY_PLAN.md)
 - [V1_CENTERLINE_OWNERSHIP_CONSOLIDATION_PLAN.md](./V1_CENTERLINE_OWNERSHIP_CONSOLIDATION_PLAN.md)
 - [V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md](./V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md)
 - [V1_REVIEW_WORKFLOW_STAGE_MAP.md](./V1_REVIEW_WORKFLOW_STAGE_MAP.md)
@@ -124,6 +135,8 @@ Preferred review workflow:
 - expose `3D Centerline` after `Review Plan/Profile` as a read-only common baseline review stage for Structures, Drainage, Applied Sections, and Build Corridor
 - use `Centerline3DResult` as the owner of the shared station/offset/elevation baseline; Applied Sections consume it and keep only derived per-section placement frames
 - introduce `Superelevation` as a dedicated source stage after `3D Centerline` and before `Assembly`; it owns station-based crossfall intent and Applied Sections consume its evaluated state
+- use `SubAssembly Designer` before `Assembly` when reusable point, link, shape, quantity, or solid-ready section definitions are needed; Assembly places definitions and Applied Sections evaluates them
+- use Subassembly presets as source contracts: `linked`, `modified`, `snapshot`, `missing_preset`, and `preset_outdated` states should be reviewed before rebuilding Applied Sections and Build Corridor
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
 - keep Design Standard editing in `New/Project Setup`; Alignment displays the project standard and applies it as a criteria snapshot

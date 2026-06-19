@@ -81,6 +81,12 @@ class TemplateSubassembly:
     thickness: float = 0.0
     material: str = ""
     target_ref: str = ""
+    definition_ref: str = ""
+    preset_ref: str = ""
+    preset_version: str = ""
+    preset_status: str = ""
+    source_instance_ref: str = ""
+    parameter_overrides: dict[str, object] = field(default_factory=dict)
     parameters: dict[str, object] = field(default_factory=dict)
     point_code_rules: tuple[str, ...] = field(default_factory=tuple)
     link_code_rules: tuple[str, ...] = field(default_factory=tuple)
@@ -98,6 +104,12 @@ class TemplateSubassembly:
         object.__setattr__(self, "thickness", _float(self.thickness))
         object.__setattr__(self, "material", str(self.material or "").strip())
         object.__setattr__(self, "target_ref", str(self.target_ref or "").strip())
+        object.__setattr__(self, "definition_ref", str(self.definition_ref or "").strip())
+        object.__setattr__(self, "preset_ref", str(self.preset_ref or "").strip())
+        object.__setattr__(self, "preset_version", str(self.preset_version or "").strip())
+        object.__setattr__(self, "preset_status", str(self.preset_status or "").strip())
+        object.__setattr__(self, "source_instance_ref", str(self.source_instance_ref or "").strip())
+        object.__setattr__(self, "parameter_overrides", normalize_parameter_overrides(self.parameter_overrides))
         object.__setattr__(self, "parameters", normalize_subassembly_parameters(self.kind, self.parameters))
         object.__setattr__(self, "point_code_rules", _string_tuple(self.point_code_rules))
         object.__setattr__(self, "link_code_rules", _string_tuple(self.link_code_rules))
@@ -180,6 +192,12 @@ def normalize_subassembly_parameters(kind: object, parameters: dict[str, object]
     if "repeat_first_bench_to_daylight" in output:
         output["repeat_first_bench_to_daylight"] = _bool(output.get("repeat_first_bench_to_daylight"))
     return output
+
+
+def normalize_parameter_overrides(parameters: dict[str, object] | None) -> dict[str, object]:
+    """Normalize definition override values while preserving future keys."""
+
+    return {str(key).strip(): value for key, value in dict(parameters or {}).items() if str(key).strip()}
 
 
 def normalize_bench_rows(value: object) -> list[dict[str, object]]:

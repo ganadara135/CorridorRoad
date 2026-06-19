@@ -617,6 +617,14 @@ def test_applied_section_review_row_colors_are_dark_theme_readable() -> None:
     assert applied_section_review_row_color("unknown") is None
 
 
+def test_applied_sections_supplemental_density_default_is_less_dense() -> None:
+    assert applied_sections_command.APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT == 11
+    assert applied_sections_command.APPLIED_SECTION_SUPPLEMENTAL_DENSITY_SPACING_SCALE == 3.0
+    assert (
+        26 - applied_sections_command.APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT
+    ) * applied_sections_command.APPLIED_SECTION_SUPPLEMENTAL_DENSITY_SPACING_SCALE == 45.0
+
+
 def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
 

@@ -13,6 +13,7 @@ from ...models.output.section_output import (
     SectionSubassemblyShapeRow,
 )
 from ...models.result.applied_section import AppliedSection
+from ..evaluation.subassembly_bench_row_parser import parse_bench_rows
 
 
 class SectionOutputMapper:
@@ -27,9 +28,11 @@ class SectionOutputMapper:
                 subassembly_id=row.subassembly_id,
                 kind=row.kind,
                 template_ref=row.source_template_id,
+                definition_ref=str(getattr(row, "definition_ref", "") or ""),
                 assembly_ref=applied_section.assembly_id,
                 region_ref=row.region_id,
                 side=str(getattr(row, "side", "") or ""),
+                parameters=dict(getattr(row, "parameters", {}) or {}),
                 notes=_section_owner_notes(row),
             )
             for index, row in enumerate(list(getattr(applied_section, "subassembly_rows", []) or []), start=1)
@@ -120,7 +123,11 @@ class SectionOutputMapper:
                 label="Quantity Count",
                 value=len(quantity_rows),
             ),
-        ] + self._frame_summary_rows(applied_section) + self._superelevation_summary_rows(applied_section) + self._intersection_summary_rows(applied_section)
+        ] + self._bench_summary_rows(
+            applied_section,
+            subassembly_point_rows=subassembly_point_rows,
+            subassembly_link_rows=subassembly_link_rows,
+        ) + self._frame_summary_rows(applied_section) + self._superelevation_summary_rows(applied_section) + self._intersection_summary_rows(applied_section)
 
         return SectionOutput(
             schema_version=1,
@@ -265,6 +272,80 @@ class SectionOutputMapper:
         return rows
 
     @staticmethod
+    def _bench_summary_rows(
+        applied_section: AppliedSection,
+        *,
+        subassembly_point_rows: list[SectionSubassemblyPointRow],
+        subassembly_link_rows: list[SectionSubassemblyLinkRow],
+    ) -> list[SectionSummaryRow]:
+        """Return side-slope bench rows for viewer diagnostics."""
+
+        bench_points = [
+            row
+            for row in list(subassembly_point_rows or [])
+            if str(getattr(row, "point_code", "") or "").strip().lower() == "bench_surface"
+        ]
+        point_code_by_id = {
+            str(getattr(row, "point_id", "") or "").strip(): str(getattr(row, "point_code", "") or "").strip().lower()
+            for row in list(subassembly_point_rows or [])
+            if str(getattr(row, "point_id", "") or "").strip()
+        }
+        bench_links = []
+        for row in list(subassembly_link_rows or []):
+            start_code = point_code_by_id.get(str(getattr(row, "start_point_ref", "") or "").strip(), "")
+            end_code = point_code_by_id.get(str(getattr(row, "end_point_ref", "") or "").strip(), "")
+            if "bench_surface" in {start_code, end_code}:
+                bench_links.append(row)
+
+        side_slope_rows = [
+            row
+            for row in list(getattr(applied_section, "subassembly_rows", []) or [])
+            if str(getattr(row, "kind", "") or "").strip().lower() == "side_slope"
+        ]
+        effective_pieces: list[str] = []
+        for row in side_slope_rows:
+            params = dict(getattr(row, "parameters", {}) or {})
+            side = str(getattr(row, "side", "") or "").strip() or "center"
+            width = params.get("side_slope_width", getattr(row, "width", ""))
+            slope = params.get("default_slope", getattr(row, "slope", ""))
+            mode = str(params.get("bench_mode", "") or "none").strip() or "none"
+            parsed_rows = parse_bench_rows(
+                params.get("bench_rows", []),
+                source_id=f"{getattr(row, 'subassembly_id', '')}:bench_rows",
+            )
+            row_count = len(parsed_rows.rows)
+            piece = (
+                f"{side}: width={_summary_value(width)}, slope={_summary_value(slope)}, "
+                f"bench_mode={mode}, bench_rows={row_count}"
+            )
+            effective_pieces.append(piece)
+
+        if not bench_points and not bench_links and not effective_pieces:
+            return []
+
+        prefix = str(getattr(applied_section, "applied_section_id", "") or "section")
+        return [
+            SectionSummaryRow(
+                summary_id=f"{prefix}:bench-point-count",
+                kind="bench_point_count",
+                label="Bench Point Count",
+                value=len(bench_points),
+            ),
+            SectionSummaryRow(
+                summary_id=f"{prefix}:bench-link-count",
+                kind="bench_link_count",
+                label="Bench Link Count",
+                value=len(bench_links),
+            ),
+            SectionSummaryRow(
+                summary_id=f"{prefix}:side-slope-effective-parameters",
+                kind="side_slope_effective_parameters",
+                label="Side Slope Effective Parameters",
+                value="; ".join(effective_pieces) if effective_pieces else "(none)",
+            ),
+        ]
+
+    @staticmethod
     def _intersection_summary_rows(applied_section: AppliedSection) -> list[SectionSummaryRow]:
         intersection_id = str(getattr(applied_section, "active_intersection_id", "") or "").strip()
         if not intersection_id:
@@ -319,6 +400,13 @@ class SectionOutputMapper:
                 )
             )
         return rows
+
+
+def _summary_value(value: object) -> str:
+    try:
+        return f"{float(value):.3f}"
+    except Exception:
+        return str(value or "").strip()
 
 
 def _section_owner_notes(row) -> str:

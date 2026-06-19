@@ -47,6 +47,7 @@ class QuantityBuildService:
 
         for section in request.applied_section_set.sections:
             fragment_rows.extend(self._fragment_rows_for_section(section))
+            fragment_rows.extend(_subassembly_shape_fragment_rows(section))
             fragment_rows.extend(_side_slope_surface_fragment_rows(section))
         drainage_fragments, drainage_diagnostics, drainage_source_refs = _drainage_quantity_fragment_rows(
             request.applied_section_set,
@@ -581,6 +582,56 @@ def _subassembly_refs_for_sections(sections: list[AppliedSection]) -> list[str]:
         refs.extend(str(getattr(link, "subassembly_ref", "") or "") for link in list(getattr(section, "subassembly_link_rows", []) or []))
         refs.extend(str(getattr(shape, "subassembly_ref", "") or "") for shape in list(getattr(section, "subassembly_shape_rows", []) or []))
     return _unique_refs(refs)
+
+
+def _subassembly_shape_fragment_rows(section: AppliedSection) -> list[QuantityFragment]:
+    point_by_id = {
+        str(getattr(point, "point_id", "") or ""): point
+        for point in list(getattr(section, "subassembly_point_rows", []) or [])
+        if str(getattr(point, "point_id", "") or "")
+    }
+    rows: list[QuantityFragment] = []
+    for shape in list(getattr(section, "subassembly_shape_rows", []) or []):
+        refs = [str(ref or "") for ref in list(getattr(shape, "point_refs", []) or []) if str(ref or "")]
+        points = [point_by_id.get(ref) for ref in refs]
+        if len(points) < 3 or any(point is None for point in points):
+            continue
+        area = _subassembly_shape_section_area([point for point in points if point is not None])
+        if area <= 0.0:
+            continue
+        shape_kind = str(getattr(shape, "solid_family", "") or getattr(shape, "shape_code", "") or "subassembly_shape")
+        rows.append(
+            QuantityFragment(
+                fragment_id=f"{getattr(section, 'applied_section_id', '')}:{getattr(shape, 'shape_id', '')}:area",
+                quantity_kind=f"{shape_kind}_area",
+                measurement_kind="section_subassembly_shape_area",
+                value=area,
+                unit="m2",
+                station_start=section.station,
+                station_end=section.station,
+                subassembly_ref=str(getattr(shape, "subassembly_ref", "") or ""),
+                assembly_ref=section.assembly_id,
+                region_ref=section.region_id,
+            )
+        )
+    return rows
+
+
+def _subassembly_shape_section_area(points: list[object]) -> float:
+    coordinates = [
+        (
+            float(getattr(point, "lateral_offset", 0.0) or 0.0),
+            float(getattr(point, "z", 0.0) or 0.0),
+        )
+        for point in list(points or [])
+    ]
+    if len(coordinates) < 3:
+        return 0.0
+    area = 0.0
+    for index, (x0, z0) in enumerate(coordinates):
+        x1, z1 = coordinates[(index + 1) % len(coordinates)]
+        area += x0 * z1 - x1 * z0
+    return abs(area) * 0.5
 
 
 def _subassembly_refs_for_points(points: list[object]) -> list[str]:

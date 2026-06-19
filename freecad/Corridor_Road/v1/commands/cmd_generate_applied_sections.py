@@ -14,7 +14,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     Part = None
 
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -37,6 +37,8 @@ from ..objects.obj_subassembly_assembly import (
     list_v1_assembly_subassembly_models,
     to_assembly_subassembly_model,
 )
+from ..objects.obj_subassembly_library import list_v1_subassembly_libraries, to_subassembly_library
+from ..objects.obj_subassembly_preset_library import list_v1_subassembly_preset_libraries, to_subassembly_preset_library
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
@@ -45,6 +47,11 @@ from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_superelevation import find_v1_superelevation_source, to_superelevation_model
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
+from ..services.builders.corridor_surface_geometry_service import (
+    SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+)
 from ..services.evaluation import Centerline3DFrameService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 
@@ -55,6 +62,10 @@ APPLIED_SECTION_REVIEW_ROW_COLORS = {
     "missing": (255, 220, 220),
 }
 APPLIED_SECTION_REVIEW_TEXT_COLOR = (20, 20, 20)
+APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT = 11
+APPLIED_SECTION_SUPPLEMENTAL_DENSITY_SPACING_SCALE = 3.0
+APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT = 0.10
+APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT = 0.01
 
 
 def build_document_applied_section_set(
@@ -62,6 +73,12 @@ def build_document_applied_section_set(
     *,
     project=None,
     corridor_id: str = "corridor:main",
+    supplemental_sections_enabled: bool = True,
+    supplemental_sections_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sections_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sections_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    supplemental_sections_vertical_chord_deviation: float = APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT,
+    supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
 ):
     """Build an AppliedSectionSet result from the active v1 source objects."""
 
@@ -84,6 +101,14 @@ def build_document_applied_section_set(
     profile = to_profile_model(profile_obj)
     assembly_subassembly_models = [
         model for model in (to_assembly_subassembly_model(obj) for obj in subassembly_objs) if model is not None
+    ]
+    subassembly_libraries = [
+        model for model in (to_subassembly_library(obj) for obj in list_v1_subassembly_libraries(doc)) if model is not None
+    ]
+    subassembly_preset_libraries = [
+        model
+        for model in (to_subassembly_preset_library(obj) for obj in list_v1_subassembly_preset_libraries(doc))
+        if model is not None
     ]
     if not assembly_subassembly_models:
         single_subassembly_model = to_assembly_subassembly_model(subassembly_obj)
@@ -128,12 +153,20 @@ def build_document_applied_section_set(
             assembly=assembly,
             assembly_models=assembly_models,
             assembly_subassembly_models=assembly_subassembly_models,
+            subassembly_libraries=subassembly_libraries,
+            subassembly_preset_libraries=subassembly_preset_libraries,
             structure_model=structure_model,
             drainage_model=drainage_model,
             superelevation_model=superelevation_model,
             intersection_model=intersection_model,
             existing_ground_surface=_resolve_applied_sections_existing_ground_tin_surface(doc),
             centerline3d_result=centerline3d_result,
+            supplemental_sections_enabled=supplemental_sections_enabled,
+            supplemental_sections_max_spacing=supplemental_sections_max_spacing,
+            supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
+            supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
+            supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
+            supplemental_sections_grade_delta=supplemental_sections_grade_delta,
         )
     override_model = OverrideModel(
         schema_version=1,
@@ -151,6 +184,8 @@ def build_document_applied_section_set(
             assembly=assembly,
             assembly_models=assembly_models,
             assembly_subassembly_models=assembly_subassembly_models,
+            subassembly_libraries=subassembly_libraries,
+            subassembly_preset_libraries=subassembly_preset_libraries,
             region_model=region_model,
             structure_model=structure_model,
             drainage_model=drainage_model,
@@ -159,6 +194,12 @@ def build_document_applied_section_set(
             override_model=override_model,
             stations=stations,
             station_kinds=station_kinds,
+            supplemental_sections_enabled=supplemental_sections_enabled,
+            supplemental_sections_max_spacing=supplemental_sections_max_spacing,
+            supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
+            supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
+            supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
+            supplemental_sections_grade_delta=supplemental_sections_grade_delta,
             applied_section_set_id="applied-sections:main",
             existing_ground_surface=existing_ground_surface,
             centerline3d_result=centerline3d_result,
@@ -174,12 +215,20 @@ def _build_multi_alignment_applied_section_set(
     assembly,
     assembly_models: list[object],
     assembly_subassembly_models: list[object] | None = None,
+    subassembly_libraries: list[object] | None = None,
+    subassembly_preset_libraries: list[object] | None = None,
     structure_model=None,
     drainage_model=None,
     superelevation_model=None,
     intersection_model=None,
     existing_ground_surface=None,
     centerline3d_result=None,
+    supplemental_sections_enabled: bool = True,
+    supplemental_sections_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sections_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sections_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    supplemental_sections_vertical_chord_deviation: float = APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT,
+    supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
 ) -> AppliedSectionSet:
     """Build one AppliedSectionSet from multiple alignment-scoped source bundles."""
 
@@ -215,6 +264,8 @@ def _build_multi_alignment_applied_section_set(
                 assembly=assembly,
                 assembly_models=assembly_models,
                 assembly_subassembly_models=list(assembly_subassembly_models or []),
+                subassembly_libraries=list(subassembly_libraries or []),
+                subassembly_preset_libraries=list(subassembly_preset_libraries or []),
                 region_model=region_model,
                 structure_model=structure_model,
                 drainage_model=drainage_model,
@@ -223,6 +274,12 @@ def _build_multi_alignment_applied_section_set(
                 override_model=override_model,
                 stations=stations,
                 station_kinds=station_kinds,
+                supplemental_sections_enabled=supplemental_sections_enabled,
+                supplemental_sections_max_spacing=supplemental_sections_max_spacing,
+                supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
+                supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
+                supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
+                supplemental_sections_grade_delta=supplemental_sections_grade_delta,
                 applied_section_set_id=set_id,
                 existing_ground_surface=existing_ground_surface,
                 centerline3d_result=_centerline3d_result_for_alignment(centerline3d_result, alignment_id),
@@ -447,13 +504,15 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
         section_id = str(getattr(station_row, "applied_section_id", "") or "")
         section = section_by_id.get(section_id)
         frame = getattr(section, "frame", None) if section is not None else None
-        diagnostic_count = len(list(getattr(section, "diagnostic_rows", []) or [])) if section is not None else 1
+        diagnostic_count = _applied_section_diagnostic_count(section) if section is not None else 1
         subassembly_count = len(list(getattr(section, "subassembly_rows", []) or [])) if section is not None else 0
         subassembly_summary = _subassembly_summary(section)
+        preset_summary = _subassembly_preset_review_summary(section)
         ditch_summary = _ditch_review_summary(section)
         slope_face_summary = _slope_face_review_summary(section)
         superelevation_summary = _superelevation_review_summary(section)
         intersection_summary = _intersection_review_summary(section)
+        frame_source = _frame_source_summary(frame)
         diagnostic_summary = _diagnostic_summary(section) if section is not None else "Missing AppliedSection result."
         output.append(
             {
@@ -473,10 +532,12 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
                 "daylight_right_width": float(getattr(section, "daylight_right_width", 0.0) or 0.0) if section is not None else 0.0,
                 "subassembly_count": subassembly_count,
                 "subassembly_summary": subassembly_summary,
+                "preset_summary": preset_summary,
                 "ditch_summary": ditch_summary,
                 "slope_face_summary": slope_face_summary,
                 "superelevation_summary": superelevation_summary,
                 "intersection_summary": intersection_summary,
+                "frame_source": frame_source,
                 "diagnostic_count": diagnostic_count,
                 "diagnostic_summary": diagnostic_summary,
                 "status": "warn" if diagnostic_count else "ok",
@@ -701,6 +762,86 @@ class V1AppliedSectionsTaskPanel:
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        options_box = QtWidgets.QGroupBox("Supplemental Sections")
+        options_layout = QtWidgets.QVBoxLayout(options_box)
+        self._supplemental_sections_check = QtWidgets.QCheckBox("Create supplemental Applied Sections on curved 3D Centerline spans")
+        self._supplemental_sections_check.setToolTip(
+            "Applied Sections creates result-only supplemental sections for horizontal and vertical curves before Build Parametric runs."
+        )
+        self._supplemental_sections_check.setChecked(True)
+        self._supplemental_sections_check.toggled.connect(lambda _checked: self._sync_supplemental_sections_summary())
+        options_layout.addWidget(self._supplemental_sections_check)
+
+        density_row = QtWidgets.QHBoxLayout()
+        density_row.addWidget(QtWidgets.QLabel("Density"))
+        self._supplemental_sections_density_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._supplemental_sections_density_slider.setRange(1, 25)
+        self._supplemental_sections_density_slider.setValue(APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT)
+        self._supplemental_sections_density_slider.setTickInterval(4)
+        self._supplemental_sections_density_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._supplemental_sections_density_slider.setToolTip(
+            "Higher density creates more supplemental Applied Sections on curved horizontal or vertical spans."
+        )
+        self._supplemental_sections_density_slider.valueChanged.connect(lambda _value: self._sync_supplemental_sections_summary())
+        density_row.addWidget(self._supplemental_sections_density_slider, 1)
+        self._supplemental_sections_density_value = QtWidgets.QLabel("")
+        density_row.addWidget(self._supplemental_sections_density_value)
+        options_layout.addLayout(density_row)
+
+        threshold_row = QtWidgets.QHBoxLayout()
+        threshold_row.addWidget(QtWidgets.QLabel("Tangent >"))
+        self._supplemental_sections_tangent_spin = QtWidgets.QDoubleSpinBox()
+        self._supplemental_sections_tangent_spin.setRange(0.1, 45.0)
+        self._supplemental_sections_tangent_spin.setDecimals(2)
+        self._supplemental_sections_tangent_spin.setSingleStep(0.25)
+        self._supplemental_sections_tangent_spin.setValue(float(SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG))
+        self._supplemental_sections_tangent_spin.setSuffix(" deg")
+        self._supplemental_sections_tangent_spin.setToolTip("Add supplemental sections when horizontal tangent direction changes more than this value.")
+        self._supplemental_sections_tangent_spin.valueChanged.connect(lambda _value: self._sync_supplemental_sections_summary())
+        threshold_row.addWidget(self._supplemental_sections_tangent_spin)
+        threshold_row.addWidget(QtWidgets.QLabel("Chord >"))
+        self._supplemental_sections_chord_spin = QtWidgets.QDoubleSpinBox()
+        self._supplemental_sections_chord_spin.setRange(0.001, 10.0)
+        self._supplemental_sections_chord_spin.setDecimals(3)
+        self._supplemental_sections_chord_spin.setSingleStep(0.05)
+        self._supplemental_sections_chord_spin.setValue(float(SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD))
+        self._supplemental_sections_chord_spin.setSuffix(" m")
+        self._supplemental_sections_chord_spin.setToolTip("Add supplemental sections when 3D Centerline chord deviation exceeds this value.")
+        self._supplemental_sections_chord_spin.valueChanged.connect(lambda _value: self._sync_supplemental_sections_summary())
+        threshold_row.addWidget(self._supplemental_sections_chord_spin)
+        threshold_row.addStretch(1)
+        options_layout.addLayout(threshold_row)
+
+        vertical_threshold_row = QtWidgets.QHBoxLayout()
+        vertical_threshold_row.addWidget(QtWidgets.QLabel("Vertical Chord >"))
+        self._supplemental_sections_vertical_chord_spin = QtWidgets.QDoubleSpinBox()
+        self._supplemental_sections_vertical_chord_spin.setRange(0.001, 10.0)
+        self._supplemental_sections_vertical_chord_spin.setDecimals(3)
+        self._supplemental_sections_vertical_chord_spin.setSingleStep(0.05)
+        self._supplemental_sections_vertical_chord_spin.setValue(float(APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT))
+        self._supplemental_sections_vertical_chord_spin.setSuffix(" m")
+        self._supplemental_sections_vertical_chord_spin.setToolTip("Add supplemental sections when a vertical curve deviates from the straight endpoint grade chord by more than this value.")
+        self._supplemental_sections_vertical_chord_spin.valueChanged.connect(lambda _value: self._sync_supplemental_sections_summary())
+        vertical_threshold_row.addWidget(self._supplemental_sections_vertical_chord_spin)
+        vertical_threshold_row.addWidget(QtWidgets.QLabel("Grade Delta >"))
+        self._supplemental_sections_grade_delta_spin = QtWidgets.QDoubleSpinBox()
+        self._supplemental_sections_grade_delta_spin.setRange(0.01, 50.0)
+        self._supplemental_sections_grade_delta_spin.setDecimals(2)
+        self._supplemental_sections_grade_delta_spin.setSingleStep(0.25)
+        self._supplemental_sections_grade_delta_spin.setValue(float(APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT) * 100.0)
+        self._supplemental_sections_grade_delta_spin.setSuffix(" %")
+        self._supplemental_sections_grade_delta_spin.setToolTip("Add supplemental sections when profile grade changes more than this percent between evaluated stations.")
+        self._supplemental_sections_grade_delta_spin.valueChanged.connect(lambda _value: self._sync_supplemental_sections_summary())
+        vertical_threshold_row.addWidget(self._supplemental_sections_grade_delta_spin)
+        vertical_threshold_row.addStretch(1)
+        options_layout.addLayout(vertical_threshold_row)
+
+        self._supplemental_sections_count_label = QtWidgets.QLabel("Sections: n/a")
+        self._supplemental_sections_count_label.setToolTip("Source, existing supplemental, and total Applied Section counts.")
+        options_layout.addWidget(self._supplemental_sections_count_label)
+        layout.addWidget(options_box)
+        self._sync_supplemental_sections_summary()
+
         self._summary = QtWidgets.QPlainTextEdit()
         self._summary.setReadOnly(True)
         self._summary.setFixedHeight(160)
@@ -712,7 +853,7 @@ class V1AppliedSectionsTaskPanel:
         self._progress.setFormat("Ready")
         layout.addWidget(self._progress)
 
-        self._review_table = QtWidgets.QTableWidget(0, 16)
+        self._review_table = QtWidgets.QTableWidget(0, 18)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "STA",
@@ -725,10 +866,12 @@ class V1AppliedSectionsTaskPanel:
                 "Template",
                 "L/R Width",
                 "Subassemblies",
+                "Presets",
                 "Ditch",
                 "Slope Face",
                 "Superelevation",
                 "Intersection",
+                "Frame Source",
                 "Diagnostics",
                 "Status",
             ]
@@ -805,19 +948,32 @@ class V1AppliedSectionsTaskPanel:
                 return False
             self._set_progress(0, "Preparing Applied Sections...")
             self._set_progress(15, "Reading v1 source models...")
-            result = build_document_applied_section_set(self.document)
+            result = build_document_applied_section_set(
+                self.document,
+                supplemental_sections_enabled=self._use_supplemental_sections(),
+                supplemental_sections_max_spacing=self._supplemental_sections_max_spacing(),
+                supplemental_sections_tangent_delta_deg=self._supplemental_sections_tangent_delta_deg(),
+                supplemental_sections_chord_deviation=self._supplemental_sections_chord_deviation(),
+                supplemental_sections_vertical_chord_deviation=self._supplemental_sections_vertical_chord_deviation(),
+                supplemental_sections_grade_delta=self._supplemental_sections_grade_delta(),
+            )
             self._set_progress(65, "Writing AppliedSectionSet result...")
             obj = apply_v1_applied_section_set(document=self.document, applied_section_set=result)
             self._set_progress(85, "Refreshing station review...")
             diagnostic_count = sum(len(section.diagnostic_rows) for section in result.sections)
+            supplemental_count = _supplemental_applied_section_count(result)
+            source_count = max(len(result.station_rows) - supplemental_count, 0)
             message = (
                 f"Applied Sections have been built.\n"
-                f"Stations: {len(result.station_rows)}\n"
+                f"Source sections: {source_count}\n"
+                f"Supplemental sections: {supplemental_count}\n"
+                f"Total sections: {len(result.station_rows)}\n"
                 f"Diagnostics: {diagnostic_count}"
             )
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
             self._set_review_rows(applied_section_review_rows(result))
             self._set_progress(100, "Applied Sections complete")
+            self._sync_supplemental_sections_summary(result)
             _show_message(self.form, "Applied Sections", message)
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -861,6 +1017,91 @@ class V1AppliedSectionsTaskPanel:
             return
         _process_panel_events()
 
+    def _use_supplemental_sections(self) -> bool:
+        check = getattr(self, "_supplemental_sections_check", None)
+        if check is None:
+            return True
+        try:
+            return bool(check.isChecked())
+        except Exception:
+            return True
+
+    def _supplemental_sections_max_spacing(self) -> float:
+        slider = getattr(self, "_supplemental_sections_density_slider", None)
+        if slider is None:
+            return float(SUPPLEMENTAL_SAMPLING_MAX_SPACING)
+        try:
+            density = max(1, min(25, int(slider.value())))
+            return float(max(1.0, (26 - density) * APPLIED_SECTION_SUPPLEMENTAL_DENSITY_SPACING_SCALE))
+        except Exception:
+            return float(SUPPLEMENTAL_SAMPLING_MAX_SPACING)
+
+    def _supplemental_sections_tangent_delta_deg(self) -> float:
+        spin = getattr(self, "_supplemental_sections_tangent_spin", None)
+        if spin is None:
+            return float(SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG)
+        try:
+            return float(spin.value())
+        except Exception:
+            return float(SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG)
+
+    def _supplemental_sections_chord_deviation(self) -> float:
+        spin = getattr(self, "_supplemental_sections_chord_spin", None)
+        if spin is None:
+            return float(SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD)
+        try:
+            return float(spin.value())
+        except Exception:
+            return float(SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD)
+
+    def _supplemental_sections_vertical_chord_deviation(self) -> float:
+        spin = getattr(self, "_supplemental_sections_vertical_chord_spin", None)
+        if spin is None:
+            return float(APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT)
+        try:
+            return float(spin.value())
+        except Exception:
+            return float(APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT)
+
+    def _supplemental_sections_grade_delta(self) -> float:
+        spin = getattr(self, "_supplemental_sections_grade_delta_spin", None)
+        if spin is None:
+            return float(APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT)
+        try:
+            return float(spin.value()) / 100.0
+        except Exception:
+            return float(APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT)
+
+    def _sync_supplemental_sections_summary(self, applied_section_set: AppliedSectionSet | None = None) -> None:
+        value_label = getattr(self, "_supplemental_sections_density_value", None)
+        count_label = getattr(self, "_supplemental_sections_count_label", None)
+        try:
+            density = APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT
+            slider = getattr(self, "_supplemental_sections_density_slider", None)
+            if slider is not None:
+                density = int(slider.value())
+            spacing = self._supplemental_sections_max_spacing()
+            if value_label is not None:
+                value_label.setText(f"{density}/25 ({spacing:g} m)")
+                value_label.setToolTip(f"Approximate maximum curved-span spacing: {spacing:g} m.")
+            if count_label is None:
+                return
+            applied = applied_section_set or to_applied_section_set(find_v1_applied_section_set(self.document))
+            if applied is None:
+                state = "on" if self._use_supplemental_sections() else "off"
+                count_label.setText(f"Sections: n/a; supplemental setting {state}")
+                return
+            total = len(list(getattr(applied, "station_rows", []) or []))
+            supplemental = _supplemental_applied_section_count(applied)
+            source = max(total - supplemental, 0)
+            count_label.setText(f"Sections: source {source}, supplemental {supplemental}, total {total}")
+            count_label.setToolTip(
+                "Existing supplemental count includes intersection and future curve/spacing supplemental Applied Sections."
+            )
+        except Exception:
+            if count_label is not None:
+                count_label.setText("Sections: unavailable")
+
     def _set_review_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_review_table"):
             return
@@ -879,10 +1120,12 @@ class V1AppliedSectionsTaskPanel:
                 _display_source_id(row.get("template_id", ""), "template:"),
                 f"{_format_float(row.get('surface_left_width', 0.0))} / {_format_float(row.get('surface_right_width', 0.0))}",
                 _review_subassembly_summary_text(row),
+                str(row.get("preset_summary", "") or ""),
                 str(row.get("ditch_summary", "") or ""),
                 str(row.get("slope_face_summary", "") or ""),
                 str(row.get("superelevation_summary", "") or ""),
                 str(row.get("intersection_summary", "") or ""),
+                str(row.get("frame_source", "") or ""),
                 str(row.get("diagnostic_summary", "") or ""),
                 _review_status_text(row),
             ]
@@ -1018,6 +1261,17 @@ def _intersection_supplemental_station_kind_map(source_stations: list[float], bu
     for station in _unique_station_values(built_stations):
         output[station] = "regular_sample" if _station_in_list(station, source) else "intersection_supplemental"
     return output
+
+
+def _supplemental_applied_section_count(applied_section_set: AppliedSectionSet | None) -> int:
+    if applied_section_set is None:
+        return 0
+    count = 0
+    for row in list(getattr(applied_section_set, "station_rows", []) or []):
+        kind = str(getattr(row, "kind", "") or "").strip().lower()
+        if "supplemental" in kind:
+            count += 1
+    return count
 
 
 def _station_in_list(station: float, stations: list[float], *, tolerance: float = 1.0e-6) -> bool:
@@ -1224,7 +1478,56 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
         frame = frame_service.resolve_station(centerline_result, station)
         if str(getattr(frame, "status", "") or "") == "blocked":
             diagnostics.extend(str(row) for row in list(getattr(frame, "diagnostic_rows", []) or []))
+    diagnostics.extend(_applied_sections_preset_source_diagnostics(document))
     return diagnostics
+
+
+def _applied_sections_preset_source_diagnostics(document) -> list[str]:
+    """Return pre-build diagnostics for Assembly/Subassembly preset linkage health."""
+
+    diagnostics: list[str] = []
+    preset_versions = _applied_sections_subassembly_preset_version_map(document)
+    preset_ids = set(preset_versions.keys())
+    for model in (
+        to_assembly_subassembly_model(obj)
+        for obj in list_v1_assembly_subassembly_models(document)
+    ):
+        if model is None:
+            continue
+        for template in list(getattr(model, "template_rows", []) or []):
+            for subassembly in list(getattr(template, "subassembly_rows", []) or []):
+                if not bool(getattr(subassembly, "enabled", True)):
+                    continue
+                subassembly_id = str(getattr(subassembly, "subassembly_id", "") or "").strip()
+                preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+                preset_version = str(getattr(subassembly, "preset_version", "") or "").strip()
+                preset_status = str(getattr(subassembly, "preset_status", "") or "").strip()
+                if not preset_ref:
+                    continue
+                if preset_ref not in preset_ids:
+                    diagnostics.append(f"missing_subassembly_preset:{subassembly_id}:{preset_ref}")
+                    continue
+                library_version = str(preset_versions.get(preset_ref, "") or "").strip()
+                if preset_version and library_version and preset_version != library_version:
+                    diagnostics.append(
+                        f"outdated_subassembly_preset:{subassembly_id}:{preset_ref}:row={preset_version}:library={library_version}"
+                    )
+    return diagnostics
+
+
+def _applied_sections_subassembly_preset_version_map(document) -> dict[str, str]:
+    output: dict[str, str] = {}
+    for library in (
+        to_subassembly_preset_library(obj)
+        for obj in list_v1_subassembly_preset_libraries(document)
+    ):
+        if library is None:
+            continue
+        for preset in list(getattr(library, "subassembly_preset_rows", []) or []):
+            preset_id = str(getattr(preset, "preset_id", "") or "").strip()
+            if preset_id:
+                output[preset_id] = str(getattr(preset, "version", "") or "").strip()
+    return output
 
 
 def _review_status_text(row: dict[str, object]) -> str:
@@ -1270,6 +1573,68 @@ def _subassembly_summary(section) -> str:
             counts[kind] = 0
         counts[kind] += 1
     return ", ".join(f"{kind}:{counts[kind]}" for kind in order)
+
+
+def _subassembly_preset_review_summary(section) -> str:
+    subassembly_rows = list(getattr(section, "subassembly_rows", []) or []) if section is not None else []
+    if not subassembly_rows:
+        return ""
+    status_counts: dict[str, int] = {}
+    linked_refs: list[str] = []
+    diagnostic_count = 0
+    for subassembly in subassembly_rows:
+        preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+        status = str(getattr(subassembly, "preset_status", "") or "").strip()
+        if not status:
+            status = "linked" if preset_ref else "snapshot"
+        status_counts[status] = status_counts.get(status, 0) + 1
+        if preset_ref and preset_ref not in linked_refs:
+            linked_refs.append(preset_ref)
+        diagnostic_count += len(
+            [
+                value
+                for value in list(getattr(subassembly, "diagnostics", []) or [])
+                if "subassembly_preset" in str(value or "")
+            ]
+        )
+    parts = [f"{status}:{count}" for status, count in status_counts.items()]
+    if linked_refs:
+        shown_refs = [_display_source_id(ref, "subassembly-preset:") for ref in linked_refs[:2]]
+        ref_text = ",".join(shown_refs)
+        if len(linked_refs) > 2:
+            ref_text += f",+{len(linked_refs) - 2}"
+        parts.append(f"refs={ref_text}")
+    if diagnostic_count:
+        parts.append(f"preset diagnostics={diagnostic_count}")
+    return " | ".join(parts)
+
+
+def _frame_source_summary(frame) -> str:
+    if frame is None:
+        return "missing frame"
+    notes = str(getattr(frame, "notes", "") or "").strip()
+    if "source=centerline3d_source_geometry" in notes:
+        return "Centerline3D Source Geometry"
+    if "source=centerline3d_result" in notes:
+        return "Centerline3D"
+    if notes:
+        return f"Alignment/Profile fallback | {notes}"
+    return "Alignment/Profile fallback"
+
+
+def _applied_section_diagnostic_count(section) -> int:
+    if section is None:
+        return 1
+    count = len(list(getattr(section, "diagnostic_rows", []) or []))
+    for subassembly in list(getattr(section, "subassembly_rows", []) or []):
+        count += len(list(getattr(subassembly, "diagnostics", []) or []))
+    for point in list(getattr(section, "subassembly_point_rows", []) or []):
+        count += len(list(getattr(point, "diagnostics", []) or []))
+    for link in list(getattr(section, "subassembly_link_rows", []) or []):
+        count += len(list(getattr(link, "diagnostics", []) or []))
+    for shape in list(getattr(section, "subassembly_shape_rows", []) or []):
+        count += len(list(getattr(shape, "diagnostics", []) or []))
+    return count
 
 
 def _ditch_review_summary(section) -> str:
@@ -1342,7 +1707,8 @@ def _intersection_review_summary(section) -> str:
 
 def _diagnostic_summary(section) -> str:
     rows = list(getattr(section, "diagnostic_rows", []) or [])
-    if not rows:
+    subassembly_diagnostics = _subassembly_diagnostic_summary_rows(section)
+    if not rows and not subassembly_diagnostics:
         return ""
     values = []
     for row in rows[:2]:
@@ -1351,9 +1717,25 @@ def _diagnostic_summary(section) -> str:
         message = str(getattr(row, "message", "") or "").strip()
         label = ":".join(part for part in [severity, kind] if part)
         values.append(f"{label} {message}".strip())
-    if len(rows) > 2:
-        values.append(f"+{len(rows) - 2} more")
+    remaining_slots = max(2 - len(values), 0)
+    values.extend(subassembly_diagnostics[:remaining_slots])
+    total_count = len(rows) + len(subassembly_diagnostics)
+    if total_count > len(values):
+        values.append(f"+{total_count - len(values)} more")
     return " | ".join(values)
+
+
+def _subassembly_diagnostic_summary_rows(section) -> list[str]:
+    output: list[str] = []
+    if section is None:
+        return output
+    for subassembly in list(getattr(section, "subassembly_rows", []) or []):
+        subassembly_id = _display_source_id(getattr(subassembly, "subassembly_id", ""), "subassembly:")
+        for diagnostic in list(getattr(subassembly, "diagnostics", []) or []):
+            text = str(diagnostic or "").strip()
+            if text:
+                output.append(f"{subassembly_id}: {text}")
+    return output
 
 
 def _applied_section_preview_polylines(section, frame):

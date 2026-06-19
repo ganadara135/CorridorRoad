@@ -30,6 +30,26 @@ Use 3D Centerline after Plan/Profile review to create the shared station/offset/
 
 3D Centerline can show or hide evaluated station markers. Structures, Drainage, Applied Sections, Build Corridor, and Watertight Solids should prefer this shared result before falling back to older Alignment-only or Applied Section frame paths.
 
+The 3D Centerline display can be reviewed with these curve modes:
+
+- `Source Geometry`
+- `B-spline`
+- `Polyline`
+
+`Source Geometry` is the preferred review mode because it keeps the generated preview closest to the Alignment and Profile source geometry.
+
+Use `B-spline` only as a visual smoothing fallback.
+
+Use `Polyline` when checking the exact sampled point sequence.
+
+Build Parametric now prefers the same Source Geometry path for its `Corridor 3D Centerline` preview.
+
+The expected object property is:
+
+`PreviewSource = centerline3d_source_geometry`
+
+If the preview reports `centerline3d_result_fallback`, rebuild or inspect the 3D Centerline source geometry before trusting downstream surfaces.
+
 ## Drainage Review
 
 Use Drainage Review after authoring Drainage source rows.

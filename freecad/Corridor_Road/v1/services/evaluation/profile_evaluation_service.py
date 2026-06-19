@@ -192,16 +192,18 @@ class ProfileEvaluationService:
         station_end = float(curve.station_end)
         if station_end < station_start:
             station_start, station_end = station_end, station_start
-        curve_length = station_end - station_start
-        if curve_length <= 1e-12:
-            return None
-
         pvi_index = self._curve_pvi_index(ordered_controls, station_start, station_end)
         if pvi_index is None:
             return None
         previous_control = ordered_controls[pvi_index - 1]
         pvi_control = ordered_controls[pvi_index]
         next_control = ordered_controls[pvi_index + 1]
+        station_start, station_end = self._effective_symmetric_curve_range(station_start, station_end, pvi_control)
+        curve_length = station_end - station_start
+        if curve_length <= 1e-12:
+            return None
+        if float(station) < station_start - 1.0e-9 or float(station) > station_end + 1.0e-9:
+            return None
 
         grade_in = self._incoming_grade(previous_control, pvi_control)
         grade_out = self._outgoing_grade(pvi_control, next_control)
@@ -220,6 +222,19 @@ class ProfileEvaluationService:
         return elevation, grade, notes
 
     @staticmethod
+    def _effective_symmetric_curve_range(
+        station_start: float,
+        station_end: float,
+        pvi_control: ProfileControlPoint,
+    ) -> tuple[float, float]:
+        """Return the effective BVC/EVC range for the current symmetric parabolic model."""
+
+        length = abs(float(station_end) - float(station_start))
+        center = float(getattr(pvi_control, "station", 0.0) or 0.0)
+        half = 0.5 * length
+        return center - half, center + half
+
+    @staticmethod
     def _curve_pvi_index(
         ordered_controls: list[ProfileControlPoint],
         station_start: float,
@@ -228,15 +243,24 @@ class ProfileEvaluationService:
         center_station = 0.5 * (float(station_start) + float(station_end))
         if len(ordered_controls) < 3:
             return None
+        candidate_indices = [
+            index
+            for index, control in enumerate(ordered_controls)
+            if 0 < index < len(ordered_controls) - 1
+            and float(station_start) - 1.0e-6 <= float(control.station) <= float(station_end) + 1.0e-6
+        ]
+        if not candidate_indices:
+            return None
+        pvi_indices = [
+            index
+            for index in candidate_indices
+            if "pvi" in str(getattr(ordered_controls[index], "kind", "") or "").lower()
+        ]
+        search_indices = pvi_indices or candidate_indices
         best_index = min(
-            range(len(ordered_controls)),
+            search_indices,
             key=lambda index: abs(float(ordered_controls[index].station) - center_station),
         )
-        tolerance = max(1e-6, abs(station_end - station_start) * 1e-6)
-        if abs(float(ordered_controls[best_index].station) - center_station) > tolerance:
-            return None
-        if best_index <= 0 or best_index >= len(ordered_controls) - 1:
-            return None
         return best_index
 
     @staticmethod

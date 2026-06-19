@@ -48,6 +48,11 @@ class AppliedSectionSubassemblyRow:
     subassembly_id: str
     kind: str
     source_template_id: str = ""
+    definition_ref: str = ""
+    preset_ref: str = ""
+    preset_version: str = ""
+    preset_status: str = ""
+    source_instance_ref: str = ""
     region_id: str = ""
     side: str = "center"
     width: float = 0.0

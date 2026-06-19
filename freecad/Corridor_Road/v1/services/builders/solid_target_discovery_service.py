@@ -543,6 +543,40 @@ def _subassembly_target_rows(
                 data["invalid_dimension_stations"].append(station)
             if not str(data.get("material", "") or ""):
                 data["material"] = str(getattr(source_row, "material", "") or "")
+        for shape in list(getattr(section, "subassembly_shape_rows", []) or []):
+            family = _subassembly_target_family_for_solid_family(getattr(shape, "solid_family", ""))
+            if not family:
+                continue
+            subassembly_ref = str(getattr(shape, "subassembly_ref", "") or "").strip()
+            if not subassembly_ref:
+                continue
+            shape_id = str(getattr(shape, "shape_id", "") or "").strip()
+            owner_ref = subassembly_ref
+            key = (family, owner_ref)
+            data = subassembly_targets.setdefault(
+                key,
+                {
+                    "stations": [],
+                    "kind": str(getattr(shape, "solid_family", "") or getattr(shape, "shape_code", "") or "shape"),
+                    "family": family,
+                    "material": str(getattr(shape, "material", "") or ""),
+                    "region_refs": [],
+                    "assembly_refs": [],
+                    "subassembly_refs": [],
+                    "shape_refs": [],
+                    "invalid_dimension_stations": [],
+                    "invalid_shape_stations": [],
+                },
+            )
+            data["stations"].append(station)
+            data["region_refs"].append(str(getattr(section, "region_id", "") or ""))
+            data["assembly_refs"].append(str(getattr(section, "assembly_id", "") or ""))
+            data["subassembly_refs"].append(subassembly_ref)
+            data.setdefault("shape_refs", []).append(shape_id)
+            if len(list(getattr(shape, "point_refs", []) or [])) < 3:
+                data.setdefault("invalid_shape_stations", []).append(station)
+            if not str(data.get("material", "") or ""):
+                data["material"] = str(getattr(shape, "material", "") or "")
 
     rows: list[SolidTargetRow] = []
     diagnostics: list[SolidTargetDiagnosticRow] = []
@@ -574,6 +608,18 @@ def _subassembly_target_rows(
             )
             diagnostics.append(diagnostic)
             diagnostic_refs.append(diagnostic.diagnostic_id)
+        invalid_shape_stations = _unique_sorted_floats(list(data.get("invalid_shape_stations", []) or []))
+        if invalid_shape_stations:
+            diagnostic = _diagnostic(
+                "error",
+                "subassembly_shape_target_invalid_profile",
+                target_id,
+                f"Subassembly {active_ref} needs closed shape profiles with at least three points at every target station.",
+                notes=f"stations={','.join(f'{station:g}' for station in invalid_shape_stations)}",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        shape_refs = _unique_refs(list(data.get("shape_refs", []) or []))
         rows.append(
             SolidTargetRow(
                 target_id=target_id,
@@ -586,12 +632,13 @@ def _subassembly_target_rows(
                 subassembly_ref=_single_ref(subassembly_refs),
                 enabled=False,
                 material_ref=str(data.get("material", "") or ""),
-                readiness_status="available" if station_count >= 2 and not invalid_stations else "blocked",
-                source_refs=_unique_refs(source_refs + subassembly_refs),
+                readiness_status="available" if station_count >= 2 and not invalid_stations and not invalid_shape_stations else "blocked",
+                source_refs=_unique_refs(source_refs + subassembly_refs + shape_refs),
                 diagnostic_refs=diagnostic_refs,
                 notes=(
                     f"{_subassembly_target_label(family)} target discovered from Applied Section Subassembly rows; "
                     f"subassembly_refs={_join_refs(subassembly_refs) or '-'}; "
+                    f"shape_refs={_join_refs(shape_refs) or '-'}; "
                     f"source_kind={data.get('kind', '')}."
                 ),
             )
@@ -1175,6 +1222,23 @@ def _subassembly_target_family(kind: str) -> str:
     if text == "shoulder":
         return "shoulder_body"
     return ""
+
+
+def _subassembly_target_family_for_solid_family(solid_family: str) -> str:
+    text = str(solid_family or "").strip().lower().replace("-", "_")
+    if not text:
+        return ""
+    if text.endswith("_body"):
+        return text
+    if text in {"pavement_layer", "pavement"}:
+        return "pavement_layer_body"
+    if text == "subbase":
+        return "subbase_body"
+    if text == "shoulder":
+        return "shoulder_body"
+    if text in {"lined_ditch", "ditch_lining"}:
+        return "lined_ditch_body"
+    return _subassembly_target_family(text)
 
 
 def _subassembly_target_prefix(family: str) -> str:

@@ -74,6 +74,11 @@ def ensure_v1_assembly_subassembly_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SubassemblyTemplateRefs", "Subassemblies", "subassembly template refs")
     _add_property(obj, "App::PropertyStringList", "SubassemblyIds", "Subassemblies", "subassembly ids")
     _add_property(obj, "App::PropertyIntegerList", "SubassemblyIndices", "Subassemblies", "subassembly indices")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyDefinitionRefs", "Subassemblies", "subassembly definition refs")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyPresetRefs", "Subassemblies", "subassembly preset refs")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyPresetVersions", "Subassemblies", "subassembly preset versions")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyPresetStatuses", "Subassemblies", "subassembly preset statuses")
+    _add_property(obj, "App::PropertyStringList", "SubassemblySourceInstanceRefs", "Subassemblies", "subassembly source instance refs")
     _add_property(obj, "App::PropertyStringList", "SubassemblyKinds", "Subassemblies", "subassembly kinds")
     _add_property(obj, "App::PropertyStringList", "SubassemblySides", "Subassemblies", "subassembly sides")
     _add_property(obj, "App::PropertyFloatList", "SubassemblyWidths", "Subassemblies", "subassembly widths")
@@ -82,6 +87,7 @@ def ensure_v1_assembly_subassembly_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SubassemblyMaterials", "Subassemblies", "subassembly materials")
     _add_property(obj, "App::PropertyStringList", "SubassemblyTargetRefs", "Subassemblies", "subassembly target refs")
     _add_property(obj, "App::PropertyIntegerList", "SubassemblyEnabledValues", "Subassemblies", "subassembly enabled values")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyParameterOverrideRows", "Subassemblies", "subassembly parameter overrides")
     _add_property(obj, "App::PropertyStringList", "SubassemblyParameterRows", "Subassemblies", "subassembly parameters")
     _add_property(obj, "App::PropertyStringList", "SubassemblyPointCodeRows", "Subassemblies", "point code rules")
     _add_property(obj, "App::PropertyStringList", "SubassemblyLinkCodeRows", "Subassemblies", "link code rules")
@@ -178,6 +184,11 @@ def update_v1_assembly_subassembly_model_object(
         int(subassembly.subassembly_index or index + 1)
         for index, (_template_id, subassembly) in enumerate(subassemblies)
     ]
+    obj.SubassemblyDefinitionRefs = [str(subassembly.definition_ref) for _template_id, subassembly in subassemblies]
+    obj.SubassemblyPresetRefs = [str(getattr(subassembly, "preset_ref", "") or "") for _template_id, subassembly in subassemblies]
+    obj.SubassemblyPresetVersions = [str(getattr(subassembly, "preset_version", "") or "") for _template_id, subassembly in subassemblies]
+    obj.SubassemblyPresetStatuses = [str(getattr(subassembly, "preset_status", "") or "") for _template_id, subassembly in subassemblies]
+    obj.SubassemblySourceInstanceRefs = [str(getattr(subassembly, "source_instance_ref", "") or "") for _template_id, subassembly in subassemblies]
     obj.SubassemblyKinds = [str(subassembly.kind) for _template_id, subassembly in subassemblies]
     obj.SubassemblySides = [str(subassembly.side) for _template_id, subassembly in subassemblies]
     obj.SubassemblyWidths = [float(subassembly.width) for _template_id, subassembly in subassemblies]
@@ -186,6 +197,10 @@ def update_v1_assembly_subassembly_model_object(
     obj.SubassemblyMaterials = [str(subassembly.material) for _template_id, subassembly in subassemblies]
     obj.SubassemblyTargetRefs = [str(subassembly.target_ref) for _template_id, subassembly in subassemblies]
     obj.SubassemblyEnabledValues = [1 if bool(subassembly.enabled) else 0 for _template_id, subassembly in subassemblies]
+    obj.SubassemblyParameterOverrideRows = [
+        serialize_subassembly_parameters(subassembly.parameter_overrides)
+        for _template_id, subassembly in subassemblies
+    ]
     obj.SubassemblyParameterRows = [serialize_subassembly_parameters(subassembly.parameters) for _template_id, subassembly in subassemblies]
     obj.SubassemblyPointCodeRows = [serialize_code_rules(subassembly.point_code_rules) for _template_id, subassembly in subassemblies]
     obj.SubassemblyLinkCodeRows = [serialize_code_rules(subassembly.link_code_rules) for _template_id, subassembly in subassemblies]
@@ -215,6 +230,11 @@ def to_assembly_subassembly_model(obj) -> AssemblySubassemblyModel | None:
                 TemplateSubassembly(
                     subassembly_id=_list_value(getattr(obj, "SubassemblyIds", []), subassembly_index, f"subassembly:{subassembly_index + 1}"),
                     subassembly_index=_int_list_value(getattr(obj, "SubassemblyIndices", []), subassembly_index, subassembly_index + 1),
+                    definition_ref=_list_value(getattr(obj, "SubassemblyDefinitionRefs", []), subassembly_index, ""),
+                    preset_ref=_list_value(getattr(obj, "SubassemblyPresetRefs", []), subassembly_index, ""),
+                    preset_version=_list_value(getattr(obj, "SubassemblyPresetVersions", []), subassembly_index, ""),
+                    preset_status=_list_value(getattr(obj, "SubassemblyPresetStatuses", []), subassembly_index, ""),
+                    source_instance_ref=_list_value(getattr(obj, "SubassemblySourceInstanceRefs", []), subassembly_index, ""),
                     kind=_list_value(getattr(obj, "SubassemblyKinds", []), subassembly_index, "lane"),
                     side=_list_value(getattr(obj, "SubassemblySides", []), subassembly_index, "center"),
                     width=_float_list_value(getattr(obj, "SubassemblyWidths", []), subassembly_index, 0.0),
@@ -222,6 +242,9 @@ def to_assembly_subassembly_model(obj) -> AssemblySubassemblyModel | None:
                     thickness=_float_list_value(getattr(obj, "SubassemblyThicknesses", []), subassembly_index, 0.0),
                     material=_list_value(getattr(obj, "SubassemblyMaterials", []), subassembly_index, ""),
                     target_ref=_list_value(getattr(obj, "SubassemblyTargetRefs", []), subassembly_index, ""),
+                    parameter_overrides=parse_subassembly_parameters(
+                        _list_value(getattr(obj, "SubassemblyParameterOverrideRows", []), subassembly_index, "")
+                    ),
                     parameters=parse_subassembly_parameters(_list_value(getattr(obj, "SubassemblyParameterRows", []), subassembly_index, "")),
                     point_code_rules=parse_code_rules(_list_value(getattr(obj, "SubassemblyPointCodeRows", []), subassembly_index, "")),
                     link_code_rules=parse_code_rules(_list_value(getattr(obj, "SubassemblyLinkCodeRows", []), subassembly_index, "")),

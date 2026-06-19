@@ -4,6 +4,11 @@
 
 This document defines how v1 should add slope bench support.
 
+Current direction:
+
+- `V1_SUBASSEMBLY_SIDE_SLOPE_BENCH_PLAN.md` is the active Designer-first implementation plan.
+- This document remains as historical Assembly-side bench context and implementation reference.
+
 It may consult the v0 `AssemblyTemplate` bench behavior as implementation reference.
 
 V0 is not a compatibility contract for v1 bench design.

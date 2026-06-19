@@ -121,6 +121,22 @@ def _intersection_summary_line(section_output) -> str:
     return " | ".join(pieces)
 
 
+def _bench_summary_line(section_output) -> str:
+    values = {
+        str(getattr(row, "kind", "") or ""): row
+        for row in list(getattr(section_output, "summary_rows", []) or [])
+    }
+    if "bench_point_count" not in values and "side_slope_effective_parameters" not in values:
+        return ""
+    points = getattr(values.get("bench_point_count"), "value", 0) or 0
+    links = getattr(values.get("bench_link_count"), "value", 0) or 0
+    effective = str(getattr(values.get("side_slope_effective_parameters"), "value", "") or "").strip()
+    pieces = [f"Bench: points={points}", f"links={links}"]
+    if effective and effective != "(none)":
+        pieces.append(effective)
+    return " | ".join(pieces)
+
+
 def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     """Build normalized editor-handoff rows for one section viewer payload."""
 
@@ -602,6 +618,10 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
         ("Subassembly Id", "subassembly_id"),
         ("Subassembly Kind", "subassembly_kind"),
         ("Subassembly Side", "subassembly_side"),
+        ("Subassembly Definition Ref", "subassembly_definition_ref"),
+        ("Effective Parameters", "subassembly_effective_parameters"),
+        ("Bench Mode", "subassembly_bench_mode"),
+        ("Bench Rows", "subassembly_bench_rows"),
         ("Owner Template Ref", "owner_template"),
         ("Owner Region Ref", "owner_region"),
         ("Owner Structure Ref", "owner_structure"),
@@ -1648,6 +1668,7 @@ class CrossSectionViewerTaskPanel:
             f"Assembly Template: {template_label}",
             _superelevation_summary_line(section_output),
             _intersection_summary_line(section_output),
+            _bench_summary_line(section_output),
             f"Stations: {len(self._navigation_station_rows())}",
             f"Subassemblies: {_section_output_subassembly_count(section_output)}",
             f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",

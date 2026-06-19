@@ -18,20 +18,22 @@ Recommended publish order:
 4. [TIN Terrain](./TIN-Terrain.md)
 5. [Alignment Stations Profile](./Alignment-Stations-Profile.md)
 6. [Superelevation](./Superelevation.md)
-7. [Assembly Region](./Assembly-Region.md)
-8. [Intersections](./Intersections.md)
-9. [Applied Sections Build Corridor](./Applied-Sections-Build-Corridor.md)
-10. [Review](./Review.md)
-11. [Earthwork](./Earthwork.md)
-12. [Structures Structure Output](./Structures-Structure-Output.md)
-13. [Drainage](./Drainage.md)
-14. [Troubleshooting](./Troubleshooting.md)
-15. [Developer Guide](./Developer-Guide.md)
+7. [SubAssembly Designer](./SubAssembly-Designer.md)
+8. [Assembly Region](./Assembly-Region.md)
+9. [Intersections](./Intersections.md)
+10. [Applied Sections Build Corridor](./Applied-Sections-Build-Corridor.md)
+11. [Review](./Review.md)
+12. [Earthwork](./Earthwork.md)
+13. [Structures Structure Output](./Structures-Structure-Output.md)
+14. [Drainage](./Drainage.md)
+15. [Troubleshooting](./Troubleshooting.md)
+16. [Developer Guide](./Developer-Guide.md)
 
 Release rule:
 
 - v1 is the primary workflow.
 - Superelevation is the source stage after 3D Centerline and before Assembly.
+- SubAssembly Designer owns reusable cross-section behavior; Assembly places those definitions and Applied Sections evaluates them.
 - Intersections can create starter multi-alignment sources and a matching 3D Centerline preview.
 - Drainage is an active source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review.
 - Advanced hydraulic analysis and automatic pipe sizing remain future work.

@@ -9,6 +9,7 @@ Source:
 - Alignment
 - Profile
 - Superelevation
+- SubAssembly Designer
 - Assembly
 - Region
 - Structure
@@ -51,15 +52,38 @@ If a result looks wrong, correct the source model or policy that created it, the
 
 ## Primary Flow
 
-`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Regions define station spans and the base Assembly. Intersections then group intersection Regions and participating Alignments into junction control areas. Structures and Drainage then choose their owning Region from their own source panels.
 
 3D Centerline is the shared downstream baseline for station/offset/elevation context. Structures, Drainage, Applied Sections, Build Corridor, and Watertight Solids should prefer it when available.
 
+Review 3D Centerline with `Source Geometry` when possible.
+
+Build Parametric should use the same reviewed Source Geometry centerline for its generated `Corridor 3D Centerline` preview.
+
+If Build Parametric reports a fallback centerline source, rebuild 3D Centerline before rebuilding Applied Sections and Build Corridor.
+
 For Intersections, 3D Centerline can be multi-alignment. Starter Sources create the participating Alignment/Profile/Stationing/Region sources and then generate a multi-alignment 3D Centerline preview so the primary road and side road do not share one baseline.
 
 Superelevation is the station-based crossfall source after 3D Centerline. It does not replace Assembly; it overrides lane and shoulder crossfall during Applied Sections generation.
+
+SubAssembly Designer owns reusable cross-section definitions. Assembly places those definitions, sets side/order, and applies row-local parameter overrides. Applied Sections evaluate the placed definitions at stations.
+
+Build Parametric, Quantity, and Watertight Solids consume evaluated Subassembly point, link, and shape rows. They should not evaluate Designer expressions directly.
+
+Use this order when changing an Assembly/Subassembly row or a reusable Subassembly definition:
+
+1. Edit the Assembly/Subassembly row or load it into SubAssembly Designer.
+2. Save the source change.
+3. Apply the Assembly/Subassembly source.
+4. Rebuild Applied Sections.
+5. Rebuild Build Corridor.
+6. Review the Subassembly guided review rows and Section Preview comparison.
+
+Applied Sections should match the Assembly/Subassembly Section Preview for lane, shoulder, ditch, and side-slope connection intent.
+
+If they do not match, treat Applied Sections as stale or inspect the row-local override and reusable definition handoff.
 
 Use this order when changing Superelevation:
 

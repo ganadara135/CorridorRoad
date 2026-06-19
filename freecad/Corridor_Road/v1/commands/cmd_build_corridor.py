@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     App = None
     Gui = None
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree, find_project
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
@@ -53,6 +53,13 @@ from ..services.builders import (
     StructureSolidOutputService,
     transition_augmented_applied_section_set,
 )
+from ..services.builders.corridor_surface_geometry_service import (
+    SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_summary,
+)
+from ..services.builders.corridor_surface_geometry_service import _supplemental_sampled_sections
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService, IntersectionPatchPrerequisiteResult
 from ..services.evaluation.station_context_resolver import StationContextResolver
@@ -91,10 +98,30 @@ CORRIDOR_BUILD_PREVIEW_DIAGNOSTIC_OBJECTS = {
 CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("centerline", "1. Centerline", ("centerline",), "Check 3D centerline continuity and station ordering."),
     ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
-    ("intersections", "3. Intersections", ("intersection",), "Check intersection-controlled Region context and Applied Sections handoff."),
-    ("slope_issues", "4. Slope Face Issues", ("daylight", "intersection_slope"), "Check ordinary and intersection-owned Slope Face outputs separately."),
-    ("drainage", "5. Drainage Surface", ("centerline", "drainage"), "Check roadside ditch surfaces and intersection low-point drainage coverage."),
-    ("drainage_flow", "6. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
+    ("intersections", "4. Intersections", ("intersection",), "Check intersection-controlled Region context and Applied Sections handoff."),
+    ("slope_issues", "5. Slope Face Diagnostics", ("daylight", "intersection_slope"), "Check ordinary and intersection-owned Slope Face output diagnostics separately."),
+    ("drainage", "6. Drainage Surface", ("centerline", "drainage"), "Check roadside ditch surfaces and intersection low-point drainage coverage."),
+    ("drainage_flow", "7. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
+)
+SUBASSEMBLY_GUIDED_REVIEW_KIND_ORDER = (
+    "lane",
+    "shoulder",
+    "ditch",
+    "lined_ditch",
+    "gutter",
+    "curb",
+    "side_slope",
+    "median",
+    "sidewalk",
+    "bike_lane",
+    "green_strip",
+    "barrier",
+    "pavement_layer",
+    "subbase",
+    "structure_interface",
+    "intersection_transition",
+    "curb_return_transition",
+    "custom",
 )
 BUILD_CORRIDOR_PANEL_MIN_WIDTH = 420
 BUILD_CORRIDOR_PANEL_MAX_WIDTH = 16777215
@@ -392,6 +419,9 @@ def apply_v1_corridor_model(
     build_surfaces: bool = True,
     show_daylight_contact_markers: bool = True,
     supplemental_sampling_enabled: bool = True,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
     progress_callback=None,
 ):
     """Persist a v1 CorridorModel result object."""
@@ -437,6 +467,9 @@ def apply_v1_corridor_model(
             corridor_model=corridor_model,
             surface_model=surface_model,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         _notify_progress(progress_callback, 80, "Creating Region surface objects...")
         create_corridor_region_surface_previews(
@@ -445,6 +478,9 @@ def apply_v1_corridor_model(
             corridor_model=corridor_model,
             surface_model=surface_model,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         _notify_progress(progress_callback, 81, "Creating intersection surface preview...")
         create_corridor_intersection_surface_preview(
@@ -460,6 +496,9 @@ def apply_v1_corridor_model(
             corridor_model=corridor_model,
             surface_model=surface_model,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         _notify_progress(progress_callback, 86, "Creating slope face preview...")
         create_corridor_daylight_surface_preview(
@@ -469,6 +508,9 @@ def apply_v1_corridor_model(
             surface_model=surface_model,
             show_daylight_contact_markers=show_daylight_contact_markers,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         _notify_progress(progress_callback, 90, "Creating drainage preview...")
         create_corridor_drainage_surface_preview(
@@ -477,6 +519,14 @@ def apply_v1_corridor_model(
             corridor_model=corridor_model,
             surface_model=surface_model,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+        )
+        _notify_progress(progress_callback, 91, "Creating Subassembly kind review objects...")
+        create_corridor_subassembly_kind_review_previews(
+            document=doc,
+            project=prj,
         )
         _notify_progress(progress_callback, 92, "Creating transition span markers...")
         create_corridor_surface_transition_span_markers(
@@ -557,15 +607,35 @@ def _subassembly_surface_role_review_note(document, *, surface_role: str) -> str
     linked_section_count = 0
     link_count = 0
     subassembly_refs: list[str] = []
+    preset_refs: list[str] = []
+    preset_statuses: list[str] = []
     role = str(surface_role or "").strip()
     for section in sections:
         section_has_role = False
+        subassembly_by_id = {
+            str(getattr(row, "subassembly_id", "") or "").strip(): row
+            for row in list(getattr(section, "subassembly_rows", []) or [])
+            if str(getattr(row, "subassembly_id", "") or "").strip()
+        }
         for link in list(getattr(section, "subassembly_link_rows", []) or []):
             if str(getattr(link, "surface_role", "") or "").strip() != role:
                 continue
             section_has_role = True
             link_count += 1
-            subassembly_refs.append(str(getattr(link, "subassembly_ref", "") or ""))
+            subassembly_ref = str(getattr(link, "subassembly_ref", "") or "")
+            subassembly_refs.append(subassembly_ref)
+            subassembly = subassembly_by_id.get(subassembly_ref.strip())
+            if subassembly is not None:
+                preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+                preset_status = str(getattr(subassembly, "preset_status", "") or "").strip()
+                if preset_ref:
+                    preset_refs.append(preset_ref)
+                if preset_status:
+                    preset_statuses.append(preset_status)
+                elif preset_ref:
+                    preset_statuses.append("linked")
+                else:
+                    preset_statuses.append("snapshot")
         if section_has_role:
             linked_section_count += 1
     if not link_count:
@@ -574,10 +644,242 @@ def _subassembly_surface_role_review_note(document, *, surface_role: str) -> str
     ref_note = f"; refs={','.join(_display_source_ref(ref) for ref in refs[:3])}" if refs else ""
     if len(refs) > 3:
         ref_note += f"; +{len(refs) - 3} more"
-    coverage = f"subassembly role={role}: linked sections={linked_section_count}/{len(sections)}, links={link_count}{ref_note}"
+    preset_ref_rows = _unique_refs(preset_refs)
+    preset_ref_note = f"; preset_refs={','.join(_display_source_ref(ref) for ref in preset_ref_rows[:3])}" if preset_ref_rows else ""
+    if len(preset_ref_rows) > 3:
+        preset_ref_note += f"; +{len(preset_ref_rows) - 3} more presets"
+    preset_status_note = ""
+    preset_status_counts = _text_count_map(preset_statuses)
+    if preset_status_counts:
+        preset_status_note = f"; preset_status={_format_count_summary(preset_status_counts)}"
+    coverage = (
+        f"subassembly role={role}: linked sections={linked_section_count}/{len(sections)}, "
+        f"links={link_count}{ref_note}{preset_ref_note}{preset_status_note}"
+    )
     if linked_section_count < len(sections):
         coverage += "; fallback used for unlinked sections"
     return coverage
+
+
+def corridor_subassembly_guided_review_summary(document=None) -> dict[str, object]:
+    """Return a compact summary of evaluated Assembly/Subassembly output rows."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        return {
+            "status": "missing",
+            "focus": "Subassemblies",
+            "notes": "Applied Sections are not built yet.",
+        }
+    sections = _station_ordered_applied_sections(applied)
+    if not sections:
+        return {
+            "status": "missing",
+            "focus": "Subassemblies",
+            "notes": "No Applied Section rows are available.",
+        }
+
+    subassembly_count = 0
+    point_count = 0
+    link_count = 0
+    shape_count = 0
+    kind_counts: dict[str, int] = {}
+    role_counts: dict[str, int] = {}
+    preset_status_counts: dict[str, int] = {}
+    diagnostic_count = 0
+
+    for section in sections:
+        subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
+        point_rows = list(getattr(section, "subassembly_point_rows", []) or [])
+        link_rows = list(getattr(section, "subassembly_link_rows", []) or [])
+        shape_rows = list(getattr(section, "subassembly_shape_rows", []) or [])
+        subassembly_count += len(subassembly_rows)
+        point_count += len(point_rows)
+        link_count += len(link_rows)
+        shape_count += len(shape_rows)
+        for row in subassembly_rows:
+            kind = str(getattr(row, "kind", "") or "unknown").strip() or "unknown"
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+            preset_ref = str(getattr(row, "preset_ref", "") or "").strip()
+            preset_status = str(getattr(row, "preset_status", "") or "").strip()
+            if not preset_status:
+                preset_status = "linked" if preset_ref else "snapshot"
+            preset_status_counts[preset_status] = preset_status_counts.get(preset_status, 0) + 1
+            diagnostic_count += len(list(getattr(row, "diagnostics", []) or []))
+        for row in link_rows:
+            role = str(getattr(row, "surface_role", "") or "unassigned").strip() or "unassigned"
+            role_counts[role] = role_counts.get(role, 0) + 1
+            diagnostic_count += len(list(getattr(row, "diagnostics", []) or []))
+
+    kind_note = _format_count_summary(kind_counts)
+    role_note = _format_count_summary(role_counts)
+    preset_note = _format_count_summary(preset_status_counts)
+    ditch_count = int(kind_counts.get("ditch", 0) or 0)
+    drainage_link_count = int(role_counts.get("drainage_surface", 0) or 0)
+    status = "ready"
+    warnings: list[str] = []
+    if not subassembly_count:
+        status = "missing"
+        warnings.append("no evaluated subassemblies")
+    if ditch_count and not drainage_link_count:
+        status = "warning"
+        warnings.append("ditch has no drainage_surface links")
+    if diagnostic_count:
+        status = "warning" if status != "missing" else status
+        warnings.append(f"diagnostics={diagnostic_count}")
+    notes = (
+        f"sections={len(sections)}, subassemblies={subassembly_count}, "
+        f"points={point_count}, links={link_count}, shapes={shape_count}; "
+        f"kinds={kind_note}; roles={role_note}; presets={preset_note}"
+    )
+    if warnings:
+        notes = f"{notes}; " + "; ".join(warnings)
+    return {
+        "status": status,
+        "focus": "Assembly/Subassembly Surfaces",
+        "notes": notes,
+        "preset_status_counts": preset_status_counts,
+    }
+
+
+def corridor_subassembly_kind_guided_review_rows(document=None) -> list[dict[str, object]]:
+    """Return guided-review rows split by evaluated Subassembly kind."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        return []
+    sections = _station_ordered_applied_sections(applied)
+    summaries: dict[str, dict[str, object]] = {}
+    for section in sections:
+        rows = {
+            str(getattr(row, "subassembly_id", "") or "").strip(): row
+            for row in list(getattr(section, "subassembly_rows", []) or [])
+            if str(getattr(row, "subassembly_id", "") or "").strip()
+        }
+        link_rows = list(getattr(section, "subassembly_link_rows", []) or [])
+        shape_rows = list(getattr(section, "subassembly_shape_rows", []) or [])
+        for subassembly_id, subassembly in rows.items():
+            kind = str(getattr(subassembly, "kind", "") or "unknown").strip() or "unknown"
+            summary = summaries.setdefault(
+                kind,
+                {
+                    "kind": kind,
+                    "section_count": 0,
+                    "subassembly_count": 0,
+                    "point_count": 0,
+                    "link_count": 0,
+                    "shape_count": 0,
+                    "surface_roles": {},
+                    "preset_statuses": {},
+                    "preset_refs": [],
+                    "diagnostic_count": 0,
+                },
+            )
+            summary["section_count"] = int(summary.get("section_count", 0) or 0) + 1
+            summary["subassembly_count"] = int(summary.get("subassembly_count", 0) or 0) + 1
+            preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+            preset_status = str(getattr(subassembly, "preset_status", "") or "").strip()
+            if not preset_status:
+                preset_status = "linked" if preset_ref else "snapshot"
+            preset_statuses = summary.setdefault("preset_statuses", {})
+            preset_statuses[preset_status] = int(preset_statuses.get(preset_status, 0) or 0) + 1
+            if preset_ref:
+                preset_refs = summary.setdefault("preset_refs", [])
+                if preset_ref not in preset_refs:
+                    preset_refs.append(preset_ref)
+            summary["diagnostic_count"] = int(summary.get("diagnostic_count", 0) or 0) + len(list(getattr(subassembly, "diagnostics", []) or []))
+            point_count = 0
+            for point in list(getattr(section, "subassembly_point_rows", []) or []):
+                if str(getattr(point, "subassembly_ref", "") or "").strip() == subassembly_id:
+                    point_count += 1
+                    summary["diagnostic_count"] = int(summary.get("diagnostic_count", 0) or 0) + len(list(getattr(point, "diagnostics", []) or []))
+            summary["point_count"] = int(summary.get("point_count", 0) or 0) + point_count
+            for link in link_rows:
+                if str(getattr(link, "subassembly_ref", "") or "").strip() != subassembly_id:
+                    continue
+                summary["link_count"] = int(summary.get("link_count", 0) or 0) + 1
+                role = str(getattr(link, "surface_role", "") or "unassigned").strip() or "unassigned"
+                role_counts = summary.setdefault("surface_roles", {})
+                role_counts[role] = int(role_counts.get(role, 0) or 0) + 1
+                summary["diagnostic_count"] = int(summary.get("diagnostic_count", 0) or 0) + len(list(getattr(link, "diagnostics", []) or []))
+            for shape in shape_rows:
+                if str(getattr(shape, "subassembly_ref", "") or "").strip() == subassembly_id:
+                    summary["shape_count"] = int(summary.get("shape_count", 0) or 0) + 1
+
+    rows: list[dict[str, object]] = []
+    ordered_kinds = [
+        kind
+        for kind in SUBASSEMBLY_GUIDED_REVIEW_KIND_ORDER
+        if kind in summaries
+    ] + sorted(kind for kind in summaries if kind not in SUBASSEMBLY_GUIDED_REVIEW_KIND_ORDER)
+    for kind in ordered_kinds:
+        summary = summaries[kind]
+        roles = dict(summary.get("surface_roles", {}) or {})
+        preset_statuses = dict(summary.get("preset_statuses", {}) or {})
+        preset_refs = list(summary.get("preset_refs", []) or [])
+        status = "ready"
+        warnings: list[str] = []
+        if int(summary.get("link_count", 0) or 0) <= 0:
+            status = "warning"
+            warnings.append("no evaluated links")
+        if kind in {"ditch", "lined_ditch", "gutter"} and int(roles.get("drainage_surface", 0) or 0) <= 0:
+            status = "warning"
+            warnings.append("no drainage_surface links")
+        if int(summary.get("diagnostic_count", 0) or 0) > 0:
+            status = "warning"
+            warnings.append(f"diagnostics={int(summary.get('diagnostic_count', 0) or 0)}")
+        notes = (
+            f"sections={int(summary.get('section_count', 0) or 0)}, "
+            f"points={int(summary.get('point_count', 0) or 0)}, "
+            f"links={int(summary.get('link_count', 0) or 0)}, "
+            f"shapes={int(summary.get('shape_count', 0) or 0)}; "
+            f"roles={_format_count_summary(roles)}; "
+            f"presets={_format_count_summary(preset_statuses)}"
+        )
+        if preset_refs:
+            notes = f"{notes}; preset_refs={_format_count_summary({ref: 1 for ref in preset_refs})}"
+        if warnings:
+            notes = f"{notes}; " + "; ".join(warnings)
+        rows.append(
+            {
+                "step_id": f"subassembly_kind:{kind}",
+                "title": f"3. {_subassembly_kind_display_name(kind)}",
+                "roles": ["centerline", "design", "daylight", "drainage"],
+                "status": status,
+                "focus": f"{_subassembly_kind_display_name(kind)} Subassembly",
+                "notes": notes,
+                "preset_statuses": preset_statuses,
+                "preset_refs": preset_refs,
+            }
+        )
+    return rows
+
+
+def _subassembly_kind_display_name(kind: str) -> str:
+    text = str(kind or "unknown").strip() or "unknown"
+    return " ".join(part.capitalize() for part in text.replace("-", "_").split("_") if part)
+
+
+def _format_count_summary(counts: dict[str, int], *, limit: int = 5) -> str:
+    if not counts:
+        return "none"
+    rows = sorted(((str(key), int(value)) for key, value in counts.items()), key=lambda item: (-item[1], item[0]))
+    text = ", ".join(f"{_display_source_ref(key)}:{value}" for key, value in rows[:limit])
+    if len(rows) > limit:
+        text += f", +{len(rows) - limit} more"
+    return text
+
+
+def _text_count_map(values: list[str] | tuple[str, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        counts[text] = counts.get(text, 0) + 1
+    return counts
 
 
 def corridor_slope_face_issue_rows(document=None) -> list[dict[str, str]]:
@@ -597,7 +899,14 @@ def corridor_slope_face_issue_rows(document=None) -> list[dict[str, str]]:
     return rows
 
 
-def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]:
+def corridor_build_guided_review_steps(
+    document=None,
+    *,
+    supplemental_sampling_enabled: bool = True,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> list[dict[str, object]]:
     """Return ordered guided-review rows for the Build Corridor panel."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -605,6 +914,7 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
     issue_count = len(corridor_slope_face_issue_rows(doc))
     drainage_flow_summary = corridor_drainage_flow_review_summary(doc)
     intersection_summary = corridor_intersection_review_summary(doc)
+    subassembly_kind_rows = corridor_subassembly_kind_guided_review_rows(doc)
     rows: list[dict[str, object]] = []
     for step_id, title, roles, default_notes in CORRIDOR_BUILD_GUIDED_REVIEW_STEPS:
         if step_id == "slope_issues":
@@ -622,8 +932,8 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
                 status = base_status
             intersection_count = intersection_slope.get("triangle_or_point_count", "")
             intersection_note = f"; intersection slope triangles={intersection_count}" if intersection_count not in {"", None} else ""
-            notes = f"{issue_count} slope-face issue(s) to review{intersection_note}." if issue_count else f"No slope-face issue rows{intersection_note}."
-            focus = "First issue marker" if issue_count else "Slope Face Surface"
+            notes = f"{issue_count} slope-face issue(s) to review{intersection_note}." if issue_count else f"No slope-face fallback issues{intersection_note}."
+            focus = "First fallback issue marker" if issue_count else "Slope Face Surface"
         else:
             primary_role = str(list(roles)[-1] if roles else "")
             source = review_by_role.get(primary_role, {})
@@ -653,7 +963,121 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
                 "notes": notes,
             }
         )
+        if step_id == "design":
+            rows.append(
+                corridor_supplemental_sampling_guided_review_row(
+                    doc,
+                    supplemental_sampling_enabled=supplemental_sampling_enabled,
+                    supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+                    supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+                    supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+                )
+            )
+            rows.extend(subassembly_kind_rows)
     return rows
+
+
+def corridor_supplemental_sampling_guided_review_row(
+    document=None,
+    *,
+    supplemental_sampling_enabled: bool = True,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> dict[str, object]:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = to_applied_section_set(find_v1_applied_section_set(doc)) if doc is not None else None
+    if applied is None:
+        return {
+            "step_id": "supplemental_sections",
+            "title": "2a. Supplemental Sections",
+            "roles": ["centerline", "design"],
+            "status": "missing",
+            "focus": "Applied Sections",
+            "notes": "Applied Sections are required before supplemental section diagnostics.",
+        }
+    summary = _applied_section_supplemental_consumption_summary(applied)
+    supplemental_count = int(summary.get("supplemental_section_count", 0) or 0)
+    compatibility_fallback = _build_parametric_compatibility_supplemental_sampling_enabled(
+        doc,
+        applied_section_set=applied,
+        supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+        supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+        supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+    )
+    status = "ready" if supplemental_count > 0 or not compatibility_fallback else "warning"
+    kind_counts = dict(summary.get("kind_counts", {}) or {})
+    kind_text = ", ".join(f"{key}={value}" for key, value in sorted(kind_counts.items())) or "none"
+    notes = (
+        f"source sections={int(summary.get('source_section_count', 0) or 0)}, "
+        f"supplemental sections={supplemental_count}, "
+        f"total consumed sections={int(summary.get('total_section_count', 0) or 0)}, "
+        f"kinds={kind_text}; "
+        "Build Parametric no longer generates hidden supplemental frames."
+    )
+    if compatibility_fallback:
+        notes = (
+            f"{notes} Temporary compatibility fallback is active because this AppliedSectionSet "
+            "has no supplemental sections but curved-span densification is still needed. Rebuild Applied Sections."
+        )
+    return {
+        "step_id": "supplemental_sections",
+        "title": "2a. Supplemental Sections",
+        "roles": ["centerline", "design"],
+        "status": status,
+        "focus": "Applied Sections",
+        "notes": notes,
+    }
+
+
+def _applied_section_supplemental_consumption_summary(applied_section_set) -> dict[str, object]:
+    rows = list(getattr(applied_section_set, "station_rows", []) or [])
+    kind_counts: dict[str, int] = {}
+    supplemental_count = 0
+    for row in rows:
+        kind = str(getattr(row, "kind", "") or "regular_sample").strip() or "regular_sample"
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        if "supplemental" in kind.lower():
+            supplemental_count += 1
+    total = len(rows)
+    return {
+        "source_section_count": max(total - supplemental_count, 0),
+        "supplemental_section_count": supplemental_count,
+        "total_section_count": total,
+        "kind_counts": kind_counts,
+    }
+
+
+def _build_parametric_compatibility_supplemental_sampling_enabled(
+    document=None,
+    *,
+    applied_section_set=None,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> bool:
+    """Return true only for old AppliedSectionSet data that lacks supplemental sections."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = applied_section_set or (to_applied_section_set(find_v1_applied_section_set(doc)) if doc is not None else None)
+    if applied is None:
+        return False
+    if int(_applied_section_supplemental_consumption_summary(applied).get("supplemental_section_count", 0) or 0) > 0:
+        return False
+    sections = list(getattr(applied, "sections", []) or [])
+    if len(sections) < 2:
+        return False
+    try:
+        summary = supplemental_sampling_summary(
+            sections,
+            max_spacing=float(supplemental_sampling_max_spacing or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
+            tangent_delta_threshold_deg=float(supplemental_sampling_tangent_delta_deg or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG),
+            chord_deviation_threshold=float(supplemental_sampling_chord_deviation or SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD),
+            frame_resolver=_corridor_supplemental_frame_resolver(doc),
+        )
+    except Exception:
+        return False
+    return int(summary.get("supplemental_frame_count", 0) or 0) > 0
 
 
 def corridor_intersection_review_summary(document=None) -> dict[str, object]:
@@ -2512,10 +2936,40 @@ def update_corridor_surface_transition_station_range(
     )
 
 
-def focus_corridor_build_guided_review_step(document=None, step_id: str = "centerline"):
+def focus_corridor_build_guided_review_step(
+    document=None,
+    step_id: str = "centerline",
+    *,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+):
     """Focus one guided review step and isolate its relevant preview layers."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    step_id_text = str(step_id or "").strip()
+    if step_id_text.startswith("subassembly_kind:"):
+        kind = step_id_text.split(":", 1)[1]
+        set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+        return focus_corridor_subassembly_kind_review(doc, kind)
+    if step_id_text == "supplemental_frames":
+        if doc is None:
+            raise RuntimeError("No active document.")
+        set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+        obj = create_or_update_corridor_supplemental_frame_markers(
+            document=doc,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+            visible=True,
+        )
+        if obj is None:
+            raise RuntimeError("Supplemental frame markers were not created.")
+        set_corridor_build_preview_visibility(doc, "centerline", True)
+        set_corridor_build_preview_visibility(doc, "design", True)
+        _set_object_visibility(obj, True)
+        _select_and_fit_object(obj)
+        return obj
     step = _corridor_build_guided_review_step(step_id)
     if doc is None or step is None:
         raise RuntimeError(f"Guided review step was not found: {step_id}")
@@ -2541,6 +2995,287 @@ def focus_corridor_build_guided_review_step(document=None, step_id: str = "cente
         raise RuntimeError(f"Guided review target has not been built: {step[1]}")
     _select_and_fit_object(obj)
     return obj
+
+
+def focus_corridor_subassembly_kind_review(document=None, kind: str = ""):
+    """Create and focus a 3D highlight for one evaluated Subassembly kind."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    kind_text = str(kind or "").strip()
+    if doc is None or not kind_text:
+        raise RuntimeError("Subassembly kind review target was not found.")
+    _set_subassembly_kind_review_previews_visibility(doc, False)
+    obj = _subassembly_kind_review_object(doc, kind_text)
+    if obj is None:
+        obj = _create_subassembly_kind_review_highlight(document=doc, kind=kind_text, visible=True)
+    if obj is None:
+        raise RuntimeError(f"No evaluated Subassembly geometry was found for kind: {kind_text}")
+    _set_object_visibility(obj, True)
+    _select_and_fit_object(obj)
+    return obj
+
+
+def create_corridor_subassembly_kind_review_previews(*, document=None, project=None) -> list[object]:
+    """Create reusable Build Parametric review objects grouped by evaluated Subassembly kind."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return []
+    for obj in _subassembly_kind_review_objects(doc):
+        try:
+            doc.removeObject(str(getattr(obj, "Name", "") or ""))
+        except Exception:
+            pass
+    created: list[object] = []
+    for row in corridor_subassembly_kind_guided_review_rows(doc):
+        kind = str(row.get("kind", "") or "").strip()
+        if not kind:
+            continue
+        obj = _create_subassembly_kind_review_highlight(
+            document=doc,
+            project=project,
+            kind=kind,
+            visible=False,
+        )
+        if obj is not None:
+            created.append(obj)
+    return created
+
+
+def _subassembly_kind_review_object(document, kind: str):
+    if document is None:
+        return None
+    object_name = f"ReviewIssueSubassemblyKind_{_safe_output_object_suffix(str(kind or '').strip())}"
+    try:
+        return document.getObject(object_name)
+    except Exception:
+        return None
+
+
+def _subassembly_kind_review_objects(document) -> list[object]:
+    if document is None:
+        return []
+    objects: list[object] = []
+    for obj in list(getattr(document, "Objects", []) or []):
+        name = str(getattr(obj, "Name", "") or "")
+        if not name.startswith("ReviewIssueSubassemblyKind_"):
+            continue
+        objects.append(obj)
+    return objects
+
+
+def _set_subassembly_kind_review_previews_visibility(document, visible: bool) -> int:
+    changed = 0
+    for obj in _subassembly_kind_review_objects(document):
+        _set_object_visibility(obj, bool(visible))
+        changed += 1
+    return changed
+
+
+def _create_subassembly_kind_review_highlight(*, document=None, project=None, kind: str = "", visible: bool = True):
+    if document is None:
+        return None
+    try:
+        import FreeCAD as AppModule
+        import Part
+    except Exception:
+        return None
+    applied = to_applied_section_set(find_v1_applied_section_set(document))
+    if applied is None:
+        return None
+    kind_text = str(kind or "").strip()
+    object_name = f"ReviewIssueSubassemblyKind_{_safe_output_object_suffix(kind_text)}"
+    _remove_preview_object(document, object_name)
+    shapes: list[object] = []
+    sections = _station_ordered_applied_sections(applied)
+    section_count = 0
+    link_count = 0
+    shape_count = 0
+    surface_patch_count = 0
+    surface_roles: list[str] = []
+    preset_refs: list[str] = []
+    preset_statuses: list[str] = []
+    source_instance_refs: list[str] = []
+    previous_link_segments: dict[str, tuple[object, object]] = {}
+
+    def make_vector(point, *, z_offset: float = 0.0):
+        return AppModule.Vector(
+            float(getattr(point, "x", 0.0) or 0.0),
+            float(getattr(point, "y", 0.0) or 0.0),
+            float(getattr(point, "z", 0.0) or 0.0) + float(z_offset),
+        )
+
+    def append_triangle_face(a, b, c) -> bool:
+        if _same_centerline_point(a, b) or _same_centerline_point(b, c) or _same_centerline_point(c, a):
+            return False
+        try:
+            shapes.append(Part.Face(Part.makePolygon([a, b, c, a])))
+            return True
+        except Exception:
+            return False
+
+    for section in sections:
+        subassembly_by_id = {
+            str(getattr(row, "subassembly_id", "") or "").strip(): row
+            for row in list(getattr(section, "subassembly_rows", []) or [])
+            if str(getattr(row, "subassembly_id", "") or "").strip()
+        }
+        target_refs = {
+            subassembly_id
+            for subassembly_id, row in subassembly_by_id.items()
+            if str(getattr(row, "kind", "") or "").strip() == kind_text
+        }
+        if not target_refs:
+            previous_link_segments = {}
+            continue
+        for subassembly_ref in sorted(target_refs):
+            source_row = subassembly_by_id.get(subassembly_ref)
+            if source_row is None:
+                continue
+            preset_ref = str(getattr(source_row, "preset_ref", "") or "").strip()
+            preset_status = str(getattr(source_row, "preset_status", "") or "").strip()
+            source_instance_ref = str(getattr(source_row, "source_instance_ref", "") or "").strip()
+            if preset_ref:
+                preset_refs.append(preset_ref)
+            if preset_status:
+                preset_statuses.append(preset_status)
+            elif preset_ref:
+                preset_statuses.append("linked")
+            else:
+                preset_statuses.append("snapshot")
+            if source_instance_ref:
+                source_instance_refs.append(source_instance_ref)
+        points = {
+            str(getattr(point, "point_id", "") or "").strip(): point
+            for point in list(getattr(section, "subassembly_point_rows", []) or [])
+            if str(getattr(point, "point_id", "") or "").strip()
+        }
+        section_has_geometry = False
+        current_link_segments: dict[str, tuple[object, object]] = {}
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            subassembly_ref = str(getattr(link, "subassembly_ref", "") or "").strip()
+            if subassembly_ref not in target_refs:
+                continue
+            start_ref = str(getattr(link, "start_point_ref", "") or "").strip()
+            end_ref = str(getattr(link, "end_point_ref", "") or "").strip()
+            start = points.get(start_ref)
+            end = points.get(end_ref)
+            if start is None or end is None:
+                continue
+            try:
+                start_vector = make_vector(start, z_offset=0.08)
+                end_vector = make_vector(end, z_offset=0.08)
+                shapes.append(Part.makeLine(start_vector, end_vector))
+                link_key = str(getattr(link, "link_id", "") or "").strip()
+                if not link_key:
+                    role_text = str(getattr(link, "surface_role", "") or "").strip()
+                    link_key = f"{subassembly_ref}:{start_ref}:{end_ref}:{role_text}"
+                current_link_segments[link_key] = (start_vector, end_vector)
+                previous_segment = previous_link_segments.get(link_key)
+                if previous_segment is not None:
+                    previous_start, previous_end = previous_segment
+                    if append_triangle_face(previous_start, previous_end, end_vector):
+                        surface_patch_count += 1
+                    if append_triangle_face(previous_start, end_vector, start_vector):
+                        surface_patch_count += 1
+                section_has_geometry = True
+                link_count += 1
+                role = str(getattr(link, "surface_role", "") or "").strip()
+                if role:
+                    surface_roles.append(role)
+            except Exception:
+                pass
+        for shape_row in list(getattr(section, "subassembly_shape_rows", []) or []):
+            if str(getattr(shape_row, "subassembly_ref", "") or "").strip() not in target_refs:
+                continue
+            vectors = []
+            for point_ref in list(getattr(shape_row, "point_refs", []) or []):
+                point = points.get(str(point_ref or "").strip())
+                if point is None:
+                    continue
+                try:
+                    vectors.append(
+                        AppModule.Vector(
+                            float(getattr(point, "x", 0.0) or 0.0),
+                            float(getattr(point, "y", 0.0) or 0.0),
+                            float(getattr(point, "z", 0.0) or 0.0) + 0.1,
+                        )
+                    )
+                except Exception:
+                    pass
+            if len(vectors) < 2:
+                continue
+            try:
+                if len(vectors) >= 3 and not _same_centerline_point(vectors[0], vectors[-1]):
+                    vectors.append(vectors[0])
+                shapes.append(Part.makePolygon(vectors))
+                section_has_geometry = True
+                shape_count += 1
+            except Exception:
+                pass
+        if section_has_geometry:
+            section_count += 1
+        previous_link_segments = current_link_segments
+    if not shapes:
+        return None
+    try:
+        obj = document.addObject("Part::Feature", object_name)
+    except Exception:
+        return None
+    try:
+        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+        obj.Label = f"Subassembly Highlight - {_subassembly_kind_display_name(kind_text)}"
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
+    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
+    _set_preview_property(obj, "IssueKind", "subassembly_kind")
+    _set_preview_property(obj, "SubassemblyKind", kind_text)
+    _set_preview_string_list_property(obj, "PresetRefs", _unique_text_values(preset_refs))
+    _set_preview_string_list_property(obj, "PresetStatuses", _unique_text_values(preset_statuses))
+    _set_preview_string_list_property(obj, "SourceInstanceRefs", _unique_text_values(source_instance_refs))
+    _set_preview_float_property(obj, "SectionCount", float(section_count))
+    _set_preview_float_property(obj, "LinkCount", float(link_count))
+    _set_preview_float_property(obj, "ShapeCount", float(shape_count))
+    _set_preview_float_property(obj, "SurfacePatchCount", float(surface_patch_count))
+    _set_preview_string_list_property(obj, "SurfaceRoles", _unique_text_values(surface_roles))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            color = _subassembly_kind_review_color(kind_text)
+            vobj.ShapeColor = color
+            vobj.LineColor = color
+            vobj.PointColor = color
+            vobj.Transparency = 45
+            vobj.LineWidth = 6.0
+            vobj.PointSize = 8.0
+            vobj.Visibility = bool(visible)
+    except Exception:
+        pass
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(project or find_project(document), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _subassembly_kind_review_color(kind: str) -> tuple[float, float, float]:
+    kind_text = str(kind or "").strip().lower()
+    if kind_text == "lane":
+        return (0.15, 0.65, 1.0)
+    if kind_text == "shoulder":
+        return (0.35, 1.0, 0.35)
+    if kind_text in {"ditch", "lined_ditch"}:
+        return (0.0, 0.95, 0.95)
+    if kind_text == "gutter":
+        return (0.75, 0.45, 1.0)
+    if kind_text == "curb":
+        return (1.0, 0.55, 0.0)
+    if kind_text == "side_slope":
+        return (1.0, 0.85, 0.0)
+    return (1.0, 0.9, 0.0)
 
 
 def show_corridor_slope_face_issue_marker(document=None, row_index: int = 0):
@@ -2658,11 +3393,114 @@ def set_all_corridor_build_preview_visibility(document=None, visible: bool = Tru
     for obj in _corridor_build_region_preview_objects(doc):
         _set_object_visibility(obj, False)
         changed += 1
+    for obj in _subassembly_kind_review_objects(doc):
+        _set_object_visibility(obj, bool(visible))
+        changed += 1
     if include_issue_markers:
         for obj in _corridor_build_issue_marker_objects(doc):
             _set_object_visibility(obj, bool(visible))
             changed += 1
     return changed
+
+
+def set_corridor_guided_review_step_visibility(document=None, step_id: str = "", visible: bool = True) -> int:
+    """Set visibility for objects represented by one Guided Review row."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return 0
+    step_id_text = str(step_id or "").strip()
+    if not step_id_text:
+        return 0
+    changed = 0
+    if step_id_text.startswith("subassembly_kind:"):
+        kind = step_id_text.split(":", 1)[1]
+        obj = _subassembly_kind_review_object(doc, kind)
+        if obj is None and visible:
+            obj = _create_subassembly_kind_review_highlight(document=doc, kind=kind, visible=True)
+        if obj is not None:
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+        return changed
+    if step_id_text == "supplemental_frames":
+        obj = _corridor_supplemental_frame_marker_object(doc)
+        if obj is None and visible:
+            obj = create_or_update_corridor_supplemental_frame_markers(document=doc, visible=True)
+        if obj is not None:
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+        return changed
+    step = _corridor_build_guided_review_step(step_id_text)
+    if step is not None:
+        for role in list(step[2] or []):
+            if set_corridor_build_preview_visibility(doc, role, bool(visible)) is not None:
+                changed += 1
+    if step_id_text == "slope_issues":
+        for marker in _corridor_build_issue_marker_objects(doc):
+            _set_object_visibility(marker, bool(visible))
+            changed += 1
+    elif step_id_text == "drainage_flow":
+        obj = doc.getObject("ReviewIssueDrainageFlowRoutes")
+        if obj is not None:
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+    return changed
+
+
+def corridor_guided_review_step_visibility(document=None, step_id: str = "") -> bool:
+    """Return whether any object represented by one Guided Review row is visible."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return False
+    step_id_text = str(step_id or "").strip()
+    if step_id_text.startswith("subassembly_kind:"):
+        obj = _subassembly_kind_review_object(doc, step_id_text.split(":", 1)[1])
+        return _object_visibility(obj) if obj is not None else False
+    if step_id_text == "supplemental_frames":
+        obj = _corridor_supplemental_frame_marker_object(doc)
+        return _object_visibility(obj) if obj is not None else False
+    step = _corridor_build_guided_review_step(step_id_text)
+    if step is not None:
+        for role in list(step[2] or []):
+            obj = _corridor_build_preview_object(doc, role)
+            if obj is not None and _object_visibility(obj):
+                return True
+    if step_id_text == "slope_issues":
+        return any(_object_visibility(marker) for marker in _corridor_build_issue_marker_objects(doc))
+    if step_id_text == "drainage_flow":
+        obj = doc.getObject("ReviewIssueDrainageFlowRoutes")
+        return _object_visibility(obj) if obj is not None else False
+    return False
+
+
+def corridor_guided_review_step_available(document=None, step_id: str = "") -> bool:
+    """Return whether one Guided Review row has a built object that can be toggled."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return False
+    step_id_text = str(step_id or "").strip()
+    if step_id_text.startswith("subassembly_kind:"):
+        kind = step_id_text.split(":", 1)[1]
+        if _subassembly_kind_review_object(doc, kind) is not None:
+            return True
+        return any(
+            str(row.get("step_id", "") or "") == step_id_text
+            for row in corridor_subassembly_kind_guided_review_rows(doc)
+        )
+    if step_id_text == "supplemental_frames":
+        return _corridor_supplemental_frame_marker_object(doc) is not None or find_v1_applied_section_set(doc) is not None
+    step = _corridor_build_guided_review_step(step_id_text)
+    if step is not None:
+        for role in list(step[2] or []):
+            if _corridor_build_preview_object(doc, role) is not None:
+                return True
+    if step_id_text == "slope_issues":
+        return bool(_corridor_build_issue_marker_objects(doc))
+    if step_id_text == "drainage_flow":
+        return doc.getObject("ReviewIssueDrainageFlowRoutes") is not None
+    return False
 
 
 def set_corridor_build_daylight_contact_marker_visibility(document=None, visible: bool = True):
@@ -2730,13 +3568,13 @@ def create_corridor_centerline_3d_preview(
     except Exception:
         return None
 
-    points, stations, source_mode, centerline_result_id = _corridor_centerline_preview_points(
+    shape, curve_kind, points, stations, source_mode, centerline_result_id = _corridor_centerline_preview_shape(
         doc,
         AppModule,
+        Part,
     )
-    if len(points) < 2:
+    if shape is None or len(points) < 2:
         return None
-    shape, curve_kind = _make_centerline_shape(points, Part)
     obj = doc.getObject("V1CorridorCenterline3DPreview")
     if obj is None:
         obj = doc.addObject("Part::Feature", "V1CorridorCenterline3DPreview")
@@ -2781,6 +3619,106 @@ def create_corridor_centerline_3d_preview(
     return obj
 
 
+def create_or_update_corridor_supplemental_frame_markers(
+    *,
+    document=None,
+    project=None,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    visible: bool = False,
+):
+    """Create or update output-only supplemental frame markers in the 3D View."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return None
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        return None
+    try:
+        import FreeCAD as AppModule
+        import Part
+    except Exception:
+        return None
+    sections = _supplemental_sampled_sections(
+        list(getattr(applied, "sections", []) or []),
+        max_spacing=float(supplemental_sampling_max_spacing or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
+        tangent_delta_threshold_deg=float(supplemental_sampling_tangent_delta_deg or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG),
+        chord_deviation_threshold=float(supplemental_sampling_chord_deviation or SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD),
+        frame_resolver=_corridor_supplemental_frame_resolver(doc),
+    )
+    supplemental_sections = [
+        section
+        for section in sections
+        if "supplemental:" in str(getattr(section, "applied_section_id", "") or "")
+        and getattr(section, "frame", None) is not None
+    ]
+    if not supplemental_sections:
+        return None
+    shapes = []
+    station_rows: list[str] = []
+    marker_size = 0.75
+    tangent_size = 1.25
+    for section in supplemental_sections:
+        frame = getattr(section, "frame", None)
+        x = float(getattr(frame, "x", 0.0) or 0.0)
+        y = float(getattr(frame, "y", 0.0) or 0.0)
+        z = float(getattr(frame, "z", 0.0) or 0.0)
+        angle = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+        tx = math.cos(angle)
+        ty = math.sin(angle)
+        nx = -math.sin(angle)
+        ny = math.cos(angle)
+        shapes.append(Part.makeLine(AppModule.Vector(x - nx * marker_size, y - ny * marker_size, z), AppModule.Vector(x + nx * marker_size, y + ny * marker_size, z)))
+        shapes.append(Part.makeLine(AppModule.Vector(x, y, z), AppModule.Vector(x + tx * tangent_size, y + ty * tangent_size, z)))
+        station_rows.append(f"{float(getattr(frame, 'station', 0.0) or 0.0):.3f}|{str(getattr(frame, 'notes', '') or '')}")
+    object_name = "V1CorridorSupplementalFrameMarkers"
+    obj = doc.getObject(object_name)
+    if obj is None:
+        obj = doc.addObject("Part::Feature", object_name)
+    try:
+        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+        obj.Label = "Corridor Supplemental Frame Markers"
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_corridor_supplemental_frame_markers")
+    _set_preview_property(obj, "V1ObjectType", "V1CorridorSupplementalFrameMarkers")
+    _set_preview_property(obj, "AppliedSectionSetId", str(getattr(applied, "applied_section_set_id", "") or ""))
+    _set_preview_float_property(obj, "MaxSpacing", float(supplemental_sampling_max_spacing or SUPPLEMENTAL_SAMPLING_MAX_SPACING))
+    _set_preview_float_property(obj, "TangentDeltaThresholdDeg", float(supplemental_sampling_tangent_delta_deg or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG))
+    _set_preview_float_property(obj, "ChordDeviationThreshold", float(supplemental_sampling_chord_deviation or SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD))
+    _set_preview_integer_property(obj, "MarkerCount", len(supplemental_sections))
+    _set_preview_string_list_property(obj, "StationRows", station_rows)
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.ShapeColor = (1.0, 0.78, 0.05)
+            vobj.LineColor = (1.0, 0.78, 0.05)
+            vobj.PointColor = (1.0, 0.78, 0.05)
+            vobj.LineWidth = 3.0
+            vobj.Visibility = bool(visible)
+    except Exception:
+        pass
+    _set_object_visibility(obj, bool(visible))
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(project or find_project(doc), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _corridor_supplemental_frame_marker_object(document):
+    if document is None:
+        return None
+    try:
+        return document.getObject("V1CorridorSupplementalFrameMarkers")
+    except Exception:
+        return None
+
+
 def create_corridor_design_surface_preview(
     *,
     document=None,
@@ -2788,6 +3726,9 @@ def create_corridor_design_surface_preview(
     corridor_model=None,
     surface_model=None,
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     """Create or update the first design-surface mesh preview for a corridor."""
 
@@ -2804,6 +3745,7 @@ def create_corridor_design_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "design_surface") or f"{corridor_model.corridor_id}:design"
+    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_design_surface(
             CorridorDesignSurfaceGeometryRequest(
@@ -2812,6 +3754,10 @@ def create_corridor_design_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+                supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+                supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+                supplemental_frame_resolver=supplemental_frame_resolver,
                 surface_transition_model=transition_model,
             )
         )
@@ -3235,6 +4181,9 @@ def create_corridor_region_surface_previews(
     corridor_model=None,
     surface_model=None,
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ) -> list[object]:
     """Create/update built Region surface objects used by Region Boundary review selection."""
 
@@ -3260,6 +4209,9 @@ def create_corridor_region_surface_previews(
             applied_section_set=applied,
             row=row,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         if objects:
             created.extend(objects)
@@ -3278,6 +4230,9 @@ def create_corridor_subgrade_surface_preview(
     corridor_model=None,
     surface_model=None,
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     """Create or update the first subgrade-surface mesh preview for a corridor."""
 
@@ -3294,6 +4249,7 @@ def create_corridor_subgrade_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "subgrade_surface") or f"{corridor_model.corridor_id}:subgrade"
+    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_subgrade_surface(
             CorridorDesignSurfaceGeometryRequest(
@@ -3302,6 +4258,10 @@ def create_corridor_subgrade_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+                supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+                supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+                supplemental_frame_resolver=supplemental_frame_resolver,
                 surface_transition_model=transition_model,
             )
         )
@@ -3363,6 +4323,9 @@ def create_corridor_daylight_surface_preview(
     surface_model=None,
     show_daylight_contact_markers: bool = True,
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     """Create or update the first slope-face mesh preview for a corridor."""
 
@@ -3379,6 +4342,7 @@ def create_corridor_daylight_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "daylight_surface") or f"{corridor_model.corridor_id}:daylight"
+    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_daylight_surface(
             CorridorDesignSurfaceGeometryRequest(
@@ -3388,6 +4352,10 @@ def create_corridor_daylight_surface_preview(
                 surface_id=surface_id,
                 existing_ground_surface=_resolve_corridor_existing_ground_tin_surface(doc),
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+                supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+                supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+                supplemental_frame_resolver=supplemental_frame_resolver,
                 surface_transition_model=transition_model,
             )
         )
@@ -3523,6 +4491,9 @@ def create_corridor_drainage_surface_preview(
     corridor_model=None,
     surface_model=None,
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     """Create or update the first ditch/drainage mesh preview for a corridor."""
 
@@ -3547,6 +4518,7 @@ def create_corridor_drainage_surface_preview(
         )
         return None
     try:
+        supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
         tin_surface = CorridorSurfaceGeometryService().build_drainage_surface(
             CorridorDesignSurfaceGeometryRequest(
                 project_id=_project_id(project or find_project(doc)),
@@ -3554,6 +4526,10 @@ def create_corridor_drainage_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+                supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+                supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+                supplemental_frame_resolver=supplemental_frame_resolver,
                 surface_transition_model=transition_model,
             )
         )
@@ -3800,7 +4776,7 @@ class V1BuildCorridorTaskPanel:
         visibility_layout.setContentsMargins(8, 8, 8, 8)
         tabs.addTab(guided_tab, "Guided Review")
         tabs.addTab(results_tab, "Results")
-        tabs.addTab(issues_tab, "Slope Issues")
+        tabs.addTab(issues_tab, "Slope Diagnostics")
         tabs.addTab(intersections_tab, "Intersections")
         tabs.addTab(regions_tab, "Regions")
         tabs.addTab(drainage_tab, "Drainage")
@@ -3854,8 +4830,8 @@ class V1BuildCorridorTaskPanel:
             pass
         self._review_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_review_row(row_index))
         results_layout.addWidget(self._review_table, 1)
-        issue_label = QtWidgets.QLabel("Slope Face Issues")
-        issue_label.setToolTip("Double-click an issue row to select and fit the related 3D review marker.")
+        issue_label = QtWidgets.QLabel("Slope Face Diagnostics")
+        issue_label.setToolTip("Double-click a fallback issue row to select and fit the related 3D review marker.")
         issues_layout.addWidget(issue_label)
         self._slope_issue_table = QtWidgets.QTableWidget(0, 5)
         self._slope_issue_table.setHorizontalHeaderLabels(["Station", "Side", "Reason", "Status", "Marker"])
@@ -3874,10 +4850,10 @@ class V1BuildCorridorTaskPanel:
         self._slope_issue_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_slope_face_issue_row(row_index))
         issues_layout.addWidget(self._slope_issue_table, 1)
         issue_nav_row = QtWidgets.QHBoxLayout()
-        previous_issue_button = QtWidgets.QPushButton("Previous Issue")
+        previous_issue_button = QtWidgets.QPushButton("Previous Fallback Issue")
         previous_issue_button.clicked.connect(lambda: self._focus_adjacent_slope_face_issue(-1))
         issue_nav_row.addWidget(previous_issue_button)
-        next_issue_button = QtWidgets.QPushButton("Next Issue")
+        next_issue_button = QtWidgets.QPushButton("Next Fallback Issue")
         next_issue_button.clicked.connect(lambda: self._focus_adjacent_slope_face_issue(1))
         issue_nav_row.addWidget(next_issue_button)
         issue_nav_row.addStretch(1)
@@ -4018,15 +4994,22 @@ class V1BuildCorridorTaskPanel:
             pass
         self._drainage_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_drainage_review_row(row_index))
         drainage_layout.addWidget(self._drainage_table, 1)
-        sampling_label = QtWidgets.QLabel("Surface Sampling")
-        sampling_label.setToolTip("Control generated Build Corridor mesh rows between source Applied Section stations.")
-        options_layout.addWidget(sampling_label)
-        self._supplemental_sampling_check = QtWidgets.QCheckBox("Supplemental Sampling")
-        self._supplemental_sampling_check.setToolTip(
-            "Automatically add generated mesh rows inside triggered station spans for cleaner corridor surfaces."
+        sampling_label = QtWidgets.QLabel("Applied Section Sampling")
+        sampling_label.setToolTip(
+            "Build Parametric now consumes supplemental Applied Sections generated by the Applied Sections stage."
         )
-        self._supplemental_sampling_check.setChecked(True)
-        options_layout.addWidget(self._supplemental_sampling_check)
+        options_layout.addWidget(sampling_label)
+        sampling_note = QtWidgets.QLabel(
+            "Supplemental density is configured in Applied Sections. Build Parametric only consumes the resulting section rows."
+        )
+        sampling_note.setWordWrap(True)
+        options_layout.addWidget(sampling_note)
+        self._supplemental_sampling_frame_count_label = QtWidgets.QLabel("Applied Sections: n/a")
+        self._supplemental_sampling_frame_count_label.setToolTip(
+            "Source, supplemental, and total Applied Sections consumed by Build Parametric."
+        )
+        options_layout.addWidget(self._supplemental_sampling_frame_count_label)
+        self._sync_supplemental_sampling_frame_count_label()
         options_layout.addStretch(1)
         visibility_label = QtWidgets.QLabel("Preview Visibility")
         visibility_label.setToolTip("Toggle corridor review objects in the 3D View without rebuilding the corridor.")
@@ -4040,6 +5023,12 @@ class V1BuildCorridorTaskPanel:
             self._visibility_checks[role] = check
             visibility_grid.addWidget(check, index // 2, index % 2)
         visibility_layout.addLayout(visibility_grid)
+        guided_visibility_label = QtWidgets.QLabel("Guided Review Visibility")
+        guided_visibility_label.setToolTip("Show or hide objects represented by Guided Review rows.")
+        visibility_layout.addWidget(guided_visibility_label)
+        self._guided_visibility_grid = QtWidgets.QGridLayout()
+        self._guided_visibility_checks = {}
+        visibility_layout.addLayout(self._guided_visibility_grid)
         marker_row = QtWidgets.QHBoxLayout()
         self._daylight_contact_marker_check = QtWidgets.QCheckBox("Daylight Contact Markers")
         self._daylight_contact_marker_check.setToolTip("Show or hide the large daylight/EG contact markers.")
@@ -4084,7 +5073,7 @@ class V1BuildCorridorTaskPanel:
         applied = to_applied_section_set(applied_obj)
         if applied is None:
             self._summary.setPlainText("Applied Sections: missing\nRun Applied Sections before Build Parametric.")
-            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
+            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document, supplemental_sampling_enabled=self._use_supplemental_sampling(), supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(), supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(), supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation()))
             self._set_review_rows(corridor_build_review_rows(self.document))
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
             self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
@@ -4108,7 +5097,8 @@ class V1BuildCorridorTaskPanel:
                 ]
             )
         )
-        self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
+        self._set_guided_review_rows(corridor_build_guided_review_steps(self.document, supplemental_sampling_enabled=self._use_supplemental_sampling(), supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(), supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(), supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation()))
+        self._sync_supplemental_sampling_frame_count_label()
         self._set_review_rows(corridor_build_review_rows(self.document))
         self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
         self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
@@ -4121,24 +5111,44 @@ class V1BuildCorridorTaskPanel:
         try:
             self._set_progress(0, "Preparing Corridor Build...")
             self._set_progress(15, "Reading Applied Sections...")
+            compatibility_supplemental_sampling = _build_parametric_compatibility_supplemental_sampling_enabled(
+                self.document,
+                supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(),
+                supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(),
+                supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation(),
+            )
             result = build_document_corridor_model(self.document)
             self._set_progress(35, "Building CorridorModel...")
             obj = apply_v1_corridor_model(
                 document=self.document,
                 corridor_model=result,
                 show_daylight_contact_markers=self._show_daylight_contact_markers(),
-                supplemental_sampling_enabled=self._use_supplemental_sampling(),
+                supplemental_sampling_enabled=compatibility_supplemental_sampling,
+                supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(),
+                supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(),
+                supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation(),
                 progress_callback=self._set_progress,
             )
             self._set_progress(96, "Reading surface summary...")
             surface_obj = find_v1_surface_model(self.document)
             surface_count = int(getattr(surface_obj, "SurfaceCount", 0) or 0) if surface_obj is not None else 0
-            message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}"
+            frame_summary = self._supplemental_sampling_summary()
+            frame_message = (
+                f"Applied Sections consumed: source {int(frame_summary.get('source_section_count', 0) or 0)}, "
+                f"supplemental {int(frame_summary.get('supplemental_section_count', 0) or 0)}, "
+                f"total {int(frame_summary.get('total_section_count', 0) or 0)}"
+                if frame_summary
+                else "Applied Sections consumed: n/a"
+            )
+            if compatibility_supplemental_sampling:
+                frame_message = f"{frame_message}\nCompatibility fallback: hidden supplemental frames used; rebuild Applied Sections."
+            message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}\n{frame_message}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
             self._set_progress(97, "Refreshing review rows...")
             _hide_applied_section_set_review_shape(self.document)
             review_rows = corridor_build_review_rows(self.document)
-            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
+            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document, supplemental_sampling_enabled=compatibility_supplemental_sampling, supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(), supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(), supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation()))
+            self._sync_supplemental_sampling_frame_count_label()
             self._set_review_rows(review_rows)
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
             self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
@@ -4146,6 +5156,7 @@ class V1BuildCorridorTaskPanel:
             self._sync_surface_transition_station_options_from_selected_region()
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
             self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
+            self._sync_supplemental_sampling_frame_count_label()
             self._set_progress(99, "Focusing review preview...")
             focused = self._show_preferred_review_row(review_rows)
             if focused:
@@ -4176,13 +5187,80 @@ class V1BuildCorridorTaskPanel:
         _process_panel_events()
 
     def _use_supplemental_sampling(self) -> bool:
-        check = getattr(self, "_supplemental_sampling_check", None)
-        if check is None:
-            return True
+        return False
+
+    def _supplemental_sampling_max_spacing(self) -> float:
+        slider = getattr(self, "_supplemental_sampling_spacing_slider", None)
+        if slider is None:
+            return float(SUPPLEMENTAL_SAMPLING_MAX_SPACING)
         try:
-            return bool(check.isChecked())
+            density = max(1, min(25, int(slider.value())))
+            return float(max(1, 26 - density))
         except Exception:
-            return True
+            return float(SUPPLEMENTAL_SAMPLING_MAX_SPACING)
+
+    def _supplemental_sampling_tangent_delta_deg(self) -> float:
+        spin = getattr(self, "_supplemental_sampling_tangent_spin", None)
+        if spin is None:
+            return float(SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG)
+        try:
+            return float(spin.value())
+        except Exception:
+            return float(SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG)
+
+    def _supplemental_sampling_chord_deviation(self) -> float:
+        spin = getattr(self, "_supplemental_sampling_chord_spin", None)
+        if spin is None:
+            return float(SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD)
+        try:
+            return float(spin.value())
+        except Exception:
+            return float(SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD)
+
+    def _supplemental_sampling_summary(self) -> dict[str, object]:
+        applied = to_applied_section_set(find_v1_applied_section_set(self.document))
+        if applied is None:
+            return {}
+        return _applied_section_supplemental_consumption_summary(applied)
+
+    def _sync_supplemental_sampling_spacing_label(self) -> None:
+        label = getattr(self, "_supplemental_sampling_spacing_value", None)
+        if label is None:
+            return
+        try:
+            slider = getattr(self, "_supplemental_sampling_spacing_slider", None)
+            density = int(slider.value()) if slider is not None else 21
+            spacing = self._supplemental_sampling_max_spacing()
+            label.setText(f"{density}/25 ({spacing:g} m)")
+            label.setToolTip(
+                f"Supplemental curve density: {density}/25. Approximate max curved-span spacing: {spacing:g} m. Straight spans are not densified by spacing alone."
+            )
+            self._sync_supplemental_sampling_frame_count_label()
+        except Exception:
+            return
+
+    def _sync_supplemental_sampling_frame_count_label(self) -> None:
+        label = getattr(self, "_supplemental_sampling_frame_count_label", None)
+        if label is None:
+            return
+        try:
+            summary = self._supplemental_sampling_summary()
+            if not summary:
+                label.setText("Applied Sections: n/a")
+                return
+            kind_counts = dict(summary.get("kind_counts", {}) or {})
+            kind_text = ", ".join(f"{key}={value}" for key, value in sorted(kind_counts.items())) or "none"
+            label.setText(
+                "Applied Sections: "
+                f"source {int(summary.get('source_section_count', 0) or 0)}, "
+                f"supplemental {int(summary.get('supplemental_section_count', 0) or 0)}, "
+                f"total {int(summary.get('total_section_count', 0) or 0)}"
+            )
+            label.setToolTip(
+                f"kinds: {kind_text}; Build Parametric hidden supplemental frames are disabled."
+            )
+        except Exception:
+            label.setText("Applied Sections: unavailable")
 
     def _open_structure_output_panel(self) -> bool:
         try:
@@ -4220,6 +5298,7 @@ class V1BuildCorridorTaskPanel:
                 self._guided_table.selectRow(0)
             except Exception:
                 pass
+        self._set_guided_visibility_checks(list(rows or []))
 
     def _set_review_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_review_table"):
@@ -4714,7 +5793,7 @@ class V1BuildCorridorTaskPanel:
             self._summary.setPlainText(
                 "\n".join(
                     [
-                        "Slope Face issue marker shown.",
+                        "Slope Face fallback issue marker shown.",
                         f"Station: {issue.get('station_label', '')}",
                         f"Side: {issue.get('side', '')}",
                         f"Reason: {issue.get('reason', '')}",
@@ -4723,7 +5802,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Slope Face issue was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Slope Face fallback issue was not shown.\n{exc}")
 
     def _show_intersection_contract_review_row(self, row_index: int) -> None:
         try:
@@ -4766,7 +5845,7 @@ class V1BuildCorridorTaskPanel:
             self._summary.setPlainText(
                 "\n".join(
                     [
-                        "Slope Face issue marker shown.",
+                        "Slope Face fallback issue marker shown.",
                         f"Issue: {target_index + 1} / {len(corridor_slope_face_issue_rows(self.document))}",
                         f"Station: {issue.get('station_label', '')}",
                         f"Side: {issue.get('side', '')}",
@@ -4776,7 +5855,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Slope Face issue was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Slope Face fallback issue was not shown.\n{exc}")
 
     def _selected_slope_face_issue_row_index(self) -> int:
         rows = self._slope_issue_table.selectionModel().selectedRows() if hasattr(self, "_slope_issue_table") else []
@@ -4802,8 +5881,15 @@ class V1BuildCorridorTaskPanel:
         try:
             item = self._guided_table.item(int(row_index), 0)
             step_id = str(item.data(32) if item is not None else "")
-            obj = focus_corridor_build_guided_review_step(self.document, step_id)
+            obj = focus_corridor_build_guided_review_step(
+                self.document,
+                step_id,
+                supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(),
+                supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(),
+                supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation(),
+            )
             self._sync_visibility_checks()
+            self._sync_guided_visibility_checks()
             self._summary.setPlainText(
                 f"Guided review step focused.\nStep: {step_id}\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}"
             )
@@ -4847,6 +5933,52 @@ class V1BuildCorridorTaskPanel:
                 except Exception:
                     pass
         self._sync_daylight_contact_marker_check()
+        self._sync_guided_visibility_checks()
+
+    def _set_guided_visibility_checks(self, rows: list[dict[str, object]]) -> None:
+        grid = getattr(self, "_guided_visibility_grid", None)
+        if grid is None:
+            return
+        while grid.count():
+            item = grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._guided_visibility_checks = {}
+        for index, row in enumerate(list(rows or [])):
+            step_id = str(row.get("step_id", "") or "").strip()
+            if not step_id:
+                continue
+            title = str(row.get("title", "") or step_id)
+            check = QtWidgets.QCheckBox(title)
+            check.setToolTip(str(row.get("notes", "") or ""))
+            check.toggled.connect(lambda checked, step_id=step_id: self._set_guided_review_visibility(step_id, checked))
+            self._guided_visibility_checks[step_id] = check
+            grid.addWidget(check, index // 2, index % 2)
+        self._sync_guided_visibility_checks()
+
+    def _set_guided_review_visibility(self, step_id: str, visible: bool) -> None:
+        count = set_corridor_guided_review_step_visibility(self.document, step_id, bool(visible))
+        self._sync_visibility_checks()
+        state = "shown" if visible else "hidden"
+        self._summary.setPlainText(f"Guided review object(s) {state}.\nStep: {step_id}\nObjects updated: {count}")
+
+    def _sync_guided_visibility_checks(self) -> None:
+        checks = getattr(self, "_guided_visibility_checks", None)
+        if not checks:
+            return
+        for step_id, check in dict(checks).items():
+            visible = corridor_guided_review_step_visibility(self.document, step_id)
+            enabled = corridor_guided_review_step_available(self.document, step_id)
+            try:
+                check.blockSignals(True)
+                check.setEnabled(enabled)
+                check.setChecked(bool(visible))
+            finally:
+                try:
+                    check.blockSignals(False)
+                except Exception:
+                    pass
 
     def _sync_daylight_contact_marker_check(self) -> None:
         check = getattr(self, "_daylight_contact_marker_check", None)
@@ -6186,6 +7318,9 @@ def _create_or_update_region_preview_objects(
     applied_section_set=None,
     row: dict[str, object],
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     if document is None or corridor_model is None or applied_section_set is None:
         return []
@@ -6229,6 +7364,9 @@ def _create_or_update_region_preview_objects(
             region_sections=build_sections,
             surface_role_spec=spec,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         if obj is not None:
             objects.append(obj)
@@ -6253,6 +7391,9 @@ def _create_or_update_region_surface_preview_object(
     region_sections: list[object],
     surface_role_spec: dict[str, object],
     supplemental_sampling_enabled: bool = False,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     if document is None or corridor_model is None or applied_section_set is None:
         return None
@@ -6267,12 +7408,17 @@ def _create_or_update_region_surface_preview_object(
     if builder is None:
         return None
     try:
+        supplemental_frame_resolver = _corridor_supplemental_frame_resolver(document) if supplemental_sampling_enabled else None
         request = CorridorDesignSurfaceGeometryRequest(
             project_id=_project_id(project or find_project(document)),
             corridor=corridor_model,
             applied_section_set=applied_section_set,
             surface_id=surface_id,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+            supplemental_frame_resolver=supplemental_frame_resolver,
             surface_transition_model=None,
         )
         if role == "daylight":
@@ -14050,6 +15196,21 @@ def _corridor_centerline_preview_points(document, app_module):
     return [], [], "", ""
 
 
+def _corridor_centerline_preview_shape(document, app_module, part_module):
+    centerline_result = _build_corridor_centerline3d_result(document)
+    points, stations, result_id = _centerline_points_from_centerline3d_result(centerline_result, app_module)
+    if len(points) < 2:
+        return None, "empty", points, stations, "", result_id
+    try:
+        from .cmd_centerline3d import _make_centerline3d_source_geometry_shape
+
+        shape, _source_summary = _make_centerline3d_source_geometry_shape(document, centerline_result)
+        return shape, "source_geometry", points, stations, "centerline3d_source_geometry", result_id
+    except Exception:
+        shape, curve_kind = _make_centerline_shape(points, part_module)
+        return shape, curve_kind, points, stations, "centerline3d_result_fallback", result_id
+
+
 def _build_corridor_centerline3d_result(document):
     try:
         from .cmd_centerline3d import build_document_centerline3d_result
@@ -14057,6 +15218,65 @@ def _build_corridor_centerline3d_result(document):
         return build_document_centerline3d_result(document)
     except Exception:
         return None
+
+
+def _corridor_supplemental_frame_resolver(document):
+    centerline_result = _build_corridor_centerline3d_result(document)
+    if str(getattr(centerline_result, "status", "") or "") != "ready":
+        return None
+    try:
+        from ..services.evaluation import Centerline3DFrameService
+
+        frame_service = Centerline3DFrameService()
+    except Exception:
+        return None
+    result_cache: dict[str, object] = {}
+
+    def resolve(station: float, first, second, ratio: float):
+        alignment_id = _supplemental_alignment_id(first, second)
+        result = _supplemental_centerline_result_for_alignment(centerline_result, alignment_id, result_cache)
+        frame = frame_service.resolve_station(result, float(station))
+        notes = str(getattr(frame, "notes", "") or "").strip()
+        if "source=centerline3d_result" not in notes:
+            notes = f"{notes};source=centerline3d_result" if notes else "source=centerline3d_result"
+        if "supplemental_sampling_source_resolved" not in notes:
+            notes = f"{notes};supplemental_sampling_source_resolved"
+        try:
+            return replace(frame, station=float(station), notes=notes)
+        except Exception:
+            return frame
+
+    return resolve
+
+
+def _supplemental_alignment_id(first, second) -> str:
+    first_id = str(getattr(first, "alignment_id", "") or "").strip()
+    second_id = str(getattr(second, "alignment_id", "") or "").strip()
+    if first_id and first_id == second_id:
+        return first_id
+    return first_id or second_id
+
+
+def _supplemental_centerline_result_for_alignment(centerline_result, alignment_id: str, cache: dict[str, object]):
+    key = str(alignment_id or "").strip()
+    if not key:
+        return centerline_result
+    if key in cache:
+        return cache[key]
+    rows = []
+    for row in list(getattr(centerline_result, "point_rows", []) or []):
+        row_alignment = str(getattr(row, "source_alignment_ref", "") or getattr(row, "alignment_id", "") or "").strip()
+        if not row_alignment or row_alignment == key:
+            rows.append(row)
+    if len(rows) < 2:
+        cache[key] = centerline_result
+        return centerline_result
+    try:
+        result = replace(centerline_result, point_rows=rows)
+    except Exception:
+        result = centerline_result
+    cache[key] = result
+    return result
 
 
 def _centerline_points_from_centerline3d_result(centerline_result, app_module):
@@ -14193,6 +15413,7 @@ def _corridor_build_auxiliary_preview_objects(document) -> list[object]:
         "V1CorridorSlopeFaceGenerationBoundaryPreview",
         "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         "V1CorridorIntersectionSlopeFaceOverlapPreview",
+        "V1CorridorSupplementalFrameMarkers",
     )
     output = []
     for name in names:
@@ -14231,7 +15452,7 @@ def _corridor_build_issue_marker_objects(document) -> list[object]:
     for obj in list(getattr(document, "Objects", []) or []):
         name = str(getattr(obj, "Name", "") or "")
         if name.startswith((
-            "ReviewIssueSlopeFace",
+            "ReviewIssueSlopeFaceIssue",
             "ReviewIssueDrainage",
             "V1RegionBoundaryRangeHighlight",
             "V1SurfaceTransitionSpanMarkers",
@@ -14269,7 +15490,7 @@ def _corridor_build_daylight_contact_marker_object(document):
     if document is None:
         return None
     try:
-        return document.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
+        return document.getObject("ReviewDiagnosticSlopeFaceIntersectionMarkers") or document.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
     except Exception:
         return None
 
@@ -14278,6 +15499,9 @@ def _corridor_build_daylight_marker_objects(document) -> list[object]:
     if document is None:
         return []
     names = (
+        "ReviewDiagnosticSlopeFaceIntersectionMarkers",
+        "ReviewDiagnosticSlopeFaceSampledEdgeMarkers",
+        "ReviewDiagnosticSlopeFaceFallbackMarkers",
         "ReviewIssueSlopeFaceIntersectionMarkers",
         "ReviewIssueSlopeFaceSampledEdgeMarkers",
         "ReviewIssueSlopeFaceFallbackMarkers",
@@ -14395,9 +15619,9 @@ def _create_slope_face_diagnostic_markers(
         return []
     daylight_marker_color = (0.10, 0.85, 0.25)
     marker_specs = [
-        ("intersection", "ReviewIssueSlopeFaceIntersectionMarkers", "Slope Face Daylight / EG Intersections", daylight_marker_color, 1.8),
-        ("sampled_outer_edge", "ReviewIssueSlopeFaceSampledEdgeMarkers", "Slope Face Outer Edge Samples", daylight_marker_color),
-        ("fallback", "ReviewIssueSlopeFaceFallbackMarkers", "Slope Face Fallback / No Hit", daylight_marker_color),
+        ("intersection", "ReviewDiagnosticSlopeFaceIntersectionMarkers", "Slope Face Daylight / EG Intersections", daylight_marker_color, 1.8),
+        ("sampled_outer_edge", "ReviewDiagnosticSlopeFaceSampledEdgeMarkers", "Slope Face Outer Edge Samples", daylight_marker_color),
+        ("fallback", "ReviewDiagnosticSlopeFaceFallbackMarkers", "Slope Face Fallback / No Hit", daylight_marker_color),
     ]
     radius = _marker_radius([point for points in status_points.values() for point in points])
     created = []
@@ -14414,6 +15638,9 @@ def _create_slope_face_diagnostic_markers(
             color=color,
             surface=surface,
             corridor_model=corridor_model,
+            record_kind="v1_review_diagnostic",
+            object_type="ReviewDiagnostic",
+            issue_kind="slope_face_tie_in_diagnostic",
         )
         if obj is not None:
             _set_object_visibility(obj, bool(show_daylight_contact_markers))
@@ -14443,6 +15670,9 @@ def _remove_slope_face_diagnostic_markers(document) -> None:
         "ReviewIssueSlopeFaceIntersectionMarkers",
         "ReviewIssueSlopeFaceSampledEdgeMarkers",
         "ReviewIssueSlopeFaceFallbackMarkers",
+        "ReviewDiagnosticSlopeFaceIntersectionMarkers",
+        "ReviewDiagnosticSlopeFaceSampledEdgeMarkers",
+        "ReviewDiagnosticSlopeFaceFallbackMarkers",
     ):
         try:
             obj = document.getObject(name)
@@ -14488,6 +15718,11 @@ def _create_slope_face_individual_issue_markers(
             point = (float(row.get("x", 0.0) or 0.0), float(row.get("y", 0.0) or 0.0), float(row.get("z", 0.0) or 0.0))
         except Exception:
             continue
+        points = _slope_face_issue_breakline_points(row, applied_section_set)
+        if not points:
+            points = [point]
+        elif not _same_xyz(points[-1], point):
+            points.append(point)
         object_name = str(row.get("marker_object", "") or "")
         if not object_name:
             continue
@@ -14495,11 +15730,15 @@ def _create_slope_face_individual_issue_markers(
             document=document,
             object_name=object_name,
             label=f"Slope Face Issue - {row.get('station_label', '')} {row.get('side', '')}",
-            points=[point],
+            points=points,
             radius=max(float(radius or 0.5) * 1.6, 0.3),
             color=(0.10, 0.85, 0.25),
             surface=surface,
             corridor_model=corridor_model,
+            record_kind="v1_review_issue",
+            object_type="ReviewIssue",
+            issue_kind="slope_face_fallback",
+            connect_points=True,
         )
         if obj is None:
             continue
@@ -14515,6 +15754,142 @@ def _create_slope_face_individual_issue_markers(
         except Exception:
             pass
     return created
+
+
+def _slope_face_issue_breakline_points(row: dict[str, str], applied_section_set=None) -> list[tuple[float, float, float]]:
+    section = _slope_face_issue_section(row, applied_section_set)
+    if section is None:
+        return []
+    side_label = _slope_face_issue_side_label(row)
+    if not side_label:
+        return []
+    points = _slope_face_linked_subassembly_breakline_points(section, side_label=side_label)
+    if not points:
+        points = _slope_face_legacy_breakline_points(section, side_label=side_label)
+    return _unique_xyz(points)
+
+
+def _slope_face_issue_section(row: dict[str, str], applied_section_set=None):
+    if applied_section_set is None:
+        return None
+    try:
+        station_index = int(str(row.get("station_index", "") or ""))
+    except Exception:
+        return None
+    station_rows = list(getattr(applied_section_set, "station_rows", []) or [])
+    if station_index < 0 or station_index >= len(station_rows):
+        return None
+    section_id = str(getattr(station_rows[station_index], "applied_section_id", "") or "")
+    if not section_id:
+        return None
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        if str(getattr(section, "applied_section_id", "") or "") == section_id:
+            return section
+    return None
+
+
+def _slope_face_issue_side_label(row: dict[str, str]) -> str:
+    side = str(row.get("side", "") or "").strip().upper()
+    if side == "L":
+        return "left"
+    if side == "R":
+        return "right"
+    return ""
+
+
+def _slope_face_linked_subassembly_breakline_points(section, *, side_label: str) -> list[tuple[float, float, float]]:
+    linked_ids = _subassembly_link_point_ids_for_preview_surface_role(section, surface_role="slope_face_surface")
+    if not linked_ids:
+        return []
+    rows = []
+    for point in list(getattr(section, "subassembly_point_rows", []) or []):
+        point_id = str(getattr(point, "point_id", "") or "").strip()
+        if point_id not in linked_ids:
+            continue
+        if not _point_matches_side(point, side_label=side_label):
+            continue
+        rows.append(point)
+    return _breakline_points_from_rows(rows, side_label=side_label, role_attr="point_code")
+
+
+def _slope_face_legacy_breakline_points(section, *, side_label: str) -> list[tuple[float, float, float]]:
+    roles = {"side_slope_surface", "bench_surface", "daylight_marker"}
+    rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") in roles and _point_matches_side(point, side_label=side_label)
+    ]
+    return _breakline_points_from_rows(rows, side_label=side_label, role_attr="point_role")
+
+
+def _subassembly_link_point_ids_for_preview_surface_role(section, *, surface_role: str) -> set[str]:
+    role = str(surface_role or "").strip()
+    point_ids: set[str] = set()
+    if not role:
+        return point_ids
+    for link in list(getattr(section, "subassembly_link_rows", []) or []):
+        if str(getattr(link, "surface_role", "") or "").strip() != role:
+            continue
+        for attr in ("start_point_ref", "end_point_ref"):
+            point_id = str(getattr(link, attr, "") or "").strip()
+            if point_id:
+                point_ids.add(point_id)
+    return point_ids
+
+
+def _point_matches_side(point, *, side_label: str) -> bool:
+    side = str(getattr(point, "side", "") or "").strip().lower()
+    if side in {"left", "right"}:
+        return side == side_label
+    offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+    return offset >= -1.0e-9 if side_label == "left" else offset <= 1.0e-9
+
+
+def _breakline_points_from_rows(rows: list[object], *, side_label: str, role_attr: str) -> list[tuple[float, float, float]]:
+    direction = 1.0 if side_label == "left" else -1.0
+    ordered = sorted(
+        list(rows or []),
+        key=lambda point: (
+            float(getattr(point, "lateral_offset", 0.0) or 0.0) * direction,
+            _slope_face_role_order(str(getattr(point, role_attr, "") or "")),
+        ),
+    )
+    return [
+        (
+            float(getattr(point, "x", 0.0) or 0.0),
+            float(getattr(point, "y", 0.0) or 0.0),
+            float(getattr(point, "z", 0.0) or 0.0),
+        )
+        for point in ordered
+    ]
+
+
+def _slope_face_role_order(role: str) -> int:
+    text = str(role or "").strip().lower()
+    if "hinge" in text or text == "side_slope_surface":
+        return 0
+    if "bench" in text:
+        return 1
+    if "daylight" in text:
+        return 2
+    return 3
+
+
+def _unique_xyz(points: list[tuple[float, float, float]], *, tolerance: float = 1.0e-7) -> list[tuple[float, float, float]]:
+    output: list[tuple[float, float, float]] = []
+    for point in list(points or []):
+        if output and _same_xyz(output[-1], point, tolerance=tolerance):
+            continue
+        output.append(point)
+    return output
+
+
+def _same_xyz(first: tuple[float, float, float], second: tuple[float, float, float], *, tolerance: float = 1.0e-7) -> bool:
+    return (
+        abs(float(first[0]) - float(second[0])) <= tolerance
+        and abs(float(first[1]) - float(second[1])) <= tolerance
+        and abs(float(first[2]) - float(second[2])) <= tolerance
+    )
 
 
 def _slope_face_status_points(surface) -> dict[str, list[tuple[float, float, float]]]:
@@ -14538,8 +15913,10 @@ def _slope_face_status_points(surface) -> dict[str, list[tuple[float, float, flo
             key = "intersection"
         elif status == "sampled_outer_edge":
             key = "sampled_outer_edge"
-        else:
+        elif status.startswith("fallback"):
             key = "fallback"
+        else:
+            continue
         points[key].append((float(vertex.x), float(vertex.y), float(vertex.z)))
     return points
 
@@ -14652,7 +16029,7 @@ def _parse_slope_face_issue_summary_text(text: str) -> list[dict[str, str]]:
                 "side": side,
                 "reason": " ".join(tokens[3:]),
                 "status": "fallback",
-                "marker_object": "ReviewIssueSlopeFaceFallbackMarkers",
+                "marker_object": "ReviewDiagnosticSlopeFaceFallbackMarkers",
             }
         )
     return rows
@@ -14722,6 +16099,10 @@ def _create_marker_compound(
     color: tuple[float, float, float],
     surface,
     corridor_model,
+    record_kind: str = "v1_review_issue",
+    object_type: str = "ReviewIssue",
+    issue_kind: str = "slope_face_tie_in",
+    connect_points: bool = False,
 ):
     try:
         import Part
@@ -14737,6 +16118,19 @@ def _create_marker_compound(
                 pass
         return None
     shapes = []
+    if bool(connect_points) and len(points) >= 2:
+        for start, end in zip(points, points[1:]):
+            if _same_xyz(start, end):
+                continue
+            try:
+                shapes.append(
+                    Part.makeLine(
+                        AppModule.Vector(float(start[0]), float(start[1]), float(start[2])),
+                        AppModule.Vector(float(end[0]), float(end[1]), float(end[2])),
+                    )
+                )
+            except Exception:
+                pass
     for x, y, z in points:
         try:
             shapes.append(Part.makeSphere(float(radius), AppModule.Vector(float(x), float(y), float(z))))
@@ -14751,9 +16145,9 @@ def _create_marker_compound(
         obj.Label = label
     except Exception:
         return obj
-    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
-    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
-    _set_preview_property(obj, "IssueKind", "slope_face_tie_in")
+    _set_preview_property(obj, "CRRecordKind", str(record_kind or "v1_review_issue"))
+    _set_preview_property(obj, "V1ObjectType", str(object_type or "ReviewIssue"))
+    _set_preview_property(obj, "IssueKind", str(issue_kind or "slope_face_tie_in"))
     _set_preview_property(obj, "SurfaceId", str(getattr(surface, "surface_id", "") or ""))
     _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
     _set_preview_integer_property(obj, "MarkerCount", len(points))

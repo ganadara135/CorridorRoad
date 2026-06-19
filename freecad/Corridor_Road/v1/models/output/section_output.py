@@ -29,9 +29,11 @@ class SectionSubassemblyRow:
     subassembly_id: str
     kind: str
     template_ref: str = ""
+    definition_ref: str = ""
     assembly_ref: str = ""
     region_ref: str = ""
     side: str = ""
+    parameters: dict[str, object] = field(default_factory=dict)
     notes: str = ""
 
 
