@@ -507,6 +507,10 @@ def _subassembly_target_rows(
     if applied is None:
         return [], []
     subassembly_targets: dict[tuple[str, str], dict[str, object]] = {}
+    applied_stations = _unique_sorted_floats([
+        float(getattr(section, "station", 0.0) or 0.0)
+        for section in list(getattr(applied, "sections", []) or [])
+    ])
     for section in list(getattr(applied, "sections", []) or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
         source_rows = _section_subassembly_rows(section)
@@ -564,6 +568,7 @@ def _subassembly_target_rows(
                     "assembly_refs": [],
                     "subassembly_refs": [],
                     "shape_refs": [],
+                    "has_shape_contract": True,
                     "invalid_dimension_stations": [],
                     "invalid_shape_stations": [],
                 },
@@ -620,6 +625,37 @@ def _subassembly_target_rows(
             diagnostics.append(diagnostic)
             diagnostic_refs.append(diagnostic.diagnostic_id)
         shape_refs = _unique_refs(list(data.get("shape_refs", []) or []))
+        has_shape_contract = bool(data.get("has_shape_contract", False))
+        missing_shape_stations: list[float] = []
+        if has_shape_contract and stations:
+            station_keys = {round(float(value), 6) for value in stations}
+            station_start = min(stations)
+            station_end = max(stations)
+            missing_shape_stations = [
+                station for station in applied_stations
+                if station_start <= station <= station_end and round(float(station), 6) not in station_keys
+            ]
+        if missing_shape_stations:
+            diagnostic = _diagnostic(
+                "error",
+                "subassembly_shape_target_missing_profile",
+                target_id,
+                f"Subassembly {active_ref} needs closed shape profiles at every Applied Section station in the target span.",
+                notes=f"stations={','.join(f'{station:g}' for station in missing_shape_stations)}",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        material_ref = str(data.get("material", "") or "").strip()
+        if not material_ref:
+            diagnostic = _diagnostic(
+                "warning",
+                "subassembly_target_missing_material",
+                target_id,
+                f"Subassembly {active_ref} needs a material contract before it can become a physical-body solid target.",
+                notes=f"target_family={family};subassembly_ref={active_ref}",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
         rows.append(
             SolidTargetRow(
                 target_id=target_id,
@@ -631,8 +667,16 @@ def _subassembly_target_rows(
                 assembly_ref=_single_ref(data.get("assembly_refs", [])),
                 subassembly_ref=_single_ref(subassembly_refs),
                 enabled=False,
-                material_ref=str(data.get("material", "") or ""),
-                readiness_status="available" if station_count >= 2 and not invalid_stations and not invalid_shape_stations else "blocked",
+                material_ref=material_ref,
+                readiness_status=(
+                    "available"
+                    if station_count >= 2
+                    and not invalid_stations
+                    and not invalid_shape_stations
+                    and not missing_shape_stations
+                    and material_ref
+                    else "blocked"
+                ),
                 source_refs=_unique_refs(source_refs + subassembly_refs + shape_refs),
                 diagnostic_refs=diagnostic_refs,
                 notes=(

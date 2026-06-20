@@ -14,6 +14,7 @@ try:
 except Exception:  # pragma: no cover - Part is not available in plain Python.
     Part = None
 
+from ..common.diagnostics import DiagnosticMessage
 from ..models.result.applied_section import (
     AppliedSection,
     AppliedSectionFrame,
@@ -131,6 +132,18 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyIntegerList", "SubassemblyCounts", "Resolved Context", "subassembly counts")
     _add_property(obj, "App::PropertyIntegerList", "DiagnosticCounts", "Diagnostics", "diagnostic counts")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "diagnostic summary rows")
+    _add_property(obj, "App::PropertyInteger", "SourceSectionCount", "Diagnostics", "non-supplemental applied section count")
+    _add_property(obj, "App::PropertyInteger", "SupplementalSectionCount", "Diagnostics", "supplemental applied section count")
+    _add_property(obj, "App::PropertyInteger", "TotalSectionCount", "Diagnostics", "total applied section count")
+    _add_property(obj, "App::PropertyStringList", "SectionKindCounts", "Diagnostics", "applied section count by station kind")
+    _add_property(obj, "App::PropertyStringList", "CenterlineSourceModeCounts", "Diagnostics", "applied section count by consumed centerline source mode")
+    _add_property(obj, "App::PropertyInteger", "CenterlineFallbackCount", "Diagnostics", "applied section frames using a centerline fallback")
+    _add_property(obj, "App::PropertyInteger", "OverlapClipDiagnosticCount", "Diagnostics", "applied section overlap clipping diagnostic count")
+    _add_property(obj, "App::PropertyInteger", "DitchShapeInferenceDiagnosticCount", "Diagnostics", "ditch shape compatibility diagnostic count")
+    _add_property(obj, "App::PropertyInteger", "DaylightFallbackDiagnosticCount", "Diagnostics", "daylight fallback diagnostic count")
+    _add_property(obj, "App::PropertyInteger", "AppliedSectionDiagnosticCount", "Diagnostics", "total applied section diagnostic row count")
+    _add_property(obj, "App::PropertyStringList", "AppliedSectionDiagnosticKinds", "Diagnostics", "applied section diagnostic kind counts")
+    _add_property(obj, "App::PropertyString", "AppliedSectionDiagnosticSummary", "Diagnostics", "compact applied section diagnostic summary")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
     _add_property(obj, "App::PropertyString", "ReviewShapeStatus", "Review", "full review shape build status")
     _add_property(obj, "App::PropertyInteger", "ReviewShapeStationCount", "Review", "station count used by the full review shape")
@@ -262,6 +275,7 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.SubassemblyCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "subassembly_rows", []) or [])) for row in station_rows]
     obj.DiagnosticCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "diagnostic_rows", []) or [])) for row in station_rows]
     obj.DiagnosticRows = _diagnostic_rows(sections)
+    _set_applied_section_diagnostic_summary(obj, station_rows, sections)
     obj.SourceRefs = [str(ref) for ref in list(getattr(applied_section_set, "source_refs", []) or []) if str(ref)]
     obj.ReviewShapeStatus = "not_built"
     obj.ReviewShapeStationCount = 0
@@ -447,6 +461,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     superelevation_sources_by_section = _parse_section_list_rows(getattr(obj, "SuperelevationSourceRows", []) or [])
     intersection_control_regions_by_section = _parse_section_list_rows(getattr(obj, "IntersectionControlRegionRows", []) or [])
     intersection_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "IntersectionDiagnosticRows", []) or [])
+    diagnostics_by_section = _parse_diagnostic_rows(getattr(obj, "DiagnosticRows", []) or [])
     subassembly_rows_by_section = _parse_subassembly_rows(getattr(obj, "SubassemblyRows", []) or [])
     subassembly_point_rows_by_section = _parse_subassembly_point_rows(getattr(obj, "SubassemblyPointRows", []) or [])
     subassembly_link_rows_by_section = _parse_subassembly_link_rows(getattr(obj, "SubassemblyLinkRows", []) or [])
@@ -496,6 +511,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 active_intersection_control_region_refs=intersection_control_regions_by_section.get(section_id, []),
                 active_intersection_grading_policy_ref=_list_value(getattr(obj, "IntersectionGradingPolicyRefs", []), index, ""),
                 intersection_diagnostic_rows=intersection_diagnostics_by_section.get(section_id, []),
+                diagnostic_rows=diagnostics_by_section.get(section_id, []),
                 subassembly_rows=section_subassembly_rows,
                 subassembly_point_rows=subassembly_point_rows_by_section.get(section_id, []),
                 subassembly_link_rows=subassembly_link_rows_by_section.get(section_id, []),
@@ -561,7 +577,15 @@ def _diagnostic_rows(sections) -> list[str]:
         section_id = str(getattr(section, "applied_section_id", "") or "")
         for diagnostic in list(getattr(section, "diagnostic_rows", []) or []):
             output.append(
-                f"{section_id}|{getattr(diagnostic, 'severity', '')}|{getattr(diagnostic, 'kind', '')}|{getattr(diagnostic, 'message', '')}"
+                "|".join(
+                    [
+                        section_id,
+                        _escape_row_value(getattr(diagnostic, "severity", "")),
+                        _escape_row_value(getattr(diagnostic, "kind", "")),
+                        _escape_row_value(getattr(diagnostic, "message", "")),
+                        _escape_row_value(getattr(diagnostic, "notes", "")),
+                    ]
+                )
             )
     return output
 
@@ -639,6 +663,84 @@ def _subassembly_rows(station_rows, section_by_id: dict[str, AppliedSection]) ->
                 )
             )
     return output
+
+
+def _set_applied_section_diagnostic_summary(obj, station_rows, sections) -> None:
+    rows = list(station_rows or [])
+    section_rows = list(sections or [])
+    section_kind_counts = _count_strings(str(getattr(row, "kind", "") or "regular_sample") for row in rows)
+    diagnostic_kind_counts: dict[str, int] = {}
+    centerline_source_counts: dict[str, int] = {}
+    centerline_fallback_count = 0
+    overlap_clip_count = 0
+    ditch_shape_count = 0
+    daylight_fallback_count = 0
+    diagnostic_count = 0
+
+    for section in section_rows:
+        frame = _section_frame(section)
+        source_mode = _centerline_source_mode_from_notes(str(getattr(frame, "notes", "") or ""))
+        centerline_source_counts[source_mode] = centerline_source_counts.get(source_mode, 0) + 1
+        if source_mode not in {"", "centerline3d_source_geometry"}:
+            centerline_fallback_count += 1
+        for diagnostic in list(getattr(section, "diagnostic_rows", []) or []):
+            diagnostic_count += 1
+            kind = str(getattr(diagnostic, "kind", "") or "unknown")
+            diagnostic_kind_counts[kind] = diagnostic_kind_counts.get(kind, 0) + 1
+            kind_lower = kind.lower()
+            if kind_lower == "applied_section_overlap_clip":
+                overlap_clip_count += 1
+            if "ditch_shape" in kind_lower:
+                ditch_shape_count += 1
+            if "daylight" in kind_lower and "fallback" in kind_lower:
+                daylight_fallback_count += 1
+
+    supplemental_count = sum(1 for row in rows if "supplemental" in str(getattr(row, "kind", "") or "").lower())
+    source_count = max(len(rows) - supplemental_count, 0)
+    obj.SourceSectionCount = source_count
+    obj.SupplementalSectionCount = supplemental_count
+    obj.TotalSectionCount = len(rows)
+    obj.SectionKindCounts = _format_count_rows(section_kind_counts)
+    obj.CenterlineSourceModeCounts = _format_count_rows(centerline_source_counts)
+    obj.CenterlineFallbackCount = centerline_fallback_count
+    obj.OverlapClipDiagnosticCount = overlap_clip_count
+    obj.DitchShapeInferenceDiagnosticCount = ditch_shape_count
+    obj.DaylightFallbackDiagnosticCount = daylight_fallback_count
+    obj.AppliedSectionDiagnosticCount = diagnostic_count
+    obj.AppliedSectionDiagnosticKinds = _format_count_rows(diagnostic_kind_counts)
+    obj.AppliedSectionDiagnosticSummary = (
+        f"sections={len(rows)};source={source_count};supplemental={supplemental_count};"
+        f"centerline_fallback={centerline_fallback_count};overlap_clip={overlap_clip_count};"
+        f"ditch_shape={ditch_shape_count};daylight_fallback={daylight_fallback_count};"
+        f"diagnostics={diagnostic_count}"
+    )
+
+
+def _centerline_source_mode_from_notes(notes: str) -> str:
+    text = str(notes or "")
+    if "source=centerline3d_source_geometry" in text:
+        return "centerline3d_source_geometry"
+    if "source=centerline3d_result" in text:
+        return "centerline3d_result"
+    if "source=alignment_profile_fallback" in text:
+        return "alignment_profile_fallback"
+    if "source=" in text:
+        for token in text.replace(";", " ").split():
+            if token.startswith("source="):
+                return token.split("=", 1)[1].strip()
+    return "unknown"
+
+
+def _count_strings(values) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _format_count_rows(counts: dict[str, int]) -> list[str]:
+    return [f"{key}={int(counts[key])}" for key in sorted(counts)]
 
 
 def _subassembly_point_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
@@ -738,6 +840,26 @@ def _parse_section_list_rows(values) -> dict[str, list[str]]:
             continue
         section_id = _unescape_row_value(parts[0])
         output[section_id] = [_unescape_row_value(value) for value in parts[1:] if str(value or "")]
+    return output
+
+
+def _parse_diagnostic_rows(values) -> dict[str, list[DiagnosticMessage]]:
+    output: dict[str, list[DiagnosticMessage]] = {}
+    for raw in list(values or []):
+        parts = str(raw or "").split("|")
+        if len(parts) < 4:
+            continue
+        section_id = _unescape_row_value(parts[0])
+        if not section_id:
+            continue
+        output.setdefault(section_id, []).append(
+            DiagnosticMessage(
+                severity=_unescape_row_value(parts[1]),
+                kind=_unescape_row_value(parts[2]),
+                message=_unescape_row_value(parts[3]),
+                notes=_unescape_row_value(parts[4] if len(parts) > 4 else ""),
+            )
+        )
     return output
 
 

@@ -120,6 +120,40 @@ def test_subassembly_validation_reports_bench_warnings() -> None:
     )
 
 
+def test_subassembly_validation_reports_implicit_ditch_shape_warning() -> None:
+    model = AssemblySubassemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:ditch-validation",
+        template_rows=[
+            SubassemblySectionTemplate(
+                template_id="template:ditch-validation",
+                template_kind="roadway",
+                subassembly_rows=[
+                    TemplateSubassembly(
+                        "ditch-right",
+                        "ditch",
+                        side="right",
+                        width=1.2,
+                        parameters={
+                            "top_width": 1.2,
+                            "bottom_width": 0.4,
+                            "depth": 0.3,
+                        },
+                    )
+                ],
+            )
+        ],
+    )
+
+    messages = _validate_subassembly_model(model)
+
+    assert (
+        "WARNING: ditch subassembly ditch-right has top_width/bottom_width/depth but no explicit shape; "
+        "shape=trapezoid will be inferred for compatibility."
+    ) in messages
+
+
 def test_subassembly_object_roundtrips_source_rows() -> None:
     doc, project = _new_project_doc()
     try:

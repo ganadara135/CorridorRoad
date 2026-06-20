@@ -1339,6 +1339,10 @@ def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
         assert "terrain=ready" in status_text
         assert "drainage=missing" in status_text
         assert "simulation_ready=no" in status_text
+        assert "diagnostics=2" in status_text
+        assert "errors=0" in status_text
+        assert "warnings=2" in status_text
+        assert "ids=missing_drainage,missing_structure" in status_text
         assert "Simulation package:" in status_text
     finally:
         App.closeDocument(doc.Name)

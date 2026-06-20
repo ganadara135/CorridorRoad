@@ -90,10 +90,13 @@ class WatertightSimulationQaService:
         port_error_count = sum(1 for row in port_diagnostics if str(getattr(row, "severity", "") or "") == "error")
         port_issue_count = len(port_diagnostics)
         port_connection_ok = port_error_count == 0
+        traceability_diagnostics = _traceability_diagnostics(inputs)
+        traceability_error_count = sum(1 for row in traceability_diagnostics if str(getattr(row, "severity", "") or "") == "error")
+        traceability_ok = traceability_error_count == 0
         geometry_contact_status = "ok" if contact_check_applied and contact_ok else "check" if contact_diagnostics else "not_checked"
         terrain_domain_status = "ok" if terrain_check_applied and terrain_domain_ok else "check" if terrain_diagnostics else "not_checked"
         port_connection_status = "ok" if port_check_applied and port_connection_ok else "check" if port_diagnostics else "not_checked"
-        simulation_ready = bool(inputs and road_ready and terrain_ready and drainage_ready and solid_validity_ok and contact_ok and terrain_domain_ok and port_connection_ok)
+        simulation_ready = bool(inputs and road_ready and terrain_ready and drainage_ready and solid_validity_ok and contact_ok and terrain_domain_ok and port_connection_ok and traceability_ok)
         missing_contexts = []
         if not road_ready:
             missing_contexts.append("road_body")
@@ -113,6 +116,7 @@ class WatertightSimulationQaService:
         diagnostics.extend(contact_diagnostics)
         diagnostics.extend(terrain_diagnostics)
         diagnostics.extend(port_diagnostics)
+        diagnostics.extend(traceability_diagnostics)
         return SimulationQaOutput(
             schema_version=1,
             project_id=str(getattr(request, "project_id", "") or "corridorroad-v1"),
@@ -162,6 +166,38 @@ def _diagnostics(*, missing_contexts: list[str], invalid_count: int, zero_volume
         rows.append(_diagnostic("error", "invalid_solid_outputs", f"{invalid_count} Watertight Solid output object(s) are not valid solids."))
     if zero_volume_count > 0:
         rows.append(_diagnostic("error", "zero_volume_solid_outputs", f"{zero_volume_count} Watertight Solid output object(s) have zero volume."))
+    return rows
+
+
+def _traceability_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list[SimulationQaDiagnosticRow]:
+    rows: list[SimulationQaDiagnosticRow] = []
+    for row in list(inputs or []):
+        output_ref = str(getattr(row, "output_ref", "") or "")
+        families = _unique_refs(getattr(row, "target_families", []) or [])
+        if not families:
+            rows.append(
+                _diagnostic(
+                    "error",
+                    "solid_output_missing_target_family",
+                    f"Watertight Solid output {output_ref or '-'} has no target family contract; target_families is required for Digital Twin traceability.",
+                    source_ref=output_ref,
+                )
+            )
+        source_refs = _unique_refs(
+            list(getattr(row, "subassembly_refs", []) or [])
+            + list(getattr(row, "structure_refs", []) or [])
+            + list(getattr(row, "flow_route_refs", []) or [])
+            + list(getattr(row, "source_refs", []) or [])
+        )
+        if families and not source_refs:
+            rows.append(
+                _diagnostic(
+                    "warning",
+                    "solid_output_missing_source_refs",
+                    f"Watertight Solid output {output_ref or '-'} has target family contract but no source/result refs for Digital Twin traceability.",
+                    source_ref=output_ref,
+                )
+            )
     return rows
 
 

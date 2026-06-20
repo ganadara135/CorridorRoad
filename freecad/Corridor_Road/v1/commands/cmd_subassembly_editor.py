@@ -31,6 +31,11 @@ from ..models.source.assembly_model import (
 )
 from ..models.source.subassembly_preset_model import SUBASSEMBLY_PRESET_STATUSES
 from ..services.evaluation.subassembly_bench_row_parser import bench_rows_to_dicts, parse_bench_rows
+from ..services.builders.applied_section_service import (
+    _bench_profile_segments,
+    ditch_section_row_local_profile,
+    ditch_section_row_validation_messages,
+)
 from ..objects.obj_alignment import find_v1_alignment
 from ..objects.obj_subassembly_assembly import (
     create_or_update_v1_assembly_subassembly_model_object,
@@ -1255,6 +1260,7 @@ def _validate_subassembly_model(
                 )
             if subassembly.width < 0.0:
                 messages.append(f"ERROR: subassembly {subassembly.subassembly_id} width must not be negative.")
+            messages.extend(f"WARNING: {message}" for message in ditch_section_row_validation_messages(subassembly))
             messages.extend(f"WARNING: {message}" for message in subassembly_bench_validation_messages(subassembly))
     return messages
 
@@ -1372,6 +1378,24 @@ def _assembly_section_preview_segment(row: TemplateSubassembly, *, side_label: s
             return segment
     params = _assembly_section_preview_parameters(row, definition_library=definition_library)
     kind = str(getattr(row, "kind", "") or "").strip().lower().replace("-", "_")
+    if kind == "ditch":
+        segment = _assembly_section_preview_ditch_segment(
+            row,
+            side_label=side_label,
+            start_offset=start_offset,
+            start_z=start_z,
+        )
+        if segment is not None:
+            return segment
+    if kind == "side_slope":
+        segment = _assembly_section_preview_side_slope_segment(
+            row,
+            side_label=side_label,
+            start_offset=start_offset,
+            start_z=start_z,
+        )
+        if segment is not None:
+            return segment
     width = _float(params.get("width", getattr(row, "width", 0.0)), 0.0)
     if kind == "side_slope":
         width = _float(params.get("side_slope_width", width), width)
@@ -1383,7 +1407,7 @@ def _assembly_section_preview_segment(row: TemplateSubassembly, *, side_label: s
         thickness = 0.2
     direction = 1.0 if side_label == "left" else -1.0
     end_offset = float(start_offset) + direction * width
-    end_z = float(start_z) + width * slope / 100.0
+    end_z = float(start_z) + width * slope
     bottom_start = (float(start_offset), float(start_z) - thickness)
     bottom_end = (end_offset, end_z - thickness)
     top_start = (float(start_offset), float(start_z))
@@ -1392,6 +1416,64 @@ def _assembly_section_preview_segment(row: TemplateSubassembly, *, side_label: s
         "points": (top_start, top_end, bottom_end, bottom_start),
         "topline": (top_start, top_end),
         "end": top_end,
+    }
+
+
+def _assembly_section_preview_ditch_segment(
+    row: TemplateSubassembly,
+    *,
+    side_label: str,
+    start_offset: float,
+    start_z: float,
+):
+    local_profile = ditch_section_row_local_profile(row)
+    if len(local_profile) < 2:
+        return None
+    direction = 1.0 if side_label == "left" else -1.0
+    points = tuple(
+        (
+            float(start_offset) + direction * float(local_offset),
+            float(start_z) + float(z_delta),
+        )
+        for local_offset, z_delta, _role in local_profile
+    )
+    if len(points) < 2:
+        return None
+    return {
+        "points": points,
+        "topline": points,
+        "end": points[-1],
+    }
+
+
+def _assembly_section_preview_side_slope_segment(
+    row: TemplateSubassembly,
+    *,
+    side_label: str,
+    start_offset: float,
+    start_z: float,
+):
+    segments = _bench_profile_segments(row)
+    if not segments:
+        return None
+    direction = 1.0 if side_label == "left" else -1.0
+    points: list[tuple[float, float]] = [(float(start_offset), float(start_z))]
+    offset = float(start_offset)
+    z = 0.0
+    for segment in segments:
+        width = max(_float(segment.get("width", 0.0), 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        slope = _float(segment.get("slope", 0.0), 0.0)
+        offset += direction * width
+        z += slope * width
+        points.append((offset, z))
+    if len(points) < 2:
+        return None
+    return {
+        "points": tuple(points),
+        "topline": tuple(points),
+        "end": points[-1],
     }
 
 

@@ -1165,7 +1165,7 @@ def _clip_applied_section_against_previous(previous: AppliedSection, section: Ap
             float(getattr(section, "daylight_left_width", 0.0) or 0.0),
             cap,
         )
-        diagnostics.append(_section_overlap_clip_diagnostic(section, "left", left_extent, cap))
+        diagnostics.append(_section_overlap_clip_diagnostic(section, previous, "left", left_extent, cap))
         return replace(
             section,
             surface_left_width=surface_left,
@@ -1189,7 +1189,7 @@ def _clip_applied_section_against_previous(previous: AppliedSection, section: Ap
         float(getattr(section, "daylight_right_width", 0.0) or 0.0),
         cap,
     )
-    diagnostics.append(_section_overlap_clip_diagnostic(section, "right", right_extent, cap))
+    diagnostics.append(_section_overlap_clip_diagnostic(section, previous, "right", right_extent, cap))
     return replace(
         section,
         surface_right_width=surface_right,
@@ -1252,7 +1252,19 @@ def _clip_section_points_to_lateral_extent(
     return clipped
 
 
-def _section_overlap_clip_diagnostic(section: AppliedSection, side: str, original_extent: float, clipped_extent: float) -> DiagnosticMessage:
+def _section_overlap_clip_diagnostic(
+    section: AppliedSection,
+    previous: AppliedSection,
+    side: str,
+    original_extent: float,
+    clipped_extent: float,
+) -> DiagnosticMessage:
+    notes = _section_overlap_clip_notes(
+        section,
+        previous,
+        side=side,
+        clipped_extent=clipped_extent,
+    )
     return DiagnosticMessage(
         severity="info",
         kind="applied_section_overlap_clip",
@@ -1260,7 +1272,59 @@ def _section_overlap_clip_diagnostic(section: AppliedSection, side: str, origina
             f"Applied Section {str(getattr(section, 'applied_section_id', '') or '')} {side} side was clipped "
             f"from {float(original_extent):g} to {float(clipped_extent):g} because adjacent section lines overlapped."
         ),
+        notes=notes,
     )
+
+
+def _section_overlap_clip_notes(
+    section: AppliedSection,
+    previous: AppliedSection,
+    *,
+    side: str,
+    clipped_extent: float,
+) -> str:
+    point_ids: list[str] = []
+    subassembly_refs: list[str] = []
+    clipped_limit = max(float(clipped_extent or 0.0), 0.0)
+    for point in list(getattr(section, "point_rows", []) or []) + list(getattr(section, "subassembly_point_rows", []) or []):
+        try:
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        except Exception:
+            continue
+        is_clipped = offset > clipped_limit if side == "left" else offset < -clipped_limit
+        if not is_clipped:
+            continue
+        point_id = str(getattr(point, "point_id", "") or "").strip()
+        if point_id:
+            point_ids.append(point_id)
+        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
+        if subassembly_ref:
+            subassembly_refs.append(subassembly_ref)
+    clipped_point_set = set(point_ids)
+    link_ids: list[str] = []
+    for link in list(getattr(section, "subassembly_link_rows", []) or []):
+        start_ref = str(getattr(link, "start_point_ref", "") or "").strip()
+        end_ref = str(getattr(link, "end_point_ref", "") or "").strip()
+        if start_ref in clipped_point_set or end_ref in clipped_point_set:
+            link_id = str(getattr(link, "link_id", "") or "").strip()
+            if link_id:
+                link_ids.append(link_id)
+            subassembly_ref = str(getattr(link, "subassembly_ref", "") or "").strip()
+            if subassembly_ref:
+                subassembly_refs.append(subassembly_ref)
+    parts = [
+        f"section_id={str(getattr(section, 'applied_section_id', '') or '')}",
+        f"previous_section_id={str(getattr(previous, 'applied_section_id', '') or '')}",
+        f"side={side}",
+        f"clip_limit={clipped_limit:g}",
+    ]
+    if point_ids:
+        parts.append("clipped_point_ids=" + ",".join(dict.fromkeys(point_ids)))
+    if link_ids:
+        parts.append("clipped_link_ids=" + ",".join(dict.fromkeys(link_ids)))
+    if subassembly_refs:
+        parts.append("subassembly_refs=" + ",".join(dict.fromkeys(subassembly_refs)))
+    return ";".join(parts)
 
 
 def _applied_section_plan_line(section: AppliedSection) -> tuple[tuple[float, float], tuple[float, float]] | None:
@@ -3076,7 +3140,7 @@ def _clip_bench_segments_to_terrain(
     if str(params.get("daylight_mode", "") or "").strip().lower() != "terrain":
         return segments, []
     subassembly_id = _subassembly_id(subassembly, fallback="side_slope")
-    notes = f"{_subassembly_note(subassembly, fallback='side_slope')}; side={side_label}"
+    notes = _bench_daylight_notes(subassembly, side_label=side_label)
     if existing_ground_surface is None or frame is None:
         return segments, [
             DiagnosticMessage(
@@ -3086,7 +3150,7 @@ def _clip_bench_segments_to_terrain(
                     f"side-slope subassembly {subassembly_id} uses terrain daylight mode, "
                     "but no existing-ground TIN is available; Assembly side-slope width was used."
                 ),
-                notes=notes,
+                notes=f"{notes};daylight_status=fallback;terrain_hit=false;fallback_reason=no_existing_ground_tin",
             )
         ]
     service = sampling_service or TinSamplingService()
@@ -3132,7 +3196,7 @@ def _clip_bench_segments_to_terrain(
                     f"side-slope subassembly {subassembly_id} did not intersect terrain within "
                     "the evaluated bench profile; full Assembly side-slope width was used."
                 ),
-                notes=notes,
+                notes=f"{notes};daylight_status=fallback;terrain_hit=false;fallback_reason=no_terrain_intersection",
             )
         )
         return segments, diagnostics
@@ -3445,7 +3509,11 @@ def _bench_clip_diagnostics(
     clip_info: dict[str, object],
 ) -> list[DiagnosticMessage]:
     subassembly_id = _subassembly_id(subassembly, fallback="side_slope")
-    notes = f"{_subassembly_note(subassembly, fallback='side_slope')}; side={side_label}"
+    notes = (
+        f"{_bench_daylight_notes(subassembly, side_label=side_label)};"
+        f"daylight_status=terrain_intersection;terrain_hit=true;clip_distance={float(clip_distance):g};"
+        f"original_width={float(total_width):g}"
+    )
     diagnostics = [
         DiagnosticMessage(
             severity="info",
@@ -3467,10 +3535,19 @@ def _bench_clip_diagnostics(
                     f"side-slope subassembly {subassembly_id} skipped {skipped_count} downstream "
                     "bench/slope segment(s) after terrain daylight intersection."
                 ),
-                notes=f"{notes}; shortened_kind={clip_info.get('shortened_kind', '')}",
+                notes=f"{notes};shortened_kind={clip_info.get('shortened_kind', '')}",
             )
         )
     return diagnostics
+
+
+def _bench_daylight_notes(subassembly, *, side_label: str) -> str:
+    params = dict(getattr(subassembly, "parameters", {}) or {})
+    return (
+        f"{_subassembly_note(subassembly, fallback='side_slope')};"
+        f"side={side_label};"
+        f"daylight_mode={str(params.get('daylight_mode', '') or '').strip().lower() or 'fixed_width'}"
+    )
 
 
 def _segments_total_width(segments: list[dict[str, object]]) -> float:
@@ -3811,6 +3888,11 @@ def ditch_section_row_validation_messages(row) -> list[str]:
     material_policy = ditch_material_policy(getattr(row, "material", ""))
     messages: list[str] = []
     if not shape:
+        if {"top_width", "bottom_width", "depth"}.issubset(set(params)):
+            messages.append(
+                f"ditch subassembly {subassembly_id} has top_width/bottom_width/depth but no explicit shape; "
+                "shape=trapezoid will be inferred for compatibility."
+            )
         return messages
     if shape not in {"trapezoid", "u", "l", "rectangular", "v", "custom_polyline"}:
         return [f"ditch subassembly {subassembly_id} uses unsupported shape '{shape}'."]

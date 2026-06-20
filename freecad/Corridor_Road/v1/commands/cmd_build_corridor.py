@@ -459,6 +459,9 @@ def apply_v1_corridor_model(
             project=prj,
             corridor_model=corridor_model,
             applied_section_set_ref=str(getattr(corridor_model, "applied_section_set_ref", "") or ""),
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
         )
         _notify_progress(progress_callback, 78, "Creating design surface preview...")
         create_corridor_design_surface_preview(
@@ -998,14 +1001,16 @@ def corridor_supplemental_sampling_guided_review_row(
         }
     summary = _applied_section_supplemental_consumption_summary(applied)
     supplemental_count = int(summary.get("supplemental_section_count", 0) or 0)
-    compatibility_fallback = _build_parametric_compatibility_supplemental_sampling_enabled(
+    potential_summary = _build_corridor_potential_supplemental_sampling_summary(
         doc,
         applied_section_set=applied,
         supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
         supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
         supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
     )
-    status = "ready" if supplemental_count > 0 or not compatibility_fallback else "warning"
+    potential_count = int(potential_summary.get("supplemental_frame_count", 0) or 0)
+    rebuild_needed = supplemental_count <= 0 and potential_count > 0
+    status = "warning" if rebuild_needed else "ready"
     kind_counts = dict(summary.get("kind_counts", {}) or {})
     kind_text = ", ".join(f"{key}={value}" for key, value in sorted(kind_counts.items())) or "none"
     notes = (
@@ -1013,12 +1018,12 @@ def corridor_supplemental_sampling_guided_review_row(
         f"supplemental sections={supplemental_count}, "
         f"total consumed sections={int(summary.get('total_section_count', 0) or 0)}, "
         f"kinds={kind_text}; "
-        "Build Parametric no longer generates hidden supplemental frames."
+        "Build Corridor does not generate hidden supplemental frames."
     )
-    if compatibility_fallback:
+    if rebuild_needed:
         notes = (
-            f"{notes} Temporary compatibility fallback is active because this AppliedSectionSet "
-            "has no supplemental sections but curved-span densification is still needed. Rebuild Applied Sections."
+            f"{notes} Potential supplemental sections={potential_count}; "
+            "rebuild Applied Sections so supplemental rows become explicit result data."
         )
     return {
         "step_id": "supplemental_sections",
@@ -1056,19 +1061,32 @@ def _build_parametric_compatibility_supplemental_sampling_enabled(
     supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
     supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ) -> bool:
-    """Return true only for old AppliedSectionSet data that lacks supplemental sections."""
+    """Return false because Build Corridor no longer creates hidden supplemental frames."""
+
+    return False
+
+
+def _build_corridor_potential_supplemental_sampling_summary(
+    document=None,
+    *,
+    applied_section_set=None,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> dict[str, object]:
+    """Return diagnostic-only potential supplemental frame counts for stale AppliedSectionSet data."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     applied = applied_section_set or (to_applied_section_set(find_v1_applied_section_set(doc)) if doc is not None else None)
     if applied is None:
-        return False
+        return {}
     if int(_applied_section_supplemental_consumption_summary(applied).get("supplemental_section_count", 0) or 0) > 0:
-        return False
+        return {}
     sections = list(getattr(applied, "sections", []) or [])
     if len(sections) < 2:
-        return False
+        return {}
     try:
-        summary = supplemental_sampling_summary(
+        return supplemental_sampling_summary(
             sections,
             max_spacing=float(supplemental_sampling_max_spacing or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
             tangent_delta_threshold_deg=float(supplemental_sampling_tangent_delta_deg or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG),
@@ -1076,8 +1094,21 @@ def _build_parametric_compatibility_supplemental_sampling_enabled(
             frame_resolver=_corridor_supplemental_frame_resolver(doc),
         )
     except Exception:
-        return False
-    return int(summary.get("supplemental_frame_count", 0) or 0) > 0
+        return {}
+
+
+def _build_corridor_effective_hidden_supplemental_sampling_enabled(
+    document=None,
+    *,
+    applied_section_set=None,
+    requested: bool,
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> bool:
+    """Build Corridor no longer performs hidden supplemental sampling."""
+
+    return False
 
 
 def corridor_intersection_review_summary(document=None) -> dict[str, object]:
@@ -1769,11 +1800,6 @@ def _create_intersection_contract_review_highlight(*, document=None, row: dict[s
                     shapes.append(shape)
                     refs.append(str(getattr(edge, "edge_id", "") or ""))
     if not shapes:
-        focus_shape = _intersection_contract_focus_object_shape(document, row)
-        if focus_shape is not None:
-            shapes.append(focus_shape)
-            refs.append(str(row.get("focus_object", "") or ""))
-    if not shapes:
         return None
     object_name = "ReviewIntersectionContractHighlight"
     obj = document.getObject(object_name)
@@ -1980,32 +2006,6 @@ def _intersection_contract_patch_boundary_shapes(part_module, app_module, patch_
             shapes.append(shape)
             refs.append(ring_id)
     return shapes
-
-
-def _intersection_contract_focus_object_shape(document, row: dict[str, object]):
-    if document is None:
-        return None
-    focus_name = str(row.get("focus_object", "") or "").strip()
-    if not focus_name:
-        return None
-    try:
-        obj = document.getObject(focus_name)
-    except Exception:
-        obj = None
-    if obj is None:
-        return None
-    shape = getattr(obj, "Shape", None)
-    if shape is None:
-        return None
-    try:
-        if bool(getattr(shape, "isNull", lambda: False)()):
-            return None
-    except Exception:
-        pass
-    try:
-        return shape.copy()
-    except Exception:
-        return shape
 
 
 def _intersection_contract_polyline_shape(part_module, app_module, points_xyz: list[tuple[float, float, float]]):
@@ -3548,6 +3548,9 @@ def create_corridor_centerline_3d_preview(
     project=None,
     corridor_model=None,
     applied_section_set_ref: str = "",
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
 ):
     """Create or update a 3D centerline preview from the shared Centerline3DResult."""
 
@@ -3595,6 +3598,17 @@ def create_corridor_centerline_3d_preview(
     )
     _set_preview_property(obj, "DisplayCurveKind", curve_kind)
     _set_preview_integer_property(obj, "PointCount", len(points))
+    _set_corridor_consumer_disclosure_properties(
+        obj,
+        document=doc,
+        applied_section_set=applied_section_set,
+        corridor_model=corridor_model,
+        centerline_source_mode=source_mode,
+        centerline_result_id=centerline_result_id,
+        supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+        supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+        supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+    )
     if stations:
         _set_preview_float_property(obj, "StationStart", min(stations))
         _set_preview_float_property(obj, "StationEnd", max(stations))
@@ -3617,6 +3631,363 @@ def create_corridor_centerline_3d_preview(
     except Exception:
         pass
     return obj
+
+
+def _set_corridor_consumer_disclosure_properties(
+    obj,
+    *,
+    document=None,
+    applied_section_set=None,
+    corridor_model=None,
+    centerline_source_mode: str = "",
+    centerline_result_id: str = "",
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> None:
+    """Expose ordinary-road result contracts consumed by Build Corridor previews."""
+
+    applied = applied_section_set
+    if applied is None:
+        return
+    supplemental_summary = _applied_section_supplemental_consumption_summary(applied)
+    source_section_count = int(supplemental_summary.get("source_section_count", 0) or 0)
+    supplemental_section_count = int(supplemental_summary.get("supplemental_section_count", 0) or 0)
+    total_section_count = int(supplemental_summary.get("total_section_count", 0) or 0)
+    kind_counts = dict(supplemental_summary.get("kind_counts", {}) or {})
+    result_contract_summary = _applied_section_result_contract_consumption_summary(applied)
+    link_role_counts = dict(result_contract_summary.get("link_surface_role_counts", {}) or {})
+    point_role_counts = dict(result_contract_summary.get("point_role_counts", {}) or {})
+    shape_family_counts = dict(result_contract_summary.get("shape_family_counts", {}) or {})
+    consumed_region_refs = list(result_contract_summary.get("region_refs", []) or [])
+    consumed_intersection_control_region_refs = list(result_contract_summary.get("intersection_control_region_refs", []) or [])
+    compatibility_fallback = False
+    result_contract_fallback = bool(total_section_count > 0 and int(result_contract_summary.get("subassembly_link_count", 0) or 0) <= 0)
+    result_contract_reason = (
+        "No consumed Subassembly link rows were available; Build Corridor may rely on legacy width/point result fields."
+        if result_contract_fallback
+        else "Consumed Applied Section Subassembly link rows are available."
+    )
+    sampling_summary = {}
+    try:
+        sampling_summary = supplemental_sampling_summary(
+            list(getattr(applied, "sections", []) or []),
+            max_spacing=float(supplemental_sampling_max_spacing or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
+            tangent_delta_threshold_deg=float(supplemental_sampling_tangent_delta_deg or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG),
+            chord_deviation_threshold=float(supplemental_sampling_chord_deviation or SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD),
+            frame_resolver=_corridor_supplemental_frame_resolver(document),
+        )
+    except Exception:
+        sampling_summary = {}
+    sampling_source_modes = dict(sampling_summary.get("source_mode_counts", {}) or {})
+    sampling_source_mode_rows = [f"{key}={value}" for key, value in sorted(sampling_source_modes.items())]
+    centerline_fallback_active = str(centerline_source_mode or "") not in {"", "centerline3d_source_geometry"}
+    supplemental_policy = "applied_sections_only"
+    supplemental_reason = "Applied Sections contain supplemental rows or no curved-span densification is required."
+    if supplemental_section_count <= 0 and int(sampling_summary.get("supplemental_frame_count", 0) or 0) > 0:
+        supplemental_policy = "rebuild_applied_sections_required"
+        supplemental_reason = (
+            "Build Corridor no longer creates hidden supplemental frames; "
+            "rebuild Applied Sections so supplemental rows become explicit result data."
+        )
+    _set_preview_property(obj, "ConsumedAppliedSectionSetId", str(getattr(applied, "applied_section_set_id", "") or ""))
+    _set_preview_property(obj, "ConsumedCenterline3DResultId", str(centerline_result_id or ""))
+    _set_preview_property(obj, "ConsumedCenterlineSourceMode", str(centerline_source_mode or ""))
+    _set_preview_integer_property(obj, "ConsumedSourceSectionCount", source_section_count)
+    _set_preview_integer_property(obj, "ConsumedSupplementalSectionCount", supplemental_section_count)
+    _set_preview_integer_property(obj, "ConsumedTotalSectionCount", total_section_count)
+    _set_preview_string_list_property(obj, "ConsumedSectionKindCounts", [f"{key}={value}" for key, value in sorted(kind_counts.items())])
+    _set_preview_integer_property(obj, "ConsumedSubassemblyLinkCount", int(result_contract_summary.get("subassembly_link_count", 0) or 0))
+    _set_preview_integer_property(obj, "ConsumedSubassemblyPointCount", int(result_contract_summary.get("subassembly_point_count", 0) or 0))
+    _set_preview_integer_property(obj, "ConsumedSubassemblyShapeCount", int(result_contract_summary.get("subassembly_shape_count", 0) or 0))
+    _set_preview_string_list_property(obj, "ConsumedSurfaceRoleCounts", [f"{key}={value}" for key, value in sorted(link_role_counts.items())])
+    _set_preview_string_list_property(obj, "ConsumedPointRoleCounts", [f"{key}={value}" for key, value in sorted(point_role_counts.items())])
+    _set_preview_string_list_property(obj, "ConsumedShapeFamilyCounts", [f"{key}={value}" for key, value in sorted(shape_family_counts.items())])
+    _set_preview_string_list_property(obj, "ConsumedRegionRefs", consumed_region_refs)
+    _set_preview_integer_property(obj, "ConsumedRegionCount", len(consumed_region_refs))
+    _set_preview_string_list_property(obj, "ConsumedIntersectionControlRegionRefs", consumed_intersection_control_region_refs)
+    _set_preview_integer_property(obj, "ConsumedIntersectionControlRegionCount", len(consumed_intersection_control_region_refs))
+    _set_preview_integer_property(obj, "ResultContractCompatibilityFallbackActive", int(bool(result_contract_fallback)))
+    _set_preview_property(obj, "ResultContractCompatibilityReason", result_contract_reason)
+    _set_preview_integer_property(obj, "CenterlineConsumerFallbackActive", int(bool(centerline_fallback_active)))
+    _set_preview_integer_property(obj, "SupplementalCompatibilityFallbackActive", int(bool(compatibility_fallback)))
+    _set_preview_property(obj, "SupplementalCompatibilityPolicy", supplemental_policy)
+    _set_preview_property(obj, "SupplementalCompatibilityReason", supplemental_reason)
+    _set_preview_integer_property(obj, "PotentialSupplementalFrameCount", int(sampling_summary.get("supplemental_frame_count", 0) or 0))
+    _set_preview_integer_property(obj, "PotentialSupplementalFallbackCount", int(sampling_summary.get("fallback_count", 0) or 0))
+    _set_preview_string_list_property(obj, "PotentialSupplementalSourceModes", sampling_source_mode_rows)
+    _set_preview_property(
+        obj,
+        "BuildCorridorConsumerSummary",
+        (
+            f"applied={str(getattr(applied, 'applied_section_set_id', '') or '')}; "
+            f"centerline={str(centerline_result_id or '')}; "
+            f"source_mode={str(centerline_source_mode or '')}; "
+            f"source_sections={source_section_count}; "
+            f"supplemental_sections={supplemental_section_count}; "
+            f"total_sections={total_section_count}; "
+            f"links={int(result_contract_summary.get('subassembly_link_count', 0) or 0)}; "
+            f"surface_roles={_format_count_summary(link_role_counts)}; "
+            f"shapes={int(result_contract_summary.get('subassembly_shape_count', 0) or 0)}; "
+            f"regions={len(consumed_region_refs)}; "
+            f"intersection_control_regions={len(consumed_intersection_control_region_refs)}; "
+            f"result_contract_fallback={int(bool(result_contract_fallback))}; "
+            f"centerline_fallback={int(bool(centerline_fallback_active))}; "
+            f"supplemental_compatibility_fallback={int(bool(compatibility_fallback))}"
+        ),
+    )
+    _set_watertight_solid_readiness_properties(
+        obj,
+        document=document,
+        applied_section_set=applied,
+        corridor_model=corridor_model,
+    )
+
+
+def _applied_section_result_contract_consumption_summary(applied_section_set) -> dict[str, object]:
+    sections = list(getattr(applied_section_set, "sections", []) or []) if applied_section_set is not None else []
+    link_role_counts: dict[str, int] = {}
+    point_role_counts: dict[str, int] = {}
+    shape_family_counts: dict[str, int] = {}
+    region_refs: set[str] = set()
+    intersection_control_region_refs: set[str] = set()
+    link_count = 0
+    point_count = 0
+    shape_count = 0
+    for section in sections:
+        section_region = str(getattr(section, "region_id", "") or "").strip()
+        if section_region:
+            region_refs.add(section_region)
+        for control_ref in list(getattr(section, "active_intersection_control_region_refs", []) or []):
+            control_ref_text = str(control_ref or "").strip()
+            if control_ref_text:
+                intersection_control_region_refs.add(control_ref_text)
+                region_refs.add(control_ref_text)
+        for row in list(getattr(section, "subassembly_rows", []) or []):
+            row_region = str(getattr(row, "region_id", "") or "").strip()
+            if row_region:
+                region_refs.add(row_region)
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            link_count += 1
+            role = str(getattr(link, "surface_role", "") or "unassigned").strip() or "unassigned"
+            link_role_counts[role] = int(link_role_counts.get(role, 0) or 0) + 1
+        for point in list(getattr(section, "subassembly_point_rows", []) or []):
+            point_count += 1
+            role = str(getattr(point, "point_code", "") or "unassigned").strip() or "unassigned"
+            point_role_counts[role] = int(point_role_counts.get(role, 0) or 0) + 1
+        for shape in list(getattr(section, "subassembly_shape_rows", []) or []):
+            shape_count += 1
+            family = str(getattr(shape, "solid_family", "") or "unassigned").strip() or "unassigned"
+            shape_family_counts[family] = int(shape_family_counts.get(family, 0) or 0) + 1
+    return {
+        "subassembly_link_count": link_count,
+        "subassembly_point_count": point_count,
+        "subassembly_shape_count": shape_count,
+        "link_surface_role_counts": link_role_counts,
+        "point_role_counts": point_role_counts,
+        "shape_family_counts": shape_family_counts,
+        "region_refs": sorted(region_refs),
+        "intersection_control_region_refs": sorted(intersection_control_region_refs),
+    }
+
+
+def _set_watertight_solid_readiness_properties(
+    obj,
+    *,
+    document=None,
+    applied_section_set=None,
+    corridor_model=None,
+) -> None:
+    """Expose ordinary-road readiness for downstream watertight solid targets."""
+
+    if obj is None:
+        return
+    try:
+        from ..services.builders.solid_target_discovery_service import SolidTargetDiscoveryRequest, SolidTargetDiscoveryService
+
+        doc = document or getattr(obj, "Document", None)
+        solid_targets = SolidTargetDiscoveryService().discover(
+            SolidTargetDiscoveryRequest(
+                project_id=str(getattr(applied_section_set, "project_id", "") or "corridorroad-v1"),
+                corridor_ref=str(getattr(corridor_model, "corridor_id", "") or getattr(applied_section_set, "corridor_id", "") or "corridor:main"),
+                applied_section_set=applied_section_set,
+                corridor_model=corridor_model,
+                region_model=to_region_model(find_v1_region_model(doc)) if doc is not None else None,
+                intersection_model=to_intersection_model(find_v1_intersection_model(doc)) if doc is not None else None,
+                structure_model=to_structure_model(find_v1_structure_model(doc)) if doc is not None else None,
+                drainage_model=to_drainage_model(find_v1_drainage_model(doc)) if doc is not None else None,
+            )
+        )
+    except Exception:
+        _set_preview_property(obj, "WatertightSolidReadinessStatus", "unknown")
+        _set_preview_property(obj, "WatertightSolidReadinessSummary", "watertight_solid_readiness=unknown")
+        return
+
+    rows = list(getattr(solid_targets, "target_rows", []) or [])
+    diagnostics = list(getattr(solid_targets, "target_diagnostic_rows", []) or [])
+    status_counts: dict[str, int] = {}
+    family_counts: dict[str, int] = {}
+    class_counts: dict[str, int] = {}
+    physical_body_count = 0
+    surface_like_count = 0
+    envelope_count = 0
+    target_region_refs: set[str] = set()
+    target_material_refs: set[str] = set()
+    target_station_span_rows: list[str] = []
+    for row in rows:
+        status = str(getattr(row, "readiness_status", "") or "planned")
+        family = str(getattr(row, "target_family", "") or "unknown")
+        target_class = _watertight_solid_target_contract_class(row)
+        target_id = str(getattr(row, "target_id", "") or "")
+        scope = str(getattr(row, "scope_kind", "") or "")
+        region_ref = str(getattr(row, "region_ref", "") or "").strip()
+        material_ref = str(getattr(row, "material_ref", "") or "").strip()
+        if region_ref:
+            target_region_refs.add(region_ref)
+        if material_ref:
+            target_material_refs.add(material_ref)
+        target_station_span_rows.append(
+            (
+                f"{target_id}|{family}|{scope}|"
+                f"{float(getattr(row, 'station_start', 0.0) or 0.0):.3f}|"
+                f"{float(getattr(row, 'station_end', 0.0) or 0.0):.3f}|"
+                f"{region_ref}|{material_ref}|{status}"
+            )
+        )
+        status_counts[status] = status_counts.get(status, 0) + 1
+        family_counts[f"{family}:{status}"] = family_counts.get(f"{family}:{status}", 0) + 1
+        class_counts[f"{target_class}:{status}"] = class_counts.get(f"{target_class}:{status}", 0) + 1
+        if target_class == "physical_body":
+            physical_body_count += 1
+        elif target_class == "surface_like":
+            surface_like_count += 1
+        elif target_class == "envelope":
+            envelope_count += 1
+    available_count = int(status_counts.get("available", 0) or 0)
+    blocked_count = int(status_counts.get("blocked", 0) or 0)
+    planned_count = int(status_counts.get("planned", 0) or 0)
+    if available_count <= 0:
+        readiness = "blocked"
+    elif blocked_count > 0:
+        readiness = "partial"
+    else:
+        readiness = "ready"
+    physical_body_readiness = "ready" if physical_body_count > 0 else "blocked"
+    physical_body_reason = (
+        "Physical-body Watertight Solid targets are available."
+        if physical_body_count > 0
+        else "No physical-body Watertight Solid targets were discovered; closed Subassembly shape/material contracts may be missing."
+    )
+    digital_twin_readiness = "ready"
+    if readiness == "blocked" or physical_body_readiness == "blocked":
+        digital_twin_readiness = "blocked"
+    elif readiness == "partial":
+        digital_twin_readiness = "partial"
+    blocked_diagnostics = [
+        f"{str(getattr(row, 'kind', '') or '')}|{str(getattr(row, 'source_ref', '') or '')}|{str(getattr(row, 'message', '') or '')}"
+        for row in diagnostics
+        if str(getattr(row, "severity", "") or "").lower() in {"error", "warning"}
+    ]
+    missing_prerequisite_rows = [
+        (
+            f"{str(getattr(row, 'severity', '') or '')}|"
+            f"{str(getattr(row, 'kind', '') or '')}|"
+            f"{str(getattr(row, 'source_ref', '') or '')}|"
+            f"{str(getattr(row, 'message', '') or '')}|"
+            f"{str(getattr(row, 'notes', '') or '')}"
+        )
+        for row in diagnostics
+        if str(getattr(row, "severity", "") or "").lower() in {"error", "warning"}
+    ]
+    diagnostic_refs_by_id = {
+        str(getattr(row, "diagnostic_id", "") or ""): row
+        for row in diagnostics
+        if str(getattr(row, "diagnostic_id", "") or "")
+    }
+    blocked_target_rows = []
+    for row in rows:
+        status = str(getattr(row, "readiness_status", "") or "planned")
+        if status not in {"blocked", "planned"}:
+            continue
+        diagnostic_kinds = []
+        for diagnostic_ref in list(getattr(row, "diagnostic_refs", []) or []):
+            diagnostic = diagnostic_refs_by_id.get(str(diagnostic_ref or ""))
+            if diagnostic is not None:
+                diagnostic_kinds.append(str(getattr(diagnostic, "kind", "") or "diagnostic"))
+        blocked_target_rows.append(
+            (
+                f"{str(getattr(row, 'target_id', '') or '')}|"
+                f"{str(getattr(row, 'target_family', '') or '')}|"
+                f"{str(getattr(row, 'scope_kind', '') or '')}|"
+                f"{str(getattr(row, 'region_ref', '') or '')}|"
+                f"{str(getattr(row, 'material_ref', '') or '')}|"
+                f"{status}|"
+                f"diagnostics={','.join(diagnostic_kinds)}"
+            )
+        )
+    digital_twin_summary = (
+        f"digital_twin_readiness={digital_twin_readiness};"
+        f"overall={readiness};"
+        f"physical_body={physical_body_readiness};"
+        f"available={available_count};"
+        f"blocked={blocked_count};"
+        f"missing_prerequisites={len(missing_prerequisite_rows)};"
+        f"blocked_targets={len(blocked_target_rows)};"
+        f"reason={physical_body_reason}"
+    )
+    _set_preview_property(obj, "WatertightSolidTargetModelId", str(getattr(solid_targets, "solid_target_model_id", "") or ""))
+    _set_preview_property(obj, "WatertightSolidReadinessStatus", readiness)
+    _set_preview_integer_property(obj, "WatertightSolidAvailableTargetCount", available_count)
+    _set_preview_integer_property(obj, "WatertightSolidBlockedTargetCount", blocked_count)
+    _set_preview_integer_property(obj, "WatertightSolidPlannedTargetCount", planned_count)
+    _set_preview_integer_property(obj, "WatertightSolidDiagnosticCount", len(diagnostics))
+    _set_preview_integer_property(obj, "WatertightSolidPhysicalBodyTargetCount", physical_body_count)
+    _set_preview_integer_property(obj, "WatertightSolidSurfaceLikeTargetCount", surface_like_count)
+    _set_preview_integer_property(obj, "WatertightSolidEnvelopeTargetCount", envelope_count)
+    _set_preview_property(obj, "WatertightSolidPhysicalBodyReadinessStatus", physical_body_readiness)
+    _set_preview_property(obj, "WatertightSolidPhysicalBodyReadinessReason", physical_body_reason)
+    _set_preview_property(obj, "WatertightSolidDigitalTwinReadinessStatus", digital_twin_readiness)
+    _set_preview_property(obj, "WatertightSolidDigitalTwinReadinessSummary", digital_twin_summary)
+    _set_preview_integer_property(obj, "WatertightSolidStationSpanCount", len(target_station_span_rows))
+    _set_preview_string_list_property(obj, "WatertightSolidTargetStationSpans", target_station_span_rows)
+    _set_preview_string_list_property(obj, "WatertightSolidTargetRegionRefs", sorted(target_region_refs))
+    _set_preview_string_list_property(obj, "WatertightSolidTargetMaterialRefs", sorted(target_material_refs))
+    _set_preview_string_list_property(obj, "WatertightSolidTargetCounts", [f"{key}={value}" for key, value in sorted(status_counts.items())])
+    _set_preview_string_list_property(obj, "WatertightSolidTargetFamilyCounts", [f"{key}={value}" for key, value in sorted(family_counts.items())])
+    _set_preview_string_list_property(obj, "WatertightSolidTargetClassCounts", [f"{key}={value}" for key, value in sorted(class_counts.items())])
+    _set_preview_string_list_property(obj, "WatertightSolidBlockedDiagnostics", blocked_diagnostics)
+    _set_preview_integer_property(obj, "WatertightSolidMissingPrerequisiteCount", len(missing_prerequisite_rows))
+    _set_preview_string_list_property(obj, "WatertightSolidMissingPrerequisiteRows", missing_prerequisite_rows)
+    _set_preview_string_list_property(obj, "WatertightSolidBlockedTargetRows", blocked_target_rows)
+    _set_preview_property(
+        obj,
+        "WatertightSolidReadinessSummary",
+        (
+            f"status={readiness};available={available_count};blocked={blocked_count};"
+            f"planned={planned_count};diagnostics={len(diagnostics)};"
+            f"physical_body_targets={physical_body_count};"
+            f"physical_body_readiness={physical_body_readiness};"
+            f"surface_like_targets={surface_like_count};"
+            f"envelope_targets={envelope_count};"
+            f"station_spans={len(target_station_span_rows)};"
+            f"region_refs={len(target_region_refs)};"
+            f"material_refs={len(target_material_refs)};"
+            f"missing_prerequisites={len(missing_prerequisite_rows)};"
+            f"blocked_targets={len(blocked_target_rows)}"
+        ),
+    )
+
+
+def _watertight_solid_target_contract_class(row) -> str:
+    family = str(getattr(row, "target_family", "") or "").strip().lower()
+    scope = str(getattr(row, "scope_kind", "") or "").strip().lower()
+    if family == "road_body_envelope":
+        return "envelope"
+    if family.endswith("_body"):
+        return "physical_body"
+    if "surface" in family or scope in {"surface", "terrain"}:
+        return "surface_like"
+    return "other"
 
 
 def create_or_update_corridor_supplemental_frame_markers(
@@ -3745,7 +4116,15 @@ def create_corridor_design_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "design_surface") or f"{corridor_model.corridor_id}:design"
-    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
+    effective_supplemental_sampling_enabled = _build_corridor_effective_hidden_supplemental_sampling_enabled(
+        doc,
+        applied_section_set=applied_section_set,
+        requested=supplemental_sampling_enabled,
+        supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+        supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+        supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+    )
+    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if effective_supplemental_sampling_enabled else None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_design_surface(
             CorridorDesignSurfaceGeometryRequest(
@@ -3753,7 +4132,7 @@ def create_corridor_design_surface_preview(
                 corridor=corridor_model,
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
-                supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_enabled=effective_supplemental_sampling_enabled,
                 supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
                 supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
                 supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
@@ -4249,7 +4628,15 @@ def create_corridor_subgrade_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "subgrade_surface") or f"{corridor_model.corridor_id}:subgrade"
-    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
+    effective_supplemental_sampling_enabled = _build_corridor_effective_hidden_supplemental_sampling_enabled(
+        doc,
+        applied_section_set=applied_section_set,
+        requested=supplemental_sampling_enabled,
+        supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+        supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+        supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+    )
+    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if effective_supplemental_sampling_enabled else None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_subgrade_surface(
             CorridorDesignSurfaceGeometryRequest(
@@ -4257,7 +4644,7 @@ def create_corridor_subgrade_surface_preview(
                 corridor=corridor_model,
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
-                supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_enabled=effective_supplemental_sampling_enabled,
                 supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
                 supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
                 supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
@@ -4342,7 +4729,15 @@ def create_corridor_daylight_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "daylight_surface") or f"{corridor_model.corridor_id}:daylight"
-    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
+    effective_supplemental_sampling_enabled = _build_corridor_effective_hidden_supplemental_sampling_enabled(
+        doc,
+        applied_section_set=applied_section_set,
+        requested=supplemental_sampling_enabled,
+        supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+        supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+        supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+    )
+    supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if effective_supplemental_sampling_enabled else None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_daylight_surface(
             CorridorDesignSurfaceGeometryRequest(
@@ -4351,7 +4746,7 @@ def create_corridor_daylight_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 existing_ground_surface=_resolve_corridor_existing_ground_tin_surface(doc),
-                supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_enabled=effective_supplemental_sampling_enabled,
                 supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
                 supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
                 supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
@@ -4518,14 +4913,22 @@ def create_corridor_drainage_surface_preview(
         )
         return None
     try:
-        supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if supplemental_sampling_enabled else None
+        effective_supplemental_sampling_enabled = _build_corridor_effective_hidden_supplemental_sampling_enabled(
+            doc,
+            applied_section_set=applied_section_set,
+            requested=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+        )
+        supplemental_frame_resolver = _corridor_supplemental_frame_resolver(doc) if effective_supplemental_sampling_enabled else None
         tin_surface = CorridorSurfaceGeometryService().build_drainage_surface(
             CorridorDesignSurfaceGeometryRequest(
                 project_id=_project_id(project or find_project(doc)),
                 corridor=corridor_model,
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
-                supplemental_sampling_enabled=supplemental_sampling_enabled,
+                supplemental_sampling_enabled=effective_supplemental_sampling_enabled,
                 supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
                 supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
                 supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
@@ -4656,11 +5059,280 @@ def _attach_corridor_surface_preview_contract(
     _set_preview_property(obj, "PreviewStatus", "ready")
     _set_preview_property(obj, "PreviewDiagnostic", str(getattr(preview_result, "notes", "") or "Preview object created from Build Parametric surface output."))
     _set_preview_integer_property(obj, "PreviewFacetCount", int(getattr(preview_result, "facet_count", 0) or 0))
+    _attach_applied_section_diagnostic_handoff_properties(obj, applied_section_set)
     _set_preview_string_list_property(
         obj,
         "SourceRefs",
         _corridor_surface_preview_source_refs(corridor_model, surface_model, applied_section_set),
     )
+    _set_corridor_consumer_disclosure_properties(
+        obj,
+        document=getattr(obj, "Document", None),
+        applied_section_set=applied_section_set,
+        corridor_model=corridor_model,
+        centerline_source_mode=_build_corridor_consumed_centerline_source_mode(getattr(obj, "Document", None)),
+        centerline_result_id=_build_corridor_consumed_centerline_result_id(getattr(obj, "Document", None)),
+    )
+    _attach_corridor_surface_role_contract_review_properties(obj, role)
+
+
+def _attach_corridor_surface_role_contract_review_properties(obj, role: str) -> None:
+    expected_roles = _expected_surface_result_roles_for_build_role(role)
+    consumed_counts = _preview_count_rows_to_dict(getattr(obj, "ConsumedSurfaceRoleCounts", []) or [])
+    matched_rows = [
+        f"{surface_role}={int(consumed_counts.get(surface_role, 0) or 0)}"
+        for surface_role in expected_roles
+        if int(consumed_counts.get(surface_role, 0) or 0) > 0
+    ]
+    if not expected_roles:
+        status = "not_required"
+    elif matched_rows:
+        status = "ready"
+    else:
+        status = "missing"
+    _set_preview_property(obj, "ResultContractExpectedSurfaceRoleStatus", status)
+    _set_preview_string_list_property(obj, "ResultContractExpectedSurfaceRoles", list(expected_roles))
+    _set_preview_string_list_property(obj, "ResultContractMatchedSurfaceRoles", matched_rows)
+
+
+def _expected_surface_result_roles_for_build_role(role: str) -> tuple[str, ...]:
+    role_key = str(role or "").strip().lower()
+    if role_key == "design":
+        return ("design_surface",)
+    if role_key == "subgrade":
+        return ("subgrade_surface", "subbase_surface")
+    if role_key == "daylight":
+        return ("slope_face_surface", "daylight_surface")
+    if role_key == "drainage":
+        return ("drainage_surface",)
+    if role_key == "intersection_slope":
+        return ("slope_face_surface",)
+    return ()
+
+
+def _preview_count_rows_to_dict(rows) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for raw in list(rows or []):
+        text = str(raw or "").strip()
+        if not text or "=" not in text:
+            continue
+        key, value = text.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        try:
+            counts[key] = int(float(str(value).strip() or 0))
+        except Exception:
+            counts[key] = 0
+    return counts
+
+
+def _corridor_surface_role_contract_review_note(obj) -> str:
+    status = str(getattr(obj, "ResultContractExpectedSurfaceRoleStatus", "") or "")
+    expected = [str(value or "") for value in list(getattr(obj, "ResultContractExpectedSurfaceRoles", []) or []) if str(value or "")]
+    matched = [str(value or "") for value in list(getattr(obj, "ResultContractMatchedSurfaceRoles", []) or []) if str(value or "")]
+    consumed = [str(value or "") for value in list(getattr(obj, "ConsumedSurfaceRoleCounts", []) or []) if str(value or "")]
+    if not status and not expected and not consumed:
+        return ""
+    parts = [f"surface role contract={status or 'unknown'}"]
+    if expected:
+        parts.append(f"expected={','.join(expected)}")
+    if matched:
+        parts.append(f"matched={','.join(matched)}")
+    elif consumed:
+        parts.append(f"consumed={','.join(consumed)}")
+    return "; ".join(parts)
+
+
+def _corridor_region_contract_review_note(obj) -> str:
+    region_refs = [
+        str(value or "")
+        for value in list(getattr(obj, "ConsumedRegionRefs", []) or [])
+        if str(value or "")
+    ]
+    control_refs = [
+        str(value or "")
+        for value in list(getattr(obj, "ConsumedIntersectionControlRegionRefs", []) or [])
+        if str(value or "")
+    ]
+    if not region_refs and not control_refs:
+        return ""
+    parts = [f"region contract: regions={len(region_refs)}"]
+    if region_refs:
+        parts.append(f"refs={','.join(region_refs)}")
+    if control_refs:
+        parts.append(f"intersection_control_regions={len(control_refs)}")
+        parts.append(f"control_refs={','.join(control_refs)}")
+    return "; ".join(parts)
+
+
+def _corridor_watertight_solid_review_note(obj) -> str:
+    status = str(getattr(obj, "WatertightSolidReadinessStatus", "") or "")
+    if not status:
+        return ""
+    physical_body_count = int(getattr(obj, "WatertightSolidPhysicalBodyTargetCount", 0) or 0)
+    physical_body_readiness = str(getattr(obj, "WatertightSolidPhysicalBodyReadinessStatus", "") or "")
+    digital_twin_readiness = str(getattr(obj, "WatertightSolidDigitalTwinReadinessStatus", "") or "")
+    surface_like_count = int(getattr(obj, "WatertightSolidSurfaceLikeTargetCount", 0) or 0)
+    envelope_count = int(getattr(obj, "WatertightSolidEnvelopeTargetCount", 0) or 0)
+    station_span_count = int(getattr(obj, "WatertightSolidStationSpanCount", 0) or 0)
+    missing_count = int(getattr(obj, "WatertightSolidMissingPrerequisiteCount", 0) or 0)
+    blocked_count = int(getattr(obj, "WatertightSolidBlockedTargetCount", 0) or 0)
+    parts = [
+        f"watertight solid readiness={status}",
+        f"digital_twin_readiness={digital_twin_readiness or 'unknown'}",
+        f"physical_body_targets={physical_body_count}",
+        f"physical_body_readiness={physical_body_readiness or 'unknown'}",
+        f"surface_like_targets={surface_like_count}",
+        f"envelope_targets={envelope_count}",
+        f"station_spans={station_span_count}",
+    ]
+    if missing_count:
+        parts.append(f"missing_prerequisites={missing_count}")
+    if blocked_count:
+        parts.append(f"blocked_targets={blocked_count}")
+    return "; ".join(parts)
+
+
+def _attach_applied_section_diagnostic_handoff_properties(obj, applied_section_set) -> None:
+    summary = _applied_section_diagnostic_handoff_summary(applied_section_set)
+    _set_preview_property(obj, "AppliedSectionDiagnosticSummary", str(summary.get("summary", "") or "diagnostics=0"))
+    _set_preview_integer_property(obj, "AppliedSectionDiagnosticCount", int(summary.get("diagnostic_count", 0) or 0))
+    _set_preview_integer_property(obj, "AppliedSectionOverlapClipCount", int(summary.get("overlap_clip_count", 0) or 0))
+    _set_preview_integer_property(obj, "AppliedSectionDaylightFallbackCount", int(summary.get("daylight_fallback_count", 0) or 0))
+    _set_preview_integer_property(obj, "AppliedSectionDaylightTerrainHitCount", int(summary.get("daylight_terrain_hit_count", 0) or 0))
+    _set_preview_string_list_property(obj, "AppliedSectionDiagnosticRows", list(summary.get("rows", []) or []))
+    _set_preview_property(obj, "AppliedSectionClipReviewSummary", str(summary.get("clip_review_summary", "") or "clip_rows=0"))
+    _set_preview_string_list_property(obj, "AppliedSectionClipReviewRows", list(summary.get("clip_review_rows", []) or []))
+
+
+def _applied_section_diagnostic_handoff_summary(applied_section_set) -> dict[str, object]:
+    sections = list(getattr(applied_section_set, "sections", []) or []) if applied_section_set is not None else []
+    rows: list[str] = []
+    clip_review_rows: list[str] = []
+    kind_counts: dict[str, int] = {}
+    daylight_fallback_count = 0
+    daylight_terrain_hit_count = 0
+    for section in sections:
+        section_id = str(getattr(section, "applied_section_id", "") or "")
+        station = float(getattr(section, "station", 0.0) or 0.0)
+        for diagnostic in list(getattr(section, "diagnostic_rows", []) or []):
+            kind = str(getattr(diagnostic, "kind", "") or "diagnostic")
+            kind_counts[kind] = int(kind_counts.get(kind, 0) or 0) + 1
+            notes = str(getattr(diagnostic, "notes", "") or "")
+            if "daylight_status=fallback" in notes or kind in {"bench_daylight_fallback", "bench_daylight_no_hit"}:
+                daylight_fallback_count += 1
+            if "daylight_status=terrain_intersection" in notes or kind == "bench_daylight_shortened":
+                daylight_terrain_hit_count += 1
+            message = str(getattr(diagnostic, "message", "") or "")
+            row = f"STA {station:.3f}|{section_id}|{kind}|{message}"
+            if notes:
+                row = f"{row}|{notes}"
+            rows.append(row[:1000])
+            if kind == "applied_section_overlap_clip":
+                clip_review_rows.append(_applied_section_clip_review_row(station, section_id, notes))
+    diagnostic_count = sum(kind_counts.values())
+    overlap_clip_count = int(kind_counts.get("applied_section_overlap_clip", 0) or 0)
+    parts = [
+        f"diagnostics={diagnostic_count}",
+        f"overlap_clip={overlap_clip_count}",
+        f"daylight_fallback={daylight_fallback_count}",
+        f"daylight_terrain_hit={daylight_terrain_hit_count}",
+    ]
+    if kind_counts:
+        parts.append("kinds=" + _format_count_summary(kind_counts))
+    clip_review_summary = f"clip_rows={len(clip_review_rows)}"
+    if clip_review_rows:
+        clip_review_summary = f"{clip_review_summary}; first={clip_review_rows[0]}"
+    return {
+        "diagnostic_count": diagnostic_count,
+        "overlap_clip_count": overlap_clip_count,
+        "daylight_fallback_count": daylight_fallback_count,
+        "daylight_terrain_hit_count": daylight_terrain_hit_count,
+        "summary": ";".join(parts),
+        "rows": rows[:200],
+        "clip_review_summary": clip_review_summary[:1000],
+        "clip_review_rows": clip_review_rows[:200],
+    }
+
+
+def _applied_section_clip_review_row(station: float, section_id: str, notes: str) -> str:
+    side = _diagnostic_note_value(notes, "side")
+    clip_limit = _diagnostic_note_value(notes, "clip_limit")
+    points = _diagnostic_note_value(notes, "clipped_point_ids")
+    links = _diagnostic_note_value(notes, "clipped_link_ids")
+    subassemblies = _diagnostic_note_value(notes, "subassembly_refs")
+    previous = _diagnostic_note_value(notes, "previous_section_id")
+    parts = [
+        f"STA {float(station):.3f}",
+        f"section={section_id}",
+    ]
+    if previous:
+        parts.append(f"previous={previous}")
+    if side:
+        parts.append(f"side={side}")
+    if clip_limit:
+        parts.append(f"clip_limit={clip_limit}")
+    if subassemblies:
+        parts.append(f"subassemblies={subassemblies}")
+    if points:
+        parts.append(f"points={points}")
+    if links:
+        parts.append(f"links={links}")
+    return ";".join(parts)[:1000]
+
+
+def _diagnostic_note_value(notes: str, key: str) -> str:
+    prefix = f"{str(key or '')}="
+    for part in str(notes or "").split(";"):
+        text = str(part or "").strip()
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return ""
+
+
+def _build_corridor_consumed_centerline_source_mode(document=None) -> str:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return ""
+    try:
+        obj = doc.getObject("V1CorridorCenterline3DPreview")
+    except Exception:
+        obj = None
+    if obj is not None:
+        value = str(getattr(obj, "PreviewSource", "") or getattr(obj, "ConsumedCenterlineSourceMode", "") or "")
+        if value:
+            return value
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+
+        result = build_document_centerline3d_result(doc)
+        if result is not None:
+            return "centerline3d_result"
+    except Exception:
+        pass
+    return ""
+
+
+def _build_corridor_consumed_centerline_result_id(document=None) -> str:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return ""
+    try:
+        obj = doc.getObject("V1CorridorCenterline3DPreview")
+    except Exception:
+        obj = None
+    if obj is not None:
+        value = str(getattr(obj, "Centerline3DResultId", "") or getattr(obj, "ConsumedCenterline3DResultId", "") or "")
+        if value:
+            return value
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+
+        result = build_document_centerline3d_result(doc)
+        return str(getattr(result, "centerline3d_result_id", "") or "")
+    except Exception:
+        return ""
 
 
 def _corridor_surface_preview_source_refs(corridor_model, surface_model, applied_section_set=None) -> list[str]:
@@ -7408,13 +8080,21 @@ def _create_or_update_region_surface_preview_object(
     if builder is None:
         return None
     try:
-        supplemental_frame_resolver = _corridor_supplemental_frame_resolver(document) if supplemental_sampling_enabled else None
+        effective_supplemental_sampling_enabled = _build_corridor_effective_hidden_supplemental_sampling_enabled(
+            document,
+            applied_section_set=applied_section_set,
+            requested=supplemental_sampling_enabled,
+            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
+            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
+            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
+        )
+        supplemental_frame_resolver = _corridor_supplemental_frame_resolver(document) if effective_supplemental_sampling_enabled else None
         request = CorridorDesignSurfaceGeometryRequest(
             project_id=_project_id(project or find_project(document)),
             corridor=corridor_model,
             applied_section_set=applied_section_set,
             surface_id=surface_id,
-            supplemental_sampling_enabled=supplemental_sampling_enabled,
+            supplemental_sampling_enabled=effective_supplemental_sampling_enabled,
             supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
             supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
             supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
@@ -14862,7 +15542,11 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
         curve_kind = str(getattr(obj, "DisplayCurveKind", "") or "")
         preview_source = str(getattr(obj, "PreviewSource", "") or "")
         source_note = f"; source={preview_source}" if preview_source else ""
-        return {
+        watertight_note = _corridor_watertight_solid_review_note(obj)
+        notes = f"Curve: {curve_kind or 'unknown'}{source_note}"
+        if watertight_note:
+            notes = f"{notes} | {watertight_note}"
+        return _with_corridor_consumer_hardening_warning({
             "role": role,
             "result": title,
             "object_name": str(getattr(obj, "Name", "") or object_name),
@@ -14870,14 +15554,29 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
             "status": "ready",
             "vertex_count": "",
             "triangle_or_point_count": point_count,
-            "notes": f"Curve: {curve_kind or 'unknown'}{source_note}",
-        }
+            "notes": notes,
+        }, obj)
     vertex_count = int(getattr(obj, "VertexCount", 0) or 0)
     triangle_count = int(getattr(obj, "TriangleCount", 0) or 0)
     notes = str(getattr(obj, "SlopeFaceDiagnosticSummary", "") or "")
     issue_stations = str(getattr(obj, "SlopeFaceIssueStations", "") or "")
     if notes and issue_stations:
         notes = f"{notes} | issues: {issue_stations}"
+    applied_section_diagnostics = str(getattr(obj, "AppliedSectionDiagnosticSummary", "") or "")
+    if applied_section_diagnostics and applied_section_diagnostics != "diagnostics=0":
+        notes = f"{notes} | applied sections: {applied_section_diagnostics}" if notes else f"applied sections: {applied_section_diagnostics}"
+    applied_section_clip_review = str(getattr(obj, "AppliedSectionClipReviewSummary", "") or "")
+    if applied_section_clip_review and applied_section_clip_review != "clip_rows=0":
+        notes = f"{notes} | clipping: {applied_section_clip_review}" if notes else f"clipping: {applied_section_clip_review}"
+    surface_role_contract = _corridor_surface_role_contract_review_note(obj)
+    if surface_role_contract:
+        notes = f"{notes} | {surface_role_contract}" if notes else surface_role_contract
+    region_contract = _corridor_region_contract_review_note(obj)
+    if region_contract:
+        notes = f"{notes} | {region_contract}" if notes else region_contract
+    watertight_note = _corridor_watertight_solid_review_note(obj)
+    if watertight_note:
+        notes = f"{notes} | {watertight_note}" if notes else watertight_note
     if role == "intersection":
         notes = _intersection_surface_review_notes(obj)
     elif role == "intersection_slope":
@@ -14920,7 +15619,7 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
     if not notes:
         surface_kind = str(getattr(obj, "SurfaceKind", "") or "")
         notes = f"Surface kind: {surface_kind or 'unknown'}"
-    return {
+    return _with_corridor_consumer_hardening_warning({
         "role": role,
         "result": title,
         "object_name": str(getattr(obj, "Name", "") or object_name),
@@ -14929,7 +15628,57 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
         "vertex_count": vertex_count,
         "triangle_or_point_count": triangle_count,
         "notes": notes,
-    }
+    }, obj)
+
+
+def _with_corridor_consumer_hardening_warning(row: dict[str, object], obj) -> dict[str, object]:
+    """Warn when Build Corridor consumed a fallback instead of the preferred v1 result path."""
+
+    if obj is None:
+        return row
+    source_mode = str(getattr(obj, "ConsumedCenterlineSourceMode", "") or getattr(obj, "PreviewSource", "") or "")
+    centerline_fallback = bool(int(getattr(obj, "CenterlineConsumerFallbackActive", 0) or 0))
+    supplemental_fallback = bool(int(getattr(obj, "SupplementalCompatibilityFallbackActive", 0) or 0))
+    result_contract_fallback = bool(int(getattr(obj, "ResultContractCompatibilityFallbackActive", 0) or 0))
+    row_role = str(row.get("role", "") or "")
+    warnings: list[str] = []
+    if centerline_fallback or (source_mode and source_mode != "centerline3d_source_geometry"):
+        warnings.append(
+            f"warning:centerline source fallback={source_mode or 'unknown'}; expected=centerline3d_source_geometry"
+        )
+    if supplemental_fallback:
+        warnings.append("warning:supplemental compatibility fallback active; rebuild Applied Sections")
+    if result_contract_fallback and row_role != "centerline":
+        reason = str(getattr(obj, "ResultContractCompatibilityReason", "") or "missing Subassembly link result contract")
+        warnings.append(f"warning:result contract fallback active; {reason}")
+    surface_role_status = str(getattr(obj, "ResultContractExpectedSurfaceRoleStatus", "") or "")
+    if surface_role_status == "missing":
+        expected = [
+            str(value or "")
+            for value in list(getattr(obj, "ResultContractExpectedSurfaceRoles", []) or [])
+            if str(value or "")
+        ]
+        warnings.append(f"warning:expected surface role missing={','.join(expected) or 'unknown'}")
+    watertight_status = str(getattr(obj, "WatertightSolidReadinessStatus", "") or "")
+    if watertight_status in {"blocked", "partial"}:
+        missing_count = int(getattr(obj, "WatertightSolidMissingPrerequisiteCount", 0) or 0)
+        blocked_count = int(getattr(obj, "WatertightSolidBlockedTargetCount", 0) or 0)
+        warnings.append(
+            f"warning:watertight solid readiness={watertight_status}; "
+            f"missing_prerequisites={missing_count}; blocked_targets={blocked_count}"
+        )
+    physical_body_readiness = str(getattr(obj, "WatertightSolidPhysicalBodyReadinessStatus", "") or "")
+    if physical_body_readiness == "blocked":
+        reason = str(getattr(obj, "WatertightSolidPhysicalBodyReadinessReason", "") or "missing physical-body targets")
+        warnings.append(f"warning:physical-body watertight readiness=blocked; {reason}")
+    if not warnings:
+        return row
+    output = dict(row)
+    existing_notes = str(output.get("notes", "") or "").strip()
+    output["notes"] = f"{existing_notes} | {' | '.join(warnings)}" if existing_notes else " | ".join(warnings)
+    if str(output.get("status", "") or "") == "ready":
+        output["status"] = "warning"
+    return output
 
 
 def _intersection_surface_review_notes(obj) -> str:

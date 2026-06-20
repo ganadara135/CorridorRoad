@@ -69,6 +69,23 @@ ASSEMBLY_PRESETS = {
             ("side_slope:right", "side_slope", "right", 4.0, -0.5, 0.0, "earth", "Right slope face"),
         ],
     },
+    "Digital Twin Ready Road": {
+        "assembly_id": "assembly:digital-twin-ready-road",
+        "template_id": "template:digital-twin-ready-road",
+        "label": "Digital Twin Ready Road Assembly",
+        "template_label": "Digital Twin Ready Road",
+        "note": "Ordinary road sample with explicit physical-body pavement, subbase, shoulder material, and thickness contracts for Watertight Solid readiness QA.",
+        "subassemblies": [
+            ("pavement_layer:main", "pavement_layer", "center", 7.0, -0.02, 0.18, "asphalt_surface", "Closed pavement layer body target across both travel lanes", {"solid_family": "pavement_layer", "shape_code": "pavement_body"}),
+            ("subbase:main", "subbase", "center", 8.4, -0.02, 0.30, "crushed_stone", "Closed subbase body target under lanes and shoulders", {"solid_family": "subbase", "shape_code": "subbase_body"}),
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.18, "asphalt_surface", "Left travel lane surface"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.18, "asphalt_surface", "Right travel lane surface"),
+            ("shoulder:left", "shoulder", "left", 1.2, -0.035, 0.16, "aggregate_shoulder", "Left shoulder body and surface contract"),
+            ("shoulder:right", "shoulder", "right", 1.2, -0.035, 0.16, "aggregate_shoulder", "Right shoulder body and surface contract"),
+            ("side_slope:left", "side_slope", "left", 4.5, -0.5, 0.0, "earth", "Left daylight grading surface"),
+            ("side_slope:right", "side_slope", "right", 4.5, -0.5, 0.0, "earth", "Right daylight grading surface"),
+        ],
+    },
     "Urban Curb & Gutter": {
         "assembly_id": "assembly:urban-curb-gutter",
         "template_id": "template:urban-curb-gutter",
