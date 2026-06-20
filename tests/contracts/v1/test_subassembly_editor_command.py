@@ -71,6 +71,20 @@ def test_subassembly_presets_offer_ditch_and_benched_slope_parameters() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_urban_subassembly_preset_includes_sidewalk_definition_refs() -> None:
+    doc, project = _new_project_doc()
+    try:
+        urban = assembly_subassembly_preset_model_from_document("Urban Curb & Gutter", doc, project=project)
+        sidewalks = [row for row in urban.template_rows[0].subassembly_rows if row.kind == "sidewalk"]
+
+        assert [row.subassembly_id for row in sidewalks] == ["sidewalk:left", "sidewalk:right"]
+        assert {row.side for row in sidewalks} == {"left", "right"}
+        assert {row.width for row in sidewalks} == {1.8}
+        assert {row.definition_ref for row in sidewalks} == {"subassembly-definition:sidewalk-basic"}
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_subassembly_validation_reports_bench_warnings() -> None:
     model = AssemblySubassemblyModel(
         schema_version=1,

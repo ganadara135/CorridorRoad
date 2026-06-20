@@ -48,6 +48,10 @@ DITCH_SHAPE_DEFAULTS = {
     "custom_polyline": {"section_points": "0,0,inner_edge;0.5,-0.4,invert;1.0,0,outer_edge"},
 }
 
+SUBASSEMBLY_KIND_DEFINITION_REFS = {
+    "sidewalk": "subassembly-definition:sidewalk-basic",
+}
+
 
 ASSEMBLY_PRESETS = {
     "Basic Road": {

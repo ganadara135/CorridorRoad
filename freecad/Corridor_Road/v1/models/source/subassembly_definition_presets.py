@@ -16,7 +16,7 @@ from .subassembly_definition_model import (
 SUBASSEMBLY_DEFINITION_PRESETS = {
     "Starter Road Primitives": {
         "library_id": "subassembly-library:starter-road-primitives",
-        "note": "Reusable lane, shoulder, side-slope, ditch, curb, and gutter definitions for starter road assemblies.",
+        "note": "Reusable lane, shoulder, sidewalk, side-slope, ditch, curb, and gutter definitions for starter road assemblies.",
         "definitions": [
             {
                 "definition_id": "subassembly-definition:lane-basic",
@@ -232,6 +232,32 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                 ],
                 "shapes": [
                     ("shape:curb", ("toe", "face_top", "back_top", "back_bottom", "toe_bottom"), "curb", "curb_body"),
+                ],
+            },
+            {
+                "definition_id": "subassembly-definition:sidewalk-basic",
+                "name": "Basic Sidewalk",
+                "kind": "sidewalk",
+                "category": "pedestrian",
+                "side_behavior": "both",
+                "parameters": [
+                    ("width", "Width", 1.8, "m", True),
+                    ("slope", "Crossfall", -1.5, "%", True),
+                    ("thickness", "Concrete thickness", 0.12, "m", False),
+                    ("material", "Material", "concrete", "", False),
+                ],
+                "points": [
+                    ("inner", "0", "0", "SW_IN", "sidewalk_inner", True),
+                    ("outer", "width", "width*slope/100", "SW_OUT", "sidewalk_outer", True),
+                    ("subgrade_inner", "0", "-thickness", "SUBGRADE", "subgrade", False),
+                    ("subgrade_outer", "width", "width*slope/100-thickness", "SUBGRADE", "subgrade", False),
+                ],
+                "links": [
+                    ("walk", "inner", "outer", "design", "sidewalk_fg", "sidewalk_width"),
+                    ("subgrade", "subgrade_inner", "subgrade_outer", "subgrade_surface", "sidewalk_subgrade", "subgrade_width"),
+                ],
+                "shapes": [
+                    ("shape:sidewalk", ("inner", "outer", "subgrade_outer", "subgrade_inner"), "sidewalk", "sidewalk_body"),
                 ],
             },
         ],

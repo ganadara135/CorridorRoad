@@ -339,6 +339,7 @@ def test_subassembly_definition_preset_creates_reusable_road_primitives() -> Non
         "subassembly-definition:ditch-trapezoid",
         "subassembly-definition:gutter-pan",
         "subassembly-definition:curb-basic",
+        "subassembly-definition:sidewalk-basic",
     }.issubset(definition_ids)
     assert lane is not None
     assert lane.kind == "lane"
@@ -348,6 +349,10 @@ def test_subassembly_definition_preset_creates_reusable_road_primitives() -> Non
     assert ditch.kind == "ditch"
     assert any(row.surface_role == "drainage_surface" for row in ditch.link_rows)
     assert ditch.target_rows[0].target_kind == "ditch_flowline"
+    sidewalk = library.definition_by_id("subassembly-definition:sidewalk-basic")
+    assert sidewalk is not None
+    assert sidewalk.kind == "sidewalk"
+    assert sidewalk.shape_rows[0].solid_role == "sidewalk_body"
 
 
 class _FakeDocument:

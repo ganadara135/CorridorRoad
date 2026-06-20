@@ -47,6 +47,7 @@ from .assembly_preset_data import (
     DITCH_PARAMETER_KEYS,
     DITCH_SHAPE_DEFAULTS,
     DITCH_SHAPES,
+    SUBASSEMBLY_KIND_DEFINITION_REFS,
     assembly_preset_names,
 )
 
@@ -1198,6 +1199,7 @@ def _preset_subassemblies(preset: dict) -> list[TemplateSubassembly]:
                 slope=slope,
                 thickness=thickness,
                 material=material,
+                definition_ref=str(row[9] if len(row) > 9 else SUBASSEMBLY_KIND_DEFINITION_REFS.get(str(kind), "") or ""),
                 parameters=dict(parameters or {}),
                 notes=notes,
                 enabled=True,
