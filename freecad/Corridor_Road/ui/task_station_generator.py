@@ -39,7 +39,7 @@ class StationGeneratorTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Stations")
+        w.setWindowTitle("ParametricRoad - Stations")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

@@ -1,4 +1,4 @@
-"""Station range sampling for CorridorRoad v1 alignments."""
+"""Station range sampling for ParametricRoad v1 alignments."""
 
 from __future__ import annotations
 

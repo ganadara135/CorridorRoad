@@ -35,7 +35,7 @@ def stationing_review_summary_lines(stationing) -> list[str]:
     ensure_v1_stationing_properties(stationing)
     station_count = len(list(getattr(stationing, "StationValues", []) or []))
     return [
-        "CorridorRoad v1 Stationing Review",
+        "ParametricRoad v1 Stationing Review",
         f"Stationing: {str(getattr(stationing, 'Label', '') or getattr(stationing, 'Name', '') or '')}",
         f"AlignmentId: {str(getattr(stationing, 'AlignmentId', '') or '')}",
         f"Source alignment: {str(getattr(stationing, 'SourceAlignmentLabel', '') or '')}",
@@ -179,7 +179,7 @@ class V1StationingReviewTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Stations")
+        widget.setWindowTitle("ParametricRoad v1 - Stations")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
@@ -325,7 +325,7 @@ class V1StationingReviewTaskPanel:
 
     def _locate_row(self, row: dict[str, object] | None) -> None:
         if row is None:
-            _show_message(self.form, "Stations", "위치확인할 측점 행을 먼저 선택해 주세요.")
+            _show_message(self.form, "Stations", "Select a station row first.")
             return
         try:
             highlight = show_station_highlight(self.document, row)
@@ -341,7 +341,7 @@ class V1StationingReviewTaskPanel:
                 except Exception:
                     pass
         except Exception as exc:
-            _show_message(self.form, "Stations", f"측점 위치를 표시하지 못했습니다.\n{exc}")
+            _show_message(self.form, "Stations", f"痢≪젏 ?꾩튂瑜??쒖떆?섏? 紐삵뻽?듬땲??\n{exc}")
 
     def _selected_station_row(self) -> dict[str, object] | None:
         row_index = int(self._table.currentRow())

@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import FreeCAD as App
 import Part
 
+from freecad.Corridor_Road.v1.common.diagnostics import DiagnosticMessage
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
@@ -66,6 +69,9 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
+    AppliedSectionSubassemblyShape,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
@@ -161,6 +167,20 @@ def _sample_sections() -> AppliedSectionSet:
                 daylight_right_width=3.0,
                 daylight_left_slope=-0.5,
                 daylight_right_slope=-0.5,
+                diagnostic_rows=[
+                    DiagnosticMessage(
+                        "info",
+                        "applied_section_overlap_clip",
+                        "left side clipped",
+                        "section_id=section:0;previous_section_id=section:-20;side=left;clipped_point_ids=slope:left:daylight;clipped_link_ids=slope:left:link;subassembly_refs=slope:left",
+                    ),
+                    DiagnosticMessage(
+                        "warning",
+                        "bench_daylight_fallback",
+                        "fixed-width daylight fallback",
+                        "subassembly_ref=slope:left;side=left;daylight_mode=terrain;daylight_status=fallback;terrain_hit=false;fallback_reason=no_existing_ground_tin",
+                    ),
+                ],
             ),
             AppliedSection(
                 schema_version=1,
@@ -857,6 +877,57 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert progress_events[0] == (40, "Preparing project tree...")
         assert any(text == "Building corridor surfaces..." for _value, text in progress_events)
         assert progress_events[-1] == (94, "Recomputing document...")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_surface_preview_contract_exposes_applied_section_diagnostics() -> None:
+    doc, project = _new_project_doc()
+    try:
+        obj = doc.addObject("Part::Feature", "DiagnosticPreview")
+
+        class _Corridor:
+            corridor_id = "corridor:main"
+
+        class _SurfaceModel:
+            surface_model_id = "surface:main"
+
+        class _PreviewResult:
+            notes = "diagnostic preview"
+            facet_count = 0
+
+        build_corridor_command._attach_corridor_surface_preview_contract(
+            obj,
+            role="daylight",
+            surface_kind="daylight_surface",
+            surface_id="surface:daylight",
+            corridor_model=_Corridor(),
+            surface_model=_SurfaceModel(),
+            applied_section_set=_sample_sections(),
+            preview_result=_PreviewResult(),
+        )
+
+        assert int(obj.AppliedSectionDiagnosticCount) == 2
+        assert int(obj.AppliedSectionOverlapClipCount) == 1
+        assert int(obj.AppliedSectionDaylightFallbackCount) == 1
+        assert "overlap_clip=1" in obj.AppliedSectionDiagnosticSummary
+        assert "daylight_fallback=1" in obj.AppliedSectionDiagnosticSummary
+        assert any("clipped_point_ids=slope:left:daylight" in row for row in list(obj.AppliedSectionDiagnosticRows))
+        assert "clip_rows=1" in obj.AppliedSectionClipReviewSummary
+        assert "subassemblies=slope:left" in obj.AppliedSectionClipReviewSummary
+        assert list(obj.AppliedSectionClipReviewRows) == [
+            "STA 0.000;section=section:0;previous=section:-20;side=left;subassemblies=slope:left;points=slope:left:daylight;links=slope:left:link"
+        ]
+        review_row = build_corridor_command._corridor_build_review_row(
+            "daylight",
+            "Slope Face Surface",
+            "DiagnosticPreview",
+            obj,
+        )
+        assert "applied sections: diagnostics=2" in review_row["notes"]
+        assert "daylight_fallback=1" in review_row["notes"]
+        assert "clipping: clip_rows=1" in review_row["notes"]
+        assert "points=slope:left:daylight" in review_row["notes"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -4840,6 +4911,26 @@ def test_apply_v1_corridor_model_can_disable_supplemental_sampling() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_apply_v1_corridor_model_does_not_resample_when_applied_sections_have_supplemental_rows() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = _sample_sections_with_centerline_curve()
+        applied.station_rows[1] = AppliedSectionStationRow("station:20", 20.0, "section:20", kind="curve_supplemental")
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=True)
+
+        preview = doc.getObject("V1CorridorDesignSurfacePreview")
+        assert preview is not None
+        assert int(preview.VertexCount) == 6
+        assert int(preview.ConsumedSourceSectionCount) == 2
+        assert int(preview.ConsumedSupplementalSectionCount) == 1
+        assert int(preview.SupplementalCompatibilityFallbackActive) == 0
+        assert preview.SupplementalCompatibilityPolicy == "applied_sections_only"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
     doc, project = _new_project_doc()
     try:
@@ -5720,11 +5811,361 @@ def test_apply_v1_corridor_model_prefers_shared_centerline3d_result_preview() ->
         assert centerline.PreviewSource == "centerline3d_source_geometry"
         assert centerline.Centerline3DResultId == "centerline3d:main"
         assert centerline.DisplayCurveKind == "source_geometry"
+        assert centerline.ConsumedAppliedSectionSetId == "sections:main"
+        assert centerline.ConsumedCenterline3DResultId == "centerline3d:main"
+        assert centerline.ConsumedCenterlineSourceMode == "centerline3d_source_geometry"
+        assert int(centerline.ConsumedSourceSectionCount) == 2
+        assert int(centerline.ConsumedSupplementalSectionCount) == 0
+        assert int(centerline.ConsumedTotalSectionCount) == 2
+        assert int(centerline.CenterlineConsumerFallbackActive) == 0
+        assert int(centerline.SupplementalCompatibilityFallbackActive) == 0
+        assert "source_mode=centerline3d_source_geometry" in centerline.BuildCorridorConsumerSummary
+        assert centerline.WatertightSolidReadinessStatus == "ready"
+        assert int(centerline.WatertightSolidAvailableTargetCount) >= 1
+        assert int(centerline.WatertightSolidBlockedTargetCount) == 0
+        assert "status=ready" in centerline.WatertightSolidReadinessSummary
+        assert "road_body_envelope:available=1" in list(centerline.WatertightSolidTargetFamilyCounts)
+        assert int(centerline.WatertightSolidEnvelopeTargetCount) >= 1
+        assert int(centerline.WatertightSolidPhysicalBodyTargetCount) >= 0
+        assert int(centerline.WatertightSolidSurfaceLikeTargetCount) >= 0
+        assert centerline.WatertightSolidPhysicalBodyReadinessStatus == "blocked"
+        assert "closed Subassembly shape/material contracts" in centerline.WatertightSolidPhysicalBodyReadinessReason
+        assert centerline.WatertightSolidDigitalTwinReadinessStatus == "blocked"
+        assert "digital_twin_readiness=blocked" in centerline.WatertightSolidDigitalTwinReadinessSummary
+        assert "overall=ready" in centerline.WatertightSolidDigitalTwinReadinessSummary
+        assert "physical_body=blocked" in centerline.WatertightSolidDigitalTwinReadinessSummary
+        assert "envelope:available=1" in list(centerline.WatertightSolidTargetClassCounts)
+        assert "physical_body_targets=" in centerline.WatertightSolidReadinessSummary
+        assert "physical_body_readiness=blocked" in centerline.WatertightSolidReadinessSummary
+        assert "surface_like_targets=" in centerline.WatertightSolidReadinessSummary
+        assert int(centerline.WatertightSolidStationSpanCount) >= 1
+        assert any(
+            str(row).startswith("solid-target:road-body-envelope|road_body_envelope|whole_corridor|")
+            for row in list(centerline.WatertightSolidTargetStationSpans)
+        )
+        assert "station_spans=" in centerline.WatertightSolidReadinessSummary
+        assert "region_refs=" in centerline.WatertightSolidReadinessSummary
+        assert "material_refs=" in centerline.WatertightSolidReadinessSummary
         assert int(centerline.PointCount) > 2
         rows = corridor_build_review_rows(doc)
         centerline_row = [row for row in rows if row["role"] == "centerline"][0]
-        assert centerline_row["status"] == "ready"
+        assert centerline_row["status"] == "warning"
         assert "source=centerline3d_source_geometry" in centerline_row["notes"]
+        assert "watertight solid readiness=ready" in centerline_row["notes"]
+        assert "digital_twin_readiness=blocked" in centerline_row["notes"]
+        assert "physical_body_targets=" in centerline_row["notes"]
+        assert "physical_body_readiness=blocked" in centerline_row["notes"]
+        assert "warning:physical-body watertight readiness=blocked" in centerline_row["notes"]
+        assert "station_spans=" in centerline_row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_surface_previews_disclose_consumed_result_contracts() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        preview_names = [
+            "V1CorridorDesignSurfacePreview",
+            "V1CorridorSubgradeSurfacePreview",
+            "V1CorridorDaylightSurfacePreview",
+        ]
+        for name in preview_names:
+            preview = doc.getObject(name)
+            assert preview is not None
+            assert preview.ConsumedAppliedSectionSetId == "sections:main"
+            assert int(preview.ConsumedSourceSectionCount) == 2
+            assert int(preview.ConsumedSupplementalSectionCount) == 0
+            assert int(preview.ConsumedTotalSectionCount) == 2
+            assert int(preview.SupplementalCompatibilityFallbackActive) == 0
+            assert "applied=sections:main" in preview.BuildCorridorConsumerSummary
+            assert preview.WatertightSolidReadinessStatus == "ready"
+            assert int(preview.WatertightSolidAvailableTargetCount) >= 1
+            assert "status=ready" in preview.WatertightSolidReadinessSummary
+            assert int(preview.WatertightSolidEnvelopeTargetCount) >= 1
+            assert "physical_body_targets=" in preview.WatertightSolidReadinessSummary
+            assert "physical_body_readiness=" in preview.WatertightSolidReadinessSummary
+            assert int(preview.WatertightSolidStationSpanCount) >= 1
+            assert "station_spans=" in preview.WatertightSolidReadinessSummary
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solid_readiness_reports_missing_prerequisites() -> None:
+    doc, project = _new_project_doc()
+    try:
+        obj = doc.addObject("App::FeaturePython", "WatertightMissingPrerequisitesProbe")
+
+        build_corridor_command._set_watertight_solid_readiness_properties(
+            obj,
+            document=doc,
+            applied_section_set=None,
+            corridor_model=None,
+        )
+
+        assert obj.WatertightSolidReadinessStatus == "blocked"
+        assert int(obj.WatertightSolidMissingPrerequisiteCount) >= 1
+        assert any("missing_applied_sections" in str(row) for row in list(obj.WatertightSolidMissingPrerequisiteRows))
+        assert any("missing_corridor_model" in str(row) for row in list(obj.WatertightSolidMissingPrerequisiteRows))
+        assert any(
+            str(row).startswith("solid-target:road-body-envelope|road_body_envelope|whole_corridor|")
+            for row in list(obj.WatertightSolidBlockedTargetRows)
+        )
+        assert "missing_prerequisites=" in obj.WatertightSolidReadinessSummary
+        assert "blocked_targets=" in obj.WatertightSolidReadinessSummary
+        assert obj.WatertightSolidDigitalTwinReadinessStatus == "blocked"
+        assert "overall=blocked" in obj.WatertightSolidDigitalTwinReadinessSummary
+        assert "physical_body=blocked" in obj.WatertightSolidDigitalTwinReadinessSummary
+        build_corridor_command._set_preview_property(obj, "SurfaceKind", "design_surface")
+        build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
+        build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
+        row = build_corridor_command._corridor_build_review_row(
+            "design",
+            "Design Surface",
+            "WatertightMissingPrerequisitesProbe",
+            obj,
+        )
+        assert row["status"] == "warning"
+        assert "watertight solid readiness=blocked" in row["notes"]
+        assert "missing_prerequisites=" in row["notes"]
+        assert "warning:watertight solid readiness=blocked" in row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_disclosure_requires_applied_sections_rebuild_for_potential_supplemental_rows() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = _sample_sections_with_centerline_curve()
+        obj = doc.addObject("App::FeaturePython", "CompatibilityFallbackProbe")
+
+        build_corridor_command._set_corridor_consumer_disclosure_properties(
+            obj,
+            document=doc,
+            applied_section_set=applied,
+            corridor_model=None,
+            centerline_source_mode="centerline3d_source_geometry",
+            centerline_result_id="centerline3d:test",
+            supplemental_sampling_max_spacing=5.0,
+            supplemental_sampling_tangent_delta_deg=1.0,
+            supplemental_sampling_chord_deviation=0.05,
+        )
+
+        assert int(obj.ConsumedSourceSectionCount) == 3
+        assert int(obj.ConsumedSupplementalSectionCount) == 0
+        assert int(obj.SupplementalCompatibilityFallbackActive) == 0
+        assert obj.SupplementalCompatibilityPolicy == "rebuild_applied_sections_required"
+        assert "no longer creates hidden supplemental frames" in obj.SupplementalCompatibilityReason
+        assert int(obj.PotentialSupplementalFrameCount) > 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_disclosure_reports_consumed_applied_section_result_roles() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id="sections:roles",
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            station_rows=[AppliedSectionStationRow("station:0", 0.0, "section:0")],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="proj-1",
+                    applied_section_id="section:0",
+                    corridor_id="corridor:main",
+                    alignment_id="alignment:main",
+                    station=0.0,
+                    region_id="region:ordinary",
+                    active_intersection_control_region_refs=["region:intersection-control"],
+                    frame=AppliedSectionFrame(station=0.0),
+                    subassembly_point_rows=[
+                        AppliedSectionSubassemblyPoint("lane:left:start", "lane:left", "fg_surface", 0.0, 0.0, 0.0),
+                        AppliedSectionSubassemblyPoint("lane:left:end", "lane:left", "fg_surface", 0.0, 3.5, -0.07),
+                    ],
+                    subassembly_link_rows=[
+                        AppliedSectionSubassemblyLink(
+                            "lane:left:fg",
+                            "lane:left",
+                            "lane:left:start",
+                            "lane:left:end",
+                            "lane_fg",
+                            surface_role="design_surface",
+                        )
+                    ],
+                    subassembly_shape_rows=[
+                        AppliedSectionSubassemblyShape(
+                            "lane:left:shape",
+                            "lane:left",
+                            point_refs=["lane:left:start", "lane:left:end", "lane:left:bottom"],
+                            shape_code="lane_body",
+                            solid_family="pavement_layer",
+                        )
+                    ],
+                )
+            ],
+        )
+        obj = doc.addObject("App::FeaturePython", "RoleCountProbe")
+
+        build_corridor_command._set_corridor_consumer_disclosure_properties(
+            obj,
+            document=doc,
+            applied_section_set=applied,
+            corridor_model=None,
+            centerline_source_mode="centerline3d_source_geometry",
+            centerline_result_id="centerline3d:test",
+        )
+
+        assert int(obj.ConsumedSubassemblyLinkCount) == 1
+        assert int(obj.ConsumedSubassemblyPointCount) == 2
+        assert int(obj.ConsumedSubassemblyShapeCount) == 1
+        assert list(obj.ConsumedSurfaceRoleCounts) == ["design_surface=1"]
+        assert list(obj.ConsumedPointRoleCounts) == ["fg_surface=2"]
+        assert list(obj.ConsumedShapeFamilyCounts) == ["pavement_layer=1"]
+        assert int(obj.ConsumedRegionCount) == 2
+        assert list(obj.ConsumedRegionRefs) == ["region:intersection-control", "region:ordinary"]
+        assert int(obj.ConsumedIntersectionControlRegionCount) == 1
+        assert list(obj.ConsumedIntersectionControlRegionRefs) == ["region:intersection-control"]
+        assert int(obj.ResultContractCompatibilityFallbackActive) == 0
+        assert "link rows are available" in obj.ResultContractCompatibilityReason
+        assert "links=1" in obj.BuildCorridorConsumerSummary
+        assert "surface_roles=design_surface:1" in obj.BuildCorridorConsumerSummary
+        assert "shapes=1" in obj.BuildCorridorConsumerSummary
+        assert "regions=2" in obj.BuildCorridorConsumerSummary
+        assert "intersection_control_regions=1" in obj.BuildCorridorConsumerSummary
+        assert "result_contract_fallback=0" in obj.BuildCorridorConsumerSummary
+
+        build_corridor_command._attach_corridor_surface_role_contract_review_properties(obj, "design")
+        assert obj.ResultContractExpectedSurfaceRoleStatus == "ready"
+        assert list(obj.ResultContractExpectedSurfaceRoles) == ["design_surface"]
+        assert list(obj.ResultContractMatchedSurfaceRoles) == ["design_surface=1"]
+
+        build_corridor_command._set_preview_property(obj, "SurfaceKind", "design_surface")
+        build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
+        build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
+        row = build_corridor_command._corridor_build_review_row(
+            "design",
+            "Design Surface",
+            "RoleCountProbe",
+            obj,
+        )
+        assert "region contract: regions=2" in row["notes"]
+        assert "refs=region:intersection-control,region:ordinary" in row["notes"]
+        assert "intersection_control_regions=1" in row["notes"]
+        assert "control_refs=region:intersection-control" in row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_review_warns_when_expected_surface_role_is_missing() -> None:
+    doc, project = _new_project_doc()
+    try:
+        obj = doc.addObject("App::FeaturePython", "MissingSurfaceRoleProbe")
+        build_corridor_command._set_preview_string_list_property(obj, "ConsumedSurfaceRoleCounts", ["drainage_surface=1"])
+        build_corridor_command._attach_corridor_surface_role_contract_review_properties(obj, "design")
+        build_corridor_command._set_preview_property(obj, "SurfaceKind", "design_surface")
+        build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
+        build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
+
+        assert obj.ResultContractExpectedSurfaceRoleStatus == "missing"
+        assert list(obj.ResultContractExpectedSurfaceRoles) == ["design_surface"]
+        assert list(obj.ResultContractMatchedSurfaceRoles) == []
+        row = build_corridor_command._corridor_build_review_row(
+            "design",
+            "Design Surface",
+            "MissingSurfaceRoleProbe",
+            obj,
+        )
+        assert row["status"] == "warning"
+        assert "surface role contract=missing" in row["notes"]
+        assert "consumed=drainage_surface=1" in row["notes"]
+        assert "warning:expected surface role missing=design_surface" in row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_review_warns_when_consumed_result_contract_links_are_missing() -> None:
+    doc, project = _new_project_doc()
+    try:
+        obj = doc.addObject("App::FeaturePython", "MissingResultContractProbe")
+        build_corridor_command._set_corridor_consumer_disclosure_properties(
+            obj,
+            document=doc,
+            applied_section_set=_sample_sections(),
+            corridor_model=None,
+            centerline_source_mode="centerline3d_source_geometry",
+            centerline_result_id="centerline3d:test",
+        )
+        build_corridor_command._set_preview_property(obj, "SurfaceKind", "design_surface")
+        build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
+        build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
+
+        assert int(obj.ResultContractCompatibilityFallbackActive) == 1
+        assert "legacy width/point result fields" in obj.ResultContractCompatibilityReason
+        row = build_corridor_command._corridor_build_review_row(
+            "design",
+            "Design Surface",
+            "MissingResultContractProbe",
+            obj,
+        )
+        assert row["status"] == "warning"
+        assert "warning:result contract fallback active" in row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_command_does_not_reverse_read_preview_shapes_as_source() -> None:
+    source = Path(build_corridor_command.__file__).read_text(encoding="utf-8")
+
+    forbidden_getattr_patterns = [
+        'getattr(obj, "Shape",',
+        "getattr(obj, 'Shape',",
+        'getattr(preview_obj, "Shape",',
+        "getattr(preview_obj, 'Shape',",
+    ]
+    for pattern in forbidden_getattr_patterns:
+        assert pattern not in source
+
+    for line in source.splitlines():
+        text = line.strip()
+        if ".Shape" not in text:
+            continue
+        if ".ShapeColor" in text:
+            continue
+        if ".Shape =" in text:
+            continue
+        if "part_module.Shape()" in text:
+            continue
+        assert False, text
+
+
+def test_corridor_build_review_warns_when_centerline_consumer_uses_fallback() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        centerline = doc.getObject("V1CorridorCenterline3DPreview")
+        assert centerline is not None
+        build_corridor_command._set_preview_property(centerline, "ConsumedCenterlineSourceMode", "centerline3d_result_fallback")
+        build_corridor_command._set_preview_integer_property(centerline, "CenterlineConsumerFallbackActive", 1)
+
+        rows = corridor_build_review_rows(doc)
+        centerline_row = next(row for row in rows if row["role"] == "centerline")
+
+        assert centerline_row["status"] == "warning"
+        assert "warning:centerline source fallback=centerline3d_result_fallback" in str(centerline_row["notes"])
+        assert "expected=centerline3d_source_geometry" in str(centerline_row["notes"])
     finally:
         App.closeDocument(doc.Name)
 

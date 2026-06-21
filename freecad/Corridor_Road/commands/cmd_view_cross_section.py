@@ -37,7 +37,7 @@ def run_cross_section_review_command(
         return "v1"
     except Exception as exc:
         app_module.Console.PrintWarning(
-            "CorridorRoad v1 cross-section viewer unavailable, "
+            "ParametricRoad v1 cross-section viewer unavailable, "
             f"falling back to the existing v0 viewer: {exc}\n"
         )
         open_existing_v0_viewer()

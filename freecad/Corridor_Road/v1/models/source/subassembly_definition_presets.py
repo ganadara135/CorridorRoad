@@ -16,7 +16,7 @@ from .subassembly_definition_model import (
 SUBASSEMBLY_DEFINITION_PRESETS = {
     "Starter Road Primitives": {
         "library_id": "subassembly-library:starter-road-primitives",
-        "note": "Reusable lane, shoulder, side-slope, ditch, curb, and gutter definitions for starter road assemblies.",
+        "note": "Reusable lane, shoulder, sidewalk, side-slope, ditch, curb, and gutter definitions for starter road assemblies.",
         "definitions": [
             {
                 "definition_id": "subassembly-definition:lane-basic",
@@ -90,7 +90,7 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                     ("slope_face", "hinge", "daylight", "slope_face_surface", "slope_face", "slope_face_area"),
                 ],
                 "targets": [
-                    ("target:terrain-daylight", "terrain_daylight", False, "fixed_width"),
+                    ("target:terrain-daylight", "terrain_daylight", False, "terrain"),
                 ],
             },
             {
@@ -111,10 +111,10 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                     ("bench_slope", "Preview bench slope", -0.02, "m/m", False),
                     ("post_slope_width", "Preview post-bench width", 4.5, "m", False),
                     ("post_slope", "Preview post-bench slope", -0.50, "m/m", False),
-                    ("repeat_first_bench_to_daylight", "Repeat first bench to daylight", "false", "", False),
-                    ("daylight_mode", "Daylight mode", "fixed_width", "", False),
-                    ("daylight_search_step", "Daylight search step", 1.0, "m", False),
-                    ("daylight_max_width", "Daylight max width", 24.0, "m", False),
+                    ("repeat_first_bench_to_daylight", "Repeat first bench to daylight", "true", "", False),
+                    ("daylight_mode", "Daylight mode", "terrain", "", False),
+                    ("daylight_search_step", "Daylight search step", 0.5, "m", False),
+                    ("daylight_max_width", "Daylight max width", 160.0, "m", False),
                     ("daylight_max_width_delta", "Daylight max width delta", 0.25, "m", False),
                     ("daylight_max_triangles", "Daylight max triangles", 128, "", False),
                 ],
@@ -144,7 +144,7 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                     ("bench_to_daylight", "bench_end", "daylight", "slope_face_surface", "slope_face", "slope_face_area"),
                 ],
                 "targets": [
-                    ("target:terrain-daylight", "terrain_daylight", False, "fixed_width"),
+                    ("target:terrain-daylight", "terrain_daylight", False, "terrain"),
                 ],
                 "note": "Designer-owned side-slope bench preset. Compact bench_rows is the durable source; preview helper parameters keep the current Live Preview editable until typed bench-row evaluation is added.",
             },
@@ -232,6 +232,32 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                 ],
                 "shapes": [
                     ("shape:curb", ("toe", "face_top", "back_top", "back_bottom", "toe_bottom"), "curb", "curb_body"),
+                ],
+            },
+            {
+                "definition_id": "subassembly-definition:sidewalk-basic",
+                "name": "Basic Sidewalk",
+                "kind": "sidewalk",
+                "category": "pedestrian",
+                "side_behavior": "both",
+                "parameters": [
+                    ("width", "Width", 1.8, "m", True),
+                    ("slope", "Crossfall", -1.5, "%", True),
+                    ("thickness", "Concrete thickness", 0.12, "m", False),
+                    ("material", "Material", "concrete", "", False),
+                ],
+                "points": [
+                    ("inner", "0", "0", "SW_IN", "sidewalk_inner", True),
+                    ("outer", "width", "width*slope/100", "SW_OUT", "sidewalk_outer", True),
+                    ("subgrade_inner", "0", "-thickness", "SUBGRADE", "subgrade", False),
+                    ("subgrade_outer", "width", "width*slope/100-thickness", "SUBGRADE", "subgrade", False),
+                ],
+                "links": [
+                    ("walk", "inner", "outer", "design", "sidewalk_fg", "sidewalk_width"),
+                    ("subgrade", "subgrade_inner", "subgrade_outer", "subgrade_surface", "sidewalk_subgrade", "subgrade_width"),
+                ],
+                "shapes": [
+                    ("shape:sidewalk", ("inner", "outer", "subgrade_outer", "subgrade_inner"), "sidewalk", "sidewalk_body"),
                 ],
             },
         ],

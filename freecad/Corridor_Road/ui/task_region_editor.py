@@ -931,7 +931,7 @@ class RegionEditorTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Manage Region Plan")
+        w.setWindowTitle("ParametricRoad - Manage Region Plan")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

@@ -1,2 +1,2 @@
-"""CorridorRoad v1 package."""
+"""ParametricRoad v1 package."""
 

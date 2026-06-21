@@ -876,9 +876,14 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
         self.drawing_payload = drawing_payload
         self._view_bounds = None
         self._last_auto_bounds = None
+        self._pan_last_pos = None
         self.setMinimumHeight(520)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.setMouseTracking(True)
+        try:
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        except Exception:
+            pass
 
     def paintEvent(self, event):  # noqa: N802 - Qt override name
         del event
@@ -953,9 +958,61 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             pass
         self.update()
 
+    def mousePressEvent(self, event):  # noqa: N802 - Qt override name
+        try:
+            if event.button() == QtCore.Qt.LeftButton:
+                drawable_rows = self._drawable_rows()
+                if drawable_rows:
+                    point = self._event_position(event)
+                    if self._plot_rect().contains(point.toPoint() if hasattr(point, "toPoint") else point):
+                        self._pan_last_pos = point
+                        self._view_bounds = self._view_bounds or self._current_view_bounds(drawable_rows)
+                        self.setCursor(QtCore.Qt.ClosedHandCursor)
+                        event.accept()
+                        return
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):  # noqa: N802 - Qt override name
+        try:
+            if self._pan_last_pos is not None and event.buttons() & QtCore.Qt.LeftButton:
+                point = self._event_position(event)
+                dx = float(point.x()) - float(self._pan_last_pos.x())
+                dy = float(point.y()) - float(self._pan_last_pos.y())
+                self._pan_last_pos = point
+                self._view_bounds = self._pan_bounds(
+                    self._view_bounds or self._current_view_bounds(self._drawable_rows()),
+                    self._plot_rect(),
+                    dx,
+                    dy,
+                )
+                event.accept()
+                self.update()
+                return
+        except Exception:
+            pass
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt override name
+        try:
+            if event.button() == QtCore.Qt.LeftButton:
+                self._pan_last_pos = None
+                self.setCursor(QtCore.Qt.OpenHandCursor)
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
+
     def mouseDoubleClickEvent(self, event):  # noqa: N802 - Qt override name
         del event
         self._view_bounds = None
+        self._pan_last_pos = None
+        try:
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        except Exception:
+            pass
         self.update()
 
     def _plot_rect(self):
@@ -1018,6 +1075,22 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             next_x_min + next_width,
             next_y_min,
             next_y_min + next_height,
+        )
+
+    @staticmethod
+    def _pan_bounds(bounds, plot, dx: float, dy: float) -> tuple[float, float, float, float]:
+        x_min, x_max, y_min, y_max = [float(value) for value in bounds]
+        width = max(1.0e-9, x_max - x_min)
+        height = max(1.0e-9, y_max - y_min)
+        plot_width = max(1.0, float(plot.width()))
+        plot_height = max(1.0, float(plot.height()))
+        shift_x = -float(dx) / plot_width * width
+        shift_y = float(dy) / plot_height * height
+        return (
+            x_min + shift_x,
+            x_max + shift_x,
+            y_min + shift_y,
+            y_max + shift_y,
         )
 
     def _drawable_rows(self) -> list[dict[str, object]]:
@@ -1419,7 +1492,7 @@ class CrossSectionViewerTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Cross Section Viewer")
+        widget.setWindowTitle("ParametricRoad v1 - Cross Section Viewer")
 
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)

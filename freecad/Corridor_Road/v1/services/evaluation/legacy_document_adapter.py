@@ -1,4 +1,4 @@
-"""Legacy FreeCAD document adapter for CorridorRoad v1 previews."""
+"""Legacy FreeCAD document adapter for ParametricRoad v1 previews."""
 
 from __future__ import annotations
 
@@ -876,7 +876,7 @@ class LegacyDocumentAdapter:
             value = getattr(document, attr, "")
             if isinstance(value, str) and value:
                 return value
-        return "CorridorRoad v1 Preview"
+        return "ParametricRoad v1 Preview"
 
     def _section_interval(self, section_set) -> float:
         """Resolve a reasonable station interval from one legacy SectionSet."""

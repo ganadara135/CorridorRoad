@@ -95,7 +95,7 @@ class Centerline3DTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - 3D Centerline Display")
+        w.setWindowTitle("ParametricRoad - 3D Centerline Display")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

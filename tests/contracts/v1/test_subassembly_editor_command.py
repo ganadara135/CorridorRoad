@@ -7,6 +7,7 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     V1AssemblySubassemblyEditorTaskPanel,
     _detail_parameter_rows,
     _merge_detail_parameters,
+    _physical_body_contract_summary,
     _subassembly_preview_text,
     _validate_subassembly_model,
     apply_v1_assembly_subassembly_model,
@@ -71,6 +72,20 @@ def test_subassembly_presets_offer_ditch_and_benched_slope_parameters() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_urban_subassembly_preset_includes_sidewalk_definition_refs() -> None:
+    doc, project = _new_project_doc()
+    try:
+        urban = assembly_subassembly_preset_model_from_document("Urban Curb & Gutter", doc, project=project)
+        sidewalks = [row for row in urban.template_rows[0].subassembly_rows if row.kind == "sidewalk"]
+
+        assert [row.subassembly_id for row in sidewalks] == ["sidewalk:left", "sidewalk:right"]
+        assert {row.side for row in sidewalks} == {"left", "right"}
+        assert {row.width for row in sidewalks} == {1.8}
+        assert {row.definition_ref for row in sidewalks} == {"subassembly-definition:sidewalk-basic"}
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_subassembly_validation_reports_bench_warnings() -> None:
     model = AssemblySubassemblyModel(
         schema_version=1,
@@ -104,6 +119,40 @@ def test_subassembly_validation_reports_bench_warnings() -> None:
         "WARNING: side_slope subassembly side-slope-left repeats bench rows to daylight without daylight mode and max width."
         in messages
     )
+
+
+def test_subassembly_validation_reports_implicit_ditch_shape_warning() -> None:
+    model = AssemblySubassemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:ditch-validation",
+        template_rows=[
+            SubassemblySectionTemplate(
+                template_id="template:ditch-validation",
+                template_kind="roadway",
+                subassembly_rows=[
+                    TemplateSubassembly(
+                        "ditch-right",
+                        "ditch",
+                        side="right",
+                        width=1.2,
+                        parameters={
+                            "top_width": 1.2,
+                            "bottom_width": 0.4,
+                            "depth": 0.3,
+                        },
+                    )
+                ],
+            )
+        ],
+    )
+
+    messages = _validate_subassembly_model(model)
+
+    assert (
+        "WARNING: ditch subassembly ditch-right has top_width/bottom_width/depth but no explicit shape; "
+        "shape=trapezoid will be inferred for compatibility."
+    ) in messages
 
 
 def test_subassembly_object_roundtrips_source_rows() -> None:
@@ -162,6 +211,38 @@ def test_subassembly_preview_text_uses_subassembly_ownership() -> None:
     assert "surface_role=drainage_surface" in text
     assert "shape=trapezoid" in text
     assert "material=concrete" in text
+
+
+def test_subassembly_physical_body_contract_summary_reports_ready_and_missing_contracts() -> None:
+    ready = _physical_body_contract_summary(
+        subassembly_id="pavement_layer:main",
+        kind="pavement_layer",
+        thickness=0.25,
+        material="asphalt_surface",
+        parameters={"shape_code": "pavement_body", "solid_family": "pavement_layer"},
+    )
+    missing = _physical_body_contract_summary(
+        subassembly_id="lane:left",
+        kind="lane",
+        thickness=0.0,
+        material="",
+        parameters={},
+    )
+    skipped = _physical_body_contract_summary(
+        subassembly_id="ditch:left",
+        kind="ditch",
+        thickness=0.0,
+        material="",
+        parameters={},
+    )
+
+    assert "Physical-body contract: ready" in ready
+    assert "shape_code=pavement_body" in ready
+    assert "solid_family=pavement_layer" in ready
+    assert "material=asphalt_surface" in ready
+    assert "Physical-body contract: incomplete" in missing
+    assert "missing=thickness,material" in missing
+    assert "Physical-body contract: n/a" in skipped
 
 
 def test_subassembly_detail_changes_only_on_table_row_click() -> None:

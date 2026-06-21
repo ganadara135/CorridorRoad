@@ -41,7 +41,7 @@ def format_tin_review_summary(preview: dict[str, object]) -> str:
     found_text = "hit" if bool(getattr(result, "found", False)) else "no_hit"
 
     lines = [
-        "CorridorRoad v1 TIN Review",
+        "ParametricRoad v1 TIN Review",
         f"Surface: {getattr(surface, 'label', '') or getattr(surface, 'surface_id', '') or '(missing)'}",
         f"Surface ID: {getattr(surface, 'surface_id', '') or '(missing)'}",
         f"Surface kind: {getattr(surface, 'surface_kind', '') or '(missing)'}",

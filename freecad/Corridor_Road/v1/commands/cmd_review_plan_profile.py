@@ -784,7 +784,7 @@ def build_demo_plan_profile_preview(
         schema_version=1,
         project_id="corridorroad-v1-demo",
         alignment_id="alignment:v1-demo",
-        label=document_label or "CorridorRoad v1 Demo Alignment",
+        label=document_label or "ParametricRoad v1 Demo Alignment",
         geometry_sequence=[
             AlignmentElement(
                 element_id="alignment:v1-demo:1",
@@ -815,7 +815,7 @@ def build_demo_plan_profile_preview(
         project_id="corridorroad-v1-demo",
         profile_id="profile:v1-demo",
         alignment_id=alignment_model.alignment_id,
-        label=document_label or "CorridorRoad v1 Demo Profile",
+        label=document_label or "ParametricRoad v1 Demo Profile",
         control_rows=[
             ProfileControlPoint(
                 control_point_id="profile:v1-demo:pvi:1",
@@ -880,7 +880,7 @@ def format_plan_profile_preview(preview: dict[str, object]) -> str:
     viewer_context = dict(preview.get("viewer_context", {}) or {})
 
     lines = [
-        "CorridorRoad v1 Plan/Profile Connection Review",
+        "ParametricRoad v1 Plan/Profile Connection Review",
         f"Preview source: {str(preview.get('preview_source_kind', '') or 'unknown')}",
         f"Alignment: {getattr(alignment_model, 'label', '') or '(missing)'}",
         f"Alignment elements: {len(list(getattr(plan_output, 'geometry_rows', []) or []))}",
@@ -1014,7 +1014,7 @@ def show_v1_plan_profile_preview(
 
                 QtGui.QMessageBox.information(
                     None,
-                    "CorridorRoad v1 Plan/Profile Connection Review",
+                    "ParametricRoad v1 Plan/Profile Connection Review",
                     summary_text,
                 )
             except Exception:

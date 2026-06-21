@@ -1909,6 +1909,46 @@ class V1SubAssemblyDesignerTaskPanel:
             pass
         self.preview_status.setText(str(message or ""))
 
+    def _add_preview_label(self, scene, text: str, anchor_x: float, anchor_y: float, used_rects, color) -> None:
+        label = scene.addText(str(text or ""))
+        label_color = color if isinstance(color, QtGui.QColor) else QtGui.QColor(str(color or "#f8fafc"))
+        label.setDefaultTextColor(label_color)
+        font = label.font()
+        font.setPointSize(8)
+        label.setFont(font)
+        label.setZValue(30.0)
+
+        offsets = (
+            (6.0, -18.0),
+            (8.0, 6.0),
+            (-34.0, -18.0),
+            (-34.0, 6.0),
+            (14.0, -34.0),
+            (14.0, 22.0),
+            (-58.0, -34.0),
+            (-58.0, 22.0),
+        )
+        final_rect = None
+        for index, (dx, dy) in enumerate(offsets):
+            if index >= len(offsets) - 1:
+                dy += 14.0 * max(0, len(used_rects) - len(offsets) + 1)
+            label.setPos(float(anchor_x) + dx, float(anchor_y) + dy)
+            rect = label.mapRectToScene(label.boundingRect()).adjusted(-4.0, -2.0, 4.0, 2.0)
+            if not any(rect.intersects(existing) for existing in used_rects):
+                final_rect = rect
+                break
+            final_rect = rect
+
+        if final_rect is None:
+            final_rect = label.mapRectToScene(label.boundingRect()).adjusted(-4.0, -2.0, 4.0, 2.0)
+        used_rects.append(final_rect)
+        background = scene.addRect(
+            final_rect,
+            QtGui.QPen(QtGui.QColor(74, 91, 116, 180)),
+            QtGui.QBrush(QtGui.QColor(15, 23, 42, 220)),
+        )
+        background.setZValue(29.0)
+
     def _draw_preview(self, definition: SubassemblyDefinition, point_rows, diagnostic_rows) -> None:
         scene = self.preview_scene
         scene.clear()
@@ -1941,6 +1981,7 @@ class V1SubAssemblyDesignerTaskPanel:
         scene.addLine(0, -120, 0, 80, pen_axis)
         side_behavior = str(getattr(definition, "side_behavior", "") or "").strip().lower().replace("-", "_")
         preview_sides = (("left", 1.0), ("right", -1.0)) if side_behavior == "both" else (("", 1.0),)
+        used_label_rects = []
 
         for side_label, x_sign in preview_sides:
             side_suffix = f"{side_label}:" if side_label else ""
@@ -1967,17 +2008,27 @@ class V1SubAssemblyDesignerTaskPanel:
                 mid_y = -((p1.z + p2.z) * 0.5) * scale
                 code = str(getattr(link, "code", "") or getattr(link, "link_id", "") or "")
                 if code:
-                    link_label = scene.addText(f"{side_suffix}{code}" if side_suffix else code)
-                    link_label.setDefaultTextColor(link_pen.color())
-                    link_label.setPos(mid_x + 4, mid_y + 4)
+                    self._add_preview_label(
+                        scene,
+                        f"{side_suffix}{code}" if side_suffix else code,
+                        mid_x,
+                        mid_y,
+                        used_label_rects,
+                        link_pen.color(),
+                    )
 
             for point in points.values():
                 x = float(x_sign) * point.x * scale
                 y = -point.z * scale
                 scene.addEllipse(x - 3.5, y - 3.5, 7.0, 7.0, pen_point, brush_point)
-                label = scene.addText(f"{side_suffix}{point.point_id}" if side_suffix else str(point.point_id))
-                label.setDefaultTextColor(QtGui.QColor("#222222"))
-                label.setPos(x + 6, y - 18)
+                self._add_preview_label(
+                    scene,
+                    f"{side_suffix}{point.point_id}" if side_suffix else str(point.point_id),
+                    x,
+                    y,
+                    used_label_rects,
+                    "#f8fafc",
+                )
 
         bounds = scene.itemsBoundingRect().adjusted(-30, -30, 30, 30)
         scene.setSceneRect(bounds)

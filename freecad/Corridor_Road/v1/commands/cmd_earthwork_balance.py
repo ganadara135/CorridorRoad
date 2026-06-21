@@ -381,7 +381,7 @@ def build_demo_earthwork_report(
         corridor_id="corridor:v1-demo",
         alignment_id="alignment:v1-demo",
         profile_id="profile:v1-demo",
-        label=document_label or "CorridorRoad v1 Demo Corridor",
+        label=document_label or "ParametricRoad v1 Demo Corridor",
         sampling_policy=CorridorSamplingPolicy(
             sampling_policy_id="sampling:v1-demo",
             station_interval=20.0,
@@ -606,7 +606,7 @@ def format_earthwork_report(report: dict[str, object]) -> str:
 
     return "\n".join(
         [
-            "CorridorRoad v1 Earthwork Balance Viewer",
+            "ParametricRoad v1 Earthwork Balance Viewer",
             f"Quantity fragments: {len(quantity_output.fragment_rows)}",
             f"Earthwork windows: {len(earthwork_output.balance_rows)}",
             f"Total cut: {total_cut} m3",
@@ -671,7 +671,7 @@ def run_v1_earthwork_balance_command() -> dict[str, object]:
 
                 QtGui.QMessageBox.information(
                     None,
-                    "CorridorRoad v1 Earthwork Balance Viewer",
+                    "ParametricRoad v1 Earthwork Balance Viewer",
                     summary_text,
                 )
             except Exception:

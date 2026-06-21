@@ -337,7 +337,7 @@ class V1WatertightSolidsTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Watertight Solids")
+        widget.setWindowTitle("ParametricRoad v1 - Watertight Solids")
         layout = QtWidgets.QVBoxLayout(widget)
 
         title = QtWidgets.QLabel("Watertight Solids")
@@ -4030,6 +4030,17 @@ def _drainage_network_fuse_status(document, network_targets: list[object]) -> st
 def _simulation_ready_qa_lines(document) -> list[str]:
     qa = _build_simulation_qa_output(document)
     families = [str(getattr(row, "family", "") or "") for row in list(getattr(qa, "family_rows", []) or []) if str(getattr(row, "family", "") or "")]
+    diagnostics = list(getattr(qa, "diagnostic_rows", []) or [])
+    error_count = sum(1 for row in diagnostics if str(getattr(row, "severity", "") or "").lower() == "error")
+    warning_count = sum(1 for row in diagnostics if str(getattr(row, "severity", "") or "").lower() == "warning")
+    diagnostic_ids = [
+        str(getattr(row, "diagnostic_id", "") or "")
+        for row in diagnostics
+        if str(getattr(row, "diagnostic_id", "") or "")
+    ]
+    diagnostic_text = ",".join(diagnostic_ids[:5]) or "-"
+    if len(diagnostic_ids) > 5:
+        diagnostic_text = f"{diagnostic_text},+{len(diagnostic_ids) - 5}"
     return [
         "Simulation QA:",
         (
@@ -4052,6 +4063,10 @@ def _simulation_ready_qa_lines(document) -> list[str]:
             f"total_volume={_volume_text(float(getattr(qa, 'total_volume', 0.0) or 0.0))}; "
             f"simulation_ready={'yes' if bool(getattr(qa, 'simulation_ready', False)) else 'no'}; "
             f"missing={','.join(list(getattr(qa, 'missing_contexts', []) or [])) or '-'}"
+        ),
+        (
+            f"diagnostics={len(diagnostics)}; errors={error_count}; warnings={warning_count}; "
+            f"ids={diagnostic_text}"
         ),
     ]
 

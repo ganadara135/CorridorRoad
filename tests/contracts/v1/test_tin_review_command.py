@@ -85,7 +85,7 @@ def test_build_demo_tin_review_returns_surface_and_probe_result() -> None:
 def test_format_tin_review_includes_core_summary() -> None:
     text = format_tin_review(build_demo_tin_review())
 
-    assert "CorridorRoad v1 TIN Review" in text
+    assert "ParametricRoad v1 TIN Review" in text
     assert "Vertices: 4" in text
     assert "Triangles: 2" in text
     assert "Extents X: 0.000 -> 10.000" in text

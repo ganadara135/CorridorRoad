@@ -759,15 +759,8 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
     )
 
     assert result.daylight_right_width == 8.0
-    assert [row.kind for row in result.subassembly_rows] == [
-        "lane",
-        "side_slope",
-        "side_slope",
-        "bench",
-        "side_slope",
-        "daylight",
-    ]
-    assert [round(row.width, 2) for row in result.subassembly_rows if row.subassembly_id.startswith("side-slope-right:")] == [4.0, 1.0, 3.0, 0.0]
+    assert [row.kind for row in result.subassembly_rows] == ["lane", "side_slope"]
+    assert [round(row.width, 2) for row in result.subassembly_rows if row.subassembly_id == "side-slope-right"] == [8.0]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
     assert [point.point_role for point in bench_points] == [
         "side_slope_surface",
@@ -778,6 +771,11 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
     assert [round(point.lateral_offset, 2) for point in bench_points] == [-7.5, -8.5, -11.5, -11.5]
     assert round(bench_points[1].z, 2) == 7.98
     assert any(row.kind == "bench_daylight_fallback" for row in result.diagnostic_rows)
+    fallback = next(row for row in result.diagnostic_rows if row.kind == "bench_daylight_fallback")
+    assert "daylight_mode=terrain" in fallback.notes
+    assert "daylight_status=fallback" in fallback.notes
+    assert "terrain_hit=false" in fallback.notes
+    assert "fallback_reason=no_existing_ground_tin" in fallback.notes
 
 
 def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> None:
@@ -879,15 +877,20 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
         )
     )
 
-    derived_rows = [row for row in result.subassembly_rows if row.subassembly_id.startswith("side-slope-right:")]
-    assert [row.kind for row in derived_rows] == ["side_slope", "bench", "daylight"]
-    assert [round(row.width, 2) for row in derived_rows] == [4.0, 0.5, 0.0]
+    derived_rows = [row for row in result.subassembly_rows if row.subassembly_id == "side-slope-right"]
+    assert [row.kind for row in derived_rows] == ["side_slope"]
+    assert [round(row.width, 2) for row in derived_rows] == [8.0]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
     assert [round(point.lateral_offset, 2) for point in bench_points] == [-7.5, -8.0, -8.0]
     assert [round(point.z, 2) for point in bench_points] == [8.0, 7.99, 7.99]
     assert any(row.kind == "bench_daylight_shortened" for row in result.diagnostic_rows)
     assert any(row.kind == "bench_daylight_skipped" for row in result.diagnostic_rows)
     assert not any(row.kind == "bench_daylight_fallback" for row in result.diagnostic_rows)
+    shortened = next(row for row in result.diagnostic_rows if row.kind == "bench_daylight_shortened")
+    assert "daylight_mode=terrain" in shortened.notes
+    assert "daylight_status=terrain_intersection" in shortened.notes
+    assert "terrain_hit=true" in shortened.notes
+    assert "clip_distance=" in shortened.notes
 
 
 def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -> None:

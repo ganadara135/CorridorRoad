@@ -177,7 +177,7 @@ class V1TINEditorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - TIN")
+        widget.setWindowTitle("ParametricRoad v1 - TIN")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)

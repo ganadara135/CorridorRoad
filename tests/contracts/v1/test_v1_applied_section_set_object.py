@@ -7,6 +7,7 @@ from freecad.Corridor_Road.objects.obj_project import (
 )
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint, AppliedSectionSubassemblyRow
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
+from freecad.Corridor_Road.v1.common.diagnostics import DiagnosticMessage
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     build_v1_applied_section_set_review_shape,
     create_or_update_v1_applied_section_set_object,
@@ -153,6 +154,15 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.ActiveStructureInfluenceZoneRows) == ["section:1|zone:bridge-01"]
         assert list(obj.StructureDiagnosticRows) == ["section:1|info\\pstructure\\psection:1\\pStructure context active."]
         assert obj.ReviewShapeStatus == "not_built"
+        assert obj.SourceSectionCount == 2
+        assert obj.SupplementalSectionCount == 0
+        assert obj.TotalSectionCount == 2
+        assert list(obj.SectionKindCounts) == ["regular_sample=2"]
+        assert list(obj.CenterlineSourceModeCounts) == ["unknown=2"]
+        assert obj.AppliedSectionDiagnosticSummary == (
+            "sections=2;source=2;supplemental=0;centerline_fallback=2;"
+            "overlap_clip=0;ditch_shape=0;daylight_fallback=0;diagnostics=0"
+        )
         assert int(obj.ReviewShapeStationCount) == 0
         assert obj.Shape.isNull()
         build_v1_applied_section_set_review_shape(obj)
@@ -160,6 +170,74 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert int(obj.ReviewShapeStationCount) == 2
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_applied_section_set_summarizes_result_diagnostics() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        section_set = _sample_set()
+        section_set.station_rows[1] = AppliedSectionStationRow("station:2", 20.0, "section:2", kind="supplemental_curve")
+        section_set.sections[0].frame = AppliedSectionFrame(
+            station=0.0,
+            x=100.0,
+            y=200.0,
+            z=10.0,
+            tangent_direction_deg=0.0,
+            notes="source=centerline3d_source_geometry",
+        )
+        section_set.sections[0].diagnostic_rows = [
+            DiagnosticMessage("info", "applied_section_overlap_clip", "left side clipped"),
+            DiagnosticMessage("warning", "ditch_shape_parameter", "ditch shape inferred from parameters"),
+        ]
+        section_set.sections[1].frame = AppliedSectionFrame(
+            station=20.0,
+            x=120.0,
+            y=200.0,
+            z=11.0,
+            tangent_direction_deg=0.0,
+            notes="source=alignment_profile_fallback",
+        )
+        section_set.sections[1].diagnostic_rows = [
+            DiagnosticMessage("warning", "bench_daylight_fallback", "fixed-width daylight fallback"),
+        ]
+
+        obj = create_or_update_v1_applied_section_set_object(
+            document=doc,
+            project=project,
+            applied_section_set=section_set,
+        )
+
+        assert obj.SourceSectionCount == 1
+        assert obj.SupplementalSectionCount == 1
+        assert obj.TotalSectionCount == 2
+        assert list(obj.SectionKindCounts) == ["regular_sample=1", "supplemental_curve=1"]
+        assert list(obj.CenterlineSourceModeCounts) == [
+            "alignment_profile_fallback=1",
+            "centerline3d_source_geometry=1",
+        ]
+        assert obj.CenterlineFallbackCount == 1
+        assert obj.OverlapClipDiagnosticCount == 1
+        assert obj.DitchShapeInferenceDiagnosticCount == 1
+        assert obj.DaylightFallbackDiagnosticCount == 1
+        assert obj.AppliedSectionDiagnosticCount == 3
+        assert list(obj.AppliedSectionDiagnosticKinds) == [
+            "applied_section_overlap_clip=1",
+            "bench_daylight_fallback=1",
+            "ditch_shape_parameter=1",
+        ]
+        assert obj.AppliedSectionDiagnosticSummary == (
+            "sections=2;source=1;supplemental=1;centerline_fallback=1;"
+            "overlap_clip=1;ditch_shape=1;daylight_fallback=1;diagnostics=3"
+        )
+        model = to_applied_section_set(obj)
+        assert model is not None
+        assert [row.kind for row in model.sections[0].diagnostic_rows] == [
+            "applied_section_overlap_clip",
+            "ditch_shape_parameter",
+        ]
+        assert [row.kind for row in model.sections[1].diagnostic_rows] == ["bench_daylight_fallback"]
     finally:
         App.closeDocument(doc.Name)
 

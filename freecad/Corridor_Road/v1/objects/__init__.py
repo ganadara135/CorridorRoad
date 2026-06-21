@@ -1,4 +1,4 @@
-"""FreeCAD document objects for CorridorRoad v1 source models."""
+"""FreeCAD document objects for ParametricRoad v1 source models."""
 
 from .obj_alignment import (
     V1AlignmentObject,

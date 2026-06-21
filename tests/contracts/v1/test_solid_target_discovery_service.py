@@ -420,6 +420,144 @@ def test_solid_target_discovery_creates_designer_shape_solid_candidates() -> Non
     assert "shape_refs=section:0:shape:lane, section:100:shape:lane" in target.notes
 
 
+def test_solid_target_discovery_blocks_closed_shape_without_material_contract() -> None:
+    def _section(section_id: str, station: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            station=station,
+            frame=AppliedSectionFrame(station, station, 0.0, 10.0),
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint(f"{section_id}:p0", "lane:right", "top", station, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p1", "lane:right", "top", station, -2.0, 10.0, lateral_offset=-2.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p2", "lane:right", "bottom", station, -2.0, 9.8, lateral_offset=-2.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p3", "lane:right", "bottom", station, 0.0, 9.8, lateral_offset=0.0),
+            ],
+            subassembly_shape_rows=[
+                AppliedSectionSubassemblyShape(
+                    f"{section_id}:shape:lane",
+                    "lane:right",
+                    point_refs=[
+                        f"{section_id}:p0",
+                        f"{section_id}:p1",
+                        f"{section_id}:p2",
+                        f"{section_id}:p3",
+                    ],
+                    shape_code="pavement",
+                    material="",
+                    solid_family="pavement_layer",
+                )
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="applied:designer-shapes-missing-material",
+        corridor_id="corridor:main",
+        station_rows=[
+            AppliedSectionStationRow("station:0", 0.0, "section:0"),
+            AppliedSectionStationRow("station:100", 100.0, "section:100"),
+        ],
+        sections=[
+            _section("section:0", 0.0),
+            _section("section:100", 100.0),
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=applied,
+            corridor_model=_corridor_model(),
+        )
+    )
+
+    targets = {row.target_id: row for row in model.target_rows}
+    target = targets["solid-target:pavement-layer:lane-right"]
+    assert target.target_family == "pavement_layer_body"
+    assert target.readiness_status == "blocked"
+    assert target.material_ref == ""
+    assert any("subassembly_target_missing_material" in ref for ref in target.diagnostic_refs)
+    diagnostics = {row.kind: row for row in model.target_diagnostic_rows}
+    assert "subassembly_target_missing_material" in diagnostics
+    assert diagnostics["subassembly_target_missing_material"].severity == "warning"
+    assert "material contract" in diagnostics["subassembly_target_missing_material"].message
+
+
+def test_solid_target_discovery_blocks_closed_shape_with_missing_span_profile() -> None:
+    def _section(section_id: str, station: float, *, include_shape: bool) -> AppliedSection:
+        shapes = []
+        if include_shape:
+            shapes.append(
+                AppliedSectionSubassemblyShape(
+                    f"{section_id}:shape:lane",
+                    "lane:right",
+                    point_refs=[
+                        f"{section_id}:p0",
+                        f"{section_id}:p1",
+                        f"{section_id}:p2",
+                        f"{section_id}:p3",
+                    ],
+                    shape_code="pavement",
+                    material="asphalt",
+                    solid_family="pavement_layer",
+                )
+            )
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            station=station,
+            frame=AppliedSectionFrame(station, station, 0.0, 10.0),
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint(f"{section_id}:p0", "lane:right", "top", station, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p1", "lane:right", "top", station, -2.0, 10.0, lateral_offset=-2.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p2", "lane:right", "bottom", station, -2.0, 9.8, lateral_offset=-2.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p3", "lane:right", "bottom", station, 0.0, 9.8, lateral_offset=0.0),
+            ],
+            subassembly_shape_rows=shapes,
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="applied:designer-shapes-missing-profile",
+        corridor_id="corridor:main",
+        station_rows=[
+            AppliedSectionStationRow("station:0", 0.0, "section:0"),
+            AppliedSectionStationRow("station:50", 50.0, "section:50"),
+            AppliedSectionStationRow("station:100", 100.0, "section:100"),
+        ],
+        sections=[
+            _section("section:0", 0.0, include_shape=True),
+            _section("section:50", 50.0, include_shape=False),
+            _section("section:100", 100.0, include_shape=True),
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=applied,
+            corridor_model=_corridor_model(),
+        )
+    )
+
+    targets = {row.target_id: row for row in model.target_rows}
+    target = targets["solid-target:pavement-layer:lane-right"]
+    assert target.readiness_status == "blocked"
+    assert any("subassembly_shape_target_missing_profile" in ref for ref in target.diagnostic_refs)
+    diagnostics = {row.kind: row for row in model.target_diagnostic_rows}
+    diagnostic = diagnostics["subassembly_shape_target_missing_profile"]
+    assert diagnostic.severity == "error"
+    assert "every Applied Section station" in diagnostic.message
+    assert "stations=50" in diagnostic.notes
+
+
 def test_solid_target_discovery_separates_subbase_and_shoulder_subassembly_bodies() -> None:
     applied = AppliedSectionSet(
         schema_version=1,

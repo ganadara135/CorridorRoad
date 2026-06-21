@@ -743,7 +743,7 @@ class V1AppliedSectionsTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Applied Sections")
+        widget.setWindowTitle("ParametricRoad v1 - Applied Sections")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
@@ -1461,6 +1461,14 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
                 "missing_required_sources_detail: Create or apply an Assembly / Subassembly source before Build Sections."
             )
         return diagnostics
+    alignment = to_alignment_model(alignment_obj)
+    profile = to_profile_model(profile_obj)
+    if alignment is None:
+        diagnostics.append("alignment_source_not_readable: Alignment source model could not be read.")
+        return diagnostics
+    if profile is None:
+        diagnostics.append("profile_source_not_readable: Profile source model could not be read.")
+        return diagnostics
 
     centerline_result = _build_applied_sections_centerline3d_result(document)
     if centerline_result is None:
@@ -1475,7 +1483,7 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
 
     frame_service = Centerline3DFrameService()
     for station in stations:
-        frame = frame_service.resolve_station(centerline_result, station)
+        frame = frame_service.resolve_station(centerline_result, station, alignment=alignment, profile=profile)
         if str(getattr(frame, "status", "") or "") == "blocked":
             diagnostics.extend(str(row) for row in list(getattr(frame, "diagnostic_rows", []) or []))
     diagnostics.extend(_applied_sections_preset_source_diagnostics(document))

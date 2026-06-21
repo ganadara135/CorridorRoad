@@ -232,7 +232,7 @@ def test_build_demo_section_preview_returns_section_output() -> None:
 def test_format_section_preview_contains_key_summary_lines() -> None:
     summary = format_section_preview(build_demo_section_preview())
 
-    assert "CorridorRoad v1 Cross Section Viewer" in summary
+    assert "ParametricRoad v1 Cross Section Viewer" in summary
     assert "Result State: current" in summary
     assert "Station: 0.0" in summary
     assert "Station Label: STA 0.000" in summary

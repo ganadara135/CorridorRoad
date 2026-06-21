@@ -1,4 +1,4 @@
-"""Closed solid profile builder for CorridorRoad v1 watertight solids."""
+"""Closed solid profile builder for ParametricRoad v1 watertight solids."""
 
 from __future__ import annotations
 

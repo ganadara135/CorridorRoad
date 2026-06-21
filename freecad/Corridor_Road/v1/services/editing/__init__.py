@@ -1,4 +1,4 @@
-"""Editing services for CorridorRoad v1 source-driven workflows."""
+"""Editing services for ParametricRoad v1 source-driven workflows."""
 
 from .tin_edit_service import TINEditReport, TINEditResult, TINEditService
 

@@ -113,7 +113,7 @@ def test_format_plan_profile_preview_includes_key_counts() -> None:
 
     text = format_plan_profile_preview(preview)
 
-    assert "CorridorRoad v1 Plan/Profile Connection Review" in text
+    assert "ParametricRoad v1 Plan/Profile Connection Review" in text
     assert "Alignment elements: 2" in text
     assert "Profile controls: 3" in text
     assert "Navigation stations: 5" in text
@@ -496,7 +496,7 @@ def test_plan_profile_navigation_station_labels_explain_selection_reason() -> No
     buttons = {button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)}
     labels = [label.text() for label in panel.form.findChildren(QtWidgets.QLabel)]
 
-    assert panel.form.windowTitle() == "CorridorRoad v1 - Plan/Profile Connection Review"
+    assert panel.form.windowTitle() == "ParametricRoad v1 - Plan/Profile Connection Review"
     assert any(text == "Plan/Profile Connection Review" for text in labels)
     assert "Current review focus station" in label
     assert {"Focus Previous", "Focus Selected", "Focus Next"}.issubset(buttons)

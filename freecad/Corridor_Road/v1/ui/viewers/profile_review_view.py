@@ -35,7 +35,7 @@ class PlanProfileViewerTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Plan/Profile Connection Review")
+        widget.setWindowTitle("ParametricRoad v1 - Plan/Profile Connection Review")
 
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)

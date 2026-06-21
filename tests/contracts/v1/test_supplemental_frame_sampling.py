@@ -229,6 +229,28 @@ def test_applied_section_overlap_guard_clips_overlapping_regular_and_supplementa
         surface_right_width=2.0,
         daylight_left_width=8.0,
         daylight_right_width=8.0,
+        subassembly_point_rows=[
+            AppliedSectionSubassemblyPoint(
+                "slope:left:daylight",
+                "slope:left",
+                "daylight_marker",
+                1.0,
+                10.0,
+                0.0,
+                lateral_offset=10.0,
+                side="left",
+            )
+        ],
+        subassembly_link_rows=[
+            AppliedSectionSubassemblyLink(
+                "slope:left:link",
+                "slope:left",
+                "slope:left:hinge",
+                "slope:left:daylight",
+                "slope_face",
+                surface_role="slope_face_surface",
+            )
+        ],
     )
     overlapping_regular = AppliedSection(
         schema_version=1,
@@ -259,7 +281,17 @@ def test_applied_section_overlap_guard_clips_overlapping_regular_and_supplementa
     assert sections[1].surface_left_width == 2.0
     assert sections[1].surface_right_width == 2.0
     assert sections[1].daylight_left_width < 8.0 or sections[1].daylight_right_width < 8.0
+    assert overlapping_supplemental.daylight_left_width == 8.0
+    assert overlapping_supplemental.daylight_right_width == 8.0
+    assert overlapping_supplemental.subassembly_point_rows[0].lateral_offset == 10.0
+    assert overlapping_supplemental.subassembly_link_rows[0].end_point_ref == "slope:left:daylight"
     assert any(row.kind == "applied_section_overlap_clip" for row in sections[1].diagnostic_rows)
+    clip = next(row for row in sections[1].diagnostic_rows if row.kind == "applied_section_overlap_clip")
+    assert "section_id=supplemental:1" in clip.notes
+    assert "previous_section_id=base:0" in clip.notes
+    assert "clipped_point_ids=slope:left:daylight" in clip.notes
+    assert "clipped_link_ids=slope:left:link" in clip.notes
+    assert "subassembly_refs=slope:left" in clip.notes
     regular_sections, regular_rows = _clip_overlapping_applied_sections(
         [first, overlapping_regular],
         [

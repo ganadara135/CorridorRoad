@@ -19,6 +19,7 @@ def test_watertight_simulation_qa_reports_first_slice_ready_state() -> None:
                     valid_solid_statuses=[True],
                     shape_valid=True,
                     bound_box=(0.0, 10.0, 0.0, 6.0, 0.0, 2.0),
+                    source_refs=["applied:main", "solid-target:road-body-envelope"],
                 ),
                 WatertightSimulationQaSolidInput(
                     output_ref="DrainageNetwork",
@@ -27,6 +28,8 @@ def test_watertight_simulation_qa_reports_first_slice_ready_state() -> None:
                     valid_solid_statuses=[True],
                     shape_valid=True,
                     bound_box=(5.0, 6.0, 2.0, 3.0, 0.5, 1.0),
+                    flow_route_refs=["flow:main"],
+                    source_refs=["solid-target:drainage-network"],
                 ),
             ],
         )
@@ -80,6 +83,66 @@ def test_watertight_simulation_qa_blocks_missing_context_and_invalid_solids() ->
         "invalid_solid_outputs",
         "zero_volume_solid_outputs",
     }
+
+
+def test_watertight_simulation_qa_blocks_solid_output_missing_target_family() -> None:
+    output = WatertightSimulationQaService().build(
+        WatertightSimulationQaBuildRequest(
+            project_id="proj-1",
+            terrain_ready=True,
+            solid_inputs=[
+                WatertightSimulationQaSolidInput(
+                    output_ref="UnclassifiedSolid",
+                    target_families=[],
+                    volumes=[4.0],
+                    valid_solid_statuses=[True],
+                    shape_valid=True,
+                    bound_box=(0.0, 5.0, 0.0, 5.0, 0.0, 1.0),
+                )
+            ],
+        )
+    )
+
+    assert output.simulation_ready is False
+    diagnostics = {row.kind: row for row in output.diagnostic_rows}
+    assert "solid_output_missing_target_family" in diagnostics
+    assert diagnostics["solid_output_missing_target_family"].severity == "error"
+    assert diagnostics["solid_output_missing_target_family"].source_ref == "UnclassifiedSolid"
+    assert "target family contract" in diagnostics["solid_output_missing_target_family"].message
+
+
+def test_watertight_simulation_qa_warns_solid_output_missing_source_refs() -> None:
+    output = WatertightSimulationQaService().build(
+        WatertightSimulationQaBuildRequest(
+            project_id="proj-1",
+            terrain_ready=True,
+            solid_inputs=[
+                WatertightSimulationQaSolidInput(
+                    output_ref="RoadBody",
+                    target_families=["road_body_envelope"],
+                    volumes=[10.0],
+                    valid_solid_statuses=[True],
+                    shape_valid=True,
+                    bound_box=(0.0, 10.0, 0.0, 6.0, 0.0, 2.0),
+                ),
+                WatertightSimulationQaSolidInput(
+                    output_ref="DrainageNetwork",
+                    target_families=["drainage_pipeline_network_body"],
+                    volumes=[2.0],
+                    valid_solid_statuses=[True],
+                    shape_valid=True,
+                    bound_box=(5.0, 6.0, 2.0, 3.0, 0.5, 1.0),
+                    flow_route_refs=["flow:main"],
+                ),
+            ],
+        )
+    )
+
+    diagnostics = {row.kind: row for row in output.diagnostic_rows}
+    assert "solid_output_missing_source_refs" in diagnostics
+    assert diagnostics["solid_output_missing_source_refs"].severity == "warning"
+    assert diagnostics["solid_output_missing_source_refs"].source_ref == "RoadBody"
+    assert "source/result refs" in diagnostics["solid_output_missing_source_refs"].message
 
 
 def test_watertight_simulation_qa_blocks_disconnected_drainage_body() -> None:

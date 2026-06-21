@@ -153,7 +153,7 @@ def show_v1_centerline3d_preview_object(
     result: Centerline3DResult | None = None,
     project=None,
     show_station_markers: bool = False,
-    display_mode: str = "source_geometry",
+    display_mode: str = "bspline",
     arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
     arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
     source_geometry_sample_spacing: float = SOURCE_GEOMETRY_CURVE_SAMPLE_MAX_SPACING,
@@ -349,12 +349,12 @@ class V1Centerline3DTaskPanel:
         display_row = QtWidgets.QHBoxLayout()
         display_row.addWidget(QtWidgets.QLabel("Display"))
         self._display_mode_combo = QtWidgets.QComboBox()
-        self._display_mode_combo.addItems(["Source Geometry", "B-spline", "Polyline"])
-        self._display_mode_combo.setCurrentText("Source Geometry")
+        self._display_mode_combo.addItems(["B-spline (Display)", "Source Geometry (Engineering)", "Polyline (Diagnostic)"])
+        self._display_mode_combo.setCurrentText("B-spline (Display)")
         self._display_mode_combo.setToolTip(
-            "Source Geometry draws from Alignment/Profile source segments. "
-            "B-spline smooths evaluated centerline points. "
-            "Polyline shows raw evaluated centerline points."
+            "B-spline is the default visual display. "
+            "Source Geometry is the engineering/source diagnostic display. "
+            "Polyline shows raw evaluated centerline points for diagnostics."
         )
         display_row.addWidget(self._display_mode_combo)
         display_row.addStretch(1)
@@ -554,9 +554,9 @@ class V1Centerline3DTaskPanel:
 
     def _selected_display_mode(self) -> str:
         try:
-            return _normalized_display_mode(str(self._display_mode_combo.currentText() or "Source Geometry"))
+            return _normalized_display_mode(str(self._display_mode_combo.currentText() or "B-spline"))
         except Exception:
-            return "source_geometry"
+            return "bspline"
 
     def _selected_arc_fit_absolute_tolerance(self) -> float:
         try:
@@ -722,7 +722,7 @@ def _make_centerline3d_preview_shape(
     result: Centerline3DResult,
     *,
     point_groups: list[list[object]],
-    display_mode: str = "source_geometry",
+    display_mode: str = "bspline",
     document=None,
     arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
     arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
@@ -1463,20 +1463,22 @@ def _normalized_display_mode(value: str) -> str:
     text = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
     if text in {"polyline", "line", "segmented"}:
         return "polyline"
-    if text in {"bspline", "b_spline", "b_spline_curve", "smooth_curve", "smooth"}:
+    if text in {"bspline", "b_spline", "b_spline_curve", "smooth_curve", "smooth", "bspline_(display)", "b_spline_(display)"}:
         return "bspline"
-    if text in {"source_geometry", "source", "geometry", "source_geometry_preview"}:
+    if text in {"source_geometry", "source", "geometry", "source_geometry_preview", "source_geometry_(engineering)"}:
         return "source_geometry"
-    return "source_geometry"
+    if text in {"polyline_(diagnostic)"}:
+        return "polyline"
+    return "bspline"
 
 
 def _display_mode_label(value: str) -> str:
     mode = _normalized_display_mode(value)
     if mode == "polyline":
-        return "Polyline"
+        return "Polyline (Diagnostic)"
     if mode == "bspline":
-        return "B-spline"
-    return "Source Geometry"
+        return "B-spline (Display)"
+    return "Source Geometry (Engineering)"
 
 
 def _source_geometry_message_suffix(obj) -> str:

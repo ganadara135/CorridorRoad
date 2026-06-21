@@ -38,7 +38,7 @@ def run_earthwork_review_command(
         return "v1"
     except Exception as exc:
         app_module.Console.PrintWarning(
-            "CorridorRoad v1 earthwork viewer unavailable, "
+            "ParametricRoad v1 earthwork viewer unavailable, "
             f"falling back to the existing v0 panel: {exc}\n"
         )
         open_existing_v0_panel()

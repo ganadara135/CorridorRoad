@@ -1,4 +1,4 @@
-"""Legacy command handoff helpers for CorridorRoad v1 preview panels."""
+"""Legacy command handoff helpers for ParametricRoad v1 preview panels."""
 
 from __future__ import annotations
 

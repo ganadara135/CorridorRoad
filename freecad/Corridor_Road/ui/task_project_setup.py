@@ -56,7 +56,7 @@ class ProjectSetupTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Project Setup")
+        w.setWindowTitle("ParametricRoad - Project Setup")
 
         root = QtWidgets.QVBoxLayout(w)
         root.setContentsMargins(10, 10, 10, 10)

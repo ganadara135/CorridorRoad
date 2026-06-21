@@ -67,7 +67,7 @@ class PviEditorTaskPanel:
     # ---- UI ----
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Edit PVI (Vertical Alignment / FG)")
+        w.setWindowTitle("ParametricRoad - Edit PVI (Vertical Alignment / FG)")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

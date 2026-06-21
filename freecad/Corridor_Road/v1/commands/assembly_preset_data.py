@@ -48,6 +48,11 @@ DITCH_SHAPE_DEFAULTS = {
     "custom_polyline": {"section_points": "0,0,inner_edge;0.5,-0.4,invert;1.0,0,outer_edge"},
 }
 
+SUBASSEMBLY_KIND_DEFINITION_REFS = {
+    "sidewalk": "subassembly-definition:sidewalk-basic",
+    "ditch": "subassembly-definition:ditch-trapezoid",
+}
+
 
 ASSEMBLY_PRESETS = {
     "Basic Road": {
@@ -63,6 +68,65 @@ ASSEMBLY_PRESETS = {
             ("shoulder:right", "shoulder", "right", 1.5, -0.04, 0.20, "aggregate", "Right shoulder"),
             ("side_slope:left", "side_slope", "left", 4.0, -0.5, 0.0, "earth", "Left slope face"),
             ("side_slope:right", "side_slope", "right", 4.0, -0.5, 0.0, "earth", "Right slope face"),
+        ],
+    },
+    "Full Set Road": {
+        "assembly_id": "assembly:full-set-road",
+        "template_id": "template:full-set-road",
+        "label": "Full Set Road Assembly",
+        "template_label": "Full Set Road",
+        "note": "Ordinary road sample with lane, shoulder, gutter, sidewalk, ditch, and side-slope rows for full Assembly/Subassembly surface review.",
+        "subassemblies": [
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.18, "asphalt_surface", "Left travel lane surface"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.18, "asphalt_surface", "Right travel lane surface"),
+            ("shoulder:left", "shoulder", "left", 1.2, -0.035, 0.16, "aggregate_shoulder", "Left shoulder body and surface contract"),
+            ("shoulder:right", "shoulder", "right", 1.2, -0.035, 0.16, "aggregate_shoulder", "Right shoulder body and surface contract"),
+            ("gutter:left", "gutter", "left", 0.45, -0.03, 0.18, "concrete_gutter", "Left gutter pan drainage edge"),
+            ("gutter:right", "gutter", "right", 0.45, -0.03, 0.18, "concrete_gutter", "Right gutter pan drainage edge"),
+            ("sidewalk:left", "sidewalk", "left", 1.8, -0.015, 0.12, "concrete_sidewalk", "Left sidewalk body and pedestrian surface contract", {"solid_family": "sidewalk_body", "shape_code": "sidewalk_body"}),
+            ("sidewalk:right", "sidewalk", "right", 1.8, -0.015, 0.12, "concrete_sidewalk", "Right sidewalk body and pedestrian surface contract", {"solid_family": "sidewalk_body", "shape_code": "sidewalk_body"}),
+            ("ditch:left", "ditch", "left", 1.8, -0.02, 0.0, "earth", "Left trapezoid roadside ditch drainage surface", {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0}),
+            ("ditch:right", "ditch", "right", 1.8, -0.02, 0.0, "earth", "Right trapezoid roadside ditch drainage surface", {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0}),
+            (
+                "side_slope:left",
+                "side_slope",
+                "left",
+                30.0,
+                -0.5,
+                0.0,
+                "earth",
+                "Left terrain daylight grading surface with cut/fill slope rules",
+                {
+                    "bench_mode": "rows",
+                    "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+                    "repeat_first_bench_to_daylight": True,
+                    "daylight_mode": "terrain",
+                    "daylight_max_width": 160.0,
+                    "daylight_search_step": 0.5,
+                    "cut_slope": 0.5,
+                    "fill_slope": 0.333333,
+                },
+            ),
+            (
+                "side_slope:right",
+                "side_slope",
+                "right",
+                30.0,
+                -0.5,
+                0.0,
+                "earth",
+                "Right terrain daylight grading surface with cut/fill slope rules",
+                {
+                    "bench_mode": "rows",
+                    "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+                    "repeat_first_bench_to_daylight": True,
+                    "daylight_mode": "terrain",
+                    "daylight_max_width": 160.0,
+                    "daylight_search_step": 0.5,
+                    "cut_slope": 0.5,
+                    "fill_slope": 0.333333,
+                },
+            ),
         ],
     },
     "Urban Curb & Gutter": {

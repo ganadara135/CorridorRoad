@@ -43,7 +43,7 @@ def exchange_package_ifc_text(payload: dict[str, object]) -> str:
     lines = [
         "ISO-10303-21;",
         "HEADER;",
-        "FILE_DESCRIPTION(('CorridorRoad v1 structure exchange handoff'),'2;1');",
+        "FILE_DESCRIPTION(('ParametricRoad v1 structure exchange handoff'),'2;1');",
         f"FILE_NAME('{_step_string(str(payload.get('exchange_output_id', '') or 'corridorroad-structure-export'))}.ifc','',('CorridorRoad'),('CorridorRoad'),'CorridorRoad v1','CorridorRoad','');",
         "FILE_SCHEMA(('IFC4'));",
         "ENDSEC;",
