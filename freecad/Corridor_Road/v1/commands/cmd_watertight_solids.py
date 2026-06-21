@@ -337,7 +337,7 @@ class V1WatertightSolidsTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Watertight Solids")
+        widget.setWindowTitle("ParametricRoad v1 - Watertight Solids")
         layout = QtWidgets.QVBoxLayout(widget)
 
         title = QtWidgets.QLabel("Watertight Solids")

@@ -20,7 +20,7 @@ def test_build_demo_earthwork_report_returns_connected_outputs() -> None:
 def test_format_earthwork_report_contains_key_summary_lines() -> None:
     summary = format_earthwork_report(build_demo_earthwork_report())
 
-    assert "CorridorRoad v1 Earthwork Balance Viewer" in summary
+    assert "ParametricRoad v1 Earthwork Balance Viewer" in summary
     assert "Total cut: 120.0 m3" in summary
     assert "Total fill: 110.0 m3" in summary
     assert "Final cumulative mass: -8.0 m3" in summary

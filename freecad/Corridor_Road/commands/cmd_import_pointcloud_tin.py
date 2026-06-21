@@ -49,7 +49,7 @@ def run_pointcloud_tin_command(
         return "v1"
     except Exception as exc:
         app_module.Console.PrintWarning(
-            "CorridorRoad v1 TIN review unavailable; "
+            "ParametricRoad v1 TIN review unavailable; "
             f"showing the placeholder PointCloud TIN message: {exc}\n"
         )
         if gui_module is not None:

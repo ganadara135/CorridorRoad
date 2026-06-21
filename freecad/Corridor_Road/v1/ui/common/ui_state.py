@@ -1,4 +1,4 @@
-"""Shared UI state helpers for CorridorRoad v1 preview workflows."""
+"""Shared UI state helpers for ParametricRoad v1 preview workflows."""
 
 from __future__ import annotations
 

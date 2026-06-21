@@ -373,7 +373,7 @@ class SectionGeneratorTaskPanel:
         display_scale = self._display_scale()
 
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Generate Sections")
+        w.setWindowTitle("ParametricRoad - Generate Sections")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

@@ -1543,7 +1543,7 @@ class V1ProfileEditorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Profile Editor")
+        widget.setWindowTitle("ParametricRoad v1 - Profile Editor")
         try:
             widget.setMinimumWidth(320)
             widget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)

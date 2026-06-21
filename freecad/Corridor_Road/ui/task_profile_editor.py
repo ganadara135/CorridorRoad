@@ -200,7 +200,7 @@ class ProfileEditorTaskPanel:
     # ---- UI ----
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Edit Profiles (Data/EG)")
+        w.setWindowTitle("ParametricRoad - Edit Profiles (Data/EG)")
 
         root = QtWidgets.QVBoxLayout(w)
         root.setContentsMargins(10, 10, 10, 10)

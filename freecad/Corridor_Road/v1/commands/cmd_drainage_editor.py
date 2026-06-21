@@ -651,7 +651,7 @@ class V1DrainageEditorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Drainage")
+        widget.setWindowTitle("ParametricRoad v1 - Drainage")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)

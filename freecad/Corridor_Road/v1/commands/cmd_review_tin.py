@@ -81,7 +81,7 @@ def build_demo_tin_review(
         project_id="corridorroad-v1-demo",
         surface_id="tin:v1-demo-existing-ground",
         surface_kind="existing_ground_tin",
-        label=document_label or "CorridorRoad v1 Demo TIN",
+        label=document_label or "ParametricRoad v1 Demo TIN",
         vertex_rows=[
             TINVertex("v0", 0.0, 0.0, 10.0, source_point_ref="demo:p0"),
             TINVertex("v1", 10.0, 0.0, 12.0, source_point_ref="demo:p1"),
@@ -272,7 +272,7 @@ def show_v1_tin_review(
 
                 QtGui.QMessageBox.information(
                     None,
-                    "CorridorRoad v1 TIN Review",
+                    "ParametricRoad v1 TIN Review",
                     summary_text,
                 )
             except Exception:

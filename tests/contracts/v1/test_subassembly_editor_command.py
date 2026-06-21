@@ -7,6 +7,7 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     V1AssemblySubassemblyEditorTaskPanel,
     _detail_parameter_rows,
     _merge_detail_parameters,
+    _physical_body_contract_summary,
     _subassembly_preview_text,
     _validate_subassembly_model,
     apply_v1_assembly_subassembly_model,
@@ -210,6 +211,38 @@ def test_subassembly_preview_text_uses_subassembly_ownership() -> None:
     assert "surface_role=drainage_surface" in text
     assert "shape=trapezoid" in text
     assert "material=concrete" in text
+
+
+def test_subassembly_physical_body_contract_summary_reports_ready_and_missing_contracts() -> None:
+    ready = _physical_body_contract_summary(
+        subassembly_id="pavement_layer:main",
+        kind="pavement_layer",
+        thickness=0.25,
+        material="asphalt_surface",
+        parameters={"shape_code": "pavement_body", "solid_family": "pavement_layer"},
+    )
+    missing = _physical_body_contract_summary(
+        subassembly_id="lane:left",
+        kind="lane",
+        thickness=0.0,
+        material="",
+        parameters={},
+    )
+    skipped = _physical_body_contract_summary(
+        subassembly_id="ditch:left",
+        kind="ditch",
+        thickness=0.0,
+        material="",
+        parameters={},
+    )
+
+    assert "Physical-body contract: ready" in ready
+    assert "shape_code=pavement_body" in ready
+    assert "solid_family=pavement_layer" in ready
+    assert "material=asphalt_surface" in ready
+    assert "Physical-body contract: incomplete" in missing
+    assert "missing=thickness,material" in missing
+    assert "Physical-body contract: n/a" in skipped
 
 
 def test_subassembly_detail_changes_only_on_table_row_click() -> None:

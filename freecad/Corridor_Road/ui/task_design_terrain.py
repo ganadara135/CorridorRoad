@@ -134,7 +134,7 @@ class DesignTerrainTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Design Terrain")
+        w.setWindowTitle("ParametricRoad - Design Terrain")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

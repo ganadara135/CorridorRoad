@@ -24,7 +24,7 @@ class CrossSectionEditorTaskPanel(CrossSectionViewerTaskPanel):
 
     def _build_ui(self):
         viewer = super()._build_ui()
-        viewer.setWindowTitle("CorridorRoad - Cross Section Editor")
+        viewer.setWindowTitle("ParametricRoad - Cross Section Editor")
         try:
             # The editor relies on guide geometry and the side inspector more than
             # dense canvas labels, so start with the clutter-heavy overlays off.
@@ -42,7 +42,7 @@ class CrossSectionEditorTaskPanel(CrossSectionViewerTaskPanel):
             pass
 
         root = QtWidgets.QWidget()
-        root.setWindowTitle("CorridorRoad - Cross Section Editor")
+        root.setWindowTitle("ParametricRoad - Cross Section Editor")
         layout = QtWidgets.QHBoxLayout(root)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)

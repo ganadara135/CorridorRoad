@@ -317,7 +317,7 @@ class EarthworkViewerTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Earthwork Viewer")
+        widget.setWindowTitle("ParametricRoad v1 - Earthwork Viewer")
 
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)

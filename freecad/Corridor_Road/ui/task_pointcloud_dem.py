@@ -53,7 +53,7 @@ class PointCloudDEMTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Import PointCloud DEM")
+        w.setWindowTitle("ParametricRoad - Import PointCloud DEM")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

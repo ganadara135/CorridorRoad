@@ -61,41 +61,38 @@ def _benched_rows() -> list[TemplateSubassembly]:
     ]
 
 
-def test_digital_twin_ready_preset_exposes_physical_body_contract_rows() -> None:
-    assert "Digital Twin Ready Road" in assembly_preset_names()
+def test_full_set_road_preset_exposes_surface_review_rows() -> None:
+    assert "Full Set Road" in assembly_preset_names()
 
-    rows = _preset_subassemblies(ASSEMBLY_PRESETS["Digital Twin Ready Road"])
+    rows = _preset_subassemblies(ASSEMBLY_PRESETS["Full Set Road"])
     by_id = {row.subassembly_id: row for row in rows}
 
-    pavement = by_id["pavement_layer:main"]
-    assert pavement.kind == "pavement_layer"
-    assert pavement.width == 7.0
-    assert pavement.thickness == 0.18
-    assert pavement.material == "asphalt_surface"
-    assert pavement.parameters["solid_family"] == "pavement_layer"
-    assert pavement.parameters["shape_code"] == "pavement_body"
-
-    subbase = by_id["subbase:main"]
-    assert subbase.kind == "subbase"
-    assert subbase.width == 8.4
-    assert subbase.thickness == 0.30
-    assert subbase.material == "crushed_stone"
-    assert subbase.parameters["solid_family"] == "subbase"
-
+    assert "pavement_layer:main" not in by_id
+    assert "subbase:main" not in by_id
+    assert by_id["lane:left"].material == "asphalt_surface"
+    assert by_id["lane:right"].material == "asphalt_surface"
     assert by_id["shoulder:left"].material == "aggregate_shoulder"
     assert by_id["shoulder:left"].thickness == 0.16
     assert by_id["shoulder:right"].material == "aggregate_shoulder"
     assert by_id["shoulder:right"].thickness == 0.16
+    assert by_id["gutter:left"].material == "concrete_gutter"
+    assert by_id["gutter:right"].material == "concrete_gutter"
+    assert by_id["sidewalk:left"].definition_ref == "subassembly-definition:sidewalk-basic"
+    assert by_id["sidewalk:right"].definition_ref == "subassembly-definition:sidewalk-basic"
+    assert by_id["ditch:left"].definition_ref == "subassembly-definition:ditch-trapezoid"
+    assert by_id["ditch:right"].definition_ref == "subassembly-definition:ditch-trapezoid"
+    assert by_id["ditch:left"].parameters["shape"] == "trapezoid"
+    assert by_id["ditch:right"].parameters["bottom_width"] == 0.6
 
 
-def test_digital_twin_ready_preset_discovers_physical_body_solid_targets() -> None:
-    rows = _preset_subassemblies(ASSEMBLY_PRESETS["Digital Twin Ready Road"])
+def test_full_set_road_preset_builds_applied_section_surface_context() -> None:
+    rows = _preset_subassemblies(ASSEMBLY_PRESETS["Full Set Road"])
     section_start = _section(rows, station=0.0, applied_section_id="section:0")
     section_end = _section(rows, station=100.0, applied_section_id="section:100")
     applied = AppliedSectionSet(
         schema_version=1,
         project_id="project:test",
-        applied_section_set_id="applied:digital-twin-ready-road",
+        applied_section_set_id="applied:full-set-road",
         corridor_id="corridor:test",
         station_rows=[
             AppliedSectionStationRow("station:0", 0.0, "section:0"),
@@ -113,26 +110,18 @@ def test_digital_twin_ready_preset_discovers_physical_body_solid_targets() -> No
                 schema_version=1,
                 project_id="project:test",
                 corridor_id="corridor:test",
-                applied_section_set_ref="applied:digital-twin-ready-road",
+                applied_section_set_ref="applied:full-set-road",
             ),
         )
     )
 
-    targets = {row.target_id: row for row in model.target_rows}
-    pavement = targets["solid-target:pavement-layer:pavement_layer-main"]
-    assert pavement.target_family == "pavement_layer_body"
-    assert pavement.material_ref == "asphalt_surface"
-    assert pavement.station_start == 0.0
-    assert pavement.station_end == 100.0
-    assert pavement.readiness_status == "available"
-
-    subbase = targets["solid-target:subbase:subbase-main"]
-    assert subbase.target_family == "subbase_body"
-    assert subbase.material_ref == "crushed_stone"
-    assert subbase.readiness_status == "available"
-
-    assert targets["solid-target:shoulder:shoulder-left"].readiness_status == "available"
-    assert targets["solid-target:shoulder:shoulder-right"].readiness_status == "available"
+    assert section_start.subassembly_rows
+    assert section_end.subassembly_rows
+    assert any(row.kind == "gutter" for row in section_start.subassembly_rows)
+    assert any(row.kind == "sidewalk" for row in section_start.subassembly_rows)
+    assert any(row.kind == "ditch" for row in section_start.subassembly_rows)
+    assert any(point.point_role == "ditch_surface" for point in section_start.point_rows)
+    assert model.target_rows
 
 
 def _assembly_model(rows: list[TemplateSubassembly]) -> AssemblySubassemblyModel:

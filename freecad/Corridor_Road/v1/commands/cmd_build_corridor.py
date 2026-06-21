@@ -5383,7 +5383,7 @@ class V1BuildCorridorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Build Parametric")
+        widget.setWindowTitle("ParametricRoad v1 - Build Parametric")
         try:
             widget.setMinimumWidth(BUILD_CORRIDOR_PANEL_MIN_WIDTH)
             widget.setMaximumWidth(BUILD_CORRIDOR_PANEL_MAX_WIDTH)
@@ -15953,8 +15953,9 @@ def _corridor_centerline_preview_shape(document, app_module, part_module):
     try:
         from .cmd_centerline3d import _make_centerline3d_source_geometry_shape
 
-        shape, _source_summary = _make_centerline3d_source_geometry_shape(document, centerline_result)
-        return shape, "source_geometry", points, stations, "centerline3d_source_geometry", result_id
+        _make_centerline3d_source_geometry_shape(document, centerline_result)
+        shape, curve_kind = _make_centerline_shape(points, part_module)
+        return shape, f"bspline_display_{curve_kind}", points, stations, "centerline3d_source_geometry", result_id
     except Exception:
         shape, curve_kind = _make_centerline_shape(points, part_module)
         return shape, curve_kind, points, stations, "centerline3d_result_fallback", result_id

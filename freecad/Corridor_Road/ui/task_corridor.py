@@ -53,7 +53,7 @@ class CorridorTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Corridor")
+        w.setWindowTitle("ParametricRoad - Corridor")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

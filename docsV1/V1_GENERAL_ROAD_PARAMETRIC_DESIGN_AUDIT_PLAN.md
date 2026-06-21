@@ -30,7 +30,7 @@ Current stage:
 
 Current target:
 
-- `Phase 7 Scope Alignment - defer deep physical solid geometry QA`
+- `Phase 7 Target 5 - Assembly/Subassembly physical-body contract UX`
 
 Completed in this plan:
 
@@ -41,7 +41,7 @@ Completed in this plan:
 
 In progress:
 
-- keep physical solid QA at readiness, traceability, material, closed-shape contract, and status-visibility level until intersections, ramps, drainage, and structures are more stable.
+- expose physical-body material, thickness, shape-code, and solid-family contract readiness in the Assembly/Subassembly selected-row detail view.
 
 Recently completed:
 
@@ -51,9 +51,10 @@ Recently completed:
 - Watertight Solid readiness reports station spans, Region refs, material refs, missing prerequisites, and blocked target rows.
 - Digital Twin readiness summarizes overall readiness plus physical-body readiness.
 - Physical-body targets require material contracts and continuous closed shape profiles across the target span.
-- `Digital Twin Ready Road` provides a physical-body-ready ordinary-road sample preset and validates through SolidTargetDiscovery.
+- `Full Set Road` provides an ordinary-road full Assembly/Subassembly surface-review sample with lane, shoulder, gutter, sidewalk, ditch, and side-slope rows, without pavement_layer/subbase physical-body rows.
 - Watertight Solids panel status summaries expose Simulation QA diagnostic counts and leading diagnostic ids.
 - Deep physical solid geometry QA is intentionally deferred until intersection, ramp, drainage, and structure source/result workflows are more stable.
+- Assembly/Subassembly selected-row detail now summarizes physical-body contract readiness without requiring users to inspect hidden columns.
 
 ## 2. Scope
 
@@ -413,8 +414,8 @@ Use this checklist after implementation phases.
 - Generate Applied Sections with supplemental sampling enabled.
 - Confirm source station and supplemental station counts are reported separately.
 - Load an Assembly/Subassembly preset with lane, shoulder, sidewalk, ditch, and side-slope rows.
-- Load the `Digital Twin Ready Road` Assembly/Subassembly preset and confirm it includes pavement_layer, subbase, lane, shoulder, and side-slope rows.
-- Confirm the `Digital Twin Ready Road` preset carries explicit material, thickness, `solid_family`, and `shape_code` contracts for pavement/subbase physical-body readiness.
+- Load the `Full Set Road` Assembly/Subassembly preset and confirm it includes lane, shoulder, gutter, sidewalk, ditch, and side-slope rows.
+- Confirm `pavement_layer` and `subbase` are intentionally excluded from the current full-set preset until physical-body authoring is reintroduced.
 - Compare Section Preview endpoints with Applied Section geometry.
 - Build Corridor.
 - Confirm Build Corridor reports consumed Centerline3D source mode and AppliedSectionSet id.
@@ -443,6 +444,7 @@ Use this checklist after implementation phases.
 - Confirm Simulation QA reports `solid_output_missing_source_refs` when an output has target families but no Subassembly, structure, flow route, or source refs.
 - Confirm valid-looking solids cannot be accepted as Digital Twin-ready when target-family traceability is missing.
 - Confirm Watertight Solids panel status text exposes Simulation QA diagnostic count, error count, warning count, and leading diagnostic ids.
+- In Assembly/Subassembly, select pavement, subbase, lane, and shoulder rows and confirm Selected Subassembly Detail reports physical-body contract readiness.
 
 ## 8.1 Deferred Physical Solid Geometry QA
 

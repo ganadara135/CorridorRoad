@@ -769,7 +769,7 @@ class V1AlignmentEditorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Alignment")
+        widget.setWindowTitle("ParametricRoad v1 - Alignment")
 
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)

@@ -372,7 +372,7 @@ class V1AssemblySubassemblyEditorTaskPanel:
         self.assembly_obj = find_v1_assembly_subassembly_model(self.document)
         self.model = to_assembly_subassembly_model(self.assembly_obj) if self.assembly_obj is not None else None
         if self.model is None:
-            self.model = assembly_subassembly_preset_model_from_document("Basic Road", document=self.document)
+            self.model = assembly_subassembly_preset_model_from_document("Full Set Road", document=self.document)
         self.form = self._build_form()
         self._load_model(self.model)
 
@@ -397,6 +397,7 @@ class V1AssemblySubassemblyEditorTaskPanel:
         preset_row.addWidget(QtWidgets.QLabel("Assembly Template:"))
         self.preset_combo = QtWidgets.QComboBox()
         self.preset_combo.addItems(assembly_preset_names())
+        self.preset_combo.setCurrentText("Full Set Road")
         preset_row.addWidget(self.preset_combo, 1)
         self.load_preset_button = QtWidgets.QPushButton("Load Assembly Template")
         self.load_preset_button.clicked.connect(self._load_selected_preset)
@@ -852,10 +853,18 @@ class V1AssemblySubassemblyEditorTaskPanel:
         side = _item_text(self.table, row, COL_SIDE)
         params = parse_subassembly_parameters(_item_text(self.table, row, COL_PARAMETERS))
         overrides = parse_subassembly_parameters(_item_text(self.table, row, COL_OVERRIDES))
+        contract_summary = _physical_body_contract_summary(
+            subassembly_id=subassembly_id,
+            kind=kind,
+            thickness=_float(_item_text(self.table, row, COL_THICKNESS)),
+            material=_item_text(self.table, row, COL_MATERIAL),
+            parameters=params,
+        )
         self.detail_summary.setText(
             f"{subassembly_id} | {kind} | {side} | index={_item_text(self.table, row, COL_INDEX) or row + 1} | "
             f"subassembly_ref={definition_ref or '-'}\n"
-            "Assembly places Subassemblies. Edit values here only when this placement needs parameter overrides."
+            "Assembly places Subassemblies. Edit values here only when this placement needs parameter overrides.\n"
+            f"{contract_summary}"
         )
         rows = _definition_override_rows(definition, overrides) if definition is not None else _detail_parameter_rows(kind, params)
         self.detail_table.setRowCount(0)
@@ -1116,6 +1125,45 @@ class V1AssemblySubassemblyEditorTaskPanel:
             return
         self.summary.setPlainText("Section preview updated in the panel.")
 
+    def _add_section_preview_label(self, scene, text: str, anchor_x: float, anchor_y: float, used_rects) -> None:
+        label = scene.addText(str(text or ""))
+        label.setDefaultTextColor(QtGui.QColor("#f8fafc"))
+        font = label.font()
+        font.setPointSize(8)
+        label.setFont(font)
+        label.setZValue(30.0)
+
+        offsets = (
+            (6.0, -18.0),
+            (8.0, 6.0),
+            (-42.0, -18.0),
+            (-42.0, 6.0),
+            (14.0, -34.0),
+            (14.0, 22.0),
+            (-66.0, -34.0),
+            (-66.0, 22.0),
+        )
+        final_rect = None
+        for index, (dx, dy) in enumerate(offsets):
+            if index >= len(offsets) - 1:
+                dy += 14.0 * max(0, len(used_rects) - len(offsets) + 1)
+            label.setPos(float(anchor_x) + dx, float(anchor_y) + dy)
+            rect = label.mapRectToScene(label.boundingRect()).adjusted(-4.0, -2.0, 4.0, 2.0)
+            if not any(rect.intersects(existing) for existing in used_rects):
+                final_rect = rect
+                break
+            final_rect = rect
+
+        if final_rect is None:
+            final_rect = label.mapRectToScene(label.boundingRect()).adjusted(-4.0, -2.0, 4.0, 2.0)
+        used_rects.append(final_rect)
+        background = scene.addRect(
+            final_rect,
+            QtGui.QPen(QtGui.QColor(74, 91, 116, 180)),
+            QtGui.QBrush(QtGui.QColor(15, 23, 42, 220)),
+        )
+        background.setZValue(29.0)
+
     def _draw_section_preview(self, assembly_model: AssemblySubassemblyModel, *, definition_library=None) -> None:
         scene = self.section_preview_scene
         scene.clear()
@@ -1143,6 +1191,7 @@ class V1AssemblySubassemblyEditorTaskPanel:
         brush_point = QtGui.QBrush(QtGui.QColor("#ffd45a"))
         scene.addLine(-320, 0, 320, 0, pen_axis)
         scene.addLine(0, -160, 0, 120, pen_axis)
+        used_label_rects = []
         for segment in segments:
             row = segment["row"]
             side_label = str(segment["side"])
@@ -1156,9 +1205,13 @@ class V1AssemblySubassemblyEditorTaskPanel:
             for x, z in topline:
                 scene.addEllipse(x * scale - 3.0, -z * scale - 3.0, 6.0, 6.0, pen_point, brush_point)
             top_end = topline[-1]
-            label = scene.addText(f"{str(getattr(row, 'subassembly_id', '') or '')} ({side_label})")
-            label.setDefaultTextColor(QtGui.QColor("#d8e0ea"))
-            label.setPos(top_end[0] * scale + 5, -top_end[1] * scale - 18)
+            self._add_section_preview_label(
+                scene,
+                f"{str(getattr(row, 'subassembly_id', '') or '')} ({side_label})",
+                top_end[0] * scale,
+                -top_end[1] * scale,
+                used_label_rects,
+            )
         bounds = scene.itemsBoundingRect().adjusted(-28, -28, 28, 28)
         scene.setSceneRect(bounds)
         try:
@@ -2167,6 +2220,44 @@ def _subassembly_preview_text(
         lines.append("diagnostics:")
         lines.extend(f"- {message}" for message in diagnostics)
     return "\n".join(lines)
+
+
+def _physical_body_contract_summary(
+    *,
+    subassembly_id: str,
+    kind: object,
+    thickness: float,
+    material: str,
+    parameters: dict[str, object],
+) -> str:
+    """Return a concise UX summary of physical-body contract readiness."""
+
+    kind_text = str(kind or "").strip().lower().replace("-", "_")
+    params = dict(parameters or {})
+    shape_capable = kind_text in {"pavement_layer", "subbase", "lane", "shoulder"}
+    if not shape_capable:
+        return "Physical-body contract: n/a for this Subassembly kind."
+    shape_code = str(params.get("shape_code", "") or f"{kind_text}_body").strip()
+    solid_family = str(params.get("solid_family", "") or kind_text).strip()
+    material_text = str(material or "").strip()
+    has_thickness = float(thickness or 0.0) > 0.0
+    missing = []
+    if not has_thickness:
+        missing.append("thickness")
+    if not material_text:
+        missing.append("material")
+    if not shape_code:
+        missing.append("shape_code")
+    if not solid_family:
+        missing.append("solid_family")
+    status = "ready" if not missing else "incomplete"
+    details = (
+        f"shape_code={shape_code or '-'}, solid_family={solid_family or '-'}, "
+        f"material={material_text or '-'}, thickness={float(thickness or 0.0):.3f}"
+    )
+    if missing:
+        details = f"{details}, missing={','.join(missing)}"
+    return f"Physical-body contract: {status} ({details})"
 
 
 def _preview_points(subassembly_id: str, kind: str, side: str, width: float, slope: float, params: dict[str, object]) -> list[str]:

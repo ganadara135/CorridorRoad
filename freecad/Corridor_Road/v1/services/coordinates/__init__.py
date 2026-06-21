@@ -1,4 +1,4 @@
-"""Coordinate import helpers for CorridorRoad v1 services."""
+"""Coordinate import helpers for ParametricRoad v1 services."""
 
 from .coordinate_import_service import (
     CoordinateExportPolicy,

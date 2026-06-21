@@ -60,14 +60,14 @@ def run_plan_profile_review_command(
         preferred_alignment, preferred_profile = resolve_targets()
         if preferred_profile is not None:
             app_module.Console.PrintWarning(
-                "CorridorRoad v1 plan/profile viewer unavailable, "
+                "ParametricRoad v1 plan/profile viewer unavailable, "
                 f"falling back to the existing v0 profile editor: {exc}\n"
             )
             open_existing_v0_profile_editor()
             return "v0_profile"
 
         app_module.Console.PrintWarning(
-            "CorridorRoad v1 plan/profile viewer unavailable, "
+            "ParametricRoad v1 plan/profile viewer unavailable, "
             f"falling back to the existing v0 alignment editor: {exc}\n"
         )
         open_existing_v0_alignment_editor()

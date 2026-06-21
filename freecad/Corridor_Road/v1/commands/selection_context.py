@@ -1,4 +1,4 @@
-"""Shared selection-context helpers for CorridorRoad v1 command bridges."""
+"""Shared selection-context helpers for ParametricRoad v1 command bridges."""
 
 from __future__ import annotations
 

@@ -90,7 +90,7 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                     ("slope_face", "hinge", "daylight", "slope_face_surface", "slope_face", "slope_face_area"),
                 ],
                 "targets": [
-                    ("target:terrain-daylight", "terrain_daylight", False, "fixed_width"),
+                    ("target:terrain-daylight", "terrain_daylight", False, "terrain"),
                 ],
             },
             {
@@ -111,10 +111,10 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                     ("bench_slope", "Preview bench slope", -0.02, "m/m", False),
                     ("post_slope_width", "Preview post-bench width", 4.5, "m", False),
                     ("post_slope", "Preview post-bench slope", -0.50, "m/m", False),
-                    ("repeat_first_bench_to_daylight", "Repeat first bench to daylight", "false", "", False),
-                    ("daylight_mode", "Daylight mode", "fixed_width", "", False),
-                    ("daylight_search_step", "Daylight search step", 1.0, "m", False),
-                    ("daylight_max_width", "Daylight max width", 24.0, "m", False),
+                    ("repeat_first_bench_to_daylight", "Repeat first bench to daylight", "true", "", False),
+                    ("daylight_mode", "Daylight mode", "terrain", "", False),
+                    ("daylight_search_step", "Daylight search step", 0.5, "m", False),
+                    ("daylight_max_width", "Daylight max width", 160.0, "m", False),
                     ("daylight_max_width_delta", "Daylight max width delta", 0.25, "m", False),
                     ("daylight_max_triangles", "Daylight max triangles", 128, "", False),
                 ],
@@ -144,7 +144,7 @@ SUBASSEMBLY_DEFINITION_PRESETS = {
                     ("bench_to_daylight", "bench_end", "daylight", "slope_face_surface", "slope_face", "slope_face_area"),
                 ],
                 "targets": [
-                    ("target:terrain-daylight", "terrain_daylight", False, "fixed_width"),
+                    ("target:terrain-daylight", "terrain_daylight", False, "terrain"),
                 ],
                 "note": "Designer-owned side-slope bench preset. Compact bench_rows is the durable source; preview helper parameters keep the current Live Preview editable until typed bench-row evaluation is added.",
             },

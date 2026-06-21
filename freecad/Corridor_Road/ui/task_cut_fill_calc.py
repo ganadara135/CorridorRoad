@@ -101,7 +101,7 @@ class CutFillCalcTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Cut-Fill Calc")
+        w.setWindowTitle("ParametricRoad - Cut-Fill Calc")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

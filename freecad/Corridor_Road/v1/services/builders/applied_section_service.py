@@ -977,6 +977,7 @@ class AppliedSectionSetService:
             max_spacing=float(getattr(request, "supplemental_sections_max_spacing", 5.0) or 5.0),
             tangent_delta_threshold_deg=float(getattr(request, "supplemental_sections_tangent_delta_deg", 3.0) or 3.0),
             chord_deviation_threshold=float(getattr(request, "supplemental_sections_chord_deviation", 0.25) or 0.25),
+            alignment=request.alignment,
             profile=request.profile,
             vertical_chord_deviation_threshold=float(getattr(request, "supplemental_sections_vertical_chord_deviation", 0.10) or 0.10),
             grade_delta_threshold=float(getattr(request, "supplemental_sections_grade_delta", 0.01) or 0.01),
@@ -1476,6 +1477,7 @@ def _supplemental_applied_section_station_series(
     max_spacing: float,
     tangent_delta_threshold_deg: float,
     chord_deviation_threshold: float,
+    alignment: AlignmentModel | None = None,
     profile: ProfileModel | None = None,
     vertical_chord_deviation_threshold: float = 0.10,
     grade_delta_threshold: float = 0.01,
@@ -1499,6 +1501,7 @@ def _supplemental_applied_section_station_series(
             max_spacing=max_spacing,
             tangent_delta_threshold_deg=tangent_delta_threshold_deg,
             chord_deviation_threshold=chord_deviation_threshold,
+            alignment=alignment,
             profile=profile,
             profile_service=profile_service,
             vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
@@ -1515,6 +1518,7 @@ def _supplemental_applied_section_station_series(
                 frame_service=frame_service,
                 tangent_delta_threshold_deg=tangent_delta_threshold_deg,
                 chord_deviation_threshold=chord_deviation_threshold,
+                alignment=alignment,
                 profile=profile,
                 profile_service=profile_service,
                 vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
@@ -1533,6 +1537,7 @@ def _supplemental_applied_section_ratios(
     max_spacing: float,
     tangent_delta_threshold_deg: float,
     chord_deviation_threshold: float,
+    alignment: AlignmentModel | None = None,
     profile: ProfileModel | None = None,
     profile_service: ProfileEvaluationService | None = None,
     vertical_chord_deviation_threshold: float = 0.10,
@@ -1552,6 +1557,7 @@ def _supplemental_applied_section_ratios(
         max_spacing=spacing,
         tangent_delta_threshold_deg=tangent_delta_threshold_deg,
         chord_deviation_threshold=chord_deviation_threshold,
+        alignment=alignment,
         profile=profile,
         profile_service=profile_service,
         vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
@@ -1579,6 +1585,7 @@ def _supplemental_applied_section_ratios(
             max_spacing=spacing,
             tangent_delta_threshold_deg=tangent_delta_threshold_deg,
             chord_deviation_threshold=chord_deviation_threshold,
+            alignment=alignment,
             profile=profile,
             profile_service=profile_service,
             vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
@@ -1609,6 +1616,7 @@ def _supplemental_applied_section_interval_needs_sampling(
     max_spacing: float,
     tangent_delta_threshold_deg: float,
     chord_deviation_threshold: float,
+    alignment: AlignmentModel | None = None,
     profile: ProfileModel | None = None,
     profile_service: ProfileEvaluationService | None = None,
     vertical_chord_deviation_threshold: float = 0.10,
@@ -1628,6 +1636,7 @@ def _supplemental_applied_section_interval_needs_sampling(
         frame_service=frame_service,
         tangent_delta_threshold_deg=tangent_delta_threshold_deg,
         chord_deviation_threshold=chord_deviation_threshold,
+        alignment=alignment,
         profile=profile,
         profile_service=profile_service,
         vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
@@ -1643,6 +1652,7 @@ def _supplemental_applied_section_curve_exceeded(
     frame_service: Centerline3DFrameService,
     tangent_delta_threshold_deg: float,
     chord_deviation_threshold: float,
+    alignment: AlignmentModel | None = None,
     profile: ProfileModel | None = None,
     profile_service: ProfileEvaluationService | None = None,
     vertical_chord_deviation_threshold: float = 0.10,
@@ -1655,6 +1665,8 @@ def _supplemental_applied_section_curve_exceeded(
         frame_service=frame_service,
         tangent_delta_threshold_deg=tangent_delta_threshold_deg,
         chord_deviation_threshold=chord_deviation_threshold,
+        alignment=alignment,
+        profile=profile,
     ):
         return True
     return _supplemental_applied_section_vertical_curve_exceeded(
@@ -1675,11 +1687,13 @@ def _supplemental_applied_section_horizontal_curve_exceeded(
     frame_service: Centerline3DFrameService,
     tangent_delta_threshold_deg: float,
     chord_deviation_threshold: float,
+    alignment: AlignmentModel | None = None,
+    profile: ProfileModel | None = None,
 ) -> bool:
-    start_frame = frame_service.resolve_station(centerline3d_result, start_station)
-    end_frame = frame_service.resolve_station(centerline3d_result, end_station)
+    start_frame = frame_service.resolve_station(centerline3d_result, start_station, alignment=alignment, profile=profile)
+    end_frame = frame_service.resolve_station(centerline3d_result, end_station, alignment=alignment, profile=profile)
     mid_station = (float(start_station) + float(end_station)) * 0.5
-    mid_frame = frame_service.resolve_station(centerline3d_result, mid_station)
+    mid_frame = frame_service.resolve_station(centerline3d_result, mid_station, alignment=alignment, profile=profile)
     if not _centerline_frame_is_usable(start_frame) or not _centerline_frame_is_usable(end_frame) or not _centerline_frame_is_usable(mid_frame):
         return False
     tangent_delta = abs(
@@ -3155,13 +3169,18 @@ def _clip_bench_segments_to_terrain(
         ]
     service = sampling_service or TinSamplingService()
     segments = _terrain_daylight_search_segments(subassembly, segments)
+    search_step = _parameter_float(params, "daylight_search_step", 0.5)
     segments = _orient_bench_segments_to_terrain(
         segments,
+        subassembly=subassembly,
+        side_label=side_label,
         edge_offset=edge_offset,
         edge_z=edge_z,
+        direction=direction,
         frame=frame,
         existing_ground_surface=existing_ground_surface,
         sampling_service=service,
+        search_step=search_step,
     )
     terrain_context = _bench_terrain_context(
         subassembly,
@@ -3185,7 +3204,7 @@ def _clip_bench_segments_to_terrain(
         frame=frame,
         surface=existing_ground_surface,
         sampling_service=service,
-        search_step=_parameter_float(params, "daylight_search_step", 0.5),
+        search_step=search_step,
     )
     if intersection is None:
         diagnostics.append(
@@ -3218,8 +3237,6 @@ def _clip_bench_segments_to_terrain(
 
 def _terrain_daylight_search_segments(subassembly, segments: list[dict[str, object]]) -> list[dict[str, object]]:
     params = dict(getattr(subassembly, "parameters", {}) or {})
-    if not _truthy(params.get("repeat_first_bench_to_daylight")):
-        return segments
     max_width = _parameter_float(params, "daylight_max_width", _parameter_float(params, "daylight_max_search_width", 0.0))
     if max_width <= _segments_total_width(segments) + 1.0e-9:
         return segments
@@ -3230,29 +3247,101 @@ def _terrain_daylight_search_segments(subassembly, segments: list[dict[str, obje
 def _orient_bench_segments_to_terrain(
     segments: list[dict[str, object]],
     *,
+    subassembly,
+    side_label: str,
     edge_offset: float,
     edge_z: float,
+    direction: float,
     frame: AppliedSectionFrame,
     existing_ground_surface: TINSurface,
     sampling_service: TinSamplingService,
+    search_step: float,
 ) -> list[dict[str, object]]:
-    direction = _bench_cut_fill_slope_direction(
+    positive_segments = _bench_segments_with_context_slope(segments, subassembly=subassembly, sign=1)
+    negative_segments = _bench_segments_with_context_slope(segments, subassembly=subassembly, sign=-1)
+    positive_hit = _find_bench_tin_intersection(
+        positive_segments,
+        side_label=side_label,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        direction=direction,
+        frame=frame,
+        surface=existing_ground_surface,
+        sampling_service=sampling_service,
+        search_step=search_step,
+    )
+    negative_hit = _find_bench_tin_intersection(
+        negative_segments,
+        side_label=side_label,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        direction=direction,
+        frame=frame,
+        surface=existing_ground_surface,
+        sampling_service=sampling_service,
+        search_step=search_step,
+    )
+    if positive_hit is not None and negative_hit is None:
+        return positive_segments
+    if negative_hit is not None and positive_hit is None:
+        return negative_segments
+    if positive_hit is not None and negative_hit is not None:
+        return positive_segments if float(positive_hit) <= float(negative_hit) else negative_segments
+
+    slope_direction = _bench_cut_fill_slope_direction(
         edge_offset=edge_offset,
         edge_z=edge_z,
         frame=frame,
         existing_ground_surface=existing_ground_surface,
         sampling_service=sampling_service,
     )
-    if direction == 0:
+    if slope_direction == 0:
+        slope_direction = _bench_cut_fill_slope_direction_at_distance(
+            edge_offset=edge_offset,
+            edge_z=edge_z,
+            direction=direction,
+            distance=min(_segments_total_width(segments), max(float(search_step or 0.0), 1.0)),
+            frame=frame,
+            existing_ground_surface=existing_ground_surface,
+            sampling_service=sampling_service,
+        )
+    if slope_direction == 0:
         return segments
+    return _bench_segments_with_context_slope(segments, subassembly=subassembly, sign=slope_direction)
+
+
+def _bench_segments_with_slope_sign(segments: list[dict[str, object]], sign: int) -> list[dict[str, object]]:
+    return _bench_segments_with_context_slope(segments, subassembly=None, sign=sign)
+
+
+def _bench_segments_with_context_slope(segments: list[dict[str, object]], *, subassembly, sign: int) -> list[dict[str, object]]:
+    params = dict(getattr(subassembly, "parameters", {}) or {}) if subassembly is not None else {}
     output: list[dict[str, object]] = []
     for segment in list(segments or []):
         row = dict(segment)
         slope = float(row.get("slope", 0.0) or 0.0)
         if abs(slope) > 1.0e-12:
-            row["slope"] = float(direction) * abs(slope)
+            magnitude = _context_slope_magnitude(params, row, sign=sign)
+            row["slope"] = float(sign) * magnitude
         output.append(row)
     return output
+
+
+def _context_slope_magnitude(params: dict[str, object], segment: dict[str, object], *, sign: int) -> float:
+    base = abs(float(segment.get("slope", 0.0) or 0.0))
+    if str(segment.get("kind", "") or "side_slope") != "side_slope":
+        return base
+    if int(sign) > 0:
+        for key in ("cut_slope", "cut_daylight_slope", "daylight_cut_slope"):
+            value = abs(_parameter_float(params, key, 0.0))
+            if value > 1.0e-12:
+                return value
+    if int(sign) < 0:
+        for key in ("fill_slope", "fill_daylight_slope", "daylight_fill_slope"):
+            value = abs(_parameter_float(params, key, 0.0))
+            if value > 1.0e-12:
+                return value
+    return base
 
 
 def _bench_cut_fill_slope_direction(
@@ -3265,6 +3354,32 @@ def _bench_cut_fill_slope_direction(
     tolerance: float = 1.0e-6,
 ) -> int:
     x, y, _z = _station_offset_point(frame, edge_offset, edge_z)
+    sample = sampling_service.sample_xy(surface=existing_ground_surface, x=x, y=y)
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return 0
+    delta = float(sample.z) - float(edge_z)
+    if delta > tolerance:
+        return 1
+    if delta < -tolerance:
+        return -1
+    return 0
+
+
+def _bench_cut_fill_slope_direction_at_distance(
+    *,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    distance: float,
+    frame: AppliedSectionFrame,
+    existing_ground_surface: TINSurface,
+    sampling_service: TinSamplingService,
+    tolerance: float = 1.0e-6,
+) -> int:
+    if float(distance or 0.0) <= tolerance:
+        return 0
+    offset = float(edge_offset) + float(direction) * float(distance)
+    x, y, _z = _station_offset_point(frame, offset, edge_z)
     sample = sampling_service.sample_xy(surface=existing_ground_surface, x=x, y=y)
     if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
         return 0

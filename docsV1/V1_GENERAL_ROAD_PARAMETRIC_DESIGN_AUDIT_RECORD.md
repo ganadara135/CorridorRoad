@@ -837,9 +837,10 @@ Goal:
 Implementation status:
 
 - `2026-06-21`: started.
-- Added `Digital Twin Ready Road` to shared Assembly/Subassembly preset data.
-- The preset includes explicit `pavement_layer:main` and `subbase:main` rows with material, thickness, `solid_family`, and shape-code parameters.
-- The preset keeps lane, shoulder, and side-slope rows so users can still review ordinary road surface behavior while testing physical-body readiness.
+- Added `Full Set Road` to shared Assembly/Subassembly preset data.
+- The preset intentionally excludes `pavement_layer:main` and `subbase:main` while current physical-body authoring is held out of scope.
+- The preset keeps lane, shoulder, gutter, sidewalk, ditch, and side-slope rows so users can review ordinary road surface and drainage behavior.
+- `2026-06-21`: renamed `Digital Twin Ready Road` to `Full Set Road`; sidewalk links to `subassembly-definition:sidewalk-basic`, and ditch links to `subassembly-definition:ditch-trapezoid` from `Starter Road Primitives`.
 - `2026-06-21`: validated with FreeCADCmd.
 
 Acceptance:
@@ -850,12 +851,12 @@ Acceptance:
 
 Goal:
 
-- make the `Digital Twin Ready Road` preset part of the manual QA flow.
+- make the `Full Set Road` preset part of the manual QA flow.
 
 Implementation status:
 
 - `2026-06-21`: started.
-- Manual QA now asks reviewers to load the `Digital Twin Ready Road` Assembly/Subassembly preset.
+- Manual QA now asks reviewers to load the `Full Set Road` Assembly/Subassembly preset.
 - Manual QA now asks reviewers to confirm the preset includes pavement_layer, subbase, lane, shoulder, and side-slope rows.
 - Manual QA now asks reviewers to confirm pavement/subbase rows carry material, thickness, `solid_family`, and `shape_code` contracts for physical-body readiness.
 - `2026-06-21`: validated by checklist string checks.
@@ -868,12 +869,12 @@ Acceptance:
 
 Goal:
 
-- verify that the `Digital Twin Ready Road` preset reaches SolidTargetDiscovery as available physical-body targets.
+- verify that the `Full Set Road` preset reaches Applied Sections as a full ordinary-road surface/drainage review sample.
 
 Implementation status:
 
 - `2026-06-21`: started.
-- Added a contract test that builds Applied Sections from the `Digital Twin Ready Road` preset at two stations.
+- Added a contract test that builds Applied Sections from the `Full Set Road` preset at two stations.
 - The test runs `SolidTargetDiscoveryService` and confirms pavement, subbase, and shoulder physical-body targets are discovered.
 - The test confirms pavement and subbase material contracts survive the preset -> Applied Sections -> SolidTargetDiscovery handoff.
 - `2026-06-21`: validated with FreeCADCmd.
@@ -894,7 +895,7 @@ Implementation status:
 - Phase 6 readiness gates now distinguish envelope readiness, physical-body readiness, and Digital Twin readiness.
 - Physical-body readiness now requires material contracts and continuous closed Subassembly shape profiles across target station spans.
 - Build Corridor Guided Review now shows Watertight Solid readiness and warns for blocked or partial readiness.
-- `Digital Twin Ready Road` now provides a physical-body-ready ordinary-road sample preset and validates through Applied Sections plus SolidTargetDiscovery.
+- `Full Set Road` now provides an ordinary-road full Assembly/Subassembly sample and validates through Applied Sections.
 
 Remaining follow-up:
 
@@ -997,3 +998,21 @@ Acceptance:
 
 - the plan no longer directs the next work toward deeper physical solid geometry QA.
 - remaining work can prioritize intersection, ramp, drainage, and structure source/result stabilization first.
+
+### Phase 7 Target 5 - Assembly/Subassembly physical-body contract UX
+
+Goal:
+
+- make physical-body material, thickness, shape-code, and solid-family contract readiness visible in the Assembly/Subassembly selected-row detail view.
+
+Implementation status:
+
+- `2026-06-21`: started.
+- Selected Subassembly Detail now reports a `Physical-body contract` summary for pavement_layer, subbase, lane, and shoulder rows.
+- The summary reports ready/incomplete status plus shape_code, solid_family, material, thickness, and missing contract fields.
+- Non-physical body rows report that the contract is not applicable instead of implying Solid geometry readiness.
+- `2026-06-21`: validated with FreeCADCmd.
+
+Acceptance:
+
+- users can review physical-body contract readiness without inspecting hidden table columns.

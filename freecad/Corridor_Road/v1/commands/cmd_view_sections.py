@@ -1811,7 +1811,7 @@ def format_section_preview(preview: dict[str, object]) -> str:
     )
 
     lines = [
-        "CorridorRoad v1 Cross Section Viewer",
+        "ParametricRoad v1 Cross Section Viewer",
         f"Result State: {state_text}",
         f"Station: {section_output.station}",
         f"Station Label: {station_label}",
@@ -2095,7 +2095,7 @@ def show_v1_section_preview(
                 )
                 QtGui.QMessageBox.information(
                     None,
-                    "CorridorRoad v1 Cross Section Viewer",
+                    "ParametricRoad v1 Cross Section Viewer",
                     fallback_text,
                 )
             except Exception:

@@ -514,7 +514,7 @@ class StructureEditorTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Edit Structures")
+        w.setWindowTitle("ParametricRoad - Edit Structures")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)

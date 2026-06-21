@@ -229,7 +229,7 @@ class CrossSectionViewerTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Cross Section Viewer")
+        w.setWindowTitle("ParametricRoad - Cross Section Viewer")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)
