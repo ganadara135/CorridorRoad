@@ -34,6 +34,11 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_drainage import to_drainage_model
 from freecad.Corridor_Road.v1.objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+from freecad.Corridor_Road.v1.objects.obj_region import to_region_model
+from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
+    find_v1_assembly_subassembly_model,
+    to_assembly_subassembly_model,
+)
 from freecad.Corridor_Road.v1.objects.obj_superelevation import to_superelevation_model
 from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 
@@ -125,6 +130,13 @@ def test_intersection_preset_source_creation_stores_intersection_model() -> None
 
         superelevation = to_superelevation_model(doc.getObject("V1IntersectionPresetSuperelevation"))
         drainage = to_drainage_model(doc.getObject("V1IntersectionPresetDrainage"))
+        assembly = to_assembly_subassembly_model(find_v1_assembly_subassembly_model(doc))
+        region_models = [
+            to_region_model(region_obj)
+            for region_obj in list(getattr(doc, "Objects", []) or [])
+            if str(getattr(region_obj, "V1ObjectType", "") or "") == "V1RegionModel"
+        ]
+        region_models = [region_model for region_model in region_models if region_model is not None]
         assert superelevation is not None
         assert superelevation.superelevation_kind == "intersection_superelevation_handoff"
         assert len(superelevation.control_rows) == 0
@@ -135,6 +147,25 @@ def test_intersection_preset_source_creation_stores_intersection_model() -> None
         assert len(drainage.element_rows) == 2
         assert len(drainage.policy_rows) == 1
         assert len(drainage.flow_route_rows) == 1
+        assert assembly is not None
+        assert assembly.assembly_id
+        assert assembly.active_template_id
+        assert any(
+            row.kind == "lane" for template in assembly.template_rows for row in template.subassembly_rows
+        )
+        assert any(
+            row.kind == "shoulder" for template in assembly.template_rows for row in template.subassembly_rows
+        )
+        assert any(
+            row.kind == "side_slope" for template in assembly.template_rows for row in template.subassembly_rows
+        )
+        assert region_models
+        assert all(
+            region_row.assembly_ref == assembly.assembly_id
+            and region_row.template_ref == assembly.active_template_id
+            for region_model in region_models
+            for region_row in region_model.region_rows
+        )
     finally:
         App.closeDocument(doc.Name)
 

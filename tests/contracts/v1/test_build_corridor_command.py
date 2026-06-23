@@ -5181,9 +5181,9 @@ def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
         assert "No ditch_surface" in str(rows[0]["notes"])
         assert summary["status"] == "missing"
         assert summary["missing_count"] == 2
-        assert steps[3]["step_id"] == "drainage"
-        assert steps[3]["status"] == "missing"
-        assert "without ditch_surface" in str(steps[3]["notes"])
+        drainage_step = next(step for step in steps if step["step_id"] == "drainage")
+        assert drainage_step["status"] == "missing"
+        assert "without ditch_surface" in str(drainage_step["notes"])
     finally:
         App.closeDocument(doc.Name)
 
@@ -5702,10 +5702,11 @@ def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
 
     steps = corridor_build_guided_review_steps(doc)
     assert [step["step_id"] for step in steps] == ["centerline", "design", "intersections", "slope_issues", "drainage", "drainage_flow"]
-    assert steps[4]["title"] == "5. Drainage Surface"
-    assert steps[5]["title"] == "6. Drainage Flow"
-    assert steps[3]["status"] == "warn"
-    assert steps[3]["focus"] == "First issue marker"
+    assert "supplemental_sections" not in {step["step_id"] for step in steps}
+    assert steps[4]["title"] == "6. Drainage Surface"
+    assert steps[5]["title"] == "7. Drainage Flow"
+    assert steps[3]["status"] == "warning"
+    assert steps[3]["focus"] == "First fallback issue marker"
 
     focused = focus_corridor_build_guided_review_step(doc, "design")
     assert focused.Name == "V1CorridorDesignSurfacePreview"
@@ -6059,6 +6060,107 @@ def test_build_corridor_disclosure_reports_consumed_applied_section_result_roles
         assert "refs=region:intersection-control,region:ordinary" in row["notes"]
         assert "intersection_control_regions=1" in row["notes"]
         assert "control_refs=region:intersection-control" in row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_subassembly_kind_review_does_not_stitch_across_alignment_scopes() -> None:
+    doc, project = _new_project_doc()
+    try:
+        def lane_section(section_id: str, alignment_id: str, station: float, x: float, y: float, tangent: float) -> AppliedSection:
+            left_x = x
+            left_y = y + 3.5
+            if tangent == 90.0:
+                left_x = x - 3.5
+                left_y = y
+            return AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id=section_id,
+                corridor_id="corridor:main",
+                alignment_id=alignment_id,
+                profile_id=f"profile:{alignment_id}",
+                assembly_id="assembly:intersection-starter",
+                station=station,
+                template_id="template:basic-road",
+                region_id=f"region:{alignment_id}",
+                frame=AppliedSectionFrame(station=station, x=x, y=y, z=10.0, tangent_direction_deg=tangent),
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane:left",
+                        kind="lane",
+                        source_template_id="template:basic-road",
+                        source_instance_ref="lane:left",
+                        side="left",
+                        width=3.5,
+                    )
+                ],
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint(
+                        "lane:left:start",
+                        "lane:left",
+                        "fg_surface",
+                        x,
+                        y,
+                        10.0,
+                        lateral_offset=0.0,
+                        side="left",
+                    ),
+                    AppliedSectionSubassemblyPoint(
+                        "lane:left:end",
+                        "lane:left",
+                        "fg_surface",
+                        left_x,
+                        left_y,
+                        9.93,
+                        lateral_offset=3.5,
+                        side="left",
+                    ),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink(
+                        "lane:left:fg",
+                        "lane:left",
+                        "lane:left:start",
+                        "lane:left:end",
+                        "lane_fg",
+                        surface_role="design_surface",
+                    )
+                ],
+            )
+
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id="sections:interleaved-alignments",
+            corridor_id="corridor:main",
+            alignment_id="alignment:primary",
+            station_rows=[
+                AppliedSectionStationRow("row:primary:0", 0.0, "section:primary:0"),
+                AppliedSectionStationRow("row:secondary:0", 0.0, "section:secondary:0"),
+                AppliedSectionStationRow("row:primary:20", 20.0, "section:primary:20"),
+                AppliedSectionStationRow("row:secondary:20", 20.0, "section:secondary:20"),
+            ],
+            sections=[
+                lane_section("section:primary:0", "alignment:primary", 0.0, 0.0, 0.0, 0.0),
+                lane_section("section:secondary:0", "alignment:secondary", 0.0, 50.0, 0.0, 90.0),
+                lane_section("section:primary:20", "alignment:primary", 20.0, 20.0, 0.0, 0.0),
+                lane_section("section:secondary:20", "alignment:secondary", 20.0, 50.0, 20.0, 90.0),
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+
+        obj = build_corridor_command._create_subassembly_kind_review_highlight(
+            document=doc,
+            project=project,
+            kind="lane",
+            visible=False,
+        )
+
+        assert obj is not None
+        assert int(obj.SectionCount) == 4
+        assert int(obj.ContinuityScopeCount) == 2
+        assert int(obj.SurfacePatchCount) == 4
     finally:
         App.closeDocument(doc.Name)
 

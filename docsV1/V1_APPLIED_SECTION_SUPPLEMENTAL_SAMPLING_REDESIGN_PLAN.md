@@ -263,7 +263,7 @@ Build Parametric diagnostics should include:
 | 6 | Done | Update Applied Sections apply summary and Options counters. |
 | 7 | Done | Change Build Parametric to consume AppliedSectionSet as-is and remove hidden supplemental interpolation for normal surface building. |
 | 8 | Done | Keep a temporary compatibility fallback only when old AppliedSectionSet data lacks supplemental sections. |
-| 9 | Done | Update Guided Review rows to report consumed supplemental Applied Sections instead of generated supplemental frames. |
+| 9 | Done | Retire the separate Guided Review supplemental row; keep consumed supplemental Applied Sections visible through preview provenance. |
 | 10 | Done | Remove or hide Build Parametric supplemental density controls after Applied Sections UI is stable. |
 | 11 | Done | Update wiki and troubleshooting docs. |
 | 12 | Done | Add FreeCADCmd contract validation for curved Centerline3DResult producing supplemental Applied Sections. |
@@ -371,7 +371,7 @@ During migration:
 - Build Parametric surface output changes when Applied Sections density changes.
 - Build Parametric no longer generates hidden supplemental frames for normal surface generation.
 - Lane, shoulder, ditch, and side slope surfaces use the same expanded AppliedSectionSet.
-- Guided Review reports consumed supplemental Applied Sections.
+- Build Parametric preview provenance reports consumed supplemental Applied Sections.
 - The 3D marker preview lies on the reviewed 3D Centerline curve.
 - Applied Section origin markers lie on the cyan 3D Centerline through strong vertical curves.
 - Increasing supplemental section density changes smoothness, not baseline location.
@@ -392,7 +392,7 @@ During migration:
 - Confirm supplemental section count increases.
 - Build Parametric after each Applied Sections run.
 - Confirm the surface follows the 3D Centerline more closely at higher density.
-- Confirm Build Parametric reports consumed supplemental Applied Sections, not generated supplemental frames.
+- Confirm Build Parametric preview provenance reports consumed supplemental Applied Sections, not generated supplemental frames.
 - Confirm ditch, side slope, shoulder, and lane highlights continue through supplemental sections.
 - Confirm changing density does not add source station rows.
 - In a strong vertical curve case, compare the red Profile line, cyan 3D Centerline, and green Applied Section origins.

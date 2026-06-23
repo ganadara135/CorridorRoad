@@ -94,7 +94,7 @@ Check:
 - 3D Centerline was built and reviewed before Applied Sections
 - Applied Sections `Supplemental Sections` is enabled
 - Applied Sections summary shows supplemental sections greater than zero on curved spans
-- Build Corridor Guided Review row `2a. Supplemental Sections` reports consumed supplemental sections
+- Build Parametric preview object properties report consumed supplemental sections
 - if Build Corridor reports compatibility fallback, rebuild Applied Sections before trusting the surface
 
 Build Parametric no longer owns supplemental density.

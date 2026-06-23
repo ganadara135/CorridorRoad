@@ -89,6 +89,10 @@ These presets should create source intent and policy rows first. Final corridor 
 
 `Create From Preset` creates editable starter source contracts.
 
+It also creates or reuses the Assembly/Subassembly source used by the generated control Regions.
+
+Lane, Shoulder, and Side Slope geometry should therefore come from Applied Sections resolving those source refs, not from Intersection Presets generating standalone review geometry.
+
 `Use Existing Alignments` links user-created Primary and Secondary Alignment sources into the same preset-driven intersection workflow.
 
 `Preview Edge Network` is available in both modes.
@@ -112,6 +116,8 @@ In existing-alignment mode, the panel can run Auto Detect, preview the edge netw
 It can also create preset-owned Superelevation and Drainage handoff sources.
 
 The preset panel does not directly create final corridor geometry.
+
+Build Parametric Subassembly review highlights keep same-kind Lane, Shoulder, and Side Slope patches scoped to each Alignment so preset-created intersecting roads are not stitched together as one display strip.
 
 The existing `Intersections` panel is not removed.
 
