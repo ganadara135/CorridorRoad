@@ -1,5 +1,5 @@
 param(
-    [string]$FreeCADExe = "D:\Program Files\FreeCAD 1.0\bin\FreeCAD.exe",
+    [string]$FreeCADExe = "D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe",
     [string]$DocumentPath = "",
     [switch]$DryRun
 )

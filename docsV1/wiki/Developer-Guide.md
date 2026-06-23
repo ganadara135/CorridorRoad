@@ -34,7 +34,7 @@ Use FreeCAD Python for tests that depend on FreeCAD modules.
 Preferred local path:
 
 ```powershell
-& 'D:\Program Files\FreeCAD 1.0\bin\python.exe' tests/contracts/v1/test_earthwork_review_handoff.py
+& 'D:\Program Files\FreeCAD 1.1\bin\python.exe' tests/contracts/v1/test_earthwork_review_handoff.py
 ```
 
 Prefer focused contract and service tests over UI-only manual checking.

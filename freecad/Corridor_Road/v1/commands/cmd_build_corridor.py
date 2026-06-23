@@ -15951,11 +15951,27 @@ def _corridor_centerline_preview_shape(document, app_module, part_module):
     if len(points) < 2:
         return None, "empty", points, stations, "", result_id
     try:
-        from .cmd_centerline3d import _make_centerline3d_source_geometry_shape
+        from .cmd_centerline3d import _centerline3d_preview_point_groups, _make_centerline3d_compound_curve_shape
 
-        _make_centerline3d_source_geometry_shape(document, centerline_result)
-        shape, curve_kind = _make_centerline_shape(points, part_module)
-        return shape, f"bspline_display_{curve_kind}", points, stations, "centerline3d_source_geometry", result_id
+        point_groups = _centerline3d_preview_point_groups(centerline_result)
+        grouped_shape, grouped_curve_kind = _make_centerline3d_compound_curve_shape(point_groups, display_mode="bspline")
+        if len(point_groups) > 1:
+            return (
+                grouped_shape,
+                f"grouped_bspline_display_{grouped_curve_kind}",
+                points,
+                stations,
+                "centerline3d_source_geometry",
+                result_id,
+            )
+        return (
+            grouped_shape,
+            f"bspline_display_{grouped_curve_kind}",
+            points,
+            stations,
+            "centerline3d_source_geometry",
+            result_id,
+        )
     except Exception:
         shape, curve_kind = _make_centerline_shape(points, part_module)
         return shape, curve_kind, points, stations, "centerline3d_result_fallback", result_id
