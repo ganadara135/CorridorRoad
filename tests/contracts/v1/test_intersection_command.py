@@ -1,10 +1,9 @@
 import FreeCAD as App
 from types import SimpleNamespace
 
-from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups
+from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, V1_TREE_INTERSECTIONS, ensure_project_tree, find_project
 from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
-    CmdV1IntersectionEditor,
     INTERSECTION_COMMAND_ID,
     INTERSECTION_SOURCE_MODES,
     NEXT_INTERSECTION_WORKFLOW_TEXT,
@@ -43,28 +42,24 @@ from freecad.Corridor_Road.v1.objects.obj_superelevation import to_superelevatio
 from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 
 
-def test_intersection_command_resources_are_specific() -> None:
-    resources = CmdV1IntersectionEditor().GetResources()
-
-    assert resources["MenuText"] == "Intersections"
-    assert "intersection" in resources["ToolTip"].lower()
-    assert str(resources["Pixmap"]).replace("\\", "/").endswith("intersections.svg")
-
-
 def test_intersection_command_is_between_regions_and_structures() -> None:
     commands = corridorroad_workflow_command_groups()["assembly_region"]
+    toolbar = corridorroad_workflow_toolbar_commands()
 
-    assert INTERSECTION_COMMAND_ID in commands
+    assert INTERSECTION_COMMAND_ID not in commands
+    assert INTERSECTION_COMMAND_ID not in toolbar
     assert INTERSECTION_PRESETS_COMMAND_ID in commands
-    assert commands.index("CorridorRoad_V1EditRegions") < commands.index(INTERSECTION_COMMAND_ID)
-    assert commands.index(INTERSECTION_COMMAND_ID) < commands.index(INTERSECTION_PRESETS_COMMAND_ID)
+    assert commands.index("CorridorRoad_V1EditRegions") < commands.index(INTERSECTION_PRESETS_COMMAND_ID)
     assert commands.index(INTERSECTION_PRESETS_COMMAND_ID) < commands.index("CorridorRoad_V1EditStructures")
+    assert INTERSECTION_PRESETS_COMMAND_ID in toolbar
+    assert toolbar.index("CorridorRoad_V1EditRegions") < toolbar.index(INTERSECTION_PRESETS_COMMAND_ID)
+    assert toolbar.index(INTERSECTION_PRESETS_COMMAND_ID) < toolbar.index("CorridorRoad_V1EditStructures")
 
 
 def test_intersection_presets_command_resources_are_specific() -> None:
     resources = CmdV1IntersectionPresets().GetResources()
 
-    assert resources["MenuText"] == "Intersection Presets"
+    assert resources["MenuText"] == "Intersection"
     assert "preset" in resources["ToolTip"].lower()
     assert str(resources["Pixmap"]).replace("\\", "/").endswith("intersections.svg")
 
@@ -680,7 +675,7 @@ def test_intersection_starter_alignment_ids_are_unique() -> None:
 
 
 def test_intersection_command_is_active_only_with_document() -> None:
-    command = CmdV1IntersectionEditor()
+    command = CmdV1IntersectionPresets()
     doc = App.newDocument("CRV1IntersectionCommand")
     try:
         assert command.IsActive() is True

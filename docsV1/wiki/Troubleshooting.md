@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## Local FreeCAD Version Or Path Is Wrong
+
+The current local development and QA environment uses FreeCAD `1.1.1`.
+
+Check:
+
+- Workbench path is `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
+- FreeCAD GUI is `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
+- FreeCADCmd is `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
+- old `v1-0` AppData paths are not being used for this workbench checkout
+
 ## Commands Do Not Appear
 
 After updating Parametric Road:

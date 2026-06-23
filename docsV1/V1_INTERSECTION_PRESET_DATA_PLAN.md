@@ -310,7 +310,7 @@ Each preset should define expected topology checks:
 
 ## 6. UX Plan
 
-### 6.1 Separate Intersection Presets Panel
+### 6.1 Intersection Panel
 
 Keep the existing `Intersections` panel as-is.
 
@@ -325,11 +325,11 @@ Create a separate panel for preset-driven starter design.
 
 Recommended command name:
 
-- `Intersection Presets`
+- `Intersection`
 
 Recommended panel title:
 
-- `Intersection Presets`
+- `Intersection`
 
 The separate panel should provide preset selector entries:
 
@@ -400,7 +400,7 @@ Work:
 - added this plan to `docsV1/README.md`
 - aligned preset names with `IntersectionModel` kinds
 - kept the existing `Intersections` panel type list unchanged
-- added Roundabout as an `Intersection Presets` source-builder kind only for this slice
+- added Roundabout as an `Intersection` source-builder kind only for this slice
 - kept advanced roundabout operation as a documented non-goal
 
 Acceptance:
@@ -414,7 +414,7 @@ Status: First code slice done
 
 Work:
 
-- added a separate `Intersection Presets` command and task panel
+- added an `Intersection` command and task panel
 - keep the existing `Intersections` command and panel behavior unchanged
 - added preset source builders for T, Cross, and Roundabout starter alignments
 - generate Alignment/Profile/Stationing/Region rows through the existing starter-source service
@@ -425,13 +425,13 @@ Work:
 Acceptance:
 
 - opening the existing `Intersections` panel still follows the current workflow
-- opening `Intersection Presets` shows preset-driven starter options
+- opening `Intersection` shows preset-driven starter options
 - selecting a preset creates editable source objects only
 - no final corridor mesh is created by preset load
 
 First-slice implementation note:
 
-- `Intersection Presets` is placed after `Intersections` and before `Structures` in the Assembly & Regions workflow.
+- `Intersection` is placed after `Regions` and before `Structures` in the Assembly & Regions workflow.
 - The panel exposes T, Cross, and Roundabout starter presets.
 - The panel now has two source modes:
   - `Create From Preset`
@@ -564,7 +564,7 @@ Work:
 
 - create manual QA steps for T, Cross, and Roundabout presets
 - include screenshot checkpoints for edge network, Applied Sections, surfaces, drainage, and topology diagnostics
-- update the user-facing wiki to describe the active `Intersection Presets` panel
+- update the user-facing wiki to describe the active `Intersection` panel
 - document current Roundabout preset limitations clearly
 
 Acceptance:
@@ -574,7 +574,7 @@ Acceptance:
 
 First-slice implementation note:
 
-- `V1_INTERSECTION_MANUAL_QA.md` now includes a shared `Intersection Presets` smoke QA flow.
+- `V1_INTERSECTION_MANUAL_QA.md` now includes a shared `Intersection` smoke QA flow.
 - T and Cross presets reuse the existing detailed intersection QA sections.
 - Roundabout has a dedicated preset QA section for:
   - edge-network rows
@@ -582,7 +582,7 @@ First-slice implementation note:
   - radial grading context
   - outside-gutter drainage handoff
   - known first-slice limitations
-- `wiki/Intersections.md` now describes `Intersection Presets` as an active workflow, not a future feature.
+- `wiki/Intersections.md` now describes `Intersection` as an active workflow, not a future feature.
 
 ## 8. Non-Goals
 

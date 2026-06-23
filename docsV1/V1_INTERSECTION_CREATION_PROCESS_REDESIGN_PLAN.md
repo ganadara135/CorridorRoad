@@ -359,7 +359,7 @@ Inventory result:
 | Area | Boundary | Current implementation | Redesign implication |
 | --- | --- | --- | --- |
 | Intersections panel | presentation/source | `cmd_intersection_editor.py` edits an IntersectionModel and can show review previews. | Keep as source editor, but split creation into visible source-completeness steps. |
-| Intersection Presets panel | presentation/source starter | `cmd_intersection_presets.py` creates starter sources or links existing Alignments, Regions, and IntersectionModel data. | Convert presets from one-click seed geometry into staged source examples. |
+| Intersection panel | presentation/source starter | `cmd_intersection_presets.py` creates starter sources or links existing Alignments, Regions, and IntersectionModel data. | Convert presets from one-click seed geometry into staged source examples. |
 | Source model | source | `IntersectionModel` owns legs, control areas, arm policies, edge policies, curb returns, grading policies, and drainage policies. | Promote anchor, corner, lane connection, edge-family, vertical, and drainage intent where currently implicit. |
 | Topology evaluation | evaluation/result | `IntersectionEvaluationService.evaluate_topology()` produces topology contracts. | Keep as first result preview after source completeness validation. |
 | Edge network evaluation | evaluation/result | `evaluate_edge_network()` produces leg, daylight, and curb-return edge rows. | Make source edge-family policy visible before this result is accepted. |

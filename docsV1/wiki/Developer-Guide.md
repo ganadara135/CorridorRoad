@@ -31,6 +31,13 @@ Generated geometry, preview objects, report rows, and exchange packages are outp
 
 Use FreeCAD Python for tests that depend on FreeCAD modules.
 
+Current local environment:
+
+- FreeCAD version: `1.1.1`
+- Workbench path: `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
+- FreeCADCmd: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
+- FreeCAD Python: `D:\Program Files\FreeCAD 1.1\bin\python.exe`
+
 Preferred local path:
 
 ```powershell

@@ -12,7 +12,7 @@ This checklist verifies the edge-network-first Intersection workflow from source
 This QA covers:
 
 - T, Cross, Y, and preset-driven intersection source creation
-- separate `Intersection Presets` workflow for T, Cross, and Roundabout starter contracts
+- `Intersection` workflow for T, Cross, and Roundabout starter contracts
 - multi-alignment 3D Centerline handoff
 - Applied Sections with active intersection context
 - Build Parametric `Intersections` review rows
@@ -39,7 +39,7 @@ Recommended baseline setup:
 2. Create or import TIN if terrain context is needed.
 3. Create main Alignment, Stations, Profile, and 3D Centerline.
 4. Create Assembly and Regions.
-5. Open Intersections.
+5. Open Intersection.
 
 ## Common Acceptance Rules
 
@@ -56,7 +56,7 @@ The QA passes only when:
 - diagnostics are `ready` or actionable `warning`
 - no Report View traceback appears
 
-## Intersection Presets Smoke QA
+## Intersection Smoke QA
 
 Use this smoke test before detailed geometry review.
 
@@ -69,7 +69,7 @@ Run it once for each preset:
 Steps:
 
 1. Open a clean FreeCAD document.
-2. Open `Intersection Presets`.
+2. Open `Intersection`.
 3. Select the preset.
 4. Review Design Vehicle, Radius / Diameter, Control Length, Grading Policy, and Drainage Mode.
 5. Click `Create Sources`.
@@ -96,7 +96,7 @@ Pass criteria:
 - Build Parametric does not silently hide missing policy, grading, or drainage handoff context
 - generated output can be deleted and rebuilt from source rows
 
-## Intersection Presets Existing Alignment QA
+## Intersection Existing Alignment QA
 
 Use this test when the participating Alignments already exist.
 
@@ -104,7 +104,7 @@ Use this test when the participating Alignments already exist.
 2. Create or import a secondary Alignment.
 3. Create matching Profile, Stationing, Region, and 3D Centerline sources as needed.
 4. Confirm Region source rows are tagged with the target intersection ref.
-5. Open `Intersection Presets`.
+5. Open `Intersection`.
 6. Set `Source Mode` to `Use Existing Alignments`.
 7. Select the preset family that matches the intended junction type.
 8. Select Primary Alignment.
@@ -195,9 +195,9 @@ Fail conditions:
 
 Roundabout is currently a preset-driven first-slice source contract.
 
-It is not yet promoted into the existing `Intersections` editor's final intersection type workflow.
+It is not yet promoted beyond the first-slice `Intersection` source workflow.
 
-1. Open `Intersection Presets`.
+1. Open `Intersection`.
 2. Select `Roundabout - Single Lane`.
 3. Confirm default Grading Policy is `roundabout_radial_crossfall`.
 4. Confirm default Drainage Mode is `outside_gutter`.
@@ -331,7 +331,7 @@ Manual QA result should be recorded as:
 
 ```text
 Date:
-FreeCAD version:
+FreeCAD version: 1.1.1
 Parametric Road version/branch:
 Document:
 Intersection kind:

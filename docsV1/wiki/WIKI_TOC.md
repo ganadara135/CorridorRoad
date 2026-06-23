@@ -1,14 +1,20 @@
 # Parametric Road V1 Wiki Drafts
 
-Target release: `v1.0.5`
+Target release: `v1.0.7`
 
 These files are draft source pages for the GitHub Wiki.
 
 Current release links:
 
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.7
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
+
+Current local FreeCAD environment:
+
+- FreeCAD version: `1.1.1`
+- Workbench path: `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
+- FreeCADCmd: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 Recommended publish order:
 

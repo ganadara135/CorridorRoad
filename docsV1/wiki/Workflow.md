@@ -52,9 +52,9 @@ If a result looks wrong, correct the source model or policy that created it, the
 
 ## Primary Flow
 
-`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersection -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
-Regions define station spans and the base Assembly. Intersections then group intersection Regions and participating Alignments into junction control areas. Structures and Drainage then choose their owning Region from their own source panels.
+Regions define station spans and the base Assembly. Intersection creates or links intersection Regions and participating Alignments into junction control areas. Structures and Drainage then choose their owning Region from their own source panels.
 
 3D Centerline is the shared downstream baseline for station/offset/elevation context. Structures, Drainage, Applied Sections, Build Corridor, and Watertight Solids should prefer it when available.
 
@@ -125,13 +125,13 @@ Use `Create Starter Sources` when a quick test junction is needed. It creates ed
 
 Use this order for the starter workflow:
 
-1. Open Intersections.
+1. Open Intersection.
 2. Select the intersection type.
 3. Set Source Mode to `Create Starter Sources`.
 4. Create starter sources.
 5. Confirm the status message includes the generated 3D Centerline.
 6. Review or refresh 3D Centerline.
-7. Apply Intersections.
+7. Apply Intersection.
 8. Build Sections.
 9. Build Parametric.
 10. Review Region Boundaries and Slope Face Issues.

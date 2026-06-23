@@ -4,10 +4,17 @@ This folder contains the Parametric Road v1 redesign documents.
 
 Current public release:
 
-- `Parametric Road 1.0.5`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
+- `Parametric Road 1.0.7`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.7
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
+
+Current local FreeCAD environment:
+
+- FreeCAD version: `1.1.1`
+- Workbench path: `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
+- GUI executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
+- command-line validation executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 Baseline document:
 
@@ -151,7 +158,7 @@ Preferred review workflow:
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
 - model corridor ranges through `Region` as station spans with one base Assembly; Structure and Drainage source models should reference Region from their own panels instead of being authored in the Region table
 - keep the existing `Assembly` editor available during the Subassembly cutover, and introduce `Assembly / Subassembly` as the new source editor for explicit Subassembly rows; opening either panel should not generate corridor geometry until `Apply`
-- order the source-authoring toolbar as `Assembly -> Regions -> Intersections -> Structures -> Drainage`, so Intersections can reference accepted Regions, Structures can reference intersection Regions, and Drainage can reference both Regions and Structure refs when needed
+- order the source-authoring toolbar as `Assembly -> Regions -> Intersection -> Structures -> Drainage`
 - treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids

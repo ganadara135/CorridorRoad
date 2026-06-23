@@ -607,10 +607,10 @@ Acceptance:
 
 | Preset / sample | Current status | Source completeness | Required follow-up |
 | --- | --- | --- | --- |
-| `T Intersection - Basic` | Active in `Intersection Presets`. | Creates editable source objects, IntersectionModel, control Regions, first-slice policy rows, Superelevation handoff, and Drainage handoff. | Add explicit anchor status, corner rows, lane connection policy, edge-family approval status, and control-area intent status. |
-| `Cross Intersection - Basic` | Active in `Intersection Presets`. | Similar to T preset with four-leg context and low-point review drainage mode. | Add explicit per-corner curb-return source rows, lane connection policy, and edge-family approval status for all four approaches. |
+| `T Intersection - Basic` | Active in `Intersection`. | Creates editable source objects, IntersectionModel, control Regions, first-slice policy rows, Superelevation handoff, and Drainage handoff. | Add explicit anchor status, corner rows, lane connection policy, edge-family approval status, and control-area intent status. |
+| `Cross Intersection - Basic` | Active in `Intersection`. | Similar to T preset with four-leg context and low-point review drainage mode. | Add explicit per-corner curb-return source rows, lane connection policy, and edge-family approval status for all four approaches. |
 | `Roundabout - Single Lane` | Active as first-slice preset source builder. | Creates roundabout-style edge families, source objects, drainage handoff, and dedicated manual QA. | Keep as first-slice source contract; advanced operation/capacity/roundabout production workflow remains outside this audit. |
-| `Y Intersection` | Supported in manual QA and source kind direction, but not active in `Intersection Presets` panel rows. | Partial. | Add preset source example with branch roles, diverging alignment geometry, corner policies, and edge-family status. |
+| `Y Intersection` | Supported in manual QA and source kind direction, but not active in `Intersection` panel rows. | Partial. | Add preset source example with branch roles, diverging alignment geometry, corner policies, and edge-family status. |
 | Skewed intersection | Not yet a complete starter preset. | Missing. | Add sample that proves anchor/contact station detection handles skew without patch repair. |
 | Urban curb-return intersection | Not yet a complete starter preset. | Missing. | Add curb/gutter/sidewalk/ditch edge-family source example and drainage intent. |
 | Drainage-sensitive sag intersection | Not yet a complete starter preset. | Missing. | Add low-point/gutter/inlet handoff source data and validation expectations. |

@@ -9,6 +9,16 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-06-23
+
+### Changed
+- Updated the local development and QA documentation for FreeCAD 1.1.1, including the `v1-1` AppData workbench path and FreeCADCmd location.
+- Renamed the user-facing `Intersection Presets` command to `Intersection` and removed the older `Intersections` command from workbench registration and workflow exposure.
+- Clarified the active intersection workflow so starter source creation remains source-driven through Assembly/Subassembly, Region, Applied Sections, and Build Parametric contracts.
+
+### Fixed
+- Fixed Subassembly kind review highlight continuity so Lane, Shoulder, and Side Slope review geometry does not stitch across unrelated intersection alignment scopes.
+
 ## [1.0.5] - 2026-06-15
 
 ### Added
