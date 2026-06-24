@@ -41,7 +41,6 @@ def corridorroad_workflow_command_groups():
             "CorridorRoad_V1SubAssemblyDesigner",
             "CorridorRoad_V1EditAssemblySubassembly",
             "CorridorRoad_V1EditRegions",
-            "CorridorRoad_V1EditIntersections",
             "CorridorRoad_V1IntersectionPresets",
             "CorridorRoad_V1EditStructures",
         ],

@@ -37,7 +37,7 @@ Current runtime behavior is effectively:
 
 This behavior is implemented in:
 
-- [obj_typical_section_template.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_typical_section_template.py)
+- [obj_typical_section_template.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_typical_section_template.py)
 
 
 ## Design Direction

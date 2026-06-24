@@ -967,72 +967,8 @@ def corridor_build_guided_review_steps(
             }
         )
         if step_id == "design":
-            rows.append(
-                corridor_supplemental_sampling_guided_review_row(
-                    doc,
-                    supplemental_sampling_enabled=supplemental_sampling_enabled,
-                    supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
-                    supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
-                    supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
-                )
-            )
             rows.extend(subassembly_kind_rows)
     return rows
-
-
-def corridor_supplemental_sampling_guided_review_row(
-    document=None,
-    *,
-    supplemental_sampling_enabled: bool = True,
-    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
-    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
-    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
-) -> dict[str, object]:
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    applied = to_applied_section_set(find_v1_applied_section_set(doc)) if doc is not None else None
-    if applied is None:
-        return {
-            "step_id": "supplemental_sections",
-            "title": "2a. Supplemental Sections",
-            "roles": ["centerline", "design"],
-            "status": "missing",
-            "focus": "Applied Sections",
-            "notes": "Applied Sections are required before supplemental section diagnostics.",
-        }
-    summary = _applied_section_supplemental_consumption_summary(applied)
-    supplemental_count = int(summary.get("supplemental_section_count", 0) or 0)
-    potential_summary = _build_corridor_potential_supplemental_sampling_summary(
-        doc,
-        applied_section_set=applied,
-        supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
-        supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
-        supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
-    )
-    potential_count = int(potential_summary.get("supplemental_frame_count", 0) or 0)
-    rebuild_needed = supplemental_count <= 0 and potential_count > 0
-    status = "warning" if rebuild_needed else "ready"
-    kind_counts = dict(summary.get("kind_counts", {}) or {})
-    kind_text = ", ".join(f"{key}={value}" for key, value in sorted(kind_counts.items())) or "none"
-    notes = (
-        f"source sections={int(summary.get('source_section_count', 0) or 0)}, "
-        f"supplemental sections={supplemental_count}, "
-        f"total consumed sections={int(summary.get('total_section_count', 0) or 0)}, "
-        f"kinds={kind_text}; "
-        "Build Corridor does not generate hidden supplemental frames."
-    )
-    if rebuild_needed:
-        notes = (
-            f"{notes} Potential supplemental sections={potential_count}; "
-            "rebuild Applied Sections so supplemental rows become explicit result data."
-        )
-    return {
-        "step_id": "supplemental_sections",
-        "title": "2a. Supplemental Sections",
-        "roles": ["centerline", "design"],
-        "status": status,
-        "focus": "Applied Sections",
-        "notes": notes,
-    }
 
 
 def _applied_section_supplemental_consumption_summary(applied_section_set) -> dict[str, object]:
@@ -3096,7 +3032,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     preset_refs: list[str] = []
     preset_statuses: list[str] = []
     source_instance_refs: list[str] = []
-    previous_link_segments: dict[str, tuple[object, object]] = {}
+    previous_link_segments_by_scope: dict[str, dict[str, tuple[object, object]]] = {}
 
     def make_vector(point, *, z_offset: float = 0.0):
         return AppModule.Vector(
@@ -3115,6 +3051,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
             return False
 
     for section in sections:
+        continuity_scope = _subassembly_kind_review_continuity_scope(section)
         subassembly_by_id = {
             str(getattr(row, "subassembly_id", "") or "").strip(): row
             for row in list(getattr(section, "subassembly_rows", []) or [])
@@ -3126,8 +3063,9 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
             if str(getattr(row, "kind", "") or "").strip() == kind_text
         }
         if not target_refs:
-            previous_link_segments = {}
+            previous_link_segments_by_scope[continuity_scope] = {}
             continue
+        previous_link_segments = previous_link_segments_by_scope.setdefault(continuity_scope, {})
         for subassembly_ref in sorted(target_refs):
             source_row = subassembly_by_id.get(subassembly_ref)
             if source_row is None:
@@ -3215,7 +3153,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
                 pass
         if section_has_geometry:
             section_count += 1
-        previous_link_segments = current_link_segments
+        previous_link_segments_by_scope[continuity_scope] = current_link_segments
     if not shapes:
         return None
     try:
@@ -3238,6 +3176,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     _set_preview_float_property(obj, "LinkCount", float(link_count))
     _set_preview_float_property(obj, "ShapeCount", float(shape_count))
     _set_preview_float_property(obj, "SurfacePatchCount", float(surface_patch_count))
+    _set_preview_float_property(obj, "ContinuityScopeCount", float(len(previous_link_segments_by_scope)))
     _set_preview_string_list_property(obj, "SurfaceRoles", _unique_text_values(surface_roles))
     try:
         vobj = getattr(obj, "ViewObject", None)
@@ -3259,6 +3198,15 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     except Exception:
         pass
     return obj
+
+
+def _subassembly_kind_review_continuity_scope(section) -> str:
+    """Return the source scope where adjacent Subassembly review links may be stitched."""
+
+    alignment_id = str(getattr(section, "alignment_id", "") or "").strip() or "(unassigned-alignment)"
+    assembly_id = str(getattr(section, "assembly_id", "") or "").strip() or "(unassigned-assembly)"
+    template_id = str(getattr(section, "template_id", "") or "").strip() or "(unassigned-template)"
+    return f"{alignment_id}|{assembly_id}|{template_id}"
 
 
 def _subassembly_kind_review_color(kind: str) -> tuple[float, float, float]:
@@ -15951,11 +15899,27 @@ def _corridor_centerline_preview_shape(document, app_module, part_module):
     if len(points) < 2:
         return None, "empty", points, stations, "", result_id
     try:
-        from .cmd_centerline3d import _make_centerline3d_source_geometry_shape
+        from .cmd_centerline3d import _centerline3d_preview_point_groups, _make_centerline3d_compound_curve_shape
 
-        _make_centerline3d_source_geometry_shape(document, centerline_result)
-        shape, curve_kind = _make_centerline_shape(points, part_module)
-        return shape, f"bspline_display_{curve_kind}", points, stations, "centerline3d_source_geometry", result_id
+        point_groups = _centerline3d_preview_point_groups(centerline_result)
+        grouped_shape, grouped_curve_kind = _make_centerline3d_compound_curve_shape(point_groups, display_mode="bspline")
+        if len(point_groups) > 1:
+            return (
+                grouped_shape,
+                f"grouped_bspline_display_{grouped_curve_kind}",
+                points,
+                stations,
+                "centerline3d_source_geometry",
+                result_id,
+            )
+        return (
+            grouped_shape,
+            f"bspline_display_{grouped_curve_kind}",
+            points,
+            stations,
+            "centerline3d_source_geometry",
+            result_id,
+        )
     except Exception:
         shape, curve_kind = _make_centerline_shape(points, part_module)
         return shape, curve_kind, points, stations, "centerline3d_result_fallback", result_id

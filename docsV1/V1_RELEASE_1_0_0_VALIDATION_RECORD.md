@@ -20,7 +20,7 @@ Status: automated validation complete, manual QA pending
 
 Commands run with:
 
-`D:\Program Files\FreeCAD 1.0\bin\python.exe`
+`D:\Program Files\FreeCAD 1.1\bin\python.exe`
 
 Passed:
 

@@ -21,16 +21,16 @@ Use runner scripts instead of maintaining long copied command lists in this docu
 Short-term regression pass:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tests/regression/run_short_term_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe'
+powershell -ExecutionPolicy Bypass -File tests/regression/run_short_term_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe'
 ```
 
 Practical engineering scope:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tests/regression/run_practical_scope_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe'
+powershell -ExecutionPolicy Bypass -File tests/regression/run_practical_scope_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe'
 ```
 
-If `FreeCADCmd` is not on `PATH`, the practical-scope runner also tries common `FreeCAD 1.0` install locations on `C:` and `D:` before failing.
+If `FreeCADCmd` is not on `PATH`, the practical-scope runner also tries common `FreeCAD 1.1` install locations on `C:` and `D:` before failing.
 
 ## Running One Smoke
 
@@ -43,14 +43,14 @@ FreeCADCmd -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding
 With an explicit executable path:
 
 ```powershell
-& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding='utf-8').read())"
 ```
 
 ## Maintained Bundles
 
 The maintained practical sample inventory and scenario bundle mapping lives in:
 
-- [PRACTICAL_SAMPLE_SET.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/PRACTICAL_SAMPLE_SET.md)
+- [PRACTICAL_SAMPLE_SET.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/docs/PRACTICAL_SAMPLE_SET.md)
 
 The runner scripts are the source of truth for exact smoke membership:
 

@@ -452,9 +452,9 @@ Recommended diagnostic fields:
 Focused bridge validation:
 
 ```powershell
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_profile_editor.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_evaluation_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_profile_editor.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_evaluation_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
 ```
 
 ## 20. Identity and Provenance

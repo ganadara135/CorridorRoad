@@ -412,18 +412,18 @@ Validation results should be recorded in `diagnostic_rows`.
 Preferred FreeCAD command-line location:
 
 ```powershell
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_evaluation_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_station_sampling_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_evaluation_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_station_sampling_service.py', 'r', encoding='utf-8').read())"
 ```
 
 Related regression checks:
 
 ```powershell
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_alignment_source_object.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_plan_profile_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 plan/profile command bridge contract tests completed.')"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_section_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 section command bridge contract tests completed.')"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_output_mappers.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 output mapper contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_alignment_source_object.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_plan_profile_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 plan/profile command bridge contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_section_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 section command bridge contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_output_mappers.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 output mapper contract tests completed.')"
 ```
 
 ## 18. Diagnostics

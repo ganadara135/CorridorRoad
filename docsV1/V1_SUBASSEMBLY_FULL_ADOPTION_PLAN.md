@@ -775,7 +775,7 @@ Implementation notes:
 - Applied Sections summary and missing-source diagnostics now name `Assembly / Subassembly` as the active source and identify old Assembly rows as legacy fallback.
 - Regions now list Subassembly-based Assembly source ids before legacy Assembly ids and present the reference column as `Assembly Source`.
 - Intersection starter source creation now creates `V1IntersectionStarterAssemblySubassembly` from the new Assembly/Subassembly contract when no compatible source already exists.
-- Intersection and Intersection Presets panels now explain that starter/preset source creation includes Assembly/Subassembly source intent for Regions and Build Sections.
+- The Intersection panel now explains that starter/preset source creation includes Assembly/Subassembly source intent for Regions and Build Sections.
 - Assembly/Subassembly source objects route to `04_Parametric Model > Assemblies` and display the Assembly id in their tree label for easier source selection.
 - Exchange source-context rows and package metadata now include `subassembly_ref` so exported traceability can identify the Subassembly owner.
 - Exchange source-context rows now emit `component_ref` only when no Subassembly owner exists, and side-slope section context is built from `subassembly_rows` before legacy component rows.

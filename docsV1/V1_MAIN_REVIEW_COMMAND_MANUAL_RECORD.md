@@ -19,10 +19,12 @@ Use it after running the actual GUI checks in FreeCAD.
 
 ## 2. Environment
 
+- FreeCAD version:
+  - `1.1.1`
 - FreeCAD GUI executable:
-  - `D:\Program Files\FreeCAD 1.0\bin\FreeCAD.exe`
+  - `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
 - FreeCAD command-line validation executable:
-  - `D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe`
+  - `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 ## 3. Test Document
 

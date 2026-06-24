@@ -144,17 +144,9 @@ It also no longer creates hidden supplemental frames during normal surface gener
 
 If an older project has an AppliedSectionSet without supplemental sections, Build Parametric may use a temporary compatibility fallback and asks the user to rebuild Applied Sections.
 
-The Guided Review table includes:
+Build Parametric keeps supplemental-section consumption as result provenance on the generated preview objects.
 
-`2a. Supplemental Sections`
-
-This row reports:
-
-- source section count
-- supplemental section count
-- total consumed section count
-- station kind counts
-- compatibility fallback status when old Applied Sections need rebuild
+It no longer shows a separate `2a. Supplemental Sections` Guided Review row.
 
 Supplemental section markers are review aids only.
 
@@ -164,7 +156,7 @@ If marker display is available, the marker object is:
 
 Each marker shows the supplemental section frame location and tangent direction.
 
-Use the Guided Review Visibility checkbox to show or hide the marker object.
+Supplemental section consumption is normally checked through generated preview object properties, not through a Guided Review row.
 
 The density control is an approximate spacing policy, not an unlimited subdivision request.
 
@@ -188,8 +180,8 @@ If changing Applied Sections density does not change the generated corridor surf
 2. Rebuild Applied Sections with `Supplemental Sections` enabled.
 3. Check the Applied Sections summary for a larger supplemental section count.
 4. Rebuild Build Corridor.
-5. Check `2a. Supplemental Sections` for consumed supplemental sections.
-6. If compatibility fallback appears, rebuild Applied Sections again so Build Parametric does not need hidden frame fallback.
+5. Inspect the generated Build Parametric preview object properties for consumed supplemental section counts.
+6. If compatibility fallback appears, rebuild Applied Sections again so Build Parametric consumes explicit result rows.
 
 ## 3D Centerline Source Geometry Handoff
 

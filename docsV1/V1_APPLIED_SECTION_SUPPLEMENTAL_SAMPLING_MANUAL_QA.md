@@ -58,7 +58,7 @@ Do not count a synthetic or demo fallback document as a pass.
 4. Confirm the summary reports `Supplemental sections: 0`.
 5. Open `Build Parametric`.
 6. Click `Apply`.
-7. Confirm `2a. Supplemental Sections` reports zero consumed supplemental sections.
+7. Confirm the generated Build Parametric preview object properties report zero consumed supplemental sections.
 8. Inspect the design surface near the curve.
 9. Record whether the surface visibly cuts the curve or appears faceted.
 
@@ -80,7 +80,7 @@ Pass conditions:
 8. Confirm the preview section lies on or near the 3D Centerline curve.
 9. Open `Build Parametric`.
 10. Click `Apply`.
-11. Confirm `2a. Supplemental Sections` reports consumed supplemental sections.
+11. Confirm the generated Build Parametric preview object properties report consumed supplemental sections.
 
 Pass conditions:
 
@@ -129,7 +129,7 @@ Pass conditions:
 
 - Supplemental sections appear in the strong vertical curve span.
 - Surface geometry follows the 3D Centerline elevation curve.
-- Build Parametric reports consumed supplemental sections.
+- Build Parametric preview object properties report consumed supplemental sections.
 
 Fail conditions:
 
@@ -219,7 +219,7 @@ Use this record format:
 ```text
 Document:
 Date:
-FreeCAD version:
+FreeCAD version: 1.1.1
 Parametric Road build:
 
 3D Centerline reviewed: yes/no

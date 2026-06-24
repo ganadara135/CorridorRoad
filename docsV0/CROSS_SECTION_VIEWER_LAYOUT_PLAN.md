@@ -610,7 +610,7 @@ Introduce the shared layout planner without changing every rendering rule at onc
 
 ### Tasks
 
-1. Add `resolve_viewer_layout_plan(...)` helper in [obj_section_set.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_section_set.py) or [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py)
+1. Add `resolve_viewer_layout_plan(...)` helper in [obj_section_set.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_section_set.py) or [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py)
 2. Convert current raw `label_rows` and `dimension_rows` into planned rows
 3. Add `priority`, `band`, `min_span`, `short_text`
 4. Keep existing rendering as fallback while planned rows stabilize

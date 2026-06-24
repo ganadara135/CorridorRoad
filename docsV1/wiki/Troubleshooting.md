@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## Local FreeCAD Version Or Path Is Wrong
+
+The current local development and QA environment uses FreeCAD `1.1.1`.
+
+Check:
+
+- Workbench path is `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
+- FreeCAD GUI is `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
+- FreeCADCmd is `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
+- old `v1-0` AppData paths are not being used for this workbench checkout
+
 ## Commands Do Not Appear
 
 After updating Parametric Road:
@@ -94,7 +105,7 @@ Check:
 - 3D Centerline was built and reviewed before Applied Sections
 - Applied Sections `Supplemental Sections` is enabled
 - Applied Sections summary shows supplemental sections greater than zero on curved spans
-- Build Corridor Guided Review row `2a. Supplemental Sections` reports consumed supplemental sections
+- Build Parametric preview object properties report consumed supplemental sections
 - if Build Corridor reports compatibility fallback, rebuild Applied Sections before trusting the surface
 
 Build Parametric no longer owns supplemental density.

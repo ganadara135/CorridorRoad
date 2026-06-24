@@ -70,11 +70,9 @@ The generated sources are normal editable v1 source objects. You can modify them
 
 `Source Mode = Create Starter Sources` creates editable starter data for the selected intersection type.
 
-Preset-driven starter design uses a separate `Intersection Presets` panel.
+Preset-driven starter design uses the `Intersection` panel.
 
-The existing `Intersections` panel remains the source-model editor and review surface.
-
-Current `Intersection Presets` families are:
+Current `Intersection` preset families are:
 
 - `T Intersection - Basic`
 - `Cross Intersection - Basic`
@@ -82,12 +80,16 @@ Current `Intersection Presets` families are:
 
 These presets should create source intent and policy rows first. Final corridor surfaces are still generated later by `Build Sections` and `Build Parametric`.
 
-`Intersection Presets` supports two source modes:
+`Intersection` supports two source modes:
 
 - `Create From Preset`
 - `Use Existing Alignments`
 
 `Create From Preset` creates editable starter source contracts.
+
+It also creates or reuses the Assembly/Subassembly source used by the generated control Regions.
+
+Lane, Shoulder, and Side Slope geometry should therefore come from Applied Sections resolving those source refs, not from Intersection generating standalone review geometry.
 
 `Use Existing Alignments` links user-created Primary and Secondary Alignment sources into the same preset-driven intersection workflow.
 
@@ -112,6 +114,8 @@ In existing-alignment mode, the panel can run Auto Detect, preview the edge netw
 It can also create preset-owned Superelevation and Drainage handoff sources.
 
 The preset panel does not directly create final corridor geometry.
+
+Build Parametric Subassembly review highlights keep same-kind Lane, Shoulder, and Side Slope patches scoped to each Alignment so preset-created intersecting roads are not stitched together as one display strip.
 
 The existing `Intersections` panel is not removed.
 

@@ -7,10 +7,10 @@ Date: 2026-04-21
 
 Related architecture:
 
-- [CROSS_SECTION_EDITOR_ARCHITECTURE.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_EDITOR_ARCHITECTURE.md)
-- [CROSS_SECTION_EDITOR_GUI_CHECKLIST.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_EDITOR_GUI_CHECKLIST.md)
-- [CROSS_SECTION_VIEWER_LAYOUT_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_VIEWER_LAYOUT_PLAN.md)
-- [CROSS_SECTION_COMPONENT_SCOPE_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_COMPONENT_SCOPE_PLAN.md)
+- [CROSS_SECTION_EDITOR_ARCHITECTURE.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/docs/CROSS_SECTION_EDITOR_ARCHITECTURE.md)
+- [CROSS_SECTION_EDITOR_GUI_CHECKLIST.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/docs/CROSS_SECTION_EDITOR_GUI_CHECKLIST.md)
+- [CROSS_SECTION_VIEWER_LAYOUT_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/docs/CROSS_SECTION_VIEWER_LAYOUT_PLAN.md)
+- [CROSS_SECTION_COMPONENT_SCOPE_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/docs/CROSS_SECTION_COMPONENT_SCOPE_PLAN.md)
 
 ## Non-Removal Decision
 

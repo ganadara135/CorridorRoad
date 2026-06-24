@@ -48,8 +48,9 @@ Before running the scenarios:
 
 Recommended environment:
 
-- FreeCAD executable: `D:\Program Files\FreeCAD 1.0\bin\FreeCAD.exe`
-- command-line validation executable: `D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe`
+- FreeCAD version: `1.1.1`
+- FreeCAD executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
+- command-line validation executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 Important interpretation note:
 

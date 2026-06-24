@@ -1,4 +1,4 @@
-"""Intersection preset source command for Parametric Road v1."""
+"""Intersection source command for Parametric Road v1."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ def intersection_preset_row_from_label(label: str) -> dict[str, object]:
 
 
 def run_v1_intersection_presets_command():
-    """Open the v1 Intersection Presets task panel."""
+    """Open the v1 Intersection task panel."""
 
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
@@ -148,10 +148,10 @@ class V1IntersectionPresetsTaskPanel:
 
     def _build_ui(self):
         root = QtWidgets.QWidget()
-        root.setWindowTitle("Parametric Road v1 - Intersection Presets")
+        root.setWindowTitle("Parametric Road v1 - Intersection")
         layout = QtWidgets.QVBoxLayout(root)
 
-        title = QtWidgets.QLabel("Intersection Presets")
+        title = QtWidgets.QLabel("Intersection")
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
 
@@ -343,12 +343,12 @@ class V1IntersectionPresetsTaskPanel:
             self._update_status("Preset source creation complete, including Assembly / Subassembly source.")
             _show_message(
                 self.form,
-                "Intersection Presets",
+                "Intersection",
                 "Preset source creation complete.\n\nCreated sources include Assembly / Subassembly intent.\nNext: review/apply the source model, then Build Sections.",
             )
         except Exception as exc:
             self._update_status(f"Preset source creation failed: {exc}")
-            _show_message(self.form, "Intersection Presets", f"Preset source creation failed:\n{exc}")
+            _show_message(self.form, "Intersection", f"Preset source creation failed:\n{exc}")
 
     def _auto_detect_existing_alignment_intersection(self):
         errors = validate_existing_alignment_selection(
@@ -382,7 +382,7 @@ class V1IntersectionPresetsTaskPanel:
             self._update_status("Existing Alignment intersection applied.")
             _show_message(
                 self.form,
-                "Intersection Presets",
+                "Intersection",
                 (
                     "Intersection has been applied from existing Alignments.\n\n"
                     f"Object: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')}\n"
@@ -393,7 +393,7 @@ class V1IntersectionPresetsTaskPanel:
         except Exception as exc:
             self._last_applied_intersection = ""
             self._update_status(f"Apply failed: {exc}")
-            _show_message(self.form, "Intersection Presets", f"Intersection was not applied.\n{exc}")
+            _show_message(self.form, "Intersection", f"Intersection was not applied.\n{exc}")
 
     def _preview_edge_network(self):
         try:
@@ -500,7 +500,6 @@ class V1IntersectionPresetsTaskPanel:
                 "Note:",
                 "- Create From Preset creates editable Alignment/Profile/Station/Region and Assembly/Subassembly sources.",
                 "- Existing Alignments mode links user-created Alignment and Region sources in this panel.",
-                "- The existing Intersections panel remains available for source-model review.",
                 "- Final surface-zone and roundabout geometry expansion remain planned follow-up phases.",
             ]
         )
@@ -1255,13 +1254,13 @@ def _format_detection_lines(result) -> list[str]:
 
 
 class CmdV1IntersectionPresets:
-    """Open the v1 Intersection Presets source starter panel."""
+    """Open the v1 Intersection source starter panel."""
 
     def GetResources(self):
         return {
             "Pixmap": icon_path("intersections.svg"),
-            "MenuText": "Intersection Presets",
-            "ToolTip": "Create v1 starter source objects for T, cross, or roundabout intersection presets",
+            "MenuText": "Intersection",
+            "ToolTip": "Create or link v1 intersection source contracts from presets or existing Alignments",
         }
 
     def IsActive(self):

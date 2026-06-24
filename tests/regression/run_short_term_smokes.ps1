@@ -1,14 +1,14 @@
 param(
-    [string]$FreeCADCmdPath = "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe"
+    [string]$FreeCADCmdPath = "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe"
 )
 
 $resolvedFreeCADCmd = $FreeCADCmdPath
 if (-not (Get-Command $resolvedFreeCADCmd -ErrorAction SilentlyContinue)) {
     $fallbacks = @(
-        "D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe",
-        "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe",
-        "C:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe",
-        "C:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe"
+        "D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe",
+        "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe",
+        "C:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe",
+        "C:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe"
     )
     foreach ($candidate in $fallbacks) {
         if (Test-Path -LiteralPath $candidate) {

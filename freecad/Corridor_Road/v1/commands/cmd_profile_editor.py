@@ -1611,7 +1611,7 @@ class V1ProfileEditorTaskPanel:
         button_grid = QtWidgets.QGridLayout()
         button_grid.setHorizontalSpacing(8)
         button_grid.setVerticalSpacing(6)
-        show_button = QtWidgets.QPushButton("Show")
+        show_button = QtWidgets.QPushButton("Show Profile Preview")
         show_button.clicked.connect(self._show_current_profile)
         button_grid.addWidget(show_button, 0, 0)
         apply_button = QtWidgets.QPushButton("Apply")

@@ -597,6 +597,7 @@ def test_centerline3d_toolbar_order_follows_plan_profile_review() -> None:
         "CorridorRoad_V1EditProfile",
         "CorridorRoad_ReviewPlanProfile",
         CENTERLINE3D_COMMAND_ID,
+        "CorridorRoad_V1EditSuperelevation",
     ]
     assert toolbar.index(CENTERLINE3D_COMMAND_ID) == toolbar.index("CorridorRoad_ReviewPlanProfile") + 1
     assert CmdV1Centerline3D().GetResources()["MenuText"] == "3D Centerline"

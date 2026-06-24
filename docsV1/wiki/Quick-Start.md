@@ -1,12 +1,25 @@
 # Quick Start
 
-This page describes the basic Parametric Road v1 workflow for `1.0.5`.
+This page describes the basic Parametric Road v1 workflow on FreeCAD `1.1.1`.
 
 ## 1. Install
 
 1. Place the `CorridorRoad` folder under your FreeCAD `Mod` directory.
 2. Restart FreeCAD.
 3. Select the `Parametric Road` workbench.
+
+Current local workbench path:
+
+```text
+C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad
+```
+
+Current local FreeCAD executables:
+
+```text
+D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe
+D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe
+```
 
 If commands do not appear after an update, restart FreeCAD or reload the workbench.
 
@@ -27,14 +40,15 @@ Use this order:
 9. SubAssembly Designer
 10. Assembly
 11. Region
-12. Structures
-13. Drainage
-14. Applied Sections
-15. Build Corridor
-16. Review
-17. Outputs
-18. AI Assist
-19. Watertight Solids
+12. Intersection
+13. Structures
+14. Drainage
+15. Applied Sections
+16. Build Corridor
+17. Review
+18. Outputs
+19. AI Assist
+20. Watertight Solids
 
 Drainage opens a source editor with Elements, Policies, and Flow Routes. It is placed after Region and Structures so Drainage Elements can reference Region ownership and Structure connection points before downstream corridor evaluation.
 
@@ -56,7 +70,7 @@ For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Al
 8. Optionally open SubAssembly Designer, create reusable definitions, and apply the library.
 9. Create or select an Assembly and place Subassembly definitions.
 10. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
-11. Optionally open Intersections. Use `Create Starter Sources` for a starter junction; it creates participating sources and a multi-alignment 3D Centerline.
+11. Optionally open Intersection. Use `Create Starter Sources` for a starter junction; it creates participating sources and a multi-alignment 3D Centerline.
 12. Optionally open Structures and apply Structure source rows.
 13. Optionally open Drainage and apply drainage source rows.
 14. Run Applied Sections.

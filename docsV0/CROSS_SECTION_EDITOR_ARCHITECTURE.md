@@ -28,10 +28,10 @@ Updated: 2026-04-21
 - Completed in PH-7 so far: added a first before/after canvas overlay slice for selected component edits, with dashed preview geometry, preview labels, overlay debug rows for smoke coverage, width-like drag handles that update the pending editor value from the canvas, handle state feedback for blocked or warning drag cases, explicit daylight/structure conflict overlays plus inspector conflict labels, resolution guidance in the inspector, impact preview, and apply-state messaging when Region or Structure policy changes are needed, direct resolution action buttons that switch the editor into Active Region or Region Daylight Policy follow-up flows, guided policy handoff text plus side-aware daylight-policy preparation when conflict actions are used, and override-migration UX that recognizes `CrossSectionEditPlan` ownership, prepares Region policy handoff, and can disable the local override row after migration.
 - Completed in PH-8 so far: preview freshness tracking now invalidates the impact preview when the target, parameter, scope, value, or range changes; `Apply` stays disabled until `Preview Impact` is current again; blocked previews keep `Apply` disabled; stale-preview messaging is shown directly in the impact panel and apply-state label; preview status text/button state now surface stale/current/blocked workflow status more directly; and a dedicated GUI checklist document has been added for manual closeout.
 - Next development step: `PH-8 GUI Pass/Fail Closeout`.
-- `PH-1 Refactor Viewer Core`: deferred. The current implementation still reuses [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py) directly.
+- `PH-1 Refactor Viewer Core`: deferred. The current implementation still reuses [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py) directly.
 - `PH-2 Selection And Inspection`: implementation complete; FreeCAD GUI manual check pending.
   - Added `CorridorRoad_EditCrossSection`.
-  - Added [task_cross_section_editor.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_editor.py).
+  - Added [task_cross_section_editor.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_editor.py).
   - The editor currently wraps the existing viewer and adds a right-side `Selection / Edit Panel`.
   - Current capability is read-only component target selection, canvas click selection for visible component guides, selected component canvas highlight, source owner display, generated/raw row preview, parameter inspection, and impact-preview scaffolding.
 - `PH-3 Impact Analyzer`: implemented for MVP text preview; GUI manual check pending.
@@ -98,7 +98,7 @@ The current viewer already provides useful foundation:
 - display-unit conversion
 - regression smoke tests
 
-The main problem is organization. [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py) currently owns UI, layout planning, summary generation, Qt rendering, SVG rendering, export, and navigation. Editor behavior should not be added directly into that file without first separating the core pieces.
+The main problem is organization. [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py) currently owns UI, layout planning, summary generation, Qt rendering, SVG rendering, export, and navigation. Editor behavior should not be added directly into that file without first separating the core pieces.
 
 ## Source Of Truth
 
@@ -1019,7 +1019,7 @@ Status: in progress. This is the current active development stage.
 
 Implemented so far:
 
-- added [obj_cross_section_edit_plan.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_cross_section_edit_plan.py)
+- added [obj_cross_section_edit_plan.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_cross_section_edit_plan.py)
 - stores edit ids, enabled flags, scopes, start/end stations, transition distances, target metadata, parameter, value, unit, source scope, and notes
 - writes structured `cross_section_edit|...` rows to `CrossSectionEditPlan.EditRows`
 - validates duplicate ids, missing target/parameter, invalid scope, reversed ranges, and station-scope range mismatch

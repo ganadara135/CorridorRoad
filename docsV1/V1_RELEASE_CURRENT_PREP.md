@@ -1,28 +1,28 @@
 # Parametric Road Current Release Preparation
 
 Date: 2026-06-15
-Status: `1.0.5` release prepared
+Status: `1.0.7` release prepared
 Scope: post-`1.0.0` v1 updates
 
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.5` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.7` release.
 
 ## Release Status
 
-- Release version: `1.0.5`
+- Release version: `1.0.7`
 - Release date: `2026-06-15`
-- Tag: `v1.0.5`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
+- Tag: `v1.0.7`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.7
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.0.5` / `2026-06-15`.
-- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.5` release section.
+- [x] `package.xml` version/date updated to `1.0.7` / `2026-06-23`.
+- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.7` release section.
 - [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
@@ -70,14 +70,14 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG `1.0.5` contains recent Subassembly, Cross Section Viewer, Intersections, and Build Parametric notes.
-- [x] README and local Wiki drafts now point to the `1.0.5` release.
+- [x] CHANGELOG `1.0.7` contains the FreeCAD 1.1.1 documentation baseline, Intersection command consolidation, and intersection review fixes.
+- [x] README and local Wiki drafts now point to the `1.0.7` release.
 
 ## Historical Document Notes
 
 The `1.0.0` release planning and validation records still mention Drainage as a placeholder or under-development stage because that was true for the `2026-05-02` release baseline.
 
-Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.5` changelog section.
+Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.7` changelog section.
 
 ## Release Validation Checklist
 
@@ -103,7 +103,7 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`Parametric Road 1.0.5 advances the source-driven v1 workflow with the active Subassembly model, Applied Sections / Cross Section Viewer stability after the Component-to-Subassembly transition, and continued Intersections / Build Parametric review refinement. Advanced hydraulic analysis, automatic pipe sizing, dedicated Intersection Surface Patch generation, and complete exchange coverage remain future work.`
+`Parametric Road 1.0.7 updates the local development and QA baseline to FreeCAD 1.1.1, consolidates the active intersection starter workflow under Intersection, and refines Subassembly-kind review geometry across multi-alignment intersection scopes. Advanced hydraulic analysis, automatic pipe sizing, dedicated Intersection Surface Patch generation, and complete exchange coverage remain future work.`
 
 Suggested highlights:
 
@@ -133,5 +133,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.0.5` and date `2026-06-15`.
-- The intended release tag is `v1.0.5`.
+- `package.xml` declares version `1.0.7` and date `2026-06-23`.
+- The intended release tag is `v1.0.7`.

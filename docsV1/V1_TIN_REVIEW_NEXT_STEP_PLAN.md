@@ -194,17 +194,17 @@ Acceptance criteria:
 
 Preferred FreeCAD command-line location:
 
-- `D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe`
+- `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 Focused validation commands:
 
 ```powershell
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_build_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_sampling_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_section_sampling_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_review_command.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_mesh_preview_mapper.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_pointcloud_tin_main_command.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_build_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_sampling_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_section_sampling_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_review_command.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_mesh_preview_mapper.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_pointcloud_tin_main_command.py', 'r', encoding='utf-8').read())"
 ```
 
 Add new focused tests as each phase is implemented.
@@ -212,7 +212,7 @@ Add new focused tests as each phase is implemented.
 For test files without a `__main__` runner, use an explicit contract runner:
 
 ```powershell
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_section_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 section command bridge contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_section_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 section command bridge contract tests completed.')"
 ```
 
 ## 8. Implementation Order

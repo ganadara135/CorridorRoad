@@ -1,10 +1,9 @@
 import FreeCAD as App
 from types import SimpleNamespace
 
-from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups
+from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, V1_TREE_INTERSECTIONS, ensure_project_tree, find_project
 from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
-    CmdV1IntersectionEditor,
     INTERSECTION_COMMAND_ID,
     INTERSECTION_SOURCE_MODES,
     NEXT_INTERSECTION_WORKFLOW_TEXT,
@@ -34,32 +33,33 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_drainage import to_drainage_model
 from freecad.Corridor_Road.v1.objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+from freecad.Corridor_Road.v1.objects.obj_region import to_region_model
+from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
+    find_v1_assembly_subassembly_model,
+    to_assembly_subassembly_model,
+)
 from freecad.Corridor_Road.v1.objects.obj_superelevation import to_superelevation_model
 from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 
 
-def test_intersection_command_resources_are_specific() -> None:
-    resources = CmdV1IntersectionEditor().GetResources()
-
-    assert resources["MenuText"] == "Intersections"
-    assert "intersection" in resources["ToolTip"].lower()
-    assert str(resources["Pixmap"]).replace("\\", "/").endswith("intersections.svg")
-
-
 def test_intersection_command_is_between_regions_and_structures() -> None:
     commands = corridorroad_workflow_command_groups()["assembly_region"]
+    toolbar = corridorroad_workflow_toolbar_commands()
 
-    assert INTERSECTION_COMMAND_ID in commands
+    assert INTERSECTION_COMMAND_ID not in commands
+    assert INTERSECTION_COMMAND_ID not in toolbar
     assert INTERSECTION_PRESETS_COMMAND_ID in commands
-    assert commands.index("CorridorRoad_V1EditRegions") < commands.index(INTERSECTION_COMMAND_ID)
-    assert commands.index(INTERSECTION_COMMAND_ID) < commands.index(INTERSECTION_PRESETS_COMMAND_ID)
+    assert commands.index("CorridorRoad_V1EditRegions") < commands.index(INTERSECTION_PRESETS_COMMAND_ID)
     assert commands.index(INTERSECTION_PRESETS_COMMAND_ID) < commands.index("CorridorRoad_V1EditStructures")
+    assert INTERSECTION_PRESETS_COMMAND_ID in toolbar
+    assert toolbar.index("CorridorRoad_V1EditRegions") < toolbar.index(INTERSECTION_PRESETS_COMMAND_ID)
+    assert toolbar.index(INTERSECTION_PRESETS_COMMAND_ID) < toolbar.index("CorridorRoad_V1EditStructures")
 
 
 def test_intersection_presets_command_resources_are_specific() -> None:
     resources = CmdV1IntersectionPresets().GetResources()
 
-    assert resources["MenuText"] == "Intersection Presets"
+    assert resources["MenuText"] == "Intersection"
     assert "preset" in resources["ToolTip"].lower()
     assert str(resources["Pixmap"]).replace("\\", "/").endswith("intersections.svg")
 
@@ -125,6 +125,13 @@ def test_intersection_preset_source_creation_stores_intersection_model() -> None
 
         superelevation = to_superelevation_model(doc.getObject("V1IntersectionPresetSuperelevation"))
         drainage = to_drainage_model(doc.getObject("V1IntersectionPresetDrainage"))
+        assembly = to_assembly_subassembly_model(find_v1_assembly_subassembly_model(doc))
+        region_models = [
+            to_region_model(region_obj)
+            for region_obj in list(getattr(doc, "Objects", []) or [])
+            if str(getattr(region_obj, "V1ObjectType", "") or "") == "V1RegionModel"
+        ]
+        region_models = [region_model for region_model in region_models if region_model is not None]
         assert superelevation is not None
         assert superelevation.superelevation_kind == "intersection_superelevation_handoff"
         assert len(superelevation.control_rows) == 0
@@ -135,6 +142,25 @@ def test_intersection_preset_source_creation_stores_intersection_model() -> None
         assert len(drainage.element_rows) == 2
         assert len(drainage.policy_rows) == 1
         assert len(drainage.flow_route_rows) == 1
+        assert assembly is not None
+        assert assembly.assembly_id
+        assert assembly.active_template_id
+        assert any(
+            row.kind == "lane" for template in assembly.template_rows for row in template.subassembly_rows
+        )
+        assert any(
+            row.kind == "shoulder" for template in assembly.template_rows for row in template.subassembly_rows
+        )
+        assert any(
+            row.kind == "side_slope" for template in assembly.template_rows for row in template.subassembly_rows
+        )
+        assert region_models
+        assert all(
+            region_row.assembly_ref == assembly.assembly_id
+            and region_row.template_ref == assembly.active_template_id
+            for region_model in region_models
+            for region_row in region_model.region_rows
+        )
     finally:
         App.closeDocument(doc.Name)
 
@@ -649,7 +675,7 @@ def test_intersection_starter_alignment_ids_are_unique() -> None:
 
 
 def test_intersection_command_is_active_only_with_document() -> None:
-    command = CmdV1IntersectionEditor()
+    command = CmdV1IntersectionPresets()
     doc = App.newDocument("CRV1IntersectionCommand")
     try:
         assert command.IsActive() is True

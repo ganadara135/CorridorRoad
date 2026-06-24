@@ -2,7 +2,9 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-Parametric Road `1.0.5` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name instead of `Corridor Road`.
+Parametric Road `1.0.7` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name instead of `Corridor Road`.
+
+The current local FreeCAD runtime for development and manual QA is FreeCAD `1.1.1`.
 
 The v1 workflow is source-driven: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics and handoff context.
 
@@ -17,15 +19,22 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 ## Release And Tutorial
 
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.7
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum discussion: https://forum.freecad.org/viewtopic.php?t=103783
+
+## Local FreeCAD Environment
+
+- FreeCAD version: `1.1.1`
+- Workbench path: `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
+- FreeCAD executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
+- FreeCADCmd executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 ## Main V1 Stages
 
 Typical toolbar order:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersection -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Main stages:
 

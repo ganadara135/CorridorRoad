@@ -1055,10 +1055,6 @@ class CmdV1IntersectionEditor:
         run_v1_intersection_editor_command()
 
 
-if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
-    Gui.addCommand(INTERSECTION_COMMAND_ID, CmdV1IntersectionEditor())
-
-
 def _populate_alignment_combo(combo, choices: list[tuple[str, str]]) -> None:
     combo.clear()
     combo.addItem("", "")

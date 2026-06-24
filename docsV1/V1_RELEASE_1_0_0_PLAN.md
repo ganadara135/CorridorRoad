@@ -114,7 +114,7 @@ Automated checks:
 Recommended test command pattern:
 
 ```powershell
-& 'D:\Program Files\FreeCAD 1.0\bin\python.exe' tests/contracts/v1/test_earthwork_review_handoff.py
+& 'D:\Program Files\FreeCAD 1.1\bin\python.exe' tests/contracts/v1/test_earthwork_review_handoff.py
 ```
 
 Manual QA:

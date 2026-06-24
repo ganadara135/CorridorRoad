@@ -311,15 +311,15 @@ Acceptance criteria:
 
 Preferred FreeCAD command-line location:
 
-- `D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe`
+- `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
 
 Recommended focused validation command once tests exist:
 
 ```powershell
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_sampling_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_build_service.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_review_command.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_pointcloud_tin_main_command.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_sampling_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_build_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_review_command.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_pointcloud_tin_main_command.py', 'r', encoding='utf-8').read())"
 ```
 
 If the test is pure Python and the local Python runtime is available, a direct Python run is acceptable, but FreeCADCmd should be preferred for addon-compatible validation.
