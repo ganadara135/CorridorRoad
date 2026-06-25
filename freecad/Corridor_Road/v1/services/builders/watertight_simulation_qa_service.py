@@ -27,6 +27,7 @@ class WatertightSimulationQaSolidInput:
     subassembly_refs: list[str] = field(default_factory=list)
     structure_refs: list[str] = field(default_factory=list)
     flow_route_refs: list[str] = field(default_factory=list)
+    material_refs: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
 
 
@@ -39,6 +40,7 @@ class WatertightSimulationQaBuildRequest:
     solid_inputs: list[WatertightSimulationQaSolidInput] = field(default_factory=list)
     terrain_ready: bool = False
     terrain_bound_box: tuple[float, float, float, float, float, float] | None = None
+    intersection_trim: dict[str, object] = field(default_factory=dict)
     simulation_qa_output_id: str = "simulation-qa:watertight-solids"
 
 
@@ -93,6 +95,18 @@ class WatertightSimulationQaService:
         traceability_diagnostics = _traceability_diagnostics(inputs)
         traceability_error_count = sum(1 for row in traceability_diagnostics if str(getattr(row, "severity", "") or "") == "error")
         traceability_ok = traceability_error_count == 0
+        intersection_trim = dict(getattr(request, "intersection_trim", {}) or {})
+        intersection_trim_status = _trim_text(intersection_trim, "status", "not_available")
+        intersection_trim_fuse_status = _trim_text(intersection_trim, "fuse_status", "not_available")
+        intersection_trim_ready_pair_count = _trim_int(intersection_trim, "ready_pair_count")
+        intersection_trim_blocked_pair_count = _trim_int(intersection_trim, "blocked_pair_count")
+        intersection_trim_max_gap = _intersection_trim_max_gap(intersection_trim)
+        intersection_trim_handoff_status = resolve_intersection_trim_handoff_status(
+            status=intersection_trim_status,
+            fuse_status=intersection_trim_fuse_status,
+            ready_pair_count=intersection_trim_ready_pair_count,
+            blocked_pair_count=intersection_trim_blocked_pair_count,
+        )
         geometry_contact_status = "ok" if contact_check_applied and contact_ok else "check" if contact_diagnostics else "not_checked"
         terrain_domain_status = "ok" if terrain_check_applied and terrain_domain_ok else "check" if terrain_diagnostics else "not_checked"
         port_connection_status = "ok" if port_check_applied and port_connection_ok else "check" if port_diagnostics else "not_checked"
@@ -117,6 +131,7 @@ class WatertightSimulationQaService:
         diagnostics.extend(terrain_diagnostics)
         diagnostics.extend(port_diagnostics)
         diagnostics.extend(traceability_diagnostics)
+        diagnostics.extend(_intersection_trim_diagnostics(intersection_trim, handoff_status=intersection_trim_handoff_status))
         return SimulationQaOutput(
             schema_version=1,
             project_id=str(getattr(request, "project_id", "") or "corridorroad-v1"),
@@ -134,12 +149,18 @@ class WatertightSimulationQaService:
             geometry_contact_status=geometry_contact_status,
             terrain_domain_status=terrain_domain_status,
             port_connection_status=port_connection_status,
+            intersection_trim_status=intersection_trim_status,
+            intersection_trim_fuse_status=intersection_trim_fuse_status,
+            intersection_trim_handoff_status=intersection_trim_handoff_status,
             simulation_ready=simulation_ready,
             invalid_output_count=invalid_count,
             zero_volume_output_count=zero_volume_count,
             contact_issue_count=contact_issue_count,
             terrain_issue_count=terrain_issue_count,
             port_issue_count=port_issue_count,
+            intersection_trim_ready_pair_count=intersection_trim_ready_pair_count,
+            intersection_trim_blocked_pair_count=intersection_trim_blocked_pair_count,
+            intersection_trim_max_gap=intersection_trim_max_gap,
             total_volume=total_volume,
             missing_contexts=missing_contexts,
             family_rows=[
@@ -167,6 +188,70 @@ def _diagnostics(*, missing_contexts: list[str], invalid_count: int, zero_volume
     if zero_volume_count > 0:
         rows.append(_diagnostic("error", "zero_volume_solid_outputs", f"{zero_volume_count} Watertight Solid output object(s) have zero volume."))
     return rows
+
+
+def resolve_intersection_trim_handoff_status(
+    *,
+    status: str,
+    fuse_status: str,
+    ready_pair_count: int,
+    blocked_pair_count: int,
+) -> str:
+    if status in {"", "not_available"}:
+        return "not_available"
+    if ready_pair_count <= 0:
+        return "blocked"
+    if blocked_pair_count > 0:
+        return "check"
+    if fuse_status == "fused":
+        return "accepted"
+    if fuse_status in {"compound_candidate", "fuse_failed_compound"}:
+        return "fallback"
+    return "check"
+
+
+def _intersection_trim_diagnostics(values: dict[str, object], *, handoff_status: str) -> list[SimulationQaDiagnosticRow]:
+    if not values or handoff_status == "not_available":
+        return []
+    status = _trim_text(values, "status", "not_available")
+    result_ref = _trim_text(values, "result_ref", "")
+    ready_count = _trim_int(values, "ready_pair_count")
+    blocked_count = _trim_int(values, "blocked_pair_count")
+    fuse_status = _trim_text(values, "fuse_status", "not_available")
+    max_gap = _intersection_trim_max_gap(values)
+    notes = (
+        f"status={status}; ready_pairs={ready_count}; blocked_pairs={blocked_count}; "
+        f"max_gap={max_gap:.3f}; fuse_status={fuse_status}; handoff={handoff_status}"
+    )
+    if handoff_status == "accepted":
+        return [
+            _diagnostic(
+                "info",
+                "intersection_trim_handoff_accepted",
+                "Intersection trim/fuse handoff has an accepted fused candidate.",
+                source_ref=result_ref,
+                notes=notes,
+            )
+        ]
+    if handoff_status == "fallback":
+        return [
+            _diagnostic(
+                "warning",
+                "intersection_trim_handoff_fallback",
+                "Intersection trim/fuse handoff uses a fallback or compound candidate.",
+                source_ref=result_ref,
+                notes=notes,
+            )
+        ]
+    return [
+        _diagnostic(
+            "warning",
+            "intersection_trim_handoff_check",
+            "Intersection trim/fuse handoff needs review before final simulation handoff.",
+            source_ref=result_ref,
+            notes=notes,
+        )
+    ]
 
 
 def _traceability_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list[SimulationQaDiagnosticRow]:
@@ -622,13 +707,37 @@ def _ref_list_message(values: set[str]) -> str:
     return ",".join(refs) if refs else "-"
 
 
-def _diagnostic(severity: str, kind: str, message: str, *, source_ref: str = "") -> SimulationQaDiagnosticRow:
+def _trim_text(values: dict[str, object], key: str, default: str = "") -> str:
+    return str(values.get(key, default) or default)
+
+
+def _trim_int(values: dict[str, object], key: str) -> int:
+    try:
+        return int(values.get(key, 0) or 0)
+    except Exception:
+        return 0
+
+
+def _intersection_trim_max_gap(values: dict[str, object]) -> float:
+    gaps: list[float] = []
+    for row in list(values.get("pair_rows", []) or []):
+        if not isinstance(row, dict):
+            continue
+        try:
+            gaps.append(float(row.get("distance_xy", 0.0) or 0.0))
+        except Exception:
+            continue
+    return max(gaps) if gaps else 0.0
+
+
+def _diagnostic(severity: str, kind: str, message: str, *, source_ref: str = "", notes: str = "") -> SimulationQaDiagnosticRow:
     return SimulationQaDiagnosticRow(
         diagnostic_id=f"simulation-qa:{kind}",
         severity=severity,
         kind=kind,
         source_ref=str(source_ref or ""),
         message=message,
+        notes=str(notes or ""),
     )
 
 

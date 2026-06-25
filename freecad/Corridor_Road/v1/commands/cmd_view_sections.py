@@ -385,7 +385,12 @@ def _build_intersection_context_rows(
     active_control_area = str(getattr(applied_section, "active_intersection_control_area_id", "") or "").strip()
     active_alignment = str(getattr(applied_section, "alignment_id", "") or "").strip()
     active_grading_policy = str(getattr(applied_section, "active_intersection_grading_policy_ref", "") or "").strip()
-
+    active_source_status = str(getattr(applied_section, "active_intersection_source_status", "") or "").strip()
+    active_source_diagnostics = [
+        str(value or "").strip()
+        for value in list(getattr(applied_section, "active_intersection_source_diagnostic_rows", []) or [])
+        if str(value or "").strip()
+    ]
     service = IntersectionEvaluationService()
     topology = service.evaluate_topology(model)
     edge_network = service.evaluate_edge_network(model, topology_result=topology)
@@ -398,6 +403,16 @@ def _build_intersection_context_rows(
     drainage_hints = service.evaluate_drainage_hints(model, surface_zone_result=surface_zones)
 
     rows: list[dict[str, object]] = [
+        _frame_source_context_row(applied_section),
+        _intersection_context_row(
+            "source_status",
+            active_source_status or "accepted",
+            active_intersection,
+            "station_source_context",
+            source_refs=[active_intersection, active_leg, active_control_area, active_grading_policy],
+            boundary_refs=list(getattr(applied_section, "active_intersection_control_region_refs", []) or []),
+            notes="; ".join(active_source_diagnostics) if active_source_diagnostics else "Intersection source context accepted.",
+        ),
         _intersection_context_row(
             "topology",
             topology.status,
@@ -410,6 +425,8 @@ def _build_intersection_context_rows(
             ),
         )
     ]
+    rows = [row for row in rows if row]
+    rows.extend(_intersection_source_stage_context_rows(applied_section))
 
     for leg_row in list(getattr(topology, "leg_span_rows", []) or []):
         if active_leg and str(getattr(leg_row, "leg_ref", "") or "") != active_leg:
@@ -604,17 +621,143 @@ def _intersection_context_row(
     *,
     source_refs: list[str] | tuple[str, ...] | None = None,
     boundary_refs: list[str] | tuple[str, ...] | None = None,
+    handoff_owner: str = "",
+    handoff_target: str = "",
+    lineage_status: str = "",
     notes: str = "",
 ) -> dict[str, object]:
+    clean_family = str(family or "").strip()
+    clean_row_id = str(row_id or "").strip()
+    clean_role = str(role or "").strip()
+    clean_status = _normalized_intersection_review_status(status)
     return {
-        "family": str(family or "").strip(),
-        "status": _normalized_intersection_review_status(status),
-        "row_id": str(row_id or "").strip(),
-        "role": str(role or "").strip(),
+        "family": clean_family,
+        "status": clean_status,
+        "row_id": clean_row_id,
+        "role": clean_role,
         "source_refs": [str(value).strip() for value in list(source_refs or []) if str(value or "").strip()],
         "boundary_refs": [str(value).strip() for value in list(boundary_refs or []) if str(value or "").strip()],
+        "handoff_owner": str(handoff_owner or "").strip() or _intersection_context_handoff_owner(clean_family),
+        "handoff_target": str(handoff_target or "").strip() or _intersection_context_handoff_target(clean_family, clean_row_id, clean_role),
+        "lineage_status": str(lineage_status or "").strip() or _intersection_context_lineage_status(clean_family, clean_status),
         "notes": str(notes or "").strip(),
     }
+
+
+def _intersection_context_handoff_owner(family: str) -> str:
+    value = str(family or "").strip()
+    if value in {"frame_source"}:
+        return "Applied Sections"
+    if value in {"source_status", "source_stage", "control_area", "topology", "grading", "drainage"}:
+        return "Intersection"
+    if value in {"edge_network", "surface_zone", "corridor_clip", "drainage_hint"}:
+        return "Build Parametric"
+    return "Cross Section Viewer"
+
+
+def _intersection_context_handoff_target(family: str, row_id: str, role: str) -> str:
+    clean_family = str(family or "").strip()
+    clean_row_id = str(row_id or "").strip()
+    clean_role = str(role or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if clean_family == "source_stage" and clean_row_id:
+        return clean_row_id
+    if clean_family == "source_status":
+        return "intersection-source-stage:participants"
+    if clean_family == "frame_source":
+        return f"applied-sections:frame-source:{clean_row_id or 'selected'}"
+    if clean_family in {"edge_network", "surface_zone", "corridor_clip", "drainage_hint"}:
+        return f"build-parametric:intersection:{clean_family}:{clean_row_id or clean_role or 'selected'}"
+    if clean_family in {"control_area", "topology", "grading", "drainage"}:
+        return f"intersection:{clean_family}:{clean_row_id or clean_role or 'selected'}"
+    return f"cross-section-viewer:{clean_family or 'row'}:{clean_row_id or clean_role or 'selected'}"
+
+
+def _intersection_context_lineage_status(family: str, status: str) -> str:
+    clean_family = str(family or "").strip()
+    clean_status = str(status or "").strip().lower()
+    if clean_family == "frame_source":
+        if clean_status in {"fallback", "warning", "error", "missing"}:
+            return clean_status
+        return "source_geometry"
+    if clean_status in {"error", "missing", "blocked"}:
+        return "source_blocked"
+    if clean_status in {"warning", "warn", "fallback", "review_required"}:
+        return "source_warning"
+    if clean_status in {"accepted", "ready", "active", "source_geometry", "result"}:
+        return "accepted_source"
+    return "review_required" if clean_status else ""
+
+
+def _intersection_source_stage_context_rows(applied_section) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for encoded in list(getattr(applied_section, "active_intersection_source_stage_rows", []) or []):
+        parts = [part.strip() for part in str(encoded or "").split("|")]
+        if len(parts) < 3:
+            continue
+        stage = parts[0]
+        status = parts[1]
+        target = parts[2]
+        diagnostics = [item.strip() for item in (parts[3].split(",") if len(parts) > 3 else []) if item.strip()]
+        refs = [item.strip() for item in (parts[4].split(",") if len(parts) > 4 else []) if item.strip()]
+        rows.append(
+            _intersection_context_row(
+                "source_stage",
+                status,
+                target,
+                stage,
+                source_refs=refs,
+                notes="; ".join(diagnostics) if diagnostics else "Intersection source stage accepted.",
+            )
+        )
+    return rows
+
+
+def _frame_source_context_row(applied_section) -> dict[str, object] | None:
+    frame = getattr(applied_section, "frame", None)
+    if frame is None:
+        return None
+    source_mode = str(getattr(frame, "source_mode", "") or "").strip()
+    if not source_mode:
+        source_mode = _frame_source_mode_from_notes(str(getattr(frame, "notes", "") or ""))
+    source_status = str(getattr(frame, "source_status", "") or "").strip()
+    if not source_status:
+        source_status = _frame_source_status_from_mode(source_mode)
+    diagnostics = [
+        str(value or "").strip()
+        for value in list(getattr(frame, "source_diagnostic_rows", []) or [])
+        if str(value or "").strip()
+    ]
+    return _intersection_context_row(
+        "frame_source",
+        source_status,
+        str(getattr(applied_section, "applied_section_id", "") or ""),
+        source_mode or "unknown",
+        source_refs=[
+            str(getattr(applied_section, "alignment_id", "") or ""),
+            str(getattr(applied_section, "profile_id", "") or ""),
+        ],
+        notes="; ".join(diagnostics) if diagnostics else str(getattr(frame, "notes", "") or ""),
+    )
+
+
+def _frame_source_mode_from_notes(notes: str) -> str:
+    text = str(notes or "")
+    if "source=" in text:
+        for token in text.replace(";", " ").split():
+            if token.startswith("source="):
+                return token.split("=", 1)[1].strip()
+    return "unknown"
+
+
+def _frame_source_status_from_mode(source_mode: str) -> str:
+    mode = str(source_mode or "").strip()
+    if mode == "centerline3d_source_geometry":
+        return "source_geometry"
+    if mode == "centerline3d_result":
+        return "result"
+    if mode in {"alignment_profile_fallback", "unknown", ""}:
+        return "fallback"
+    return "accepted"
 
 
 def _normalized_intersection_review_status(status: str) -> str:

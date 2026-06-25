@@ -45,7 +45,15 @@ def _sample_set() -> AppliedSectionSet:
                 profile_id="profile:main",
                 assembly_id="assembly:basic-road",
                 station=0.0,
-                frame=AppliedSectionFrame(station=0.0, x=100.0, y=200.0, z=10.0, tangent_direction_deg=0.0),
+                frame=AppliedSectionFrame(
+                    station=0.0,
+                    x=100.0,
+                    y=200.0,
+                    z=10.0,
+                    tangent_direction_deg=0.0,
+                    source_mode="centerline3d_source_geometry",
+                    source_status="source_geometry",
+                ),
                 surface_left_width=5.0,
                 surface_right_width=4.5,
                 subgrade_depth=0.25,
@@ -61,6 +69,19 @@ def _sample_set() -> AppliedSectionSet:
                     "left:control:normal",
                     "right:control:right-full",
                     "transition:transition:runoff",
+                ],
+                active_intersection_id="intersection:t-01",
+                active_intersection_control_area_id="area:main",
+                active_intersection_leg_id="leg:main",
+                active_intersection_leg_role="primary_before",
+                active_intersection_control_region_refs=["region:main"],
+                active_intersection_grading_policy_ref="grading:main",
+                active_intersection_source_status="warning",
+                active_intersection_source_diagnostic_rows=["source_leg_profile_ref_missing"],
+                active_intersection_source_stage_rows=[
+                    "Anchor|accepted|intersection-source-stage:anchor||intersection:t-01,area:main,leg:main",
+                    "Control Areas|accepted|intersection-source-stage:control_areas||intersection:t-01,area:main,leg:main",
+                    "Edge Families|warning|intersection-source-stage:edge_families|source_leg_edge_policy_refs_missing|intersection:t-01,area:main,leg:main",
                 ],
                 template_id="template:basic-road",
                 region_id="region:main",
@@ -94,7 +115,16 @@ def _sample_set() -> AppliedSectionSet:
                 profile_id="profile:main",
                 assembly_id="assembly:basic-road",
                 station=20.0,
-                frame=AppliedSectionFrame(station=20.0, x=120.0, y=200.0, z=11.0, tangent_direction_deg=0.0),
+                frame=AppliedSectionFrame(
+                    station=20.0,
+                    x=120.0,
+                    y=200.0,
+                    z=11.0,
+                    tangent_direction_deg=0.0,
+                    source_mode="alignment_profile_fallback",
+                    source_status="fallback",
+                    source_diagnostic_rows=["centerline3d_result_missing"],
+                ),
                 surface_left_width=5.5,
                 surface_right_width=4.0,
                 subgrade_depth=0.20,
@@ -145,6 +175,18 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.SuperelevationSourceRows) == [
             "section:1|left:control:normal|right:control:right-full|transition:transition:runoff",
         ]
+        assert list(obj.FrameSourceModes) == ["centerline3d_source_geometry", "alignment_profile_fallback"]
+        assert list(obj.FrameSourceStatuses) == ["source_geometry", "fallback"]
+        assert list(obj.FrameSourceDiagnosticRows) == ["section:2|centerline3d_result_missing"]
+        assert list(obj.IntersectionSourceStatuses) == ["warning", ""]
+        assert list(obj.IntersectionSourceDiagnosticRows) == ["section:1|source_leg_profile_ref_missing"]
+        assert obj.IntersectionSourceSectionCount == 1
+        assert obj.IntersectionSourceWarningCount == 1
+        assert obj.IntersectionSourceDiagnosticCount == 2
+        assert list(obj.IntersectionSourceStatusCounts) == ["warning=1"]
+        assert obj.IntersectionSourceSummary == (
+            "intersection_sections=1;intersection_warnings=1;intersection_source_diagnostics=2"
+        )
         assert len(list(obj.PointRows)) == 6
         assert len(list(obj.SubassemblyRows)) == 2
         assert list(obj.RegionIds) == ["region:main", "region:main"]
@@ -158,9 +200,13 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert obj.SupplementalSectionCount == 0
         assert obj.TotalSectionCount == 2
         assert list(obj.SectionKindCounts) == ["regular_sample=2"]
-        assert list(obj.CenterlineSourceModeCounts) == ["unknown=2"]
+        assert list(obj.CenterlineSourceModeCounts) == [
+            "alignment_profile_fallback=1",
+            "centerline3d_source_geometry=1",
+        ]
+        assert list(obj.CenterlineSourceStatusCounts) == ["fallback=1", "source_geometry=1"]
         assert obj.AppliedSectionDiagnosticSummary == (
-            "sections=2;source=2;supplemental=0;centerline_fallback=2;"
+            "sections=2;source=2;supplemental=0;centerline_fallback=1;"
             "overlap_clip=0;ditch_shape=0;daylight_fallback=0;diagnostics=0"
         )
         assert int(obj.ReviewShapeStationCount) == 0
@@ -217,10 +263,18 @@ def test_v1_applied_section_set_summarizes_result_diagnostics() -> None:
             "alignment_profile_fallback=1",
             "centerline3d_source_geometry=1",
         ]
+        assert list(obj.CenterlineSourceStatusCounts) == ["fallback=1", "source_geometry=1"]
         assert obj.CenterlineFallbackCount == 1
         assert obj.OverlapClipDiagnosticCount == 1
         assert obj.DitchShapeInferenceDiagnosticCount == 1
         assert obj.DaylightFallbackDiagnosticCount == 1
+        assert obj.IntersectionSourceSectionCount == 1
+        assert obj.IntersectionSourceWarningCount == 1
+        assert obj.IntersectionSourceDiagnosticCount == 2
+        assert list(obj.IntersectionSourceStatusCounts) == ["warning=1"]
+        assert obj.IntersectionSourceSummary == (
+            "intersection_sections=1;intersection_warnings=1;intersection_source_diagnostics=2"
+        )
         assert obj.AppliedSectionDiagnosticCount == 3
         assert list(obj.AppliedSectionDiagnosticKinds) == [
             "applied_section_overlap_clip=1",
@@ -258,6 +312,12 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert [row.station for row in model.station_rows] == [0.0, 20.0]
         assert [section.frame.x for section in model.sections] == [100.0, 120.0]
         assert [section.frame.z for section in model.sections] == [10.0, 11.0]
+        assert [section.frame.source_mode for section in model.sections] == [
+            "centerline3d_source_geometry",
+            "alignment_profile_fallback",
+        ]
+        assert [section.frame.source_status for section in model.sections] == ["source_geometry", "fallback"]
+        assert model.sections[1].frame.source_diagnostic_rows == ["centerline3d_result_missing"]
         assert [section.surface_left_width for section in model.sections] == [5.0, 5.5]
         assert [section.surface_right_width for section in model.sections] == [4.5, 4.0]
         assert [section.subgrade_depth for section in model.sections] == [0.25, 0.20]
@@ -272,6 +332,10 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
             "right:control:right-full",
             "transition:transition:runoff",
         ]
+        assert model.sections[0].active_intersection_id == "intersection:t-01"
+        assert model.sections[0].active_intersection_source_status == "warning"
+        assert model.sections[0].active_intersection_source_diagnostic_rows == ["source_leg_profile_ref_missing"]
+        assert model.sections[0].active_intersection_source_stage_rows[2].startswith("Edge Families|warning|intersection-source-stage:edge_families")
         assert [section.subassembly_rows[0].subassembly_id for section in model.sections] == ["lane-1", "lane-1"]
         assert [section.subassembly_rows[0].kind for section in model.sections] == ["lane", "lane"]
         assert model.sections[0].subassembly_rows[0].drainage_refs == ["drainage:side-ditch-right"]

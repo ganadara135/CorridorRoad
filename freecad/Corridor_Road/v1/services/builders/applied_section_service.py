@@ -396,6 +396,9 @@ class AppliedSectionService:
             active_intersection_leg_role=str(getattr(intersection_result, "leg_role", "") or ""),
             active_intersection_control_region_refs=list(getattr(intersection_result, "control_region_refs", ()) or ()),
             active_intersection_grading_policy_ref=str(getattr(intersection_result, "grading_policy_ref", "") or ""),
+            active_intersection_source_status=str(getattr(intersection_result, "source_status", "") or ""),
+            active_intersection_source_diagnostic_rows=list(getattr(intersection_result, "source_diagnostic_rows", ()) or ()),
+            active_intersection_source_stage_rows=_intersection_source_stage_rows(intersection_result),
             intersection_diagnostic_rows=list(getattr(intersection_result, "diagnostic_rows", ()) or ()),
             point_rows=point_rows,
             subassembly_point_rows=subassembly_point_rows,
@@ -505,12 +508,13 @@ class AppliedSectionService:
     ) -> AppliedSectionFrame:
         if centerline_frame is not None and str(getattr(centerline_frame, "status", "") or "") in {"ok", "warning"}:
             source_mode = str(getattr(centerline_frame, "source_mode", "") or "centerline3d_result")
+            source_diagnostics = [str(item) for item in list(getattr(centerline_frame, "diagnostic_rows", []) or []) if str(item)]
             centerline_notes = "; ".join(
                 text
                 for text in [
                     f"source={source_mode}",
                     "compatible_source=centerline3d_result" if source_mode == "centerline3d_source_geometry" else "",
-                    *list(getattr(centerline_frame, "diagnostic_rows", []) or []),
+                    *source_diagnostics,
                 ]
                 if text
             )
@@ -527,15 +531,25 @@ class AppliedSectionService:
                 active_profile_segment_start_id=str(getattr(profile_result, "active_segment_start_id", "") or ""),
                 active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
                 active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
+                source_mode=source_mode,
+                source_status="source_geometry" if source_mode == "centerline3d_source_geometry" else str(getattr(centerline_frame, "status", "") or "ok"),
+                source_diagnostic_rows=source_diagnostics,
                 notes=centerline_notes,
             )
+        fallback_diagnostics = [
+            str(item)
+            for item in [
+                str(getattr(alignment_result, "notes", "") or "").strip(),
+                str(getattr(profile_result, "notes", "") or "").strip(),
+                *(list(getattr(centerline_frame, "diagnostic_rows", []) or []) if centerline_frame is not None else []),
+            ]
+            if str(item)
+        ]
         notes = "; ".join(
             text
             for text in [
                 "source=alignment_profile_fallback",
-                str(getattr(alignment_result, "notes", "") or "").strip(),
-                str(getattr(profile_result, "notes", "") or "").strip(),
-                *(list(getattr(centerline_frame, "diagnostic_rows", []) or []) if centerline_frame is not None else []),
+                *fallback_diagnostics,
             ]
             if text
         )
@@ -553,6 +567,9 @@ class AppliedSectionService:
             active_profile_segment_start_id=str(getattr(profile_result, "active_segment_start_id", "") or ""),
             active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
             active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
+            source_mode="alignment_profile_fallback",
+            source_status="fallback",
+            source_diagnostic_rows=fallback_diagnostics,
             notes=notes,
         )
 
@@ -1518,7 +1535,6 @@ def _supplemental_applied_section_station_series(
                 frame_service=frame_service,
                 tangent_delta_threshold_deg=tangent_delta_threshold_deg,
                 chord_deviation_threshold=chord_deviation_threshold,
-                alignment=alignment,
                 profile=profile,
                 profile_service=profile_service,
                 vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
@@ -3721,6 +3737,18 @@ def _intersection_context_diagnostics(result: IntersectionEvaluationResult | Non
         return []
     active_id = str(getattr(result, "active_intersection_id", "") or "")
     rows = []
+    for kind in list(getattr(result, "source_diagnostic_rows", ()) or ()):
+        text = str(kind or "")
+        if not text:
+            continue
+        rows.append(
+            DiagnosticMessage(
+                severity="warning",
+                kind=text,
+                message="Intersection source diagnostic from Applied Sections handoff.",
+                notes=f"intersection_id={active_id};station={float(getattr(result, 'station', 0.0) or 0.0):g}",
+            )
+        )
     for kind in list(getattr(result, "diagnostic_rows", ()) or ()):
         text = str(kind or "")
         if text in {
@@ -3736,6 +3764,50 @@ def _intersection_context_diagnostics(result: IntersectionEvaluationResult | Non
                 notes=f"intersection_id={active_id};station={float(getattr(result, 'station', 0.0) or 0.0):g}",
             )
         )
+    return rows
+
+
+def _intersection_source_stage_rows(result: IntersectionEvaluationResult | None) -> list[str]:
+    if result is None or not str(getattr(result, "active_intersection_id", "") or ""):
+        return []
+    diagnostics = [
+        str(value or "").strip()
+        for value in list(getattr(result, "source_diagnostic_rows", ()) or ())
+        if str(value or "").strip()
+    ]
+    stage_diagnostics = {
+        "Anchor": [item for item in diagnostics if item.startswith("source_anchor")],
+        "Control Areas": [
+            item
+            for item in diagnostics
+            if item.startswith("source_control_area")
+            or item.startswith("source_control_region")
+            or item.startswith("source_curb_return_policy")
+            or item.startswith("source_grading_policy")
+            or item.startswith("source_drainage_policy")
+        ],
+        "Edge Families": [
+            item
+            for item in diagnostics
+            if item.startswith("source_edge")
+            or item.startswith("source_leg_edge_policy")
+            or item == "unresolved_edge_policy"
+            or item == "missing_edge_policy"
+        ],
+    }
+    active_intersection = str(getattr(result, "active_intersection_id", "") or "")
+    rows: list[str] = []
+    for stage, items in stage_diagnostics.items():
+        status = "warning" if items else "accepted"
+        target = "intersection-source-stage:" + stage.lower().replace(" ", "_").replace("-", "_")
+        refs = _unique_refs(
+            [
+                active_intersection,
+                str(getattr(result, "active_control_area_id", "") or ""),
+                str(getattr(result, "active_leg_id", "") or ""),
+            ]
+        )
+        rows.append("|".join([stage, status, target, ",".join(items), ",".join(refs)]))
     return rows
 
 

@@ -24,7 +24,12 @@ class IntersectionSlopeFaceLoopRow:
     loop_points_xyz: tuple[tuple[float, float, float], ...] = ()
     source_applied_section_refs: tuple[str, ...] = ()
     source_edge_network_refs: tuple[str, ...] = ()
+    source_edge_network_status: str = ""
     source_surface_zone_refs: tuple[str, ...] = ()
+    source_surface_zone_status: str = ""
+    source_status: str = "accepted"
+    source_diagnostic_rows: tuple[str, ...] = ()
+    source_lineage_status: str = "accepted"
     closed_xy: bool = False
     self_crossing: bool = False
     overlaps_intersection_surface: bool = False

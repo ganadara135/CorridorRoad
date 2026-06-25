@@ -64,6 +64,24 @@ def export_exchange_package_to_json(path: str | Path, exchange_package_obj) -> d
         "payload_byte_count": payload["payload_byte_count"],
         "quantity_fragment_count": payload["quantity_fragment_count"],
         "source_context_count": int(payload_metadata.get("source_context_count", 0) or 0),
+        "watertight_intersection_source_context_count": int(
+            payload_metadata.get("watertight_intersection_source_context_count", 0) or 0
+        ),
+        "watertight_intersection_surface_zone_context_count": int(
+            payload_metadata.get("watertight_intersection_surface_zone_context_count", 0) or 0
+        ),
+        "watertight_intersection_diagnostic_ref_count": int(
+            payload_metadata.get("watertight_intersection_diagnostic_ref_count", 0) or 0
+        ),
+        "simulation_intersection_handoff_context_count": int(
+            payload_metadata.get("simulation_intersection_handoff_context_count", 0) or 0
+        ),
+        "simulation_intersection_replacement_blocker_kind": str(
+            payload_metadata.get("simulation_intersection_replacement_blocker_kind", "") or ""
+        ),
+        "simulation_intersection_replacement_blocker_kinds": list(
+            payload_metadata.get("simulation_intersection_replacement_blocker_kinds", []) or []
+        ),
         "side_slope_source_context_count": int(payload_metadata.get("side_slope_source_context_count", 0) or 0),
         "bench_source_context_count": int(payload_metadata.get("bench_source_context_count", 0) or 0),
         "packaged_output_count": len(list(payload["packaged_output_ids"] or [])),

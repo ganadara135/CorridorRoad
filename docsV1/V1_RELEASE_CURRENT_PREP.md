@@ -103,7 +103,7 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`Parametric Road 1.0.7 updates the local development and QA baseline to FreeCAD 1.1.1, consolidates the active intersection starter workflow under Intersection, and refines Subassembly-kind review geometry across multi-alignment intersection scopes. Advanced hydraulic analysis, automatic pipe sizing, dedicated Intersection Surface Patch generation, and complete exchange coverage remain future work.`
+`Parametric Road 1.0.7 updates the local development and QA baseline to FreeCAD 1.1.1, consolidates the active intersection starter workflow under Intersection, refines Subassembly-kind review geometry across multi-alignment intersection scopes, and exposes transitional Intersection Surface Patch result rows for review. Advanced hydraulic analysis, automatic pipe sizing, accepted Intersection Surface Zone output, and complete exchange coverage remain future work.`
 
 Suggested highlights:
 

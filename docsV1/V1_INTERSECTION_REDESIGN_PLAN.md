@@ -345,21 +345,25 @@ It must record:
 - `status`
 - `diagnostics`
 
-Build Parametric should expose the boundary before using it for triangulation.
+Build Parametric should record the boundary before using it for triangulation.
 
-The first implementation step is a preview-only boundary object so users can verify whether the strip is correct.
+The visible boundary preview object is currently suppressed.
 
-The second implementation step is strip triangulation between the inner and outer boundary polylines.
+Boundary review is metadata-only until a production-safe boundary display is approved.
 
-This step appends `intersection_slope_face_boundary_strip` triangles to the Slope Face Surface result.
+The visible strip triangulation step is currently suppressed.
 
-The strip result must remain traceable through quality rows:
+The earlier implementation appended `intersection_slope_face_boundary_strip` triangles to the Slope Face Surface result, but manual QA showed visible forced rectangular patches in Side Slope Surface areas.
+
+Build Parametric now records boundary metadata only:
 
 - `intersection_slope_face_boundary_strip_count`
 - `intersection_slope_face_boundary_strip_sample_count`
 - `intersection_slope_face_boundary_strip_triangle_count`
+- `intersection_slope_face_boundary_strip_generation_mode=suppressed`
+- `intersection_slope_face_boundary_strip_output_path=metadata_only`
 
-The ordinary `Corridor Slope Face Surface` remains responsible outside the intersection boundary strips.
+The ordinary `Corridor Slope Face Surface` remains responsible outside the intersection footprint.
 
 The `Intersection Surface` remains responsible inside the intersection footprint.
 
@@ -717,7 +721,7 @@ Phase 11 completion note:
 
 - Cross Section Viewer payloads now include `intersection_context_rows` when the focused Applied Section has active intersection context.
 - The context rows are generated from `IntersectionEvaluationService` topology, edge-network, surface-zone, and corridor-clipping contracts.
-- The Viewer now shows an `Intersection Context` table with family, status, ID, role, source refs, boundary refs, and notes.
+- The Viewer now shows an `Intersection Context` table with family, status, ID, role, source refs, boundary refs, handoff owner, handoff target, lineage status, and notes.
 - Viewer summary text also reports the intersection contract row count and grouped contract summary.
 - The table includes active leg, control area, pavement/daylight/curb-return edge context, surface-zone responsibility, ordinary corridor clipping responsibility, grading policy, and drainage policy.
 - This phase is review-only and does not generate or modify mesh geometry.
@@ -973,7 +977,8 @@ Fail conditions:
 
 ### 15.14 Phase 15.4 Completion Note
 
-- Build Parametric now creates `V1CorridorIntersectionSlopeFaceLoopPreview` from `IntersectionSlopeFaceLoopResult` and the evaluated edge network.
+- Build Parametric no longer creates `V1CorridorIntersectionSlopeFaceLoopPreview` by default.
+- Slope Face Loop contract metadata remains available on the main Intersection preview and related review rows.
 - The preview is linework only; it exposes candidate loop references before any new Slope Face mesh generation is attempted.
 - Intersection contract review includes `slope_face_loop` rows, and double-click focus highlights the related loop boundary edges in 3D.
 - The preview is routed under `04_Parametric Model > Intersections` with the other intersection review/output objects.

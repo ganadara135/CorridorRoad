@@ -1,19 +1,56 @@
-from dataclasses import replace
+from dataclasses import fields, replace
 
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionAnchorRow,
     IntersectionArmPolicyRow,
     IntersectionControlArea,
+    IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
     IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
+    IntersectionLaneConnectionRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
 )
+from freecad.Corridor_Road.v1.models.result.intersection_corridor_clipping import IntersectionCorridorClipRow
+from freecad.Corridor_Road.v1.models.result.intersection_drainage_hint import IntersectionDrainageHintRow
+from freecad.Corridor_Road.v1.models.result.intersection_edge_network import IntersectionEdgeNetworkRow
+from freecad.Corridor_Road.v1.models.result.intersection_grading_context import IntersectionGradingContextRow
+from freecad.Corridor_Road.v1.models.result.intersection_slope_face_loop import IntersectionSlopeFaceLoopRow
+from freecad.Corridor_Road.v1.models.result.intersection_surface_zone import IntersectionSurfaceZoneRow
+from freecad.Corridor_Road.v1.models.result.intersection_topology import (
+    IntersectionTopologyAnchorRow,
+    IntersectionTopologyControlAreaRow,
+    IntersectionTopologyLaneConnectionRow,
+    IntersectionTopologyLegSpanRow,
+)
 from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import (
     IntersectionEvaluationService,
 )
+
+
+def test_intersection_core_result_rows_expose_source_status_contract() -> None:
+    """Core evaluated result rows must preserve source lineage for review/output consumers."""
+
+    row_types = (
+        IntersectionTopologyAnchorRow,
+        IntersectionTopologyLegSpanRow,
+        IntersectionTopologyControlAreaRow,
+        IntersectionTopologyLaneConnectionRow,
+        IntersectionEdgeNetworkRow,
+        IntersectionSurfaceZoneRow,
+        IntersectionCorridorClipRow,
+        IntersectionGradingContextRow,
+        IntersectionDrainageHintRow,
+        IntersectionSlopeFaceLoopRow,
+    )
+
+    for row_type in row_types:
+        field_names = {field.name for field in fields(row_type)}
+        assert "source_status" in field_names, row_type.__name__
+        assert "source_diagnostic_rows" in field_names, row_type.__name__
 
 
 def _sample_intersection_model() -> IntersectionModel:
@@ -94,6 +131,21 @@ def _sample_intersection_model() -> IntersectionModel:
                 ],
             )
         ],
+        anchor_rows=[
+            IntersectionAnchorRow(
+                anchor_id="anchor:intersection:t-01:main",
+                intersection_id="intersection:t-01",
+                source_method="manual",
+                approval_status="locked",
+                primary_alignment_ref="alignment:main",
+                primary_station=520.0,
+                secondary_station_refs={"alignment:side": 60.0},
+                point_x=10.0,
+                point_y=20.0,
+                point_z=30.0,
+                tolerance=0.05,
+            )
+        ],
         control_area_rows=[
             IntersectionControlArea(
                 control_area_id="intersection:t-01:control-main",
@@ -120,6 +172,32 @@ def _sample_intersection_model() -> IntersectionModel:
                 drainage_policy_ref="policy:drainage-side",
             ),
         ],
+        corner_rows=[
+            IntersectionCornerRow(
+                corner_id="corner:intersection:t-01:left",
+                intersection_id="intersection:t-01",
+                control_area_ref="intersection:t-01:control-main",
+                from_leg_ref="intersection:t-01:leg-main-before",
+                to_leg_ref="intersection:t-01:leg-side",
+                side="left",
+                quadrant="left",
+                curb_return_policy_ref="policy:curb-return-main",
+                source_method="manual",
+                approval_status="locked",
+            ),
+            IntersectionCornerRow(
+                corner_id="corner:intersection:t-01:right",
+                intersection_id="intersection:t-01",
+                control_area_ref="intersection:t-01:control-main",
+                from_leg_ref="intersection:t-01:leg-side",
+                to_leg_ref="intersection:t-01:leg-main-after",
+                side="right",
+                quadrant="right",
+                curb_return_policy_ref="policy:curb-return-main",
+                source_method="manual",
+                approval_status="locked",
+            ),
+        ],
         arm_policy_rows=[
             IntersectionArmPolicyRow("arm-policy:t-01:primary-before", "intersection:t-01", "intersection:t-01:leg-main-before"),
             IntersectionArmPolicyRow("arm-policy:t-01:primary-after", "intersection:t-01", "intersection:t-01:leg-main-after"),
@@ -136,37 +214,130 @@ def _sample_intersection_model() -> IntersectionModel:
                     "intersection:t-01:leg-main-after",
                     "intersection:t-01:leg-side",
                 ],
+                corner_refs=[
+                    "corner:intersection:t-01:left",
+                    "corner:intersection:t-01:right",
+                ],
             )
         ],
         edge_policy_rows=[
-            IntersectionEdgePolicyRow("edge-policy:t-01:primary-before:pavement", "intersection:t-01", "intersection:t-01:leg-main-before"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:t-01:primary-before:pavement",
+                "intersection:t-01",
+                "intersection:t-01:leg-main-before",
+                edge_family_intent="lane",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="lane",
+            ),
             IntersectionEdgePolicyRow(
                 "edge-policy:t-01:primary-before:daylight",
                 "intersection:t-01",
                 "intersection:t-01:leg-main-before",
                 edge_role="daylight_hinge",
+                edge_family_intent="side_slope",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="side_slope",
             ),
-            IntersectionEdgePolicyRow("edge-policy:t-01:primary-after:pavement", "intersection:t-01", "intersection:t-01:leg-main-after"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:t-01:primary-after:pavement",
+                "intersection:t-01",
+                "intersection:t-01:leg-main-after",
+                edge_family_intent="lane",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="lane",
+            ),
             IntersectionEdgePolicyRow(
                 "edge-policy:t-01:primary-after:daylight",
                 "intersection:t-01",
                 "intersection:t-01:leg-main-after",
                 edge_role="daylight_hinge",
+                edge_family_intent="side_slope",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="side_slope",
             ),
-            IntersectionEdgePolicyRow("edge-policy:t-01:side:pavement", "intersection:t-01", "intersection:t-01:leg-side"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:t-01:side:pavement",
+                "intersection:t-01",
+                "intersection:t-01:leg-side",
+                edge_family_intent="lane",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="lane",
+            ),
             IntersectionEdgePolicyRow(
                 "edge-policy:t-01:side:daylight",
                 "intersection:t-01",
                 "intersection:t-01:leg-side",
                 edge_role="daylight_hinge",
+                edge_family_intent="side_slope",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="side_slope",
+            ),
+        ],
+        lane_connection_rows=[
+            IntersectionLaneConnectionRow(
+                connection_id="lane-connection:intersection:t-01:through-main",
+                intersection_id="intersection:t-01",
+                movement_type="through",
+                from_leg_ref="intersection:t-01:leg-main-before",
+                to_leg_ref="intersection:t-01:leg-main-after",
+                from_edge_policy_ref="edge-policy:t-01:primary-before:pavement",
+                to_edge_policy_ref="edge-policy:t-01:primary-after:pavement",
+                source_method="manual",
+                approval_status="locked",
+            ),
+            IntersectionLaneConnectionRow(
+                connection_id="lane-connection:intersection:t-01:turn-side",
+                intersection_id="intersection:t-01",
+                movement_type="turn",
+                from_leg_ref="intersection:t-01:leg-side",
+                to_leg_ref="intersection:t-01:leg-main-after",
+                from_edge_policy_ref="edge-policy:t-01:side:pavement",
+                to_edge_policy_ref="edge-policy:t-01:primary-after:pavement",
+                source_method="manual",
+                approval_status="locked",
             ),
         ],
         grading_policy_rows=[
-            IntersectionGradingPolicyRow("policy:grading-main", "intersection:t-01", primary_alignment_ref="alignment:main"),
-            IntersectionGradingPolicyRow("policy:grading-side", "intersection:t-01", primary_alignment_ref="alignment:side"),
+            IntersectionGradingPolicyRow(
+                "policy:grading-main",
+                "intersection:t-01",
+                primary_alignment_ref="alignment:main",
+                controlling_profile_ref="profile:main",
+                crown_behavior="preserve_primary_crown",
+                tie_in_rule="tie_to_primary_profile",
+                crossfall_transition="linear",
+                low_point_strategy="review_low_points",
+                approval_status="locked",
+            ),
+            IntersectionGradingPolicyRow(
+                "policy:grading-side",
+                "intersection:t-01",
+                primary_alignment_ref="alignment:side",
+                controlling_profile_ref="profile:side",
+                crown_behavior="blend_primary_side_crowns",
+                tie_in_rule="blend_to_leg_profiles",
+                crossfall_transition="linear",
+                low_point_strategy="review_low_points",
+                approval_status="locked",
+            ),
         ],
         drainage_policy_rows=[
-            IntersectionDrainagePolicyRow("policy:drainage-main", "intersection:t-01"),
+            IntersectionDrainagePolicyRow(
+                "policy:drainage-main",
+                "intersection:t-01",
+                drainage_element_refs=["drainage:inlet-main"],
+                flow_route_refs=["flow-route:main"],
+                inlet_candidate_refs=["inlet-candidate:main"],
+                low_point_refs=["low-point:central"],
+                intent_status="accepted",
+                approval_status="locked",
+            ),
         ],
     )
 
@@ -225,14 +396,25 @@ def test_intersection_evaluation_reports_missing_leg_when_control_area_matches()
 def test_intersection_topology_evaluation_returns_leg_spans_control_areas_and_diagnostics() -> None:
     result = IntersectionEvaluationService().evaluate_topology(_sample_intersection_model())
 
-    assert result.status == "ready"
+    assert result.status == "warning"
     assert result.intersection_id == "intersection:t-01"
     assert result.intersection_kind == "t_intersection"
     assert result.participating_alignment_count == 2
     assert result.control_region_count == 2
+    assert result.anchor_count == 1
     assert result.leg_span_count == 3
     assert result.control_area_count == 2
-    assert result.diagnostic_rows == []
+    assert result.lane_connection_count == 2
+    assert any(row.startswith("warning:source_leg_profile_ref_missing:") for row in result.diagnostic_rows)
+    assert result.anchor_rows[0].source_anchor_ref == "anchor:intersection:t-01:main"
+    assert result.anchor_rows[0].primary_alignment_ref == "alignment:main"
+    assert result.anchor_rows[0].primary_station == 520.0
+    assert result.anchor_rows[0].secondary_station_refs == (("alignment:side", 60.0),)
+    assert result.anchor_rows[0].point_xyz == (10.0, 20.0, 30.0)
+    assert result.anchor_rows[0].tolerance == 0.05
+    assert result.anchor_rows[0].source_status == "accepted"
+    assert result.anchor_rows[0].station_lineage_status == "accepted"
+    assert result.anchor_rows[0].handoff_target == "intersection-source-stage:anchor:anchor-intersection-t-01-main"
     assert result.leg_span_rows[0].leg_ref == "intersection:t-01:leg-main-before"
     assert result.leg_span_rows[0].station_start == 480.0
     assert result.leg_span_rows[0].station_end == 520.0
@@ -243,6 +425,32 @@ def test_intersection_topology_evaluation_returns_leg_spans_control_areas_and_di
     )
     assert result.control_area_rows[1].alignment_ref == "alignment:side"
     assert result.control_area_rows[1].station_ranges == ((0.0, 120.0),)
+    assert result.control_area_rows[1].control_area_result_id == "intersection:t-01:control-area-result:02"
+    assert result.control_area_rows[1].source_control_area_ref == "intersection:t-01:control-side"
+    assert result.control_area_rows[1].result_region_refs == ("region:side-intersection",)
+    assert result.control_area_rows[1].region_lineage_status == "result_only"
+    assert result.control_area_rows[1].clipping_boundary_ref == "intersection-control-boundary:intersection-t-01-control-side"
+    assert result.control_area_rows[1].region_handoff_status == "review_required"
+    assert result.control_area_rows[1].clipping_handoff_status == "review_required"
+    assert result.control_area_rows[1].handoff_target == "intersection-source-stage:control_areas:intersection-t-01-control-side"
+    assert result.control_area_rows[1].surface_zone_scope == "intersection_control_area"
+    assert result.control_area_rows[1].source_status == "warning"
+    assert result.lane_connection_rows[0].movement_type == "through"
+    assert result.lane_connection_rows[0].lane_connection_result_id == "intersection:t-01:lane-connection-result:01"
+    assert result.lane_connection_rows[0].source_lane_connection_ref == "lane-connection:intersection:t-01:through-main"
+    assert result.lane_connection_rows[0].from_leg_source_status == "warning"
+    assert result.lane_connection_rows[0].to_leg_source_status == "warning"
+    assert result.lane_connection_rows[0].from_edge_family_intent == "lane"
+    assert result.lane_connection_rows[0].to_edge_family_intent == "lane"
+    assert result.lane_connection_rows[0].from_edge_source_status == "accepted"
+    assert result.lane_connection_rows[0].to_edge_source_status == "accepted"
+    assert result.lane_connection_rows[0].movement_lineage_status == "warning"
+    assert result.lane_connection_rows[0].leg_handoff_status == "review_required"
+    assert result.lane_connection_rows[0].edge_handoff_status == "accepted"
+    assert result.lane_connection_rows[0].handoff_scope == "lane_connection"
+    assert result.lane_connection_rows[0].handoff_target == "intersection-source-stage:lane_connections:lane-connection-intersection-t-01-through-main"
+    assert result.lane_connection_rows[0].source_status == "warning"
+    assert "source_lane_connection_from_leg_status:warning" in result.lane_connection_rows[0].source_diagnostic_rows
 
 
 def test_intersection_topology_evaluation_warns_about_unresolved_policy_refs() -> None:
@@ -252,6 +460,7 @@ def test_intersection_topology_evaluation_warns_about_unresolved_policy_refs() -
         project_id=model.project_id,
         intersection_model_id=model.intersection_model_id,
         intersection_rows=model.intersection_rows,
+        anchor_rows=model.anchor_rows,
         control_area_rows=model.control_area_rows,
     )
 
@@ -283,12 +492,13 @@ def test_intersection_edge_network_evaluation_creates_leg_and_curb_return_edges(
     topology = service.evaluate_topology(_sample_intersection_model())
     result = service.evaluate_edge_network(_sample_intersection_model(), topology)
 
-    assert result.status == "ready"
+    assert result.status == "warning"
     assert result.intersection_id == "intersection:t-01"
     assert result.edge_count == 8
     assert result.leg_edge_count == 6
     assert result.daylight_edge_count == 3
     assert result.curb_return_edge_count == 2
+    assert any(row.startswith("warning:source_leg_profile_ref_missing:") for row in result.diagnostic_rows)
     assert result.edge_rows[0].edge_role == "pavement_edge"
     assert result.edge_rows[0].edge_family == "leg_edge"
     assert result.edge_rows[0].leg_ref == "intersection:t-01:leg-main-before"
@@ -296,6 +506,10 @@ def test_intersection_edge_network_evaluation_creates_leg_and_curb_return_edges(
     assert result.edge_rows[0].station_end == 520.0
     curb_edges = [row for row in result.edge_rows if row.edge_family == "curb_return"]
     assert [row.side for row in curb_edges] == ["left", "right"]
+    assert [row.source_corner_ref for row in curb_edges] == [
+        "corner:intersection:t-01:left",
+        "corner:intersection:t-01:right",
+    ]
     assert curb_edges[0].edge_role == "curb_return_edge"
     assert curb_edges[0].radius == 12.0
     assert "leg-side" in curb_edges[0].leg_ref
@@ -319,7 +533,7 @@ def test_intersection_surface_zone_evaluation_creates_zone_contracts_without_tri
     edge_network = service.evaluate_edge_network(_sample_intersection_model(), topology)
     result = service.evaluate_surface_zones(_sample_intersection_model(), edge_network)
 
-    assert result.status == "ready"
+    assert result.status == "warning"
     assert result.intersection_id == "intersection:t-01"
     assert result.zone_count == 9
     assert result.design_zone_count == 6
@@ -331,6 +545,7 @@ def test_intersection_surface_zone_evaluation_creates_zone_contracts_without_tri
     assert result.slope_zone_count == 3
     assert result.slope_zone_ready_count == 3
     assert result.slope_zone_warning_count == 0
+    assert any(row.startswith("warning:source_leg_profile_ref_missing:") for row in result.diagnostic_rows)
     assert result.zone_rows[0].zone_role == "central_junction"
     assert result.zone_rows[0].zone_family == "pavement"
     assert result.zone_rows[0].design_zone_role == "central_pavement"
@@ -412,21 +627,29 @@ def test_intersection_corridor_clipping_evaluation_creates_control_area_clip_con
     surface_zones = service.evaluate_surface_zones(model, edge_network)
     result = service.evaluate_corridor_clipping(model, topology, surface_zones)
 
-    assert result.status == "ready"
+    assert result.status == "warning"
     assert result.intersection_id == "intersection:t-01"
     assert result.clip_row_count == 4
     assert result.design_clip_count == 2
     assert result.slope_clip_count == 2
     assert result.ready_clip_count == 4
     assert result.warning_clip_count == 0
+    assert any(row.startswith("warning:source_leg_profile_ref_missing:") for row in result.diagnostic_rows)
     assert result.clip_rows[0].clip_boundary_source == "intersection_control_area"
     assert result.clip_rows[0].clip_timing == "before_surface_merge"
     assert result.clip_rows[0].clip_method == "station_control_area_boundary"
     assert result.clip_rows[0].surface_role == "design"
     assert result.clip_rows[0].control_area_ref == "intersection:t-01:control-main"
+    assert result.clip_rows[0].source_control_area_ref == "intersection:t-01:control-main"
+    assert result.clip_rows[0].control_area_intent_status == "intersection_owned"
+    assert result.clip_rows[0].control_area_source_method == "manual"
+    assert result.clip_rows[0].control_area_approval_status == "accepted"
     assert result.clip_rows[0].alignment_ref == "alignment:main"
     assert result.clip_rows[0].station_ranges == ((480.0, 560.0),)
     assert result.clip_rows[0].control_region_refs == ("region:main-intersection",)
+    assert result.clip_rows[0].result_region_refs == ("region:main-intersection",)
+    assert result.clip_rows[0].region_lineage_status == "result_only"
+    assert result.clip_rows[0].source_status == "accepted"
     assert "central-junction" in result.clip_rows[0].protected_zone_refs[0]
 
 
@@ -456,6 +679,40 @@ def test_intersection_corridor_clipping_evaluation_warns_when_control_area_regio
     assert result.ready_clip_count == 2
     assert result.warning_clip_count == 2
     assert any("warning:clip_control_area_region_refs_missing" in row for row in result.diagnostic_rows)
+    assert result.clip_rows[0].source_status == "warning"
+    assert "warning:clip_control_area_region_refs_missing" in result.clip_rows[0].source_diagnostic_rows
+
+
+def test_intersection_grading_context_exposes_vertical_source_lineage() -> None:
+    service = IntersectionEvaluationService()
+    model = _sample_intersection_model()
+    topology = service.evaluate_topology(model)
+    edge_network = service.evaluate_edge_network(model, topology)
+    surface_zones = service.evaluate_surface_zones(model, edge_network)
+    result = service.evaluate_grading_context(model, surface_zones)
+
+    assert result.status == "warning"
+    rows_by_role = {row.design_zone_role if hasattr(row, "design_zone_role") else row.zone_role: row for row in result.context_rows}
+    central = rows_by_role["central_pavement"]
+    assert central.source_grading_policy_ref == "policy:grading-main"
+    assert central.controlling_profile_ref == "profile:main"
+    assert central.profile_lineage_status == "explicit"
+    assert central.profile_handoff_status == "accepted"
+    assert central.superelevation_source_ref == ""
+    assert central.superelevation_source_status == "intersection_policy_override"
+    assert central.superelevation_handoff_status == "overridden"
+    assert central.vertical_handoff_status == "ready"
+    assert central.handoff_target.startswith("intersection-preview-stage:grading:")
+    assert central.grading_source_scope == "intersection_policy"
+    assert central.fallback_status == "none"
+    assert central.source_status == "accepted"
+
+    slope = rows_by_role["exterior_slope_face"]
+    assert slope.crossfall_context == "normal_superelevation"
+    assert slope.superelevation_source_status == "normal_superelevation_context"
+    assert slope.superelevation_handoff_status == "inherited"
+    assert slope.grading_source_scope == "normal_superelevation"
+    assert slope.fallback_status == "none"
 
 
 def test_intersection_drainage_hint_evaluation_generates_low_point_and_inlet_recommendations() -> None:
@@ -466,16 +723,31 @@ def test_intersection_drainage_hint_evaluation_generates_low_point_and_inlet_rec
     surface_zones = service.evaluate_surface_zones(model, edge_network)
     result = service.evaluate_drainage_hints(model, surface_zones)
 
-    assert result.status == "ready"
+    assert result.status == "warning"
     assert result.intersection_id == "intersection:t-01"
     assert result.low_point_hint_count == 1
     assert result.inlet_recommendation_count == 5
     assert result.hint_row_count == 6
-    assert result.ready_hint_count == 6
-    assert result.warning_hint_count == 0
+    assert result.accepted_handoff_count == 6
+    assert result.hint_only_count == 0
+    assert result.review_required_count == 0
+    assert result.ready_hint_count == 5
+    assert result.warning_hint_count == 1
+    assert "warning:intersection_drainage_hint_rows_require_review" in result.diagnostic_rows
     assert result.hint_rows[0].hint_kind == "low_point_candidate"
     assert result.hint_rows[0].recommended_element_kind == "low_point_review"
     assert result.hint_rows[0].drainage_policy_ref == "policy:drainage-main"
+    assert result.hint_rows[0].source_drainage_policy_ref == "policy:drainage-main"
+    assert result.hint_rows[0].drainage_intent_status == "accepted"
+    assert result.hint_rows[0].drainage_element_refs == ("drainage:inlet-main",)
+    assert result.hint_rows[0].flow_route_refs == ("flow-route:main",)
+    assert result.hint_rows[0].drainage_handoff_status == "accepted_handoff"
+    assert result.hint_rows[0].drainage_source_scope == "source_owned"
+    assert result.hint_rows[0].accepted_drainage_ref == "drainage:inlet-main"
+    assert result.hint_rows[0].drainage_review_status == "accepted"
+    assert result.hint_rows[0].source_lineage_status == "accepted_source"
+    assert result.hint_rows[0].handoff_target == "intersection-source-stage:drainage:policy-drainage-main"
+    assert result.hint_rows[0].source_status == "accepted"
     assert any(row.hint_kind == "inlet_recommendation" and row.recommended_element_kind == "inlet" for row in result.hint_rows)
 
 
@@ -498,9 +770,19 @@ def test_intersection_drainage_hint_evaluation_warns_without_drainage_policy() -
 
     assert result.status == "warning"
     assert result.hint_row_count == 6
+    assert result.accepted_handoff_count == 0
+    assert result.hint_only_count == 6
+    assert result.review_required_count == 6
     assert result.ready_hint_count == 0
     assert result.warning_hint_count == 6
     assert "warning:intersection_drainage_policy_missing" in result.diagnostic_rows
+    assert result.hint_rows[0].drainage_handoff_status == "hint_only"
+    assert result.hint_rows[0].drainage_source_scope == "hint"
+    assert result.hint_rows[0].drainage_review_status == "review_required"
+    assert result.hint_rows[0].source_lineage_status == "hint_only"
+    assert result.hint_rows[0].handoff_target == "intersection-source-stage:drainage:intersection-t-01"
+    assert result.hint_rows[0].source_status == "warning"
+    assert "source_drainage_policy_missing" in result.hint_rows[0].source_diagnostic_rows
     assert any("drainage_policy_missing" in row.diagnostic_rows[0] for row in result.hint_rows if row.diagnostic_rows)
 
 

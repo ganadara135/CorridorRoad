@@ -90,6 +90,7 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "IntersectionTrimPatchSegmentsXYZ", "Intersection Trim", "intersection trim patch segment XYZ rows")
     _add_property(obj, "App::PropertyStringList", "IntersectionTrimRoadSegmentsXYZ", "Intersection Trim", "intersection trim road segment XYZ rows")
     _add_property(obj, "App::PropertyString", "IntersectionTrimFuseStatus", "Intersection Trim", "intersection trim fuse candidate status")
+    _add_property(obj, "App::PropertyString", "IntersectionTrimHandoffStatus", "Intersection Trim", "intersection trim accepted/fallback handoff status")
     _add_property(obj, "App::PropertyString", "IntersectionTrimFuseCandidateRef", "Intersection Trim", "intersection trim fuse candidate object ref")
     _add_property(obj, "App::PropertyInteger", "IntersectionTrimFuseSourceCount", "Intersection Trim", "intersection trim fuse source count")
     _add_property(obj, "App::PropertyInteger", "IntersectionTrimFuseFaceCount", "Intersection Trim", "intersection trim fuse face count")
@@ -97,6 +98,19 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "IntersectionTrimFuseSourceRefs", "Intersection Trim", "intersection trim fuse source refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionTrimHandoffChainRefs", "Intersection Trim", "intersection trim handoff chain object refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionTrimHandoffStageStatuses", "Intersection Trim", "intersection trim handoff stage statuses")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffReadinessStatus", "Intersection Handoff", "intersection watertight handoff readiness status")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffFinalQualityStatus", "Intersection Handoff", "intersection final-quality handoff status")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffStatus", "Intersection Handoff", "intersection Digital Twin handoff status")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffTargetCount", "Intersection Handoff", "intersection watertight target count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffPatchTargetCount", "Intersection Handoff", "intersection transitional patch target count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffAcceptedZoneTargetCount", "Intersection Handoff", "intersection accepted zone target count")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffReplacementGateStatus", "Intersection Handoff", "intersection replacement gate status")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffReplacementReadinessStatus", "Intersection Handoff", "intersection replacement readiness status")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffReplacementHandoffPreference", "Intersection Handoff", "intersection replacement handoff preference")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffDownstreamSelectedRole", "Intersection Handoff", "intersection downstream selected handoff role")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffLegacyPatchReviewVisibility", "Intersection Handoff", "intersection legacy patch review visibility")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffLegacyPatchCompatibilityAuditSummary", "Intersection Handoff", "intersection legacy patch compatibility audit summary")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffReplacementBlockerKind", "Intersection Handoff", "intersection replacement blocker diagnostic kind")
     _add_property(obj, "App::PropertyInteger", "OutputCount", "Simulation Package", "packaged solid output count")
     _add_property(obj, "App::PropertyFloat", "TotalVolume", "Simulation Package", "packaged total solid volume")
     _add_property(obj, "App::PropertyStringList", "TargetFamilies", "Simulation Package", "target families")
@@ -109,6 +123,8 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SolidStructureRefs", "Solids", "solid structure refs")
     _add_property(obj, "App::PropertyStringList", "SolidDrainageRefs", "Solids", "solid drainage refs")
     _add_property(obj, "App::PropertyStringList", "SolidFlowRouteRefs", "Solids", "solid flow route refs")
+    _add_property(obj, "App::PropertyStringList", "SolidMaterialRefs", "Solids", "solid material refs")
+    _add_property(obj, "App::PropertyStringList", "SolidSourceRefs", "Solids", "solid source refs")
     _add_property(obj, "App::PropertyFloatList", "SolidVolumes", "Solids", "solid volumes")
     _add_property(obj, "App::PropertyStringList", "SolidShapeValidStatuses", "Solids", "solid shape valid statuses")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Traceability", "source refs")
@@ -214,6 +230,7 @@ def update_v1_simulation_package_output_object(
     obj.IntersectionTrimPatchSegmentsXYZ = [_segment_text(row.get("patch_segment_xyz", ())) for row in trim_pairs]
     obj.IntersectionTrimRoadSegmentsXYZ = [_segment_text(row.get("road_segment_xyz", ())) for row in trim_pairs]
     obj.IntersectionTrimFuseStatus = str(getattr(simulation_package_output, "intersection_trim_fuse_status", "") or "not_available")
+    obj.IntersectionTrimHandoffStatus = str(getattr(simulation_package_output, "intersection_trim_handoff_status", "") or "not_available")
     obj.IntersectionTrimFuseCandidateRef = str(getattr(simulation_package_output, "intersection_trim_fuse_candidate_ref", "") or "")
     obj.IntersectionTrimFuseSourceCount = int(getattr(simulation_package_output, "intersection_trim_fuse_source_count", 0) or 0)
     obj.IntersectionTrimFuseFaceCount = int(getattr(simulation_package_output, "intersection_trim_fuse_face_count", 0) or 0)
@@ -229,6 +246,19 @@ def update_v1_simulation_package_output_object(
         for value in list(getattr(simulation_package_output, "intersection_trim_handoff_stage_statuses", []) or [])
         if str(value)
     ]
+    obj.IntersectionHandoffReadinessStatus = str(getattr(simulation_package_output, "intersection_handoff_readiness_status", "") or "not_available")
+    obj.IntersectionHandoffFinalQualityStatus = str(getattr(simulation_package_output, "intersection_handoff_final_quality_status", "") or "not_available")
+    obj.IntersectionHandoffStatus = str(getattr(simulation_package_output, "intersection_handoff_status", "") or "not_available")
+    obj.IntersectionHandoffTargetCount = int(getattr(simulation_package_output, "intersection_handoff_target_count", 0) or 0)
+    obj.IntersectionHandoffPatchTargetCount = int(getattr(simulation_package_output, "intersection_handoff_patch_target_count", 0) or 0)
+    obj.IntersectionHandoffAcceptedZoneTargetCount = int(getattr(simulation_package_output, "intersection_handoff_accepted_zone_target_count", 0) or 0)
+    obj.IntersectionHandoffReplacementGateStatus = str(getattr(simulation_package_output, "intersection_handoff_replacement_gate_status", "") or "")
+    obj.IntersectionHandoffReplacementReadinessStatus = str(getattr(simulation_package_output, "intersection_handoff_replacement_readiness_status", "") or "")
+    obj.IntersectionHandoffReplacementHandoffPreference = str(getattr(simulation_package_output, "intersection_handoff_replacement_handoff_preference", "") or "")
+    obj.IntersectionHandoffDownstreamSelectedRole = str(getattr(simulation_package_output, "intersection_handoff_downstream_selected_role", "") or "")
+    obj.IntersectionHandoffLegacyPatchReviewVisibility = str(getattr(simulation_package_output, "intersection_handoff_legacy_patch_review_visibility", "") or "")
+    obj.IntersectionHandoffLegacyPatchCompatibilityAuditSummary = str(getattr(simulation_package_output, "intersection_handoff_legacy_patch_compatibility_audit_summary", "") or "")
+    obj.IntersectionHandoffReplacementBlockerKind = str(getattr(simulation_package_output, "intersection_handoff_replacement_blocker_kind", "") or "")
     obj.OutputCount = int(getattr(simulation_package_output, "output_count", 0) or 0)
     obj.TotalVolume = float(getattr(simulation_package_output, "total_volume", 0.0) or 0.0)
     obj.TargetFamilies = [str(value) for value in list(getattr(simulation_package_output, "target_families", []) or []) if str(value)]
@@ -241,6 +271,8 @@ def update_v1_simulation_package_output_object(
     obj.SolidStructureRefs = [_join_refs(getattr(row, "structure_refs", []) or []) for row in rows]
     obj.SolidDrainageRefs = [_join_refs(getattr(row, "drainage_refs", []) or []) for row in rows]
     obj.SolidFlowRouteRefs = [_join_refs(getattr(row, "flow_route_refs", []) or []) for row in rows]
+    obj.SolidMaterialRefs = [_join_refs(getattr(row, "material_refs", []) or []) for row in rows]
+    obj.SolidSourceRefs = [_join_refs(getattr(row, "source_refs", []) or []) for row in rows]
     obj.SolidVolumes = [float(getattr(row, "volume", 0.0) or 0.0) for row in rows]
     obj.SolidShapeValidStatuses = ["true" if bool(getattr(row, "shape_valid", False)) else "false" for row in rows]
     obj.SourceRefs = [str(ref) for ref in list(getattr(simulation_package_output, "source_refs", []) or []) if str(ref)]
@@ -267,6 +299,8 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
             structure_refs=_split_refs(_list_value(getattr(obj, "SolidStructureRefs", []), index, "")),
             drainage_refs=_split_refs(_list_value(getattr(obj, "SolidDrainageRefs", []), index, "")),
             flow_route_refs=_split_refs(_list_value(getattr(obj, "SolidFlowRouteRefs", []), index, "")),
+            material_refs=_split_refs(_list_value(getattr(obj, "SolidMaterialRefs", []), index, "")),
+            source_refs=_split_refs(_list_value(getattr(obj, "SolidSourceRefs", []), index, "")),
             volume=_float_list_value(getattr(obj, "SolidVolumes", []), index),
             shape_valid=_bool_value(_list_value(getattr(obj, "SolidShapeValidStatuses", []), index, "")),
         )
@@ -305,6 +339,7 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
         intersection_trim_blocked_pair_count=int(getattr(obj, "IntersectionTrimBlockedPairCount", 0) or 0),
         intersection_trim_pair_rows=_intersection_trim_pair_rows_from_object(obj),
         intersection_trim_fuse_status=str(getattr(obj, "IntersectionTrimFuseStatus", "") or "not_available"),
+        intersection_trim_handoff_status=str(getattr(obj, "IntersectionTrimHandoffStatus", "") or "not_available"),
         intersection_trim_fuse_candidate_ref=str(getattr(obj, "IntersectionTrimFuseCandidateRef", "") or ""),
         intersection_trim_fuse_source_count=int(getattr(obj, "IntersectionTrimFuseSourceCount", 0) or 0),
         intersection_trim_fuse_face_count=int(getattr(obj, "IntersectionTrimFuseFaceCount", 0) or 0),
@@ -316,6 +351,19 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
             for value in list(getattr(obj, "IntersectionTrimHandoffStageStatuses", []) or [])
             if str(value)
         ],
+        intersection_handoff_readiness_status=str(getattr(obj, "IntersectionHandoffReadinessStatus", "") or "not_available"),
+        intersection_handoff_final_quality_status=str(getattr(obj, "IntersectionHandoffFinalQualityStatus", "") or "not_available"),
+        intersection_handoff_status=str(getattr(obj, "IntersectionHandoffStatus", "") or "not_available"),
+        intersection_handoff_target_count=int(getattr(obj, "IntersectionHandoffTargetCount", 0) or 0),
+        intersection_handoff_patch_target_count=int(getattr(obj, "IntersectionHandoffPatchTargetCount", 0) or 0),
+        intersection_handoff_accepted_zone_target_count=int(getattr(obj, "IntersectionHandoffAcceptedZoneTargetCount", 0) or 0),
+        intersection_handoff_replacement_gate_status=str(getattr(obj, "IntersectionHandoffReplacementGateStatus", "") or ""),
+        intersection_handoff_replacement_readiness_status=str(getattr(obj, "IntersectionHandoffReplacementReadinessStatus", "") or ""),
+        intersection_handoff_replacement_handoff_preference=str(getattr(obj, "IntersectionHandoffReplacementHandoffPreference", "") or ""),
+        intersection_handoff_downstream_selected_role=str(getattr(obj, "IntersectionHandoffDownstreamSelectedRole", "") or ""),
+        intersection_handoff_legacy_patch_review_visibility=str(getattr(obj, "IntersectionHandoffLegacyPatchReviewVisibility", "") or ""),
+        intersection_handoff_legacy_patch_compatibility_audit_summary=str(getattr(obj, "IntersectionHandoffLegacyPatchCompatibilityAuditSummary", "") or ""),
+        intersection_handoff_replacement_blocker_kind=str(getattr(obj, "IntersectionHandoffReplacementBlockerKind", "") or ""),
         output_count=int(getattr(obj, "OutputCount", 0) or 0),
         total_volume=float(getattr(obj, "TotalVolume", 0.0) or 0.0),
         target_families=[str(value) for value in list(getattr(obj, "TargetFamilies", []) or []) if str(value)],

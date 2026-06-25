@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import FreeCAD as App
 import Part
@@ -11,6 +12,10 @@ from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_tree,
 )
 import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
+from freecad.Corridor_Road.v1.models.output.surface_output import (
+    decide_intersection_surface_downstream_handoff,
+    intersection_surface_replacement_blocker_kind,
+)
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
     _hide_applied_section_set_review_shape,
@@ -88,10 +93,14 @@ from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
     find_v1_surface_transition_model,
     to_surface_transition_model,
 )
+
+
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionAnchorRow,
     IntersectionArmPolicyRow,
     IntersectionControlArea,
+    IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
     IntersectionEdgePolicyRow,
@@ -113,9 +122,69 @@ from freecad.Corridor_Road.v1.models.result.intersection_patch_boundary import (
     IntersectionPatchBoundaryPointRow,
     IntersectionPatchBoundaryResult,
 )
+from freecad.Corridor_Road.v1.models.result.intersection_slope_face_loop import (
+    IntersectionSlopeFaceLoopResult,
+    IntersectionSlopeFaceLoopRow,
+)
+from freecad.Corridor_Road.v1.models.result.intersection_slope_face_boundary import (
+    IntersectionSlopeFaceBoundaryResult,
+    IntersectionSlopeFaceBoundaryRow,
+)
 from dataclasses import replace
 
 _QAPP = None
+
+
+def test_intersection_surface_downstream_handoff_decision_contract() -> None:
+    review_only = decide_intersection_surface_downstream_handoff(
+        gate_status="review_required",
+        patch_ref="V1CorridorIntersectionSurfacePreview",
+        zone_surface_ref="V1CorridorIntersectionSurfaceZoneSurfacePreview",
+    )
+
+    assert review_only.readiness == "review_only"
+    assert review_only.selected_ref == "V1CorridorIntersectionSurfacePreview"
+    assert review_only.selected_role == "transitional_patch_fallback"
+    assert review_only.selection_reason == "replacement_gate_review_only"
+    assert review_only.patch_selected is True
+    assert review_only.zone_selected is False
+    assert review_only.patch_handoff_preference == "fallback_review_required"
+    assert review_only.zone_handoff_preference == "preferred_candidate_review_only"
+
+    ready = decide_intersection_surface_downstream_handoff(
+        gate_status="ready_to_replace",
+        patch_ref="V1CorridorIntersectionSurfacePreview",
+        zone_surface_ref="V1CorridorIntersectionSurfaceZoneSurfacePreview",
+    )
+
+    assert ready.readiness == "ready_to_replace"
+    assert ready.selected_ref == "V1CorridorIntersectionSurfaceZoneSurfacePreview"
+    assert ready.selected_role == "accepted_zone_surface"
+    assert ready.selection_reason == "replacement_gate_ready_to_replace"
+    assert ready.patch_selected is False
+    assert ready.zone_selected is True
+    assert ready.patch_handoff_preference == "fallback_until_replaced"
+    assert ready.zone_handoff_preference == "preferred_ready_to_replace"
+
+    blocked = decide_intersection_surface_downstream_handoff(
+        gate_status="blocked",
+        patch_ref="V1CorridorIntersectionSurfacePreview",
+        zone_surface_ref="V1CorridorIntersectionSurfaceZoneSurfacePreview",
+    )
+
+    assert blocked.readiness == "blocked"
+    assert blocked.selected_ref == "V1CorridorIntersectionSurfacePreview"
+    assert blocked.selected_role == "transitional_patch_fallback"
+    assert blocked.selection_reason == "replacement_gate_blocked"
+    assert blocked.patch_selected is True
+    assert blocked.zone_selected is False
+    assert intersection_surface_replacement_blocker_kind(review_only.readiness, review_only.selected_role) == "intersection_replacement_gate_review_required"
+    assert intersection_surface_replacement_blocker_kind(blocked.readiness, blocked.selected_role) == "intersection_replacement_gate_blocked"
+    assert intersection_surface_replacement_blocker_kind(ready.readiness, ready.selected_role) == ""
+    assert (
+        intersection_surface_replacement_blocker_kind("ready_to_replace", "transitional_patch_fallback")
+        == "intersection_replacement_ready_patch_fallback"
+    )
 
 
 def _group_names(group):
@@ -661,6 +730,9 @@ def _sample_intersection_model() -> IntersectionModel:
                         intersection_id="intersection:t-01",
                         leg_role="primary_through",
                         alignment_ref="alignment:primary",
+                        profile_ref="profile:primary",
+                        centerline3d_ref="centerline3d:primary",
+                        region_ref="region:primary-intersection",
                         approach_station_start=0.0,
                         approach_station_end=20.0,
                         arm_policy_ref="arm-policy:intersection:t-01:primary",
@@ -675,6 +747,9 @@ def _sample_intersection_model() -> IntersectionModel:
                         intersection_id="intersection:t-01",
                         leg_role="side_road",
                         alignment_ref="alignment:side",
+                        profile_ref="profile:side",
+                        centerline3d_ref="centerline3d:side",
+                        region_ref="region:side-intersection",
                         approach_station_start=0.0,
                         approach_station_end=20.0,
                         arm_policy_ref="arm-policy:intersection:t-01:side",
@@ -685,6 +760,18 @@ def _sample_intersection_model() -> IntersectionModel:
                         grading_policy_ref="grading:intersection:t-01:default",
                     ),
                 ],
+            )
+        ],
+        anchor_rows=[
+            IntersectionAnchorRow(
+                anchor_id="anchor:intersection:t-01:main",
+                intersection_id="intersection:t-01",
+                source_method="manual",
+                approval_status="locked",
+                primary_alignment_ref="alignment:primary",
+                primary_station=10.0,
+                secondary_station_refs={"alignment:side": 10.0},
+                tolerance=0.05,
             )
         ],
         control_area_rows=[
@@ -705,6 +792,30 @@ def _sample_intersection_model() -> IntersectionModel:
                 grading_policy_ref="grading:intersection:t-01:default",
             ),
         ],
+        corner_rows=[
+            IntersectionCornerRow(
+                corner_id="corner:intersection:t-01:left",
+                intersection_id="intersection:t-01",
+                control_area_ref="control-area:t-01:primary",
+                from_leg_ref="leg:primary",
+                to_leg_ref="leg:side",
+                side="left",
+                quadrant="left",
+                curb_return_policy_ref="curb-return:intersection:t-01:default",
+                approval_status="locked",
+            ),
+            IntersectionCornerRow(
+                corner_id="corner:intersection:t-01:right",
+                intersection_id="intersection:t-01",
+                control_area_ref="control-area:t-01:side",
+                from_leg_ref="leg:side",
+                to_leg_ref="leg:primary",
+                side="right",
+                quadrant="right",
+                curb_return_policy_ref="curb-return:intersection:t-01:default",
+                approval_status="locked",
+            ),
+        ],
         arm_policy_rows=[
             IntersectionArmPolicyRow("arm-policy:intersection:t-01:primary", "intersection:t-01", "leg:primary"),
             IntersectionArmPolicyRow("arm-policy:intersection:t-01:side", "intersection:t-01", "leg:side"),
@@ -715,22 +826,47 @@ def _sample_intersection_model() -> IntersectionModel:
                 intersection_id="intersection:t-01",
                 radius=12.0,
                 approach_leg_refs=["leg:primary", "leg:side"],
+                corner_refs=["corner:intersection:t-01:left", "corner:intersection:t-01:right"],
             )
         ],
         edge_policy_rows=[
-            IntersectionEdgePolicyRow("edge-policy:intersection:t-01:primary:pavement", "intersection:t-01", "leg:primary"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:intersection:t-01:primary:pavement",
+                "intersection:t-01",
+                "leg:primary",
+                edge_family_intent="lane",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="lane",
+            ),
             IntersectionEdgePolicyRow(
                 "edge-policy:intersection:t-01:primary:daylight",
                 "intersection:t-01",
                 "leg:primary",
                 edge_role="daylight_hinge",
+                edge_family_intent="side_slope",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="side_slope",
             ),
-            IntersectionEdgePolicyRow("edge-policy:intersection:t-01:side:pavement", "intersection:t-01", "leg:side"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:intersection:t-01:side:pavement",
+                "intersection:t-01",
+                "leg:side",
+                edge_family_intent="lane",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="lane",
+            ),
             IntersectionEdgePolicyRow(
                 "edge-policy:intersection:t-01:side:daylight",
                 "intersection:t-01",
                 "leg:side",
                 edge_role="daylight_hinge",
+                edge_family_intent="side_slope",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                subassembly_kind="side_slope",
             ),
         ],
         grading_policy_rows=[
@@ -744,7 +880,16 @@ def _sample_intersection_model() -> IntersectionModel:
             )
         ],
         drainage_policy_rows=[
-            IntersectionDrainagePolicyRow("drainage:intersection:t-01:default", "intersection:t-01"),
+            IntersectionDrainagePolicyRow(
+                "drainage:intersection:t-01:default",
+                "intersection:t-01",
+                drainage_element_refs=["drainage:inlet-main"],
+                flow_route_refs=["flow-route:main"],
+                inlet_candidate_refs=["inlet-candidate:main"],
+                low_point_refs=["low-point:central"],
+                intent_status="accepted",
+                approval_status="locked",
+            ),
         ],
     )
 
@@ -1154,6 +1299,23 @@ def test_corridor_guided_review_reports_intersection_exclusion_clip_counts() -> 
         App.closeDocument(doc.Name)
 
 
+def test_corridor_intersection_contract_review_rows_label_missing_source_path() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        rows = corridor_intersection_contract_review_rows(doc)
+        summary = corridor_intersection_contract_review_summary(doc)
+
+        assert len(rows) == 1
+        assert rows[0]["status"] == "missing"
+        assert rows[0]["source_status"] == "missing"
+        assert rows[0]["output_path"] == "missing_source"
+        assert "IntersectionModel is required" in rows[0]["notes"]
+        assert "source status=missing=1" in summary["notes"]
+        assert "output paths=missing_source=1" in summary["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clipping() -> None:
     doc, project = _new_project_doc()
     try:
@@ -1166,32 +1328,141 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
         rows = corridor_intersection_contract_review_rows(doc)
         summary = corridor_intersection_contract_review_summary(doc)
 
-        assert summary["status"] == "ready"
-        assert summary["row_count"] == 23
+        assert summary["status"] == "warning"
+        assert summary["row_count"] == 25
+        assert summary["source_warning_count"] == 0
         assert "topology=1" in summary["notes"]
         assert "edge_network=6" in summary["notes"]
         assert "surface_zone=7" in summary["notes"]
+        assert "slope_face_loop=2" in summary["notes"]
         assert "corridor_clip=4" in summary["notes"]
         assert "drainage_hint=5" in summary["notes"]
+        assert "output paths=contract_consumed=25" in summary["notes"]
+        assert "source status=accepted=25" in summary["notes"]
+        assert "source warnings=0" in summary["notes"]
+        assert all(row["output_path"] == "contract_consumed" for row in rows)
         assert rows[0]["contract_family"] == "topology"
         assert rows[0]["status"] == "ready"
+        assert rows[0]["source_status"] == "accepted"
+        assert "lane connections=0" in rows[0]["notes"]
 
         edge_rows = [row for row in rows if row["contract_family"] == "edge_network"]
         assert len(edge_rows) == 6
         assert {row["role"] for row in edge_rows} == {"pavement_edge", "daylight_hinge", "curb_return_edge"}
+        assert all(row["source_status"] == "accepted" for row in edge_rows)
 
         zone_rows = [row for row in rows if row["contract_family"] == "surface_zone"]
         assert len(zone_rows) == 7
         assert zone_rows[0]["status"] == "ready"
+        assert all(row["source_status"] == "accepted" for row in zone_rows)
         assert "central_pavement" in {row["role"] for row in zone_rows}
         assert "exterior_slope_face" in {row["role"] for row in zone_rows}
 
         clip_rows = [row for row in rows if row["contract_family"] == "corridor_clip"]
         assert len(clip_rows) == 4
         assert {row["role"] for row in clip_rows} == {"design", "slope_face"}
+        assert all(row["source_status"] == "accepted" for row in clip_rows)
+        assert "control-area:t-01:primary" in clip_rows[0]["source_refs"]
+        assert "intent=intersection_owned" in clip_rows[0]["notes"]
+        assert "lineage=result_only" in clip_rows[0]["notes"]
         drainage_hint_rows = [row for row in rows if row["contract_family"] == "drainage_hint"]
         assert len(drainage_hint_rows) == 5
         assert {row["role"] for row in drainage_hint_rows} == {"low_point_candidate", "inlet_recommendation"}
+        assert all(row["source_status"] == "accepted" for row in drainage_hint_rows)
+        assert all("handoff=accepted_handoff" in row["notes"] for row in drainage_hint_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_intersection_contract_review_rows_expose_source_status_warnings() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=IntersectionModel(
+                schema_version=1,
+                project_id="proj-1",
+                intersection_model_id="intersections:source-status",
+                intersection_rows=[
+                    IntersectionRow(
+                        intersection_id="intersection:source-status",
+                        intersection_kind="t_intersection",
+                        primary_alignment_ref="alignment:primary",
+                        secondary_alignment_refs=["alignment:side"],
+                        control_region_refs=["region:primary-intersection"],
+                        leg_rows=[
+                            IntersectionLegRow(
+                                leg_id="leg:primary",
+                                intersection_id="intersection:source-status",
+                                leg_role="primary_through",
+                                alignment_ref="alignment:primary",
+                                approach_station_start=0.0,
+                                approach_station_end=20.0,
+                                edge_policy_refs=["edge-policy:intersection:source-status:missing"],
+                            )
+                        ],
+                    )
+                ],
+                control_area_rows=[
+                    IntersectionControlArea(
+                        control_area_id="control-area:source-status:primary",
+                        intersection_id="intersection:source-status",
+                        alignment_ref="alignment:primary",
+                        station_ranges=[(0.0, 20.0)],
+                        control_region_refs=["region:primary-intersection"],
+                    )
+                ],
+            ),
+        )
+
+        rows = corridor_intersection_contract_review_rows(doc)
+        summary = corridor_intersection_contract_review_summary(doc)
+        warning_rows = [row for row in rows if row.get("source_status") == "warning"]
+
+        assert summary["status"] == "warning"
+        assert summary["source_warning_count"] > 0
+        assert "source status=" in summary["notes"]
+        assert "warning=" in summary["notes"]
+        assert "source warnings=" in summary["notes"]
+        assert warning_rows
+        assert all(row["output_path"] == "contract_consumed" for row in warning_rows)
+        assert any("source_leg_profile_ref_missing" in str(row.get("source_diagnostics", "")) for row in warning_rows)
+        assert any("source_edge_policy_ref_unresolved" in str(row.get("source_diagnostics", "")) for row in warning_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_intersection_contract_review_rows_carry_slope_loop_source_lineage_warnings() -> None:
+    doc, project = _new_project_doc()
+    try:
+        model = _sample_intersection_model()
+        model.edge_policy_rows[1] = replace(
+            model.edge_policy_rows[1],
+            source_method="mesh_repaired",
+            approval_status="auto_accepted",
+        )
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=model,
+        )
+
+        rows = corridor_intersection_contract_review_rows(doc)
+        summary = corridor_intersection_contract_review_summary(doc)
+        slope_loop_warning_rows = [
+            row
+            for row in rows
+            if row.get("contract_family") == "slope_face_loop" and row.get("source_status") == "warning"
+        ]
+
+        assert summary["source_warning_count"] > 0
+        assert slope_loop_warning_rows
+        assert all(row["output_path"] == "contract_consumed" for row in slope_loop_warning_rows)
+        assert any("source_lineage=source_warning" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
+        assert any("surface_zone_status=warning" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
+        assert any("edge_network_status=warning" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
+        assert any("surface_zone_source_edge_diagnostic" in str(row.get("source_diagnostics", "")) for row in slope_loop_warning_rows)
     finally:
         App.closeDocument(doc.Name)
 
@@ -1232,9 +1503,12 @@ def test_build_corridor_panel_populates_intersection_contract_table() -> None:
 
         panel = V1BuildCorridorTaskPanel(document=doc)
 
-        assert panel._intersection_contract_table.rowCount() == 23
+        assert panel._intersection_contract_table.rowCount() == 25
+        assert panel._intersection_contract_table.columnCount() == 10
         assert panel._intersection_contract_table.item(0, 0).text() == "topology"
         assert panel._intersection_contract_table.item(0, 1).text() == "ready"
+        assert panel._intersection_contract_table.item(0, 2).text() == "accepted"
+        assert panel._intersection_contract_table.item(0, 3).text() == "contract_consumed"
     finally:
         App.closeDocument(doc.Name)
 
@@ -1278,6 +1552,7 @@ def test_corridor_guided_review_reports_intersection_patch_boundary_diagnostics(
 
         assert intersection_step["status"] == "warning"
         assert intersection_step["focus"] == "Intersection Patch Boundary diagnostics"
+        assert intersection_step["output_path"] == "legacy_output"
         assert "patch boundary rings: holes=1, islands=0" in intersection_step["notes"]
         assert "intersection_patch_boundary_inner_ring_outside_outer" in intersection_step["notes"]
     finally:
@@ -1364,6 +1639,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         )
         rows = corridor_build_review_rows(doc)
         intersection_row = [row for row in rows if row["role"] == "intersection"][0]
+        assert [row for row in rows if row["role"] == "intersection_zone_surface"] == []
+        replacement_readiness_row = [row for row in rows if row["role"] == "intersection_replacement_readiness"][0]
         guided_steps = corridor_build_guided_review_steps(doc)
         intersection_step = [row for row in guided_steps if row["step_id"] == "intersections"][0]
 
@@ -1404,19 +1681,145 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert int(preview.PatchCurbReturnEdgeCount) == 2
         assert preview.IntersectionImplementationMode == "legacy_patch_frozen"
         assert preview.IntersectionRedesignPath == "edge_network_first"
+        assert preview.IntersectionOutputPath == "legacy_output"
+        assert preview.ConsumedIntersectionTopologyResultId == "intersection-topology:intersection:t-01"
+        assert preview.ConsumedIntersectionEdgeNetworkResultId == "intersection-edge-network:intersection:t-01"
+        assert preview.ConsumedIntersectionSurfaceZoneResultId == "intersection-surface-zones:intersection:t-01"
+        assert preview.IntersectionSurfaceZoneOutputId == "intersection-surface-zone-output:intersection-t-01"
+        assert preview.IntersectionSurfaceZoneOutputStatus in {"ready", "warning"}
+        assert preview.IntersectionSurfaceZoneOutputContractStatus == "accepted_surface_zone"
+        assert preview.IntersectionSurfaceZoneOutputDigitalTwinHandoff == "accepted_zone_candidate"
+        assert preview.IntersectionSurfaceZoneOutputSurfaceZoneResultRef == "intersection-surface-zones:intersection:t-01"
+        assert preview.IntersectionSurfaceZoneOutputEdgeNetworkResultRef == "intersection-edge-network:intersection:t-01"
+        assert int(preview.IntersectionSurfaceZoneOutputRowCount) >= 1
+        assert list(preview.IntersectionSurfaceZoneOutputRowRefs)
+        assert all(str(row).startswith("intersection-surface-zone-output:intersection-t-01:") for row in list(preview.IntersectionSurfaceZoneOutputRowRefs))
+        assert all(str(row).endswith((":ready", ":warning")) for row in list(preview.IntersectionSurfaceZoneOutputRowStatuses))
+        assert list(preview.IntersectionSurfaceZoneOutputRowLineage)
+        assert any("legs=" in row and "alignments=" in row for row in list(preview.IntersectionSurfaceZoneOutputRowLineage))
+        assert any("vertical_policy=" in row for row in list(preview.IntersectionSurfaceZoneOutputRowLineage))
+        assert "contract=accepted_surface_zone" in preview.IntersectionSurfaceZoneOutputSummary
+        assert "handoff=accepted_zone_candidate" in preview.IntersectionSurfaceZoneOutputSummary
+        assert "legs=" in preview.IntersectionSurfaceZoneOutputSummary
+        assert "alignments=" in preview.IntersectionSurfaceZoneOutputSummary
+        assert preview.IntersectionSurfaceZoneOutputPreviewRef == ""
+        zone_output_preview = doc.getObject("V1CorridorIntersectionSurfaceZoneOutputPreview")
+        assert zone_output_preview is None
+        assert preview.IntersectionSurfaceZoneSurfacePreviewRef == ""
+        zone_surface_preview = doc.getObject("V1CorridorIntersectionSurfaceZoneSurfacePreview")
+        assert zone_surface_preview is None
+        assert preview.IntersectionSurfaceReplacementGateStatus == "blocked"
+        assert preview.IntersectionSurfaceReplacementGateRecommendation == "build_accepted_zone_surface_before_replacing_patch"
+        assert preview.IntersectionSurfaceReplacementZoneSurfaceRef == ""
+        assert int(preview.IntersectionSurfaceComparisonPatchTriangleCount) == int(preview.TriangleCount)
+        assert int(preview.IntersectionSurfaceComparisonZoneTriangleCount) == 0
+        assert int(preview.IntersectionSurfaceComparisonZoneVertexCount) == 0
+        assert int(preview.IntersectionSurfaceComparisonZoneOutputRowCount) == int(preview.IntersectionSurfaceZoneOutputRowCount)
+        assert preview.IntersectionSurfaceReplacementReadinessStatus == "blocked"
+        assert preview.IntersectionSurfaceReplacementHandoffRole == "transitional_patch"
+        assert preview.IntersectionSurfaceReplacementHandoffPreference == "fallback_blocked_replacement"
+        assert int(preview.IntersectionSurfaceDownstreamHandoffSelected) == 1
+        assert preview.IntersectionSurfaceDownstreamHandoffSelectedRef == "V1CorridorIntersectionSurfacePreview"
+        assert preview.IntersectionSurfaceDownstreamHandoffSelectedRole == "transitional_patch_fallback"
+        assert preview.IntersectionSurfaceDownstreamHandoffSelectionReason == "replacement_gate_blocked"
+        assert preview.IntersectionSurfaceReplacementBlockerKind == "intersection_replacement_gate_blocked"
+        assert "replacement_blocker=intersection_replacement_gate_blocked" in preview.IntersectionSurfaceDownstreamHandoffSummary
+        assert "gate=blocked" in preview.IntersectionSurfaceReplacementSummary
+        assert "recommendation=build_accepted_zone_surface_before_replacing_patch" in preview.IntersectionSurfaceReplacementSummary
+        assert "acceptance_evidence=1" in preview.IntersectionSurfaceReplacementSummary
+        assert "error:intersection_surface_replacement_zone_surface_missing" in list(preview.IntersectionSurfaceReplacementDiagnostics)
+        assert "info:intersection_surface_patch_is_transitional_normalized" in list(preview.IntersectionSurfaceReplacementDiagnostics)
+        assert "info:intersection_surface_zone_output_is_accepted_candidate" in list(preview.IntersectionSurfaceReplacementDiagnostics)
+        assert "error:required_evidence:accepted_zone_surface_preview_missing" in list(preview.IntersectionSurfaceReplacementAcceptanceDiagnostics)
+        assert preview.ConsumedIntersectionGradingContextResultId == "intersection-grading-context:intersection:t-01"
+        assert preview.ConsumedIntersectionDrainageHintResultId == "intersection-drainage-hints:intersection:t-01"
+        assert preview.ConsumedIntersectionSlopeFaceLoopResultId == "intersection-slope-face-loops:intersection:t-01"
+        assert preview.IntersectionSlopeFaceLoopPreviewRef == ""
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceLoopPreview") is None
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceBoundaryPreview") is None
+        assert "topology=" in preview.ConsumedIntersectionContractSummary
+        assert "edge_network=" in preview.ConsumedIntersectionContractSummary
+        assert "surface_zone=" in preview.ConsumedIntersectionContractSummary
+        assert "grading_context=" in preview.ConsumedIntersectionContractSummary
+        assert "drainage_hint=" in preview.ConsumedIntersectionContractSummary
+        assert "slope_face_loop=" in preview.ConsumedIntersectionContractSummary
+        assert int(preview.ConsumedIntersectionContractCount) == 6
+        assert preview.IntersectionSurfacePatchResultId == "intersection-surface-patch:intersection-t-01"
+        assert preview.IntersectionSurfacePatchStatus == "warning"
+        assert preview.IntersectionSurfacePatchOutputPath == "legacy_output"
+        assert preview.IntersectionSurfacePatchOutputContractStatus == "transitional_normalized"
+        assert preview.IntersectionSurfacePatchDigitalTwinHandoff == "review_required"
+        assert preview.IntersectionSurfacePatchTransitionalReason == "legacy_patch_surface_output"
+        assert preview.IntersectionSurfacePatchReplacementPath == "accepted_intersection_surface_zone_output"
+        assert int(preview.IntersectionSurfacePatchBoundaryRowCount) == 1
+        assert int(preview.IntersectionSurfacePatchTriangulationRowCount) == 1
+        assert int(preview.IntersectionSurfacePatchQualityRowCount) == 1
+        assert list(preview.IntersectionSurfacePatchBoundaryRowRefs) == ["intersection-surface-patch-boundary:intersection-t-01"]
+        assert list(preview.IntersectionSurfacePatchTriangulationRowRefs) == ["intersection-surface-patch-triangulation:intersection-t-01"]
+        assert list(preview.IntersectionSurfacePatchQualityRowRefs) == ["intersection-surface-patch-quality:intersection-t-01"]
+        assert list(preview.IntersectionSurfacePatchBoundaryRowStatuses) == ["intersection-surface-patch-boundary:intersection-t-01:ready"]
+        assert list(preview.IntersectionSurfacePatchTriangulationRowStatuses) == ["intersection-surface-patch-triangulation:intersection-t-01:ready"]
+        assert list(preview.IntersectionSurfacePatchQualityRowStatuses) == ["intersection-surface-patch-quality:intersection-t-01:warning"]
+        assert any("quality:intersection-surface-patch-quality:intersection-t-01:" in row for row in list(preview.IntersectionSurfacePatchRowDiagnostics))
+        assert "boundary=ready" in preview.IntersectionSurfacePatchSummary
+        assert "triangulation=structured_strip_curb_return_blend" in preview.IntersectionSurfacePatchSummary
+        assert "quality=warning" in preview.IntersectionSurfacePatchSummary
+        assert "points=" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "rings=" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "area=" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "bbox=" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "curb_return_edges=2" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "curb_return_arcs=2" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "tie_in_edges=4" in preview.IntersectionSurfacePatchFootprintSummary
+        assert list(preview.IntersectionSurfacePatchConsumedContractRefs) == list(preview.ConsumedIntersectionContractRefs)
+        assert preview.IntersectionLegacyPatchReviewVisibility == "metadata_only"
+        assert int(preview.IntersectionLegacyPatchCompatibilityPropertyCount) >= 5
+        legacy_patch_audit = list(preview.IntersectionLegacyPatchCompatibilityAudit)
+        assert "property_only:PatchBoundaryPointCount->IntersectionSurfacePatchBoundaryRowCount:normalized_available" in legacy_patch_audit
+        assert "property_only:PatchTriangulationMode->IntersectionSurfacePatchSummary:normalized_available" in legacy_patch_audit
+        assert "property_only:PatchSurfaceBoundaryStrategy->IntersectionSurfacePatchSummary:normalized_available" in legacy_patch_audit
+        assert "property_only:PatchBoundaryRoleSummary->IntersectionSurfacePatchBoundaryRowRefs:normalized_available" in legacy_patch_audit
+        assert "review_visibility=metadata_only" in preview.IntersectionLegacyPatchCompatibilityAuditSummary
         assert "Frozen first-slice patch path" in preview.IntersectionImplementationStatus
-        assert "triangulation=structured_strip_curb_return_blend" in preview.IntersectionReviewSummary
-        assert "edge blend faces=" in preview.IntersectionReviewSummary
-        assert "boundary roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" in preview.IntersectionReviewSummary
+        assert "legacy_patch_review=metadata_only" in preview.IntersectionReviewSummary
+        assert "legacy_patch_audit=review_visibility=metadata_only" in preview.IntersectionReviewSummary
+        assert "surface_patch=boundary=ready" in preview.IntersectionReviewSummary
+        assert "boundary roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" not in preview.IntersectionReviewSummary
+        assert "surface boundary=structured_strip_curb_return_blend" not in preview.IntersectionReviewSummary
         assert "implementation=legacy_patch_frozen" in preview.IntersectionReviewSummary
         assert "next=edge_network_first" in preview.IntersectionReviewSummary
-        assert "boundary=structured_strip_curb_return_blend" in preview.IntersectionPatchQualitySummary
-        assert "roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" in preview.IntersectionPatchQualitySummary
+        assert "output_path=legacy_output" in preview.IntersectionReviewSummary
+        assert "consumed_contracts=topology=" in preview.IntersectionReviewSummary
+        assert "surface_patch_result=intersection-surface-patch:intersection-t-01" in preview.IntersectionReviewSummary
+        assert "surface_patch_footprint=points=" in preview.IntersectionReviewSummary
+        assert "curb_return_edges=2" in preview.IntersectionReviewSummary
+        assert "tie_in_edges=4" in preview.IntersectionReviewSummary
+        assert "surface_zone_output=status=" in preview.IntersectionReviewSummary
+        assert "surface_zone_output_contract=accepted_surface_zone" in preview.IntersectionReviewSummary
+        assert "surface_zone_output_handoff=accepted_zone_candidate" in preview.IntersectionReviewSummary
+        assert "surface_replacement=gate=blocked" in preview.IntersectionReviewSummary
+        assert "surface_replacement_gate=blocked" in preview.IntersectionReviewSummary
+        assert "surface_patch_contract=transitional_normalized" in preview.IntersectionReviewSummary
+        assert "surface_patch_handoff=review_required" in preview.IntersectionReviewSummary
+        assert "surface_patch_transitional_reason=legacy_patch_surface_output" in preview.IntersectionReviewSummary
+        assert "surface_patch_replacement=accepted_intersection_surface_zone_output" in preview.IntersectionReviewSummary
+        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=warning" in preview.IntersectionReviewSummary
+        assert "surface_patch_row_diagnostics=1" in preview.IntersectionReviewSummary
         assert float(preview.PatchBoundaryBBoxAspectRatio) >= 1.0
         assert float(preview.PatchTriangleMinQuality) > 0.0
         assert int(preview.PatchTriangleSkinnyCount) >= 0
-        assert intersection_row["status"] == "ready"
+        assert intersection_row["status"] == "warning"
         assert intersection_row["result"] == "Intersection Surface"
+        assert intersection_row["output_path"] == "legacy_output"
+        assert replacement_readiness_row["status"] == "error"
+        assert replacement_readiness_row["result"] == "Intersection Replacement Readiness"
+        assert replacement_readiness_row["object_name"] == "V1CorridorIntersectionSurfacePreview"
+        assert replacement_readiness_row["output_path"] == "review_gate"
+        assert replacement_readiness_row["triangle_or_point_count"] == 0
+        assert "Replacement readiness=blocked" in replacement_readiness_row["notes"]
+        assert "gate=blocked" in replacement_readiness_row["notes"]
+        assert "recommendation=build_accepted_zone_surface_before_replacing_patch" in replacement_readiness_row["notes"]
+        assert "acceptance_evidence=1" in replacement_readiness_row["notes"]
         assert "tie-in edges=4" in intersection_row["notes"]
         assert "grading policy=intersection:t-01:default" in intersection_row["notes"]
         assert "grading=flatten_intersection" in intersection_row["notes"]
@@ -1426,29 +1829,299 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "low-point candidates=" in intersection_row["notes"]
         assert "flow hint=boundary_to_low" in intersection_row["notes"]
         assert "tie-in status=ready" in intersection_row["notes"]
-        assert "patch boundary=ready" in intersection_row["notes"]
-        assert "triangulation=structured_strip_curb_return_blend" in intersection_row["notes"]
-        assert "surface boundary=structured_strip_curb_return_blend" in intersection_row["notes"]
-        assert "structured strips=2" in intersection_row["notes"]
-        assert "curb-return surface edges=2" in intersection_row["notes"]
-        assert "curb-return arcs=2" in intersection_row["notes"]
+        assert "legacy_patch_review=metadata_only" in intersection_row["notes"]
+        assert "legacy_patch_audit=review_visibility=metadata_only" in intersection_row["notes"]
+        assert "patch boundary=ready" not in intersection_row["notes"]
+        assert "surface boundary=structured_strip_curb_return_blend" not in intersection_row["notes"]
+        assert "structured strips=2" not in intersection_row["notes"]
+        assert "curb-return surface edges=2" not in intersection_row["notes"]
+        assert "curb-return arcs=2" not in intersection_row["notes"]
         assert "implementation=legacy_patch_frozen" in intersection_row["notes"]
         assert "next=edge_network_first" in intersection_row["notes"]
-        assert "arc samples=" in intersection_row["notes"]
-        assert "arc segments=" in intersection_row["notes"]
-        assert "edge blend faces=" in intersection_row["notes"]
-        assert "boundary roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" in intersection_row["notes"]
-        assert "pavement tie-in edges=2" in intersection_row["notes"]
-        assert "stem tie-in edges=2" in intersection_row["notes"]
-        assert "overlap-cut edges=1" in intersection_row["notes"]
-        assert "curb-return edges=2" in intersection_row["notes"]
-        assert "boundary bbox ratio=" in intersection_row["notes"]
-        assert "min triangle quality=" in intersection_row["notes"]
+        assert "output_path=legacy_output" in intersection_row["notes"]
+        assert "consumed_contracts=topology=" in intersection_row["notes"]
+        assert "surface_patch_result=intersection-surface-patch:intersection-t-01" in intersection_row["notes"]
+        assert "boundary roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" not in intersection_row["notes"]
+        assert "surface_zone_output_contract=accepted_surface_zone" in intersection_row["notes"]
+        assert "surface_zone_output_handoff=accepted_zone_candidate" in intersection_row["notes"]
+        assert "surface_replacement_gate=blocked" in intersection_row["notes"]
+        assert "surface_patch_contract=transitional_normalized" in intersection_row["notes"]
+        assert "surface_patch_handoff=review_required" in intersection_row["notes"]
+        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=warning" in intersection_row["notes"]
+        assert "surface_patch_row_diagnostics=1" in intersection_row["notes"]
         assert "grading policy=intersection:t-01:default, mode=flatten_intersection" in intersection_step["notes"]
         assert "superelevation sources=1, transitions=2" in intersection_step["notes"]
+        assert "surface_patch_contract=transitional_normalized" in intersection_step["notes"]
+        assert "surface_patch_handoff=review_required" in intersection_step["notes"]
+        assert "surface_patch_replacement=accepted_intersection_surface_zone_output" in intersection_step["notes"]
+        assert "surface_zone_output_contract=accepted_surface_zone" in intersection_step["notes"]
+        assert "surface_zone_output_handoff=accepted_zone_candidate" in intersection_step["notes"]
+        assert "surface_replacement_gate=blocked" in intersection_step["notes"]
+        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=warning" in intersection_step["notes"]
+        assert "surface_patch_row_diagnostics=1" in intersection_step["notes"]
+        assert "structured strips=2" not in intersection_step["notes"]
+        assert "curb-return arcs=2" not in intersection_step["notes"]
+        assert preferred_corridor_build_review_row_index(rows, preferred_role="intersection") is None
+        guided_focus = focus_corridor_build_guided_review_step(doc, "intersections")
+        assert guided_focus.Name == "V1CorridorIntersectionSurfacePreview"
+        focused = show_corridor_build_review_object(doc, rows.index(intersection_row))
+        assert focused.Name == "V1CorridorIntersectionSurfacePreview"
+        shown = set_corridor_build_preview_visibility(doc, "intersection_zone_surface", True)
+        assert shown is None
         assert doc.getObject("V1CorridorIntersectionCurbReturnSlopePreview") is None
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_surface_preview_records_consumed_loop_contract() -> None:
+    doc, project = _new_project_doc()
+    try:
+        loop_result = IntersectionSlopeFaceLoopResult(
+            schema_version=1,
+            project_id="proj-1",
+            loop_result_id="intersection-slope-face-loops:test",
+            intersection_id="intersection:test",
+            status="warning",
+            loop_count=2,
+            ready_count=1,
+            warning_count=1,
+            loop_rows=[
+                IntersectionSlopeFaceLoopRow(
+                    loop_id="loop:test:outer",
+                    intersection_id="intersection:test",
+                    loop_family="primary_outside",
+                    loop_points_xyz=((0.0, 0.0, 10.0), (5.0, 0.0, 10.0), (5.0, 4.0, 9.0), (0.0, 4.0, 9.0)),
+                    source_edge_network_refs=("edge:test:1",),
+                    source_surface_zone_refs=("zone:test:1",),
+                    closed_xy=True,
+                    point_count=4,
+                    status="ready",
+                ),
+                IntersectionSlopeFaceLoopRow(
+                    loop_id="loop:test:warning",
+                    intersection_id="intersection:test",
+                    loop_family="secondary_outside",
+                    source_edge_network_refs=("edge:test:warning",),
+                    source_surface_zone_refs=("zone:test:warning",),
+                    source_edge_network_status="warning",
+                    source_surface_zone_status="warning",
+                    source_status="warning",
+                    source_diagnostic_rows=("source_edge_network:edge:test:warning:source_edge_family_policy_ref_missing",),
+                    source_lineage_status="source_warning",
+                    point_count=0,
+                    status="warning",
+                ),
+            ],
+            source_refs=["intersection:test"],
+        )
+
+        slope_preview = build_corridor_command._create_corridor_intersection_slope_face_surface_preview(
+            doc,
+            loop_result,
+            project=project,
+        )
+
+        assert slope_preview is not None
+        assert slope_preview.ConsumedIntersectionSlopeFaceLoopResultId == "intersection-slope-face-loops:test"
+        assert list(slope_preview.ConsumedIntersectionContractRefs) == ["intersection-slope-face-loops:test"]
+        assert slope_preview.ConsumedIntersectionContractSummary == "slope_face_loop=warning rows=2"
+        assert int(slope_preview.ConsumedIntersectionContractCount) == 1
+        diagnostics = list(slope_preview.ConsumedIntersectionContractDiagnostics)
+        assert "slope_face_loop:loop:test:warning:source_status=warning" in diagnostics
+        assert "slope_face_loop:loop:test:warning:source_lineage=source_warning" in diagnostics
+        assert "slope_face_loop:loop:test:warning:surface_zone_status=warning" in diagnostics
+        assert "slope_face_loop:loop:test:warning:edge_network_status=warning" in diagnostics
+        assert "slope_face_loop:loop:test:warning:source:source_edge_network:edge:test:warning:source_edge_family_policy_ref_missing" in diagnostics
+        review_rows = corridor_build_review_rows(doc)
+        slope_row = [row for row in review_rows if row["role"] == "intersection_slope"][0]
+        assert slope_row["output_path"] == "contract_consumed"
+        assert "consumed_contracts=slope_face_loop=warning rows=2" in str(slope_row["notes"])
+        assert f"consumed_contract_diagnostics={len(diagnostics)}" in str(slope_row["notes"])
+        assert (
+            build_corridor_command._corridor_build_review_output_path(
+                "intersection_slope",
+                SimpleNamespace(
+                    ReadyLoopCount=0,
+                    SourceLoopRefs=[],
+                    ConsumedIntersectionContractRefs=["intersection-slope-face-loops:test"],
+                ),
+            )
+            == "contract_consumed"
+        )
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_consumed_contract_metadata_preserves_row_source_diagnostics() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        preview = doc.addObject("Part::Feature", "V1IntersectionConsumedContractMetadataPreview")
+        build_corridor_command._attach_intersection_contract_consumption_metadata(
+            preview,
+            edge_network_result=SimpleNamespace(
+                edge_network_result_id="intersection-edge-network:test",
+                status="warning",
+                source_refs=["intersection:test"],
+                diagnostic_rows=["warning:edge_network_result_warning"],
+                edge_rows=[
+                    SimpleNamespace(
+                        edge_id="edge:test:warning",
+                        source_status="warning",
+                        source_diagnostic_rows=("source_edge_policy_ref_unresolved",),
+                    )
+                ],
+            ),
+            surface_zone_result=SimpleNamespace(
+                surface_zone_result_id="intersection-surface-zones:test",
+                status="warning",
+                source_refs=["intersection:test"],
+                diagnostic_rows=[],
+                zone_rows=[
+                    SimpleNamespace(
+                        zone_id="zone:test:warning",
+                        source_status="warning",
+                        source_diagnostic_rows=("surface_zone_source_edge_diagnostic",),
+                    )
+                ],
+            ),
+            grading_context_result=SimpleNamespace(
+                grading_context_result_id="intersection-grading-context:test",
+                status="warning",
+                source_refs=["intersection:test"],
+                diagnostic_rows=[],
+                context_rows=[
+                    SimpleNamespace(
+                        context_id="grading:test:warning",
+                        source_status="warning",
+                        source_diagnostic_rows=("source_grading_policy_mode_unknown",),
+                    )
+                ],
+            ),
+            drainage_hint_result=SimpleNamespace(
+                drainage_hint_result_id="intersection-drainage-hints:test",
+                status="warning",
+                source_refs=["intersection:test"],
+                diagnostic_rows=[],
+                hint_rows=[
+                    SimpleNamespace(
+                        hint_id="drainage:test:error",
+                        source_status="error",
+                        source_diagnostic_rows=("source_drainage_element_refs_missing",),
+                    )
+                ],
+            ),
+            slope_loop_result=SimpleNamespace(
+                loop_result_id="intersection-slope-face-loops:test",
+                status="warning",
+                source_refs=["intersection:test"],
+                diagnostic_rows=[],
+                loop_rows=[
+                    SimpleNamespace(
+                        loop_id="loop:test:warning",
+                        source_status="warning",
+                        source_lineage_status="source_warning",
+                        source_surface_zone_status="warning",
+                        source_edge_network_status="warning",
+                        source_diagnostic_rows=("source_edge_network:edge:test:warning:source_edge_policy_ref_unresolved",),
+                    )
+                ],
+            ),
+        )
+
+        diagnostics = list(preview.ConsumedIntersectionContractDiagnostics)
+
+        assert preview.ConsumedIntersectionContractSummary == (
+            "edge_network=warning rows=1; "
+            "surface_zone=warning rows=1; "
+            "grading_context=warning rows=1; "
+            "drainage_hint=warning rows=1; "
+            "slope_face_loop=warning rows=1"
+        )
+        assert "edge_network:warning:edge_network_result_warning" in diagnostics
+        assert "edge_network:edge:test:warning:source_status=warning" in diagnostics
+        assert "edge_network:edge:test:warning:source:source_edge_policy_ref_unresolved" in diagnostics
+        assert "surface_zone:zone:test:warning:source:surface_zone_source_edge_diagnostic" in diagnostics
+        assert "grading_context:grading:test:warning:source:source_grading_policy_mode_unknown" in diagnostics
+        assert "drainage_hint:drainage:test:error:source_status=error" in diagnostics
+        assert "drainage_hint:drainage:test:error:source:source_drainage_element_refs_missing" in diagnostics
+        assert "slope_face_loop:loop:test:warning:source_lineage=source_warning" in diagnostics
+        assert "slope_face_loop:loop:test:warning:edge_network_status=warning" in diagnostics
+        assert "slope_face_loop:loop:test:warning:source:source_edge_network:edge:test:warning:source_edge_policy_ref_unresolved" in diagnostics
+        assert int(preview.ConsumedIntersectionContractDiagnosticCount) == len(diagnostics)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_boundary_strips_are_suppressed_but_record_metadata() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+    )
+    boundary_result = IntersectionSlopeFaceBoundaryResult(
+        schema_version=1,
+        project_id="proj-1",
+        boundary_result_id="intersection-slope-face-boundary:test",
+        intersection_id="intersection:test",
+        status="ready",
+        boundary_count=1,
+        ready_count=1,
+        boundary_rows=[
+            IntersectionSlopeFaceBoundaryRow(
+                boundary_id="slope-face-boundary:test:left",
+                intersection_id="intersection:test",
+                alignment_ref="alignment:test",
+                side="left",
+                inner_points_xyz=((0.0, 0.0, 10.0), (5.0, 0.0, 10.0)),
+                outer_points_xyz=((0.0, 3.0, 9.0), (5.0, 3.0, 9.0)),
+                source_applied_section_refs=("section:1", "section:2"),
+                source_intersection_surface_ref="intersection-boundary:test:left",
+                status="ready",
+            )
+        ],
+    )
+
+    augmented = build_corridor_command._augment_daylight_surface_with_slope_face_boundary_strips(
+        surface,
+        boundary_result,
+    )
+
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_result_id") == "intersection-slope-face-boundary:test"
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_status") == "ready"
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_face_boundary_count") == 1
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_face_boundary_ready_count") == 1
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_refs") == "slope-face-boundary:test:left"
+    assert "boundary_result=intersection-slope-face-boundary:test" in build_corridor_command._tin_quality_text(
+        augmented,
+        "intersection_slope_face_boundary_summary",
+    )
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_face_boundary_strip_triangle_count") == 0
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_strip_generation_mode") == "suppressed"
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_strip_output_path") == "metadata_only"
+    assert (
+        build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_strip_diagnostic")
+        == "visible_boundary_strip_generation_suppressed"
+    )
+    review_note = build_corridor_command._intersection_slope_face_boundary_review_note(
+        SimpleNamespace(
+            IntersectionSlopeFaceBoundarySummary="boundary_result=intersection-slope-face-boundary:test; status=ready; ready=1/1; warnings=0; strip_generation=suppressed",
+            IntersectionSlopeFaceBoundaryStripGenerationMode="suppressed",
+            IntersectionSlopeFaceBoundaryStripOutputPath="metadata_only",
+            IntersectionSlopeFaceBoundaryStripCount=0,
+            IntersectionSlopeFaceBoundaryStripTriangleCount=0,
+            IntersectionSlopeFaceBoundaryStripDiagnostic="visible_boundary_strip_generation_suppressed",
+        )
+    )
+    assert "strip_generation=suppressed" in review_note
+    assert "strip_output=metadata_only" in review_note
+    assert "strip_diagnostic=visible_boundary_strip_generation_suppressed" in review_note
+    guided_suffix = build_corridor_command._slope_face_boundary_guided_review_suffix(
+        {"notes": f"Slope Face Surface ready | {review_note}"}
+    )
+    assert guided_suffix.startswith("boundary_review=intersection_slope_face_boundary_result")
+    assert "slope_face_boundary=boundary_result=intersection-slope-face-boundary:test" in guided_suffix
+    assert "strip_generation=suppressed" in guided_suffix
 
 
 def test_intersection_patch_boundary_tin_vertices_preserve_elevation_source_notes() -> None:
@@ -2720,6 +3393,185 @@ def test_intersection_slope_trim_removes_intersecting_daylight_triangle_above_in
     assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_intersecting_triangle_count") == 1
     assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_removed_triangle_count") == 1
     assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_kept_triangle_count") == 1
+
+
+def test_intersection_side_slope_strip_fills_boundary_gap_from_applied_sections() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("b1", 0.0, 1.0, 10.0),
+            TINVertex("b2", 10.0, 1.0, 10.0),
+            TINVertex("b3", 0.0, 2.0, 10.0),
+            TINVertex("b4", 10.0, 2.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("existing-a", "b1", "b2", "b4"),
+            TINTriangle("existing-b", "b1", "b4", "b3"),
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                alignment_id="alignment:main",
+                station=0.0,
+                frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=2.0,
+                daylight_left_width=2.0,
+                daylight_left_slope=-0.25,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:10",
+                alignment_id="alignment:main",
+                station=10.0,
+                frame=AppliedSectionFrame(station=10.0, x=10.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=2.0,
+                daylight_left_width=2.0,
+                daylight_left_slope=-0.25,
+            ),
+        ],
+    )
+
+    augmented = build_corridor_command._augment_daylight_surface_with_applied_section_side_slope_strips(
+        surface,
+        applied,
+    )
+
+    strip_triangles = [
+        triangle for triangle in augmented.triangle_rows
+        if triangle.triangle_kind == "intersection_side_slope_strip"
+    ]
+    assert len(strip_triangles) == 2
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_side_slope_strip_status") == "ready"
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_strip_count") == 1
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_strip_triangle_count") == 2
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_side_slope_strip_output_path") == "applied_section_side_slope_edges"
+
+
+def test_intersection_side_slope_strip_does_not_duplicate_existing_surface() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("i1", 0.0, 2.0, 10.0),
+            TINVertex("i2", 10.0, 2.0, 10.0),
+            TINVertex("o1", 0.0, 4.0, 9.5),
+            TINVertex("o2", 10.0, 4.0, 9.5),
+        ],
+        triangle_rows=[
+            TINTriangle("existing-a", "i1", "i2", "o2"),
+            TINTriangle("existing-b", "i1", "o2", "o1"),
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                alignment_id="alignment:main",
+                station=0.0,
+                frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=2.0,
+                daylight_left_width=2.0,
+                daylight_left_slope=-0.25,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:10",
+                alignment_id="alignment:main",
+                station=10.0,
+                frame=AppliedSectionFrame(station=10.0, x=10.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=2.0,
+                daylight_left_width=2.0,
+                daylight_left_slope=-0.25,
+            ),
+        ],
+    )
+
+    augmented = build_corridor_command._augment_daylight_surface_with_applied_section_side_slope_strips(
+        surface,
+        applied,
+    )
+
+    assert len(augmented.triangle_rows) == 2
+    assert build_corridor_command._tin_quality_text(augmented, "intersection_side_slope_strip_status") == "not_needed"
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_strip_count") == 0
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_strip_skipped_existing_count") == 1
+
+
+def test_intersection_side_slope_restore_uses_preclip_reference_without_filling_patch() -> None:
+    current = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("u1", 0.0, 4.0, 10.0),
+            TINVertex("u2", 10.0, 4.0, 10.0),
+            TINVertex("u3", 0.0, 6.0, 9.5),
+            TINVertex("u4", 10.0, 6.0, 9.5),
+            TINVertex("p1", 0.0, 0.0, 10.0),
+            TINVertex("p2", 10.0, 0.0, 10.0),
+            TINVertex("p3", 0.0, 2.0, 9.5),
+            TINVertex("p4", 10.0, 2.0, 9.5),
+        ],
+        triangle_rows=[],
+    )
+    reference = replace(
+        current,
+        triangle_rows=[
+            TINTriangle("upper-a", "u1", "u2", "u4", triangle_kind="corridor_daylight_bench_strip"),
+            TINTriangle("upper-b", "u1", "u4", "u3", triangle_kind="corridor_daylight_bench_strip"),
+            TINTriangle("patch-a", "p1", "p2", "p4", triangle_kind="corridor_daylight_bench_strip"),
+        ],
+    )
+    intersection = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        surface_kind="intersection_surface",
+        vertex_rows=[
+            TINVertex("i1", -1.0, -1.0, 10.0),
+            TINVertex("i2", 11.0, -1.0, 10.0),
+            TINVertex("i3", 11.0, 3.0, 10.0),
+            TINVertex("i4", -1.0, 3.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("intersection-a", "i1", "i2", "i3"),
+            TINTriangle("intersection-b", "i1", "i3", "i4"),
+        ],
+    )
+
+    restored = build_corridor_command._restore_daylight_surface_side_slope_strips_from_reference(
+        current,
+        reference,
+        intersection_tin_surface=intersection,
+    )
+
+    restored_ids = {triangle.triangle_id for triangle in restored.triangle_rows}
+    assert restored_ids == {"upper-a", "upper-b"}
+    assert all(triangle.quality_ref == "intersection_side_slope_strip" for triangle in restored.triangle_rows)
+    assert build_corridor_command._tin_quality_text(restored, "intersection_side_slope_reference_restore_status") == "ready"
+    assert build_corridor_command._tin_quality_float(restored, "intersection_side_slope_reference_restore_triangle_count") == 2
+    assert build_corridor_command._tin_quality_float(restored, "intersection_side_slope_reference_restore_skipped_intersection_count") == 1
+    assert build_corridor_command._tin_quality_text(restored, "intersection_side_slope_reference_restore_output_path") == "preclip_side_slope_tin"
 
 
 def test_intersection_exclusion_suppresses_daylight_triangles_near_junction_gap() -> None:
@@ -5417,8 +6269,8 @@ def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> No
         assert rows[0]["highlight_mode"] == "station_span"
         assert summary["status"] == "ready"
         assert "culvert-01" in str(summary["notes"])
-        assert steps[4]["step_id"] == "drainage_flow"
-        assert steps[4]["focus"] == "flowId-01"
+        drainage_flow_step = [step for step in steps if step["step_id"] == "drainage_flow"][0]
+        assert drainage_flow_step["focus"] == "flowId-01"
         assert focused.Name == "ReviewIssueDrainageFlowRoutes"
         assert focused.DisplayMode == "drainage_flow_station_span"
         assert focused.FlowRouteRefs == ["flow-route:flowId-01"]
@@ -5426,6 +6278,60 @@ def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> No
         assert int(focused.PipeSegmentCount) == 0
         assert int(focused.StationSpanCount) >= 1
         assert focus_corridor_drainage_flow_review(doc).Name == "ReviewIssueDrainageFlowRoutes"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_preset_drainage_does_not_create_drainage_flow_highlight() -> None:
+    doc, project = _new_project_doc()
+    try:
+        stale = doc.addObject("Part::Feature", "ReviewIssueDrainageFlowRoutes")
+        stale.Label = "Drainage Flow Highlight"
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:intersection-preset-t-intersection",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:intersection-low-point-t-intersection",
+                        element_kind="low_point_hint",
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:intersection-outlet-hint-t-intersection",
+                        element_kind="outlet_hint",
+                    ),
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:intersection-t-intersection-01",
+                        from_element_ref="drainage:intersection-low-point-t-intersection",
+                        to_element_ref="drainage:intersection-outlet-hint-t-intersection",
+                        outlet_ref="drainage:intersection-outlet-hint-t-intersection",
+                    )
+                ],
+                source_refs=["intersection:t-01"],
+            ),
+            object_name="V1IntersectionPresetDrainage",
+            label="Intersection Preset Drainage",
+        )
+
+        rows = corridor_drainage_flow_review_rows(doc)
+        summary = corridor_drainage_flow_review_summary(doc)
+
+        assert doc.getObject("ReviewIssueDrainageFlowRoutes") is None
+        assert rows[0]["status"] == "missing"
+        assert rows[0]["flow_route_id"] == ""
+        assert "Intersection preset drainage" in rows[0]["notes"]
+        assert summary["status"] == "missing"
+        try:
+            focus_corridor_drainage_flow_review(doc)
+        except RuntimeError as exc:
+            assert "No Drainage Flow Route rows" in str(exc)
+        else:
+            raise AssertionError("Intersection preset drainage should not create a Drainage Flow highlight.")
     finally:
         App.closeDocument(doc.Name)
 
@@ -6266,6 +7172,7 @@ def test_corridor_build_review_warns_when_centerline_consumer_uses_fallback() ->
         centerline_row = next(row for row in rows if row["role"] == "centerline")
 
         assert centerline_row["status"] == "warning"
+        assert centerline_row["output_path"] == "inferred_fallback"
         assert "warning:centerline source fallback=centerline3d_result_fallback" in str(centerline_row["notes"])
         assert "expected=centerline3d_source_geometry" in str(centerline_row["notes"])
     finally:

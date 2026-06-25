@@ -32,6 +32,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section_solid_profile import
 )
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
 from freecad.Corridor_Road.v1.models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow
+from freecad.Corridor_Road.v1.models.output.simulation_qa_output import SimulationQaOutput
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionArmPolicyRow,
@@ -43,6 +44,7 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionModel,
     IntersectionRow,
 )
+from freecad.Corridor_Road.v1.models.source.solid_target_model import SolidTargetModel, SolidTargetRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     CulvertGeometrySpec,
     StructureConnectionPoint,
@@ -60,7 +62,13 @@ from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_s
 from freecad.Corridor_Road.v1.objects.obj_surface import create_or_update_v1_surface_model_object
 from freecad.Corridor_Road.v1.objects.obj_watertight_solid import create_or_update_v1_watertight_solid_output_object
 from freecad.Corridor_Road.v1.objects.obj_simulation_qa import to_simulation_qa_output
+from freecad.Corridor_Road.v1.objects.obj_simulation_qa import create_or_update_v1_simulation_qa_output_object
 from freecad.Corridor_Road.v1.objects.obj_simulation_package import to_simulation_package_output
+from freecad.Corridor_Road.v1.services.builders.watertight_simulation_package_service import (
+    WatertightSimulationPackageBuildRequest,
+    WatertightSimulationPackageService,
+)
+from freecad.Corridor_Road.v1.services.builders.watertight_simulation_qa_service import WatertightSimulationQaSolidInput
 from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     CmdV1WatertightSolids,
     V1WatertightSolidsTaskPanel,
@@ -80,6 +88,7 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     _create_or_update_intersection_trim_preview_object,
     drainage_watertight_handoff_summary,
     _profile_set_on_centerline3d,
+    _simulation_package_status_line,
     discover_watertight_solid_targets,
     export_document_simulation_package_json,
     watertight_solid_prerequisite_status,
@@ -400,6 +409,24 @@ def _populate_ready_build_corridor_outputs(
     )
     create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
     create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+
+
+def _add_ready_build_parametric_preview_objects(doc) -> None:
+    for name in [
+        "V1CorridorDesignSurfacePreview",
+        "V1CorridorSubgradeSurfacePreview",
+        "V1CorridorDaylightSurfacePreview",
+    ]:
+        obj = doc.getObject(name) or doc.addObject("App::FeaturePython", name)
+        if not hasattr(obj, "PreviewStatus"):
+            obj.addProperty("App::PropertyString", "PreviewStatus", "Test")
+        obj.PreviewStatus = "ready"
+        if not hasattr(obj, "VertexCount"):
+            obj.addProperty("App::PropertyInteger", "VertexCount", "Test")
+        obj.VertexCount = 4
+        if not hasattr(obj, "TriangleCount"):
+            obj.addProperty("App::PropertyInteger", "TriangleCount", "Test")
+        obj.TriangleCount = 2
 
 
 def _pipeline_structure_model(*, include_native_specs: bool = False) -> StructureModel:
@@ -808,13 +835,27 @@ def test_watertight_solids_discovers_blocked_intersection_patch_body_target() ->
         assert "intersection:t-01" in target.source_refs
         assert "intersection-patch-boundary:refined-preferred" in target.source_refs
         assert "boundary_source=refined_patch_boundary_preferred" in target.notes
+        assert "quality_status=transitional" in target.notes
+        assert "transitional_reason=legacy_patch_prism" in target.notes
+        assert "replacement_target_families=intersection_pavement_body,intersection_subgrade_body,intersection_slope_body,intersection_curb_return_body" in target.notes
+        assert "replacement_guidance=accepted_zone_solids_required" in target.notes
+        assert "source_contract_required=accepted_surface_zone" in target.notes
+        assert any(
+            diagnostic.kind == "intersection_patch_body_transitional"
+            and diagnostic.source_ref == target.target_id
+            and diagnostic.severity == "warning"
+            and "transitional_reason=legacy_patch_prism" in diagnostic.notes
+            and "replacement_target_families=intersection_pavement_body,intersection_subgrade_body,intersection_slope_body,intersection_curb_return_body" in diagnostic.notes
+            and "replacement_guidance=accepted_zone_solids_required" in diagnostic.notes
+            for diagnostic in target_model.target_diagnostic_rows
+        )
         assert any(
             diagnostic.kind == "intersection_patch_target_insufficient_sections"
             and diagnostic.source_ref == target.target_id
             for diagnostic in target_model.target_diagnostic_rows
         )
-        assert panel._target_table.item(row_index, 1).text() == "Intersection Patch Solid - intersection:t-01"
-        assert panel._target_table.item(row_index, 2).text() == "Intersection Patch"
+        assert panel._target_table.item(row_index, 1).text() == "Intersection Patch Solid (Transitional) - intersection:t-01"
+        assert panel._target_table.item(row_index, 2).text() == "Intersection Patch (Transitional)"
     finally:
         App.closeDocument(doc.Name)
 
@@ -854,6 +895,12 @@ def test_watertight_solids_discovers_intersection_surface_zone_target_handoff_ro
         assert all(row.scope_kind == "intersection" for row in zone_targets)
         assert all(row.readiness_status == "planned" for row in zone_targets)
         assert all("build_backend=planned_edge_network_zone_solid" in row.notes for row in zone_targets)
+        assert all("builder_state=pending_accepted_zone_solid_builder" in row.notes for row in zone_targets)
+        assert all("contract_status=accepted_surface_zone" in row.notes for row in zone_targets)
+        assert all("quality_status=accepted_contract_pending_builder" in row.notes for row in zone_targets)
+        assert all("digital_twin_handoff=accepted_zone_candidate" in row.notes for row in zone_targets)
+        assert all("intersection-edge-network:intersection:t-01" in row.source_refs for row in zone_targets)
+        assert all("intersection-surface-zones:intersection:t-01" in row.source_refs for row in zone_targets)
         assert any("intersection-zone:" in ref for row in zone_targets for ref in row.source_refs)
         assert panel._target_table.item(row_index, 2).text() == "Intersection: Pavement"
     finally:
@@ -871,6 +918,7 @@ def test_watertight_solids_builds_intersection_patch_body_target() -> None:
         )
         create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
         create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        _add_ready_build_parametric_preview_objects(doc)
         create_or_update_v1_intersection_model_object(
             doc,
             project=project,
@@ -895,6 +943,10 @@ def test_watertight_solids_builds_intersection_patch_body_target() -> None:
         assert state.watertight_output.solid_rows[0].is_watertight is True
         assert "intersection=t-01" not in state.watertight_output.solid_rows[0].notes
         assert "intersection=intersection:t-01" in state.watertight_output.solid_rows[0].notes
+        assert "quality_status=transitional" in state.target_row.notes
+        assert "transitional_reason=legacy_patch_prism" in state.target_row.notes
+        assert "replacement_guidance=accepted_zone_solids_required" in state.target_row.notes
+        assert "source_contract_required=accepted_surface_zone" in state.target_row.notes
         assert state.output_object is not None
         assert state.output_object.TargetFamilies == ["intersection_patch_body"]
 
@@ -919,6 +971,7 @@ def test_watertight_solids_blocks_degenerate_intersection_patch_boundary() -> No
         )
         create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
         create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        _add_ready_build_parametric_preview_objects(doc)
         create_or_update_v1_intersection_model_object(
             doc,
             project=project,
@@ -947,6 +1000,7 @@ def test_watertight_solids_blocks_open_refined_intersection_patch_boundary() -> 
         )
         create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
         create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        _add_ready_build_parametric_preview_objects(doc)
         create_or_update_v1_intersection_model_object(
             doc,
             project=project,
@@ -988,6 +1042,7 @@ def test_watertight_solids_builds_intersection_patch_from_closed_refined_preview
         )
         create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
         create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        _add_ready_build_parametric_preview_objects(doc)
         create_or_update_v1_intersection_model_object(
             doc,
             project=project,
@@ -1069,16 +1124,354 @@ def test_watertight_solids_reports_intersection_practical_boundary_handoff() -> 
         status_text = panel._status_text()
 
         assert summary.readiness_status == "ready"
+        assert summary.final_quality_status == "blocked"
+        assert summary.digital_twin_handoff_status == "review_required"
         assert summary.surface_boundary_strategy == "structured_strip_curb_return_blend"
         assert summary.exclusion_practical_aligned is True
+        assert summary.patch_target_count == 1
+        assert summary.accepted_zone_target_count == 0
         assert "intersection-boundary:structured_strip_curb_return_blend" in target.source_refs
         assert "IntersectionHandoff: status=ready" in target.notes
         assert "boundary=structured_strip_curb_return_blend" in target.notes
+        assert "final_quality=blocked" in target.notes
+        assert "digital_twin_handoff=review_required" in target.notes
         assert "Intersection Solid QA:" in status_text
         assert "status=ready" in status_text
+        assert "final_quality=blocked" in status_text
+        assert "handoff=review_required" in status_text
         assert "aligned=practical" in status_text
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_intersection_watertight_handoff_blocks_transitional_only_patch_final_quality() -> None:
+    doc, _project = _new_project_doc("V1WatertightSolidsIntersectionPatchOnlyHandoffTest")
+    try:
+        preview = doc.addObject("App::FeaturePython", "V1CorridorIntersectionSurfacePreview")
+        preview.addProperty("App::PropertyString", "IntersectionId", "Test").IntersectionId = "intersection:t-01"
+        preview.addProperty("App::PropertyString", "IntersectionPatchBoundaryClosed", "Test").IntersectionPatchBoundaryClosed = "Yes"
+        preview.addProperty("App::PropertyString", "PatchTriangulationMode", "Test").PatchTriangulationMode = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyString", "PatchBoundaryStrategy", "Test").PatchBoundaryStrategy = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyInteger", "PatchSkinnyTriangleCount", "Test").PatchSkinnyTriangleCount = 0
+        preview.addProperty("App::PropertyString", "IntersectionSurfaceReplacementGateStatus", "Test").IntersectionSurfaceReplacementGateStatus = "review_required"
+        preview.addProperty("App::PropertyString", "IntersectionSurfaceReplacementReadinessStatus", "Test").IntersectionSurfaceReplacementReadinessStatus = "review_only"
+        preview.addProperty("App::PropertyString", "IntersectionSurfaceReplacementHandoffPreference", "Test").IntersectionSurfaceReplacementHandoffPreference = "fallback_review_required"
+        preview.addProperty("App::PropertyString", "IntersectionSurfaceDownstreamHandoffSelectedRole", "Test").IntersectionSurfaceDownstreamHandoffSelectedRole = "transitional_patch_fallback"
+        preview.addProperty("App::PropertyString", "IntersectionLegacyPatchReviewVisibility", "Test").IntersectionLegacyPatchReviewVisibility = "metadata_only"
+        preview.addProperty(
+            "App::PropertyString",
+            "IntersectionLegacyPatchCompatibilityAuditSummary",
+            "Test",
+        ).IntersectionLegacyPatchCompatibilityAuditSummary = "review_visibility=metadata_only; property_only=5; normalized_replacement=available"
+
+        target_model = SolidTargetModel(
+            schema_version=1,
+            project_id="corridorroad-v1",
+            target_rows=[
+                SolidTargetRow(
+                    target_id="solid-target:intersection-patch:test",
+                    target_family="intersection_patch_body",
+                    scope_kind="intersection",
+                    enabled=True,
+                    source_refs=[],
+                    notes="",
+                )
+            ]
+        )
+
+        summary = watertight_cmd.intersection_watertight_handoff_summary(doc, target_model=target_model)
+        annotated = watertight_cmd._annotate_intersection_watertight_handoff_targets(target_model, doc)
+        target = annotated.target_rows[0]
+
+        assert summary.readiness_status == "ready"
+        assert summary.final_quality_status == "blocked"
+        assert summary.digital_twin_handoff_status == "review_required"
+        assert summary.replacement_gate_status == "review_required"
+        assert summary.replacement_readiness_status == "review_only"
+        assert summary.replacement_handoff_preference == "fallback_review_required"
+        assert summary.downstream_selected_role == "transitional_patch_fallback"
+        assert summary.legacy_patch_review_visibility == "metadata_only"
+        assert summary.patch_target_count == 1
+        assert summary.accepted_zone_target_count == 0
+        assert "final_quality=blocked" in target.notes
+        assert "digital_twin_handoff=review_required" in target.notes
+        assert "replacement_gate=review_required" in target.notes
+        assert "replacement_readiness=review_only" in target.notes
+        assert "handoff_preference=fallback_review_required" in target.notes
+        assert "downstream_selected_role=transitional_patch_fallback" in target.notes
+        assert "legacy_patch_review=metadata_only" in target.notes
+        assert "legacy_patch_audit=review_visibility=metadata_only" in target.notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_simulation_package_blocks_transitional_only_intersection_patch_final_handoff() -> None:
+    qa_output = SimulationQaOutput(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        simulation_ready=True,
+        terrain_status="ready",
+    )
+    package_output = WatertightSimulationPackageService().build(
+        WatertightSimulationPackageBuildRequest(
+            project_id="corridorroad-v1",
+            simulation_qa_output=qa_output,
+            solid_inputs=[
+                WatertightSimulationQaSolidInput(
+                    output_ref="V1WatertightSolidOutput_IntersectionPatch",
+                    target_families=["intersection_patch_body"],
+                    volumes=[12.0],
+                    valid_solid_statuses=[True],
+                    shape_valid=True,
+                )
+            ],
+            intersection_handoff={
+                "readiness_status": "ready",
+                "final_quality_status": "blocked",
+                "digital_twin_handoff": "review_required",
+                "target_count": 1,
+                "patch_target_count": 1,
+                "accepted_zone_target_count": 0,
+                "replacement_gate_status": "review_required",
+                "replacement_readiness_status": "review_only",
+                "replacement_handoff_preference": "fallback_review_required",
+                "downstream_selected_role": "transitional_patch_fallback",
+                "legacy_patch_review_visibility": "metadata_only",
+                "legacy_patch_compatibility_audit_summary": "review_visibility=metadata_only; property_only=5; normalized_replacement=available",
+            },
+        )
+    )
+
+    assert package_output.package_status == "blocked"
+    assert package_output.simulation_ready is False
+    assert package_output.intersection_handoff_final_quality_status == "blocked"
+    assert package_output.intersection_handoff_status == "review_required"
+    assert package_output.intersection_handoff_patch_target_count == 1
+    assert package_output.intersection_handoff_accepted_zone_target_count == 0
+    assert package_output.intersection_handoff_replacement_gate_status == "review_required"
+    assert package_output.intersection_handoff_replacement_readiness_status == "review_only"
+    assert package_output.intersection_handoff_replacement_handoff_preference == "fallback_review_required"
+    assert package_output.intersection_handoff_downstream_selected_role == "transitional_patch_fallback"
+    assert package_output.intersection_handoff_legacy_patch_review_visibility == "metadata_only"
+    assert "property_only=5" in package_output.intersection_handoff_legacy_patch_compatibility_audit_summary
+    assert package_output.intersection_handoff_replacement_blocker_kind == "intersection_replacement_gate_review_required"
+    assert "intersection_final_handoff_blocked" in package_output.diagnostic_kinds
+    assert "intersection_replacement_gate_review_required" in package_output.diagnostic_kinds
+
+
+def test_simulation_package_reports_intersection_replacement_readiness_blocker_kinds() -> None:
+    qa_output = SimulationQaOutput(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        simulation_ready=True,
+        terrain_status="ready",
+    )
+
+    blocked = WatertightSimulationPackageService().build(
+        WatertightSimulationPackageBuildRequest(
+            project_id="corridorroad-v1",
+            simulation_qa_output=qa_output,
+            intersection_handoff={
+                "readiness_status": "ready",
+                "final_quality_status": "blocked",
+                "digital_twin_handoff": "review_required",
+                "target_count": 1,
+                "patch_target_count": 1,
+                "accepted_zone_target_count": 0,
+                "replacement_readiness_status": "blocked",
+            },
+        )
+    )
+
+    assert "intersection_final_handoff_blocked" in blocked.diagnostic_kinds
+    assert "intersection_replacement_gate_blocked" in blocked.diagnostic_kinds
+    assert blocked.intersection_handoff_replacement_blocker_kind == "intersection_replacement_gate_blocked"
+
+    ready_to_replace = WatertightSimulationPackageService().build(
+        WatertightSimulationPackageBuildRequest(
+            project_id="corridorroad-v1",
+            simulation_qa_output=qa_output,
+            intersection_handoff={
+                "readiness_status": "ready",
+                "final_quality_status": "blocked",
+                "digital_twin_handoff": "review_required",
+                "target_count": 1,
+                "patch_target_count": 1,
+                "accepted_zone_target_count": 0,
+                "replacement_readiness_status": "ready_to_replace",
+                "downstream_selected_role": "transitional_patch_fallback",
+            },
+        )
+    )
+
+    assert "intersection_final_handoff_blocked" in ready_to_replace.diagnostic_kinds
+    assert "intersection_replacement_ready_patch_fallback" in ready_to_replace.diagnostic_kinds
+    assert ready_to_replace.intersection_handoff_replacement_blocker_kind == "intersection_replacement_ready_patch_fallback"
+
+
+def test_simulation_package_status_line_reports_trim_handoff_status() -> None:
+    package_obj = SimpleNamespace(Name="V1SimulationPackageOutput")
+    package_output = SimpleNamespace(
+        package_status="ready",
+        output_count=2,
+        intersection_trim_handoff_status="fallback",
+        intersection_trim_fuse_status="fuse_failed_compound",
+        total_volume=12.5,
+    )
+
+    status_line = _simulation_package_status_line(package_obj, package_output)
+
+    assert "Simulation package: V1SimulationPackageOutput" in status_line
+    assert "status=ready" in status_line
+    assert "outputs=2" in status_line
+    assert "trim_handoff=fallback" in status_line
+    assert "trim_fuse=fuse_failed_compound" in status_line
+
+
+def test_simulation_qa_records_intersection_replacement_blocker_before_package_build() -> None:
+    doc, project = _new_project_doc("V1SimulationQaIntersectionReplacementBlockerTest")
+    try:
+        preview = doc.addObject("App::FeaturePython", "V1CorridorIntersectionSurfacePreview")
+        preview.addProperty("App::PropertyString", "IntersectionId", "Test").IntersectionId = "intersection:t-01"
+        preview.addProperty("App::PropertyString", "IntersectionPatchBoundaryClosed", "Test").IntersectionPatchBoundaryClosed = "Yes"
+        preview.addProperty("App::PropertyString", "PatchTriangulationMode", "Test").PatchTriangulationMode = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyString", "PatchBoundaryStrategy", "Test").PatchBoundaryStrategy = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyInteger", "PatchSkinnyTriangleCount", "Test").PatchSkinnyTriangleCount = 0
+        preview.addProperty("App::PropertyString", "IntersectionSurfaceReplacementGateStatus", "Test").IntersectionSurfaceReplacementGateStatus = "review_required"
+        preview.addProperty("App::PropertyString", "IntersectionSurfaceReplacementReadinessStatus", "Test").IntersectionSurfaceReplacementReadinessStatus = "review_only"
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+
+        target_model = SolidTargetModel(
+            schema_version=1,
+            project_id="corridorroad-v1",
+            target_rows=[
+                SolidTargetRow(
+                    target_id="solid-target:intersection-patch:test",
+                    target_family="intersection_patch_body",
+                    scope_kind="intersection",
+                    enabled=True,
+                    source_refs=[],
+                    notes="",
+                )
+            ]
+        )
+        annotated = watertight_cmd._annotate_intersection_watertight_handoff_targets(target_model, doc)
+        target = annotated.target_rows[0]
+        output = WatertightSolidOutput(
+            schema_version=1,
+            project_id="corridorroad-v1",
+            watertight_solid_output_id="watertight-solids:intersection-patch-qa",
+            corridor_id="corridor:main",
+            solid_rows=[
+                WatertightSolidOutputRow(
+                    output_object_id="watertight-solid:intersection-patch-qa",
+                    target_id=target.target_id,
+                    target_family="intersection_patch_body",
+                    scope_kind="intersection",
+                    station_start=0.0,
+                    station_end=10.0,
+                    generated_object_ref="V1WatertightSolidOutput_IntersectionPatchQa",
+                    validation_status="ok",
+                    is_watertight=True,
+                    is_valid_solid=True,
+                    volume=1.0,
+                    face_count=6,
+                    edge_count=12,
+                    source_refs=["intersection:t-01"],
+                )
+            ],
+        )
+        create_or_update_v1_watertight_solid_output_object(
+            document=doc,
+            watertight_solid_output=output,
+            shape=Part.makeBox(1.0, 1.0, 1.0),
+            project=project,
+            object_name="V1WatertightSolidOutput_IntersectionPatchQa",
+            label="Watertight Solid - Intersection Patch QA",
+        )
+
+        qa_obj = create_or_update_v1_simulation_qa_output_object(
+            document=doc,
+            simulation_qa_output=watertight_cmd._build_simulation_qa_output(doc),
+            project=project,
+            object_name="V1SimulationQaOutput",
+            label="Simulation QA - Watertight Solids",
+        )
+        qa_output = to_simulation_qa_output(qa_obj)
+
+        assert qa_obj.IntersectionHandoffFinalQualityStatus == "blocked"
+        assert qa_obj.IntersectionHandoffStatus == "review_required"
+        assert qa_obj.IntersectionReplacementReadinessStatus == "review_only"
+        assert qa_obj.IntersectionReplacementBlockerKind == "intersection_replacement_gate_review_required"
+        assert "intersection_final_handoff_blocked" in list(qa_obj.DiagnosticKinds)
+        assert "intersection_replacement_gate_review_required" in list(qa_obj.DiagnosticKinds)
+        broad_index = list(qa_obj.DiagnosticKinds).index("intersection_final_handoff_blocked")
+        assert "blocker_kind=intersection_replacement_gate_review_required" in list(qa_obj.DiagnosticNotes)[broad_index]
+        assert "replacement_readiness=review_only" in list(qa_obj.DiagnosticNotes)[broad_index]
+        assert qa_output is not None
+        assert qa_output.intersection_replacement_blocker_kind == "intersection_replacement_gate_review_required"
+        assert qa_output.simulation_ready is False
+        status_text = "\n".join(watertight_cmd._simulation_ready_qa_lines(doc))
+        assert "intersection_final_quality=blocked" in status_text
+        assert "intersection_handoff=review_required" in status_text
+        assert "replacement_readiness=review_only" in status_text
+        assert "replacement_blocker=intersection_replacement_gate_review_required" in status_text
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_simulation_package_allows_accepted_intersection_zone_candidate_handoff() -> None:
+    qa_output = SimulationQaOutput(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        simulation_ready=True,
+        terrain_status="ready",
+    )
+    package_output = WatertightSimulationPackageService().build(
+        WatertightSimulationPackageBuildRequest(
+            project_id="corridorroad-v1",
+            simulation_qa_output=qa_output,
+            solid_inputs=[
+                WatertightSimulationQaSolidInput(
+                    output_ref="V1WatertightSolidOutput_IntersectionPavement",
+                    target_families=["intersection_pavement_body"],
+                    material_refs=["material:intersection-pavement"],
+                    source_refs=[
+                        "intersection:t-01",
+                        "intersection-zone:intersection:t-01:pavement",
+                        "intersection-edge-network:intersection:t-01",
+                        "intersection-surface-zones:intersection:t-01",
+                    ],
+                    volumes=[18.0],
+                    valid_solid_statuses=[True],
+                    shape_valid=True,
+                )
+            ],
+            intersection_handoff={
+                "readiness_status": "ready",
+                "final_quality_status": "candidate",
+                "digital_twin_handoff": "accepted_zone_candidate",
+                "target_count": 1,
+                "patch_target_count": 0,
+                "accepted_zone_target_count": 1,
+            },
+        )
+    )
+
+    assert package_output.package_status == "ready"
+    assert package_output.simulation_ready is True
+    assert package_output.intersection_handoff_final_quality_status == "candidate"
+    assert package_output.intersection_handoff_status == "accepted_zone_candidate"
+    assert package_output.intersection_handoff_patch_target_count == 0
+    assert package_output.intersection_handoff_accepted_zone_target_count == 1
+    assert "intersection_final_handoff_blocked" not in package_output.diagnostic_kinds
+    assert "intersection:t-01" in package_output.source_refs
+    assert "material:intersection-pavement" in package_output.source_refs
+    assert package_output.solid_rows[0].target_families == ["intersection_pavement_body"]
 
 
 def test_watertight_solids_prerequisites_block_on_build_parametric_error_diagnostics() -> None:
@@ -1438,6 +1831,7 @@ def test_watertight_solids_creates_intersection_trim_candidate_preview_object() 
                     face_count=1,
                     edge_count=1,
                     source_refs=["intersection:t-01", "region:primary-intersection"],
+                    material_ref="material:intersection-pavement",
                 )
             ],
         )
@@ -1606,6 +2000,32 @@ def test_watertight_solids_creates_intersection_trim_candidate_preview_object() 
         assert solid_reconstruction.ShellClosureStatus == "closed"
         assert solid_reconstruction.OpenEdgeCount == 0
         assert solid_reconstruction.SolidFaceCount == 5
+        qa_obj = create_or_update_v1_simulation_qa_output_object(
+            document=doc,
+            simulation_qa_output=watertight_cmd._build_simulation_qa_output(doc),
+            project=project,
+            object_name="V1SimulationQaOutput",
+            label="Simulation QA - Watertight Solids",
+        )
+        assert qa_obj is not None
+        assert qa_obj.IntersectionTrimStatus == "ready"
+        assert qa_obj.IntersectionTrimReadyPairCount == 1
+        assert qa_obj.IntersectionTrimBlockedPairCount == 0
+        assert qa_obj.IntersectionTrimMaxGap == 0.0
+        assert qa_obj.IntersectionTrimFuseStatus in {"fused", "fuse_failed_compound"}
+        assert qa_obj.IntersectionTrimHandoffStatus in {"accepted", "fallback"}
+        assert any(
+            kind in {"intersection_trim_handoff_accepted", "intersection_trim_handoff_fallback"}
+            for kind in list(qa_obj.DiagnosticKinds)
+        )
+        qa_output = to_simulation_qa_output(qa_obj)
+        assert qa_output is not None
+        assert qa_output.intersection_trim_status == "ready"
+        assert qa_output.intersection_trim_ready_pair_count == 1
+        assert qa_output.intersection_trim_blocked_pair_count == 0
+        assert qa_output.intersection_trim_max_gap == 0.0
+        assert qa_output.intersection_trim_fuse_status in {"fused", "fuse_failed_compound"}
+        assert qa_output.intersection_trim_handoff_status in {"accepted", "fallback"}
         package_obj = watertight_cmd.apply_v1_simulation_package(document=doc, project=project)
         assert package_obj.IntersectionTrimStatus == "ready"
         assert package_obj.IntersectionTrimResultRef == result_obj.Name
@@ -1613,9 +2033,13 @@ def test_watertight_solids_creates_intersection_trim_candidate_preview_object() 
         assert package_obj.IntersectionTrimReadyPairCount == 1
         assert package_obj.IntersectionTrimBlockedPairCount == 0
         assert package_obj.IntersectionTrimFuseStatus in {"fused", "fuse_failed_compound"}
+        assert package_obj.IntersectionTrimHandoffStatus in {"accepted", "fallback"}
         assert package_obj.IntersectionTrimFuseCandidateRef == fuse_candidate.Name
         assert package_obj.IntersectionTrimFuseSourceCount == 3
         assert package_obj.IntersectionTrimFuseFaceCount >= 5
+        assert "intersection:t-01" in "|".join(list(package_obj.SolidSourceRefs))
+        assert "region:primary-intersection" in "|".join(list(package_obj.SolidSourceRefs))
+        assert "material:intersection-pavement" in "|".join(list(package_obj.SolidMaterialRefs))
         assert set(package_obj.IntersectionTrimFuseSourceRefs) == {
             "V1WatertightSolidOutput_PatchTrimPreview",
             "V1WatertightSolidOutput_RoadTrimPreview",
@@ -1646,26 +2070,50 @@ def test_watertight_solids_creates_intersection_trim_candidate_preview_object() 
         assert package_output.intersection_trim_result_ref == result_obj.Name
         assert package_output.intersection_trim_ready_pair_count == 1
         assert package_output.intersection_trim_fuse_status in {"fused", "fuse_failed_compound"}
+        assert package_output.intersection_trim_handoff_status in {"accepted", "fallback"}
         assert package_output.intersection_trim_fuse_candidate_ref == fuse_candidate.Name
         assert package_output.intersection_trim_fuse_source_count == 3
         assert package_output.intersection_trim_fuse_face_count >= 5
+        patch_package_row = [
+            row for row in package_output.solid_rows
+            if "intersection_patch_body" in row.target_families
+        ][0]
+        assert "intersection:t-01" in patch_package_row.source_refs
+        assert "region:primary-intersection" in patch_package_row.source_refs
+        assert "material:intersection-pavement" in patch_package_row.material_refs
         assert package_output.intersection_trim_handoff_chain_refs == list(package_obj.IntersectionTrimHandoffChainRefs)
         assert "fuse_candidate=" + fuse_candidate.FuseCandidateStatus in package_output.intersection_trim_handoff_stage_statuses
         assert package_output.intersection_trim_pair_rows[0]["boundary_pair_id"] == "intersection-trim-boundary:1"
         assert package_output.intersection_trim_pair_rows[0]["status"] == "ready_to_trim"
         with tempfile.TemporaryDirectory() as temp_dir:
             export_path = Path(temp_dir) / "simulation_package.json"
-            export_document_simulation_package_json(str(export_path), document=doc, project=project)
+            export_info = export_document_simulation_package_json(str(export_path), document=doc, project=project)
             exported = json.loads(export_path.read_text(encoding="utf-8"))
             assert exported["intersection_trim"]["status"] == "ready"
             assert exported["intersection_trim"]["result_ref"] == result_obj.Name
             assert exported["intersection_trim"]["ready_pair_count"] == 1
+            assert exported["intersection_trim"]["handoff_status"] in {"accepted", "fallback"}
             assert exported["intersection_trim"]["fuse_candidate"]["ref"] == fuse_candidate.Name
             assert exported["intersection_trim"]["fuse_candidate"]["source_count"] == 3
             assert exported["intersection_trim"]["fuse_candidate"]["face_count"] >= 5
             assert exported["intersection_trim"]["handoff_chain"]["refs"] == list(package_obj.IntersectionTrimHandoffChainRefs)
             assert "shell_candidate=ready" in exported["intersection_trim"]["handoff_chain"]["stage_statuses"]
             assert exported["intersection_trim"]["pair_rows"][0]["boundary_pair_id"] == "intersection-trim-boundary:1"
+            exported_patch_row = [
+                row for row in exported["solid_rows"]
+                if "intersection_patch_body" in row["target_families"]
+            ][0]
+            assert export_info["intersection_handoff_final_quality_status"] == package_obj.IntersectionHandoffFinalQualityStatus
+            assert export_info["intersection_handoff_status"] == package_obj.IntersectionHandoffStatus
+            assert export_info["intersection_handoff_replacement_readiness_status"] == package_obj.IntersectionHandoffReplacementReadinessStatus
+            assert export_info["intersection_handoff_replacement_blocker_kind"] == package_obj.IntersectionHandoffReplacementBlockerKind
+            assert export_info["intersection_trim_status"] == package_obj.IntersectionTrimStatus
+            assert export_info["intersection_trim_fuse_status"] == package_obj.IntersectionTrimFuseStatus
+            assert export_info["intersection_trim_handoff_status"] == package_obj.IntersectionTrimHandoffStatus
+            assert exported["intersection_handoff"]["replacement_blocker_kind"] == package_obj.IntersectionHandoffReplacementBlockerKind
+            assert "intersection:t-01" in exported_patch_row["source_refs"]
+            assert "region:primary-intersection" in exported_patch_row["source_refs"]
+            assert "material:intersection-pavement" in exported_patch_row["material_refs"]
             assert exported["intersection_trim"]["pair_rows"][0]["status"] == "ready_to_trim"
             assert exported["intersection_trim"]["pair_rows"][0]["patch_segment_xyz"] == [5.0, 2.0, 1.0, 5.0, 4.0, 1.0]
         tree = ensure_project_tree(project, include_references=False)

@@ -30,9 +30,23 @@ from ..objects.obj_surface_transition import (
     to_surface_transition_model,
 )
 from ..models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
+from ..models.output.surface_output import (
+    IntersectionSurfaceZoneOutput,
+    IntersectionSurfaceZoneOutputRow,
+    decide_intersection_surface_downstream_handoff,
+    intersection_surface_replacement_blocker_kind,
+    intersection_surface_replacement_handoff_preference,
+    intersection_surface_replacement_readiness,
+)
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ..models.result.intersection_boundary_segment import IntersectionBoundarySegmentResult, IntersectionBoundarySegmentRow
 from ..models.result.intersection_patch_boundary import IntersectionPatchBoundaryPointRow, IntersectionPatchBoundaryResult
+from ..models.result.intersection_surface_patch import (
+    IntersectionSurfacePatchBoundaryRow,
+    IntersectionSurfacePatchQualityRow,
+    IntersectionSurfacePatchResult,
+    IntersectionSurfacePatchTriangulationRow,
+)
 from ..models.result.intersection_slope_face_boundary import (
     IntersectionSlopeFaceBoundaryResult,
     IntersectionSlopeFaceBoundaryRow,
@@ -563,6 +577,15 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
                 applied_summary,
             )
         )
+        if role == "intersection":
+            readiness_row = _corridor_intersection_surface_replacement_readiness_row(doc)
+            if readiness_row is not None:
+                rows.append(
+                    _with_applied_section_review_summary(
+                        readiness_row,
+                        applied_summary,
+                    )
+                )
     return rows
 
 
@@ -935,14 +958,20 @@ def corridor_build_guided_review_steps(
                 status = base_status
             intersection_count = intersection_slope.get("triangle_or_point_count", "")
             intersection_note = f"; intersection slope triangles={intersection_count}" if intersection_count not in {"", None} else ""
+            boundary_review_note = _slope_face_boundary_guided_review_suffix(daylight, intersection_slope)
             notes = f"{issue_count} slope-face issue(s) to review{intersection_note}." if issue_count else f"No slope-face fallback issues{intersection_note}."
+            if boundary_review_note:
+                notes = f"{notes} {boundary_review_note}"
             focus = "First fallback issue marker" if issue_count else "Slope Face Surface"
+            if boundary_review_note:
+                focus = "Intersection Slope Face Boundary"
         else:
             primary_role = str(list(roles)[-1] if roles else "")
             source = review_by_role.get(primary_role, {})
             status = str(source.get("status", "missing") or "missing")
             notes = default_notes if status == "ready" else str(source.get("notes", "") or "Not built yet.")
             focus = str(source.get("result", title) or title)
+            output_path = str(source.get("output_path", "") or "")
             if step_id == "drainage":
                 drainage = corridor_drainage_review_summary(doc)
                 status = str(drainage.get("status", status) or status)
@@ -953,9 +982,11 @@ def corridor_build_guided_review_steps(
                 notes = str(drainage_flow_summary.get("notes", default_notes) or default_notes)
                 focus = str(drainage_flow_summary.get("focus", "Drainage Flow") or "Drainage Flow")
             elif step_id == "intersections":
+                intersection_source = review_by_role.get("intersection", source)
                 status = str(intersection_summary.get("status", status) or status)
                 notes = str(intersection_summary.get("notes", default_notes) or default_notes)
                 focus = str(intersection_summary.get("focus", "Intersections") or "Intersections")
+                output_path = str(intersection_source.get("output_path", output_path) or output_path)
         rows.append(
             {
                 "step_id": step_id,
@@ -963,12 +994,34 @@ def corridor_build_guided_review_steps(
                 "roles": list(roles),
                 "status": status,
                 "focus": focus,
+                "output_path": output_path if step_id != "slope_issues" else str(intersection_slope.get("output_path", "") or daylight.get("output_path", "") or ""),
                 "notes": notes,
             }
         )
         if step_id == "design":
             rows.extend(subassembly_kind_rows)
     return rows
+
+
+def _slope_face_boundary_guided_review_suffix(*review_rows: dict[str, object]) -> str:
+    boundary_note = _slope_face_boundary_review_note_from_rows(*review_rows)
+    if not boundary_note:
+        return ""
+    return f"boundary_review=intersection_slope_face_boundary_result; {boundary_note}"
+
+
+def _slope_face_boundary_review_note_from_rows(*review_rows: dict[str, object]) -> str:
+    for row in review_rows:
+        notes = str((row or {}).get("notes", "") or "")
+        marker = "slope_face_boundary="
+        index = notes.find(marker)
+        if index < 0:
+            continue
+        tail = notes[index:].strip()
+        if " | " in tail:
+            tail = tail.split(" | ", 1)[0].strip()
+        return tail
+    return ""
 
 
 def _applied_section_supplemental_consumption_summary(applied_section_set) -> dict[str, object]:
@@ -1082,6 +1135,11 @@ def corridor_intersection_review_summary(document=None) -> dict[str, object]:
     grading_notes = _intersection_grading_review_notes(document)
     surface_quality_review = _intersection_surface_quality_review_notes(document)
     if int(boundary_review.get("diagnostic_count", 0) or 0) or int(surface_quality_review.get("diagnostic_count", 0) or 0):
+        focus = (
+            "Intersection Patch Boundary diagnostics"
+            if int(boundary_review.get("diagnostic_count", 0) or 0)
+            else "Intersection Surface diagnostics"
+        )
         return {
             "status": "warning",
             "notes": _join_review_notes(
@@ -1091,7 +1149,7 @@ def corridor_intersection_review_summary(document=None) -> dict[str, object]:
                 str(boundary_review.get("notes", "") or ""),
                 exclusion_notes,
             ),
-            "focus": "Intersection Surface diagnostics",
+            "focus": focus,
         }
     return {
         "status": "ready",
@@ -1230,20 +1288,51 @@ def _intersection_surface_quality_review_notes(document=None) -> dict[str, objec
     obj = _corridor_build_preview_object(doc, "intersection") if doc is not None else None
     if obj is None:
         return {"diagnostic_count": 0, "notes": ""}
+    surface_patch_summary = str(getattr(obj, "IntersectionSurfacePatchSummary", "") or "")
+    surface_zone_output_summary = str(getattr(obj, "IntersectionSurfaceZoneOutputSummary", "") or "")
+    surface_zone_output_contract_status = str(getattr(obj, "IntersectionSurfaceZoneOutputContractStatus", "") or "")
+    surface_zone_output_handoff = str(getattr(obj, "IntersectionSurfaceZoneOutputDigitalTwinHandoff", "") or "")
+    surface_replacement_summary = str(getattr(obj, "IntersectionSurfaceReplacementSummary", "") or "")
+    surface_replacement_gate = str(getattr(obj, "IntersectionSurfaceReplacementGateStatus", "") or "")
+    surface_patch_contract_status = str(getattr(obj, "IntersectionSurfacePatchOutputContractStatus", "") or "")
+    surface_patch_handoff = str(getattr(obj, "IntersectionSurfacePatchDigitalTwinHandoff", "") or "")
+    surface_patch_replacement_path = str(getattr(obj, "IntersectionSurfacePatchReplacementPath", "") or "")
+    surface_patch_row_statuses = _surface_patch_review_status_note(obj)
+    surface_patch_row_diagnostics = [
+        str(value or "")
+        for value in list(getattr(obj, "IntersectionSurfacePatchRowDiagnostics", []) or [])
+        if str(value or "")
+    ]
     triangulation_mode = str(getattr(obj, "PatchTriangulationMode", "") or "")
     boundary_strategy = str(getattr(obj, "PatchSurfaceBoundaryStrategy", "") or "")
-    structured_strip_count = int(getattr(obj, "PatchStructuredStripCount", 0) or 0)
-    curb_return_surface_edge_count = int(getattr(obj, "PatchCurbReturnSurfaceEdgeCount", 0) or 0)
-    curb_return_arc_count = int(getattr(obj, "PatchCurbReturnArcCount", 0) or 0)
-    curb_return_arc_sample_count = int(getattr(obj, "PatchCurbReturnArcSampleCount", 0) or 0)
-    curb_return_arc_segment_count = int(getattr(obj, "PatchCurbReturnArcSegmentCount", 0) or 0)
-    edge_blend_face_count = int(getattr(obj, "PatchEdgeBlendFaceCount", 0) or 0)
     bbox_ratio = float(getattr(obj, "PatchBoundaryBBoxAspectRatio", 0.0) or 0.0)
     min_quality = float(getattr(obj, "PatchTriangleMinQuality", 0.0) or 0.0)
     skinny_count = int(getattr(obj, "PatchTriangleSkinnyCount", 0) or 0)
     long_edge_count = int(getattr(obj, "PatchBoundaryLongEdgeCount", 0) or 0)
     parts: list[str] = []
-    diagnostics = 0
+    diagnostics = len(surface_patch_row_diagnostics)
+    if surface_patch_summary:
+        parts.append(f"surface_patch={surface_patch_summary}")
+    if surface_zone_output_summary:
+        parts.append(f"surface_zone_output={surface_zone_output_summary}")
+    if surface_zone_output_contract_status:
+        parts.append(f"surface_zone_output_contract={surface_zone_output_contract_status}")
+    if surface_zone_output_handoff:
+        parts.append(f"surface_zone_output_handoff={surface_zone_output_handoff}")
+    if surface_replacement_summary:
+        parts.append(f"surface_replacement={surface_replacement_summary}")
+    if surface_replacement_gate:
+        parts.append(f"surface_replacement_gate={surface_replacement_gate}")
+    if surface_patch_contract_status:
+        parts.append(f"surface_patch_contract={surface_patch_contract_status}")
+    if surface_patch_handoff:
+        parts.append(f"surface_patch_handoff={surface_patch_handoff}")
+    if surface_patch_replacement_path:
+        parts.append(f"surface_patch_replacement={surface_patch_replacement_path}")
+    if surface_patch_row_statuses:
+        parts.append(f"surface_patch_rows={surface_patch_row_statuses}")
+    if surface_patch_row_diagnostics:
+        parts.append(f"surface_patch_row_diagnostics={len(surface_patch_row_diagnostics)}")
     if triangulation_mode:
         if triangulation_mode == "fan_fallback":
             diagnostics += 1
@@ -1252,18 +1341,6 @@ def _intersection_surface_quality_review_notes(document=None) -> dict[str, objec
             parts.append(f"patch triangulation={triangulation_mode}")
     if boundary_strategy:
         parts.append(f"surface boundary={boundary_strategy}")
-    if structured_strip_count:
-        parts.append(f"structured strips={structured_strip_count}")
-    if curb_return_surface_edge_count:
-        parts.append(f"curb-return surface edges={curb_return_surface_edge_count}")
-    if curb_return_arc_count:
-        parts.append(f"curb-return arcs={curb_return_arc_count}")
-    if curb_return_arc_sample_count:
-        parts.append(f"arc samples={curb_return_arc_sample_count}")
-    if curb_return_arc_segment_count:
-        parts.append(f"arc segments={curb_return_arc_segment_count}")
-    if edge_blend_face_count:
-        parts.append(f"edge blend faces={edge_blend_face_count}")
     if bbox_ratio:
         if bbox_ratio >= 8.0:
             diagnostics += 1
@@ -1456,6 +1533,9 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
                 "role": "",
                 "source_refs": "",
                 "boundary_refs": "",
+                "source_status": "missing",
+                "output_path": "missing_source",
+                "source_diagnostics": "",
                 "focus_object": "",
                 "notes": "IntersectionModel is required before edge-network-first review.",
             }
@@ -1476,9 +1556,26 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
             "role": "control_area",
             "source_refs": ", ".join(list(getattr(topology, "source_refs", []) or [])),
             "boundary_refs": ", ".join(row.control_area_id for row in list(topology.control_area_rows or [])),
+            "source_status": _intersection_contract_source_status(
+                [
+                    *list(getattr(topology, "anchor_rows", []) or []),
+                    *list(getattr(topology, "leg_span_rows", []) or []),
+                    *list(getattr(topology, "control_area_rows", []) or []),
+                    *list(getattr(topology, "lane_connection_rows", []) or []),
+                ]
+            ),
+            "source_diagnostics": _intersection_contract_source_diagnostics(
+                [
+                    *list(getattr(topology, "anchor_rows", []) or []),
+                    *list(getattr(topology, "leg_span_rows", []) or []),
+                    *list(getattr(topology, "control_area_rows", []) or []),
+                    *list(getattr(topology, "lane_connection_rows", []) or []),
+                ]
+            ),
             "focus_object": "V1CorridorIntersectionSurfacePreview",
             "notes": (
-                f"legs={topology.leg_span_count}; control areas={topology.control_area_count}; "
+                f"anchors={getattr(topology, 'anchor_count', 0)}; legs={topology.leg_span_count}; control areas={topology.control_area_count}; "
+                f"lane connections={getattr(topology, 'lane_connection_count', 0)}; "
                 f"alignments={topology.participating_alignment_count}; diagnostics={len(topology.diagnostic_rows)}"
             ),
         }
@@ -1496,11 +1593,15 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
                     str(getattr(row, "control_area_ref", "") or ""),
                     str(getattr(row, "alignment_ref", "") or ""),
                 ),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                 "focus_object": "V1IntersectionEdgeNetworkPreview",
                 "notes": _join_review_notes(
                     f"family={getattr(row, 'edge_family', '')}",
                     f"side={getattr(row, 'side', '')}",
                     f"STA {float(getattr(row, 'station_start', 0.0) or 0.0):.3f}-{float(getattr(row, 'station_end', 0.0) or 0.0):.3f}",
+                    f"source={getattr(row, 'source_status', '')}" if str(getattr(row, "source_status", "") or "") != "accepted" else "",
+                    "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                     str(getattr(row, "notes", "") or ""),
                 ),
             }
@@ -1514,11 +1615,15 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
                 "role": str(getattr(row, "design_zone_role", "") or getattr(row, "zone_role", "") or ""),
                 "source_refs": ", ".join(list(getattr(row, "source_edge_refs", ()) or ())),
                 "boundary_refs": ", ".join(list(getattr(row, "boundary_edge_refs", ()) or ())),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                 "focus_object": "V1CorridorIntersectionSurfacePreview",
                 "notes": _join_review_notes(
                     f"zone={getattr(row, 'zone_role', '')}",
                     f"surface={getattr(row, 'surface_role', '')}",
                     f"triangulation={getattr(row, 'triangulation_method', '')}",
+                    f"source={getattr(row, 'source_status', '')}" if str(getattr(row, "source_status", "") or "") != "accepted" else "",
+                    "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                     "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
                     str(getattr(row, "notes", "") or ""),
                 ),
@@ -1536,12 +1641,18 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
                     ", ".join(list(getattr(row, "source_surface_zone_refs", ()) or ())),
                 ),
                 "boundary_refs": ", ".join(list(getattr(row, "boundary_edge_refs", ()) or ())),
-                "focus_object": "V1CorridorIntersectionSlopeFaceLoopPreview",
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
+                "focus_object": "",
                 "notes": _join_review_notes(
                     f"alignment={getattr(row, 'alignment_ref', '')}",
                     f"leg={getattr(row, 'leg_ref', '')}",
                     f"side={getattr(row, 'side', '')}",
                     f"points={getattr(row, 'point_count', 0)}",
+                    f"source_lineage={getattr(row, 'source_lineage_status', '')}" if str(getattr(row, "source_lineage_status", "") or "") != "accepted" else "",
+                    f"surface_zone_status={getattr(row, 'source_surface_zone_status', '')}" if str(getattr(row, "source_surface_zone_status", "") or "") not in {"", "accepted"} else "",
+                    f"edge_network_status={getattr(row, 'source_edge_network_status', '')}" if str(getattr(row, "source_edge_network_status", "") or "") not in {"", "accepted"} else "",
+                    "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                     "; ".join(list(getattr(row, "diagnostics", ()) or ())),
                     str(getattr(row, "notes", "") or ""),
                 ),
@@ -1554,13 +1665,20 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
                 "status": _intersection_contract_display_status(str(getattr(row, "status", "") or corridor_clips.status)),
                 "row_id": str(getattr(row, "clip_id", "") or ""),
                 "role": str(getattr(row, "surface_role", "") or ""),
-                "source_refs": str(getattr(row, "control_area_ref", "") or ""),
+                "source_refs": _join_review_notes(
+                    str(getattr(row, "source_control_area_ref", "") or getattr(row, "control_area_ref", "") or ""),
+                    ", ".join(list(getattr(row, "source_region_refs", ()) or ())),
+                ),
                 "boundary_refs": ", ".join(list(getattr(row, "protected_zone_refs", ()) or ())),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                 "focus_object": "V1CorridorIntersectionExclusionZonePreview",
                 "notes": _join_review_notes(
                     f"alignment={getattr(row, 'alignment_ref', '')}",
                     f"method={getattr(row, 'clip_method', '')}",
                     f"timing={getattr(row, 'clip_timing', '')}",
+                    f"intent={getattr(row, 'control_area_intent_status', '')}",
+                    f"lineage={getattr(row, 'region_lineage_status', '')}",
                     "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
                     str(getattr(row, "notes", "") or ""),
                 ),
@@ -1574,23 +1692,30 @@ def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, 
                 "row_id": str(getattr(row, "hint_id", "") or ""),
                 "role": str(getattr(row, "hint_kind", "") or ""),
                 "source_refs": _join_review_notes(
-                    str(getattr(row, "drainage_policy_ref", "") or ""),
+                    str(getattr(row, "source_drainage_policy_ref", "") or getattr(row, "drainage_policy_ref", "") or ""),
+                    str(getattr(row, "accepted_drainage_ref", "") or ""),
                     ", ".join(list(getattr(row, "source_edge_refs", ()) or ())),
                 ),
                 "boundary_refs": _join_review_notes(
                     str(getattr(row, "zone_ref", "") or ""),
                     ", ".join(list(getattr(row, "control_area_refs", ()) or ())),
                 ),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
                 "focus_object": "V1CorridorIntersectionSurfacePreview",
                 "notes": _join_review_notes(
                     f"zone={getattr(row, 'zone_role', '')}",
                     f"surface={getattr(row, 'surface_role', '')}",
                     f"recommend={getattr(row, 'recommended_element_kind', '')}",
+                    f"handoff={getattr(row, 'drainage_handoff_status', '')}",
+                    f"review={getattr(row, 'drainage_review_status', '')}",
                     "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
                     str(getattr(row, "notes", "") or ""),
                 ),
             }
         )
+    for row in rows:
+        row.setdefault("output_path", "contract_consumed")
     return rows
 
 
@@ -1600,25 +1725,55 @@ def corridor_intersection_contract_review_summary(document=None) -> dict[str, ob
     rows = corridor_intersection_contract_review_rows(document)
     real_rows = [row for row in rows if row.get("row_id")]
     if not real_rows:
+        output_path_counts: dict[str, int] = {}
+        source_status_counts: dict[str, int] = {}
+        for row in rows:
+            output_path = str(row.get("output_path", "") or "missing_source")
+            output_path_counts[output_path] = output_path_counts.get(output_path, 0) + 1
+            source_status = str(row.get("source_status", "") or "missing")
+            source_status_counts[source_status] = source_status_counts.get(source_status, 0) + 1
+        output_counts = ", ".join(f"{path}={count}" for path, count in sorted(output_path_counts.items()))
+        source_status_summary = ", ".join(f"{status}={count}" for status, count in sorted(source_status_counts.items()))
+        base_notes = str(rows[0].get("notes", "No intersection contract rows.") if rows else "No intersection contract rows.")
+        suffix = _join_review_notes(
+            f"source status={source_status_summary}" if source_status_summary else "",
+            f"output paths={output_counts}" if output_counts else "",
+        )
+        notes = f"{base_notes} {suffix}." if suffix else base_notes
         return {
             "status": "missing",
             "row_count": 0,
-            "notes": str(rows[0].get("notes", "No intersection contract rows.") if rows else "No intersection contract rows."),
+            "notes": notes,
         }
     error_count = sum(1 for row in real_rows if str(row.get("status", "") or "") == "error")
     warning_count = sum(1 for row in real_rows if str(row.get("status", "") or "") in {"warning", "warn"})
+    source_warning_count = sum(
+        1
+        for row in real_rows
+        if str(row.get("source_status", "") or "") not in {"", "accepted", "ready"}
+        or str(row.get("source_diagnostics", "") or "")
+    )
     family_counts: dict[str, int] = {}
+    output_path_counts: dict[str, int] = {}
+    source_status_counts: dict[str, int] = {}
     for row in real_rows:
         family = str(row.get("contract_family", "") or "contract")
         family_counts[family] = family_counts.get(family, 0) + 1
+        output_path = str(row.get("output_path", "") or "contract_consumed")
+        output_path_counts[output_path] = output_path_counts.get(output_path, 0) + 1
+        source_status = str(row.get("source_status", "") or "accepted")
+        source_status_counts[source_status] = source_status_counts.get(source_status, 0) + 1
     status = "error" if error_count else ("warning" if warning_count else "ready")
     counts = ", ".join(f"{family}={count}" for family, count in sorted(family_counts.items()))
+    output_counts = ", ".join(f"{path}={count}" for path, count in sorted(output_path_counts.items()))
+    source_status_summary = ", ".join(f"{source_status}={count}" for source_status, count in sorted(source_status_counts.items()))
     return {
         "status": status,
         "row_count": len(real_rows),
         "warning_count": warning_count,
         "error_count": error_count,
-        "notes": f"Intersection contracts: {counts}; warnings={warning_count}; errors={error_count}.",
+        "source_warning_count": source_warning_count,
+        "notes": f"Intersection contracts: {counts}; output paths={output_counts}; source status={source_status_summary}; warnings={warning_count}; source warnings={source_warning_count}; errors={error_count}.",
     }
 
 
@@ -1629,6 +1784,26 @@ def _intersection_contract_display_status(status: str) -> str:
     if text == "warn":
         return "warning"
     return text or "missing"
+
+
+def _intersection_contract_source_status(rows: list[object]) -> str:
+    statuses = [str(getattr(row, "source_status", "") or "") for row in rows]
+    statuses = [status for status in statuses if status]
+    if any(status == "error" for status in statuses):
+        return "error"
+    if any(status == "warning" for status in statuses):
+        return "warning"
+    return "accepted"
+
+
+def _intersection_contract_source_diagnostics(rows: list[object]) -> str:
+    diagnostics: list[str] = []
+    for row in rows:
+        for item in tuple(getattr(row, "source_diagnostic_rows", ()) or ()):
+            text = str(item or "").strip()
+            if text and text not in diagnostics:
+                diagnostics.append(text)
+    return "; ".join(diagnostics)
 
 
 def focus_corridor_intersection_contract_review_row(document=None, row_index: int = 0):
@@ -1896,7 +2071,35 @@ def _intersection_contract_edge_highlight_shape(part_module, app_module, edge):
         return None
     start = tuple(getattr(edge, "start_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
     end = tuple(getattr(edge, "end_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
+    if _points_same_xyz(start, end):
+        station_start = float(getattr(edge, "station_start", 0.0) or 0.0)
+        station_end = float(getattr(edge, "station_end", 0.0) or 0.0)
+        if abs(station_end - station_start) > 1.0e-9:
+            y = _intersection_contract_edge_fallback_y(edge)
+            start = (station_start, y, 0.0)
+            end = (station_end, y, 0.0)
     return _intersection_contract_polyline_shape(part_module, app_module, [start, end])
+
+
+def _points_same_xyz(first: tuple[float, float, float], second: tuple[float, float, float]) -> bool:
+    if len(first) < 3 or len(second) < 3:
+        return False
+    return (
+        abs(float(first[0]) - float(second[0])) <= 1.0e-9
+        and abs(float(first[1]) - float(second[1])) <= 1.0e-9
+        and abs(float(first[2]) - float(second[2])) <= 1.0e-9
+    )
+
+
+def _intersection_contract_edge_fallback_y(edge) -> float:
+    role = str(getattr(edge, "edge_role", "") or "")
+    family = str(getattr(edge, "edge_family", "") or "")
+    leg_role = str(getattr(edge, "leg_role", "") or "")
+    if family == "curb_return":
+        return 6.0
+    if role == "daylight_hinge":
+        return 4.0 if "side" not in leg_role else -4.0
+    return 2.0 if "side" not in leg_role else -2.0
 
 
 def _intersection_contract_boundary_segment_shapes(part_module, app_module, boundary_result, refs: list[str]) -> list[object]:
@@ -1977,6 +2180,7 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     drainage_model = to_drainage_model(find_v1_drainage_model(doc))
     if drainage_model is None:
+        _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
         return [
             {
                 "flow_route_id": "",
@@ -1988,6 +2192,21 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
                 "station_start": "",
                 "station_end": "",
                 "notes": "DrainageModel is required before Drainage Flow review.",
+            }
+        ]
+    if _is_intersection_preset_drainage_model(drainage_model):
+        _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
+        return [
+            {
+                "flow_route_id": "",
+                "status": "missing",
+                "from_element": "",
+                "to_element": "",
+                "outlet": "",
+                "structure_refs": "",
+                "station_start": "",
+                "station_end": "",
+                "notes": "Intersection preset drainage is source-stage handoff metadata, not a Drainage Flow highlight source.",
             }
         ]
     element_by_id = {
@@ -2044,6 +2263,7 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
             }
         )
     if not rows:
+        _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
         return [
             {
                 "flow_route_id": "",
@@ -2058,6 +2278,20 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
             }
         ]
     return rows
+
+
+def _is_intersection_preset_drainage_model(drainage_model) -> bool:
+    drainage_model_id = str(getattr(drainage_model, "drainage_model_id", "") or "")
+    if drainage_model_id.startswith("drainage:intersection-preset-"):
+        return True
+    source_refs = [str(value or "") for value in list(getattr(drainage_model, "source_refs", []) or [])]
+    if any(value.startswith("intersection:") for value in source_refs):
+        flow_rows = list(getattr(drainage_model, "flow_route_rows", []) or [])
+        return all(
+            str(getattr(row, "flow_route_id", "") or "").startswith("flow-route:intersection-")
+            for row in flow_rows
+        )
+    return False
 
 
 def corridor_drainage_flow_review_summary(document=None) -> dict[str, object]:
@@ -4387,7 +4621,24 @@ def create_corridor_intersection_surface_preview(
             topology_result = service.evaluate_topology(intersection_model)
             edge_network_result = service.evaluate_edge_network(intersection_model, topology_result)
             surface_zone_result = service.evaluate_surface_zones(intersection_model, edge_network_result)
+            grading_context_result = service.evaluate_grading_context(intersection_model, surface_zone_result)
+            drainage_hint_result = service.evaluate_drainage_hints(intersection_model, surface_zone_result, grading_context_result)
             slope_loop_result = service.evaluate_slope_face_loops(intersection_model, surface_zone_result, edge_network_result)
+            _attach_intersection_contract_consumption_metadata(
+                preview_obj,
+                topology_result=topology_result,
+                edge_network_result=edge_network_result,
+                surface_zone_result=surface_zone_result,
+                grading_context_result=grading_context_result,
+                drainage_hint_result=drainage_hint_result,
+                slope_loop_result=slope_loop_result,
+            )
+            surface_zone_output = corridor_intersection_surface_zone_output(surface_zone_result, edge_network_result)
+            _attach_intersection_surface_zone_output_metadata(preview_obj, surface_zone_output)
+            _remove_preview_object(doc, "V1CorridorIntersectionSurfaceZoneOutputPreview")
+            _set_preview_property(preview_obj, "IntersectionSurfaceZoneOutputPreviewRef", "")
+            _remove_preview_object(doc, "V1CorridorIntersectionSurfaceZoneSurfacePreview")
+            _set_preview_property(preview_obj, "IntersectionSurfaceZoneSurfacePreviewRef", "")
             _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopStatus", str(getattr(slope_loop_result, "status", "") or ""))
             _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopCount", int(getattr(slope_loop_result, "loop_count", 0) or 0))
             _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopReadyCount", int(getattr(slope_loop_result, "ready_count", 0) or 0))
@@ -4398,20 +4649,18 @@ def create_corridor_intersection_surface_preview(
                 "IntersectionSlopeFaceLoopDiagnostics",
                 [str(value or "") for value in list(getattr(slope_loop_result, "diagnostic_rows", []) or [])],
             )
-            loop_preview = _create_corridor_intersection_slope_face_loop_preview(
-                doc,
-                slope_loop_result,
-                edge_network_result,
-                project=project or find_project(doc),
-            )
-            if loop_preview is not None:
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopPreviewRef", str(getattr(loop_preview, "Name", "") or ""))
+            _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
+            _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopPreviewRef", "")
             slope_face_preview = _create_corridor_intersection_slope_face_surface_preview(
                 doc,
                 slope_loop_result,
                 project=project or find_project(doc),
             )
             if slope_face_preview is not None:
+                _attach_intersection_contract_consumption_metadata(
+                    slope_face_preview,
+                    slope_loop_result=slope_loop_result,
+                )
                 _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfacePreviewRef", str(getattr(slope_face_preview, "Name", "") or ""))
                 _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "ready")
                 _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", int(getattr(slope_face_preview, "TriangleCount", 0) or 0))
@@ -4451,25 +4700,36 @@ def create_corridor_intersection_surface_preview(
                 "IntersectionDrainageDiagnostics",
                 [value.strip() for value in str(drainage_row.get("diagnostics", "") or "").split(";") if value.strip()],
             )
+        surface_patch_result = corridor_intersection_surface_patch_result(
+            tin_surface,
+            patch_boundary_result=patch_boundary_result if "patch_boundary_result" in locals() else None,
+            consumed_contract_refs=list(getattr(preview_obj, "ConsumedIntersectionContractRefs", []) or []),
+        )
+        _attach_intersection_surface_patch_result_metadata(preview_obj, surface_patch_result)
         _set_preview_property(preview_obj, "IntersectionImplementationMode", "legacy_patch_frozen")
         _set_preview_property(preview_obj, "IntersectionRedesignPath", "edge_network_first")
+        _set_preview_property(preview_obj, "IntersectionOutputPath", "legacy_output")
+        _attach_intersection_surface_replacement_gate_metadata(
+            preview_obj,
+            surface_zone_surface_preview if "surface_zone_surface_preview" in locals() else None,
+        )
+        _attach_intersection_surface_replacement_handoff_metadata(
+            preview_obj,
+            preview_obj,
+            handoff_role="transitional_patch",
+        )
+        _attach_intersection_surface_downstream_handoff_selection(
+            preview_obj,
+            None,
+            None,
+        )
+        _attach_intersection_legacy_patch_compatibility_audit(preview_obj)
         _set_preview_property(
             preview_obj,
             "IntersectionImplementationStatus",
             "Frozen first-slice patch path; next redesign work must use Intersection Edge Network.",
         )
         _set_preview_property(preview_obj, "IntersectionReviewSummary", _intersection_surface_review_notes(preview_obj))
-        _set_preview_property(
-            preview_obj,
-            "IntersectionPatchQualitySummary",
-            (
-                f"triangulation={str(getattr(preview_obj, 'PatchTriangulationMode', '') or '')}; "
-                f"boundary={str(getattr(preview_obj, 'PatchSurfaceBoundaryStrategy', '') or '')}; "
-                f"edge_blend_faces={int(getattr(preview_obj, 'PatchEdgeBlendFaceCount', 0) or 0)}; "
-                f"roles={str(getattr(preview_obj, 'PatchBoundaryRoleSummary', '') or '')}; "
-                f"min_quality={float(getattr(preview_obj, 'PatchTriangleMinQuality', 0.0) or 0.0):.3f}"
-            ),
-        )
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -4477,6 +4737,804 @@ def create_corridor_intersection_surface_preview(
         except Exception:
             pass
     return preview_obj
+
+
+def _attach_intersection_contract_consumption_metadata(
+    obj,
+    *,
+    topology_result=None,
+    edge_network_result=None,
+    surface_zone_result=None,
+    grading_context_result=None,
+    drainage_hint_result=None,
+    slope_loop_result=None,
+) -> None:
+    """Record the accepted/result contracts consumed by intersection output previews."""
+
+    if obj is None:
+        return
+
+    contracts: list[tuple[str, object, str, str]] = [
+        ("topology", topology_result, "topology_result_id", "ConsumedIntersectionTopologyResultId"),
+        ("edge_network", edge_network_result, "edge_network_result_id", "ConsumedIntersectionEdgeNetworkResultId"),
+        ("surface_zone", surface_zone_result, "surface_zone_result_id", "ConsumedIntersectionSurfaceZoneResultId"),
+        ("grading_context", grading_context_result, "grading_context_result_id", "ConsumedIntersectionGradingContextResultId"),
+        ("drainage_hint", drainage_hint_result, "drainage_hint_result_id", "ConsumedIntersectionDrainageHintResultId"),
+        ("slope_face_loop", slope_loop_result, "loop_result_id", "ConsumedIntersectionSlopeFaceLoopResultId"),
+    ]
+    refs: list[str] = []
+    summary_parts: list[str] = []
+    source_refs: list[str] = []
+    diagnostics: list[str] = []
+    for family, result, id_attr, property_name in contracts:
+        if result is None:
+            continue
+        result_id = str(getattr(result, id_attr, "") or "")
+        status = str(getattr(result, "status", "") or "")
+        row_count = _intersection_contract_result_row_count(family, result)
+        if result_id:
+            _set_preview_property(obj, property_name, result_id)
+            refs.append(result_id)
+        summary_parts.append(f"{family}={status or 'unknown'} rows={row_count}")
+        for ref in list(getattr(result, "source_refs", []) or []):
+            text = str(ref or "").strip()
+            if text:
+                source_refs.append(text)
+        for diagnostic in list(getattr(result, "diagnostic_rows", []) or []):
+            text = str(diagnostic or "").strip()
+            if text:
+                diagnostics.append(f"{family}:{text}")
+        diagnostics.extend(_intersection_contract_consumed_row_diagnostics(family, result))
+
+    _set_preview_string_list_property(obj, "ConsumedIntersectionContractRefs", _unique_text_values(refs))
+    _set_preview_integer_property(obj, "ConsumedIntersectionContractCount", len(_unique_text_values(refs)))
+    _set_preview_string_list_property(obj, "ConsumedIntersectionSourceRefs", _unique_text_values(source_refs))
+    _set_preview_string_list_property(obj, "ConsumedIntersectionContractDiagnostics", _unique_text_values(diagnostics))
+    _set_preview_integer_property(obj, "ConsumedIntersectionContractDiagnosticCount", len(_unique_text_values(diagnostics)))
+    _set_preview_property(obj, "ConsumedIntersectionContractSummary", "; ".join(summary_parts))
+
+
+def _intersection_contract_consumed_row_diagnostics(family: str, result) -> list[str]:
+    rows = _intersection_contract_result_rows(family, result)
+    diagnostics: list[str] = []
+    for row in rows:
+        row_id = _intersection_contract_result_row_id(family, row)
+        source_status = str(getattr(row, "source_status", "") or "")
+        if source_status and source_status != "accepted":
+            diagnostics.append(f"{family}:{row_id}:source_status={source_status}")
+        if family == "slope_face_loop":
+            source_lineage = str(getattr(row, "source_lineage_status", "") or "")
+            surface_zone_status = str(getattr(row, "source_surface_zone_status", "") or "")
+            edge_network_status = str(getattr(row, "source_edge_network_status", "") or "")
+            if source_lineage and source_lineage != "accepted":
+                diagnostics.append(f"{family}:{row_id}:source_lineage={source_lineage}")
+            if surface_zone_status and surface_zone_status != "accepted":
+                diagnostics.append(f"{family}:{row_id}:surface_zone_status={surface_zone_status}")
+            if edge_network_status and edge_network_status != "accepted":
+                diagnostics.append(f"{family}:{row_id}:edge_network_status={edge_network_status}")
+        for diagnostic in tuple(getattr(row, "source_diagnostic_rows", ()) or ()):
+            text = str(diagnostic or "").strip()
+            if text:
+                diagnostics.append(f"{family}:{row_id}:source:{text}")
+    return _unique_text_values(diagnostics)
+
+
+def _intersection_contract_result_rows(family: str, result) -> list[object]:
+    if result is None:
+        return []
+    if family == "topology":
+        return (
+            list(getattr(result, "anchor_rows", []) or [])
+            + list(getattr(result, "leg_span_rows", []) or [])
+            + list(getattr(result, "control_area_rows", []) or [])
+            + list(getattr(result, "lane_connection_rows", []) or [])
+        )
+    if family == "edge_network":
+        return list(getattr(result, "edge_rows", []) or [])
+    if family == "surface_zone":
+        return list(getattr(result, "zone_rows", []) or [])
+    if family == "grading_context":
+        return list(getattr(result, "context_rows", []) or [])
+    if family == "drainage_hint":
+        return list(getattr(result, "hint_rows", []) or [])
+    if family == "slope_face_loop":
+        return list(getattr(result, "loop_rows", []) or [])
+    return []
+
+
+def _intersection_contract_result_row_id(family: str, row) -> str:
+    for attr in (
+        "loop_id",
+        "hint_id",
+        "context_id",
+        "zone_id",
+        "clip_id",
+        "edge_id",
+        "anchor_result_id",
+        "leg_span_id",
+        "control_area_result_id",
+        "connection_result_id",
+    ):
+        text = str(getattr(row, attr, "") or "").strip()
+        if text:
+            return text
+    return f"{family}:row"
+
+
+def _intersection_contract_result_row_count(family: str, result) -> int:
+    if result is None:
+        return 0
+    if family == "topology":
+        return (
+            len(list(getattr(result, "anchor_rows", []) or []))
+            + len(list(getattr(result, "leg_span_rows", []) or []))
+            + len(list(getattr(result, "control_area_rows", []) or []))
+            + len(list(getattr(result, "lane_connection_rows", []) or []))
+        )
+    if family == "edge_network":
+        return len(list(getattr(result, "edge_rows", []) or []))
+    if family == "surface_zone":
+        return len(list(getattr(result, "zone_rows", []) or []))
+    if family == "grading_context":
+        return len(list(getattr(result, "context_rows", []) or []))
+    if family == "drainage_hint":
+        return len(list(getattr(result, "hint_rows", []) or []))
+    if family == "slope_face_loop":
+        return len(list(getattr(result, "loop_rows", []) or []))
+    return 0
+
+
+def corridor_intersection_surface_zone_output(surface_zone_result=None, edge_network_result=None) -> IntersectionSurfaceZoneOutput:
+    """Build accepted output handoff rows from Intersection Surface Zone and Edge Network results."""
+
+    surface_zone_result_id = str(getattr(surface_zone_result, "surface_zone_result_id", "") or "")
+    edge_network_result_id = str(getattr(edge_network_result, "edge_network_result_id", "") or "")
+    intersection_id = str(getattr(surface_zone_result, "intersection_id", "") or getattr(edge_network_result, "intersection_id", "") or "")
+    diagnostics: list[str] = []
+    rows: list[IntersectionSurfaceZoneOutputRow] = []
+    if surface_zone_result is None:
+        diagnostics.append("error:intersection_surface_zone_output_missing_surface_zone_result")
+    if edge_network_result is None:
+        diagnostics.append("error:intersection_surface_zone_output_missing_edge_network_result")
+    zone_rows = list(getattr(surface_zone_result, "zone_rows", []) or []) if surface_zone_result is not None else []
+    if surface_zone_result is not None and not zone_rows:
+        diagnostics.append("error:intersection_surface_zone_output_rows_missing")
+    for index, zone in enumerate(zone_rows, start=1):
+        zone_id = str(getattr(zone, "zone_id", "") or "")
+        source_status = str(getattr(zone, "source_status", "") or "accepted")
+        zone_status = str(getattr(zone, "status", "") or "candidate")
+        row_diagnostics = [
+            str(value or "")
+            for value in list(getattr(zone, "source_diagnostic_rows", ()) or ()) + list(getattr(zone, "diagnostic_rows", ()) or ())
+            if str(value or "")
+        ]
+        if source_status not in {"", "accepted", "ready"}:
+            row_diagnostics.append(f"warning:intersection_surface_zone_output_source_status:{source_status}")
+        if zone_status not in {"candidate", "ready", "warning", "accepted"}:
+            row_diagnostics.append(f"error:intersection_surface_zone_output_zone_status:{zone_status}")
+        output_status = "warning" if row_diagnostics or zone_status == "warning" else "ready"
+        rows.append(
+            IntersectionSurfaceZoneOutputRow(
+                output_row_id=f"intersection-surface-zone-output:{_safe_id_fragment(intersection_id or 'main')}:{index:02d}",
+                intersection_id=intersection_id,
+                surface_zone_ref=zone_id,
+                surface_zone_result_ref=surface_zone_result_id,
+                edge_network_result_ref=edge_network_result_id,
+                zone_family=str(getattr(zone, "zone_family", "") or ""),
+                design_zone_role=str(getattr(zone, "design_zone_role", "") or ""),
+                surface_role=str(getattr(zone, "surface_role", "") or "design"),
+                source_edge_refs=tuple(str(value or "") for value in list(getattr(zone, "source_edge_refs", ()) or ()) if str(value or "")),
+                boundary_edge_refs=tuple(str(value or "") for value in list(getattr(zone, "boundary_edge_refs", ()) or ()) if str(value or "")),
+                inner_edge_refs=tuple(str(value or "") for value in list(getattr(zone, "inner_edge_refs", ()) or ()) if str(value or "")),
+                outer_edge_refs=tuple(str(value or "") for value in list(getattr(zone, "outer_edge_refs", ()) or ()) if str(value or "")),
+                tie_edge_refs=tuple(str(value or "") for value in list(getattr(zone, "tie_edge_refs", ()) or ()) if str(value or "")),
+                leg_refs=tuple(str(value or "") for value in list(getattr(zone, "leg_refs", ()) or ()) if str(value or "")),
+                alignment_refs=tuple(str(value or "") for value in list(getattr(zone, "alignment_refs", ()) or ()) if str(value or "")),
+                control_area_refs=tuple(str(value or "") for value in list(getattr(zone, "control_area_refs", ()) or ()) if str(value or "")),
+                vertical_policy_ref=str(getattr(zone, "vertical_policy_ref", "") or ""),
+                source_status=source_status,
+                status=output_status,
+                diagnostic_rows=tuple(_unique_text_values(row_diagnostics)),
+                notes=(
+                    "Accepted Intersection Surface Zone output row. "
+                    f"zone={zone_id}; edge_network={edge_network_result_id}; "
+                    "build_backend=planned_edge_network_zone_surface."
+                ),
+            )
+        )
+    diagnostics.extend(str(value or "") for value in list(getattr(surface_zone_result, "diagnostic_rows", []) or []) if str(value or ""))
+    diagnostics.extend(str(value or "") for value in list(getattr(edge_network_result, "diagnostic_rows", []) or []) if str(value or ""))
+    if any(str(getattr(row, "status", "") or "") == "warning" for row in rows):
+        status = "warning"
+    elif diagnostics:
+        status = "warning" if rows else "error"
+    elif rows:
+        status = "ready"
+    else:
+        status = "error"
+    return IntersectionSurfaceZoneOutput(
+        schema_version=int(getattr(surface_zone_result, "schema_version", 1) or 1),
+        project_id=str(getattr(surface_zone_result, "project_id", "") or "corridorroad-v1"),
+        label=f"Intersection Surface Zone Output - {intersection_id or 'main'}",
+        surface_zone_output_id=f"intersection-surface-zone-output:{_safe_id_fragment(intersection_id or 'main')}",
+        intersection_id=intersection_id,
+        status=status,
+        surface_zone_result_ref=surface_zone_result_id,
+        edge_network_result_ref=edge_network_result_id,
+        result_refs=_unique_text_values([surface_zone_result_id, edge_network_result_id]),
+        source_refs=_unique_text_values(
+            list(getattr(surface_zone_result, "source_refs", []) or [])
+            + list(getattr(edge_network_result, "source_refs", []) or [])
+        ),
+        diagnostic_rows=_unique_text_values(diagnostics),
+        zone_output_rows=rows,
+    )
+
+
+def _attach_intersection_surface_zone_output_metadata(obj, output: IntersectionSurfaceZoneOutput | None) -> None:
+    if obj is None or output is None:
+        return
+    rows = list(getattr(output, "zone_output_rows", []) or [])
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputId", str(getattr(output, "surface_zone_output_id", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputStatus", str(getattr(output, "status", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputContractStatus", str(getattr(output, "output_contract_status", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputDigitalTwinHandoff", str(getattr(output, "digital_twin_handoff", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputSurfaceZoneResultRef", str(getattr(output, "surface_zone_result_ref", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputEdgeNetworkResultRef", str(getattr(output, "edge_network_result_ref", "") or ""))
+    _set_preview_integer_property(obj, "IntersectionSurfaceZoneOutputRowCount", len(rows))
+    _set_preview_string_list_property(obj, "IntersectionSurfaceZoneOutputRowRefs", [str(getattr(row, "output_row_id", "") or "") for row in rows if str(getattr(row, "output_row_id", "") or "")])
+    _set_preview_string_list_property(obj, "IntersectionSurfaceZoneOutputRowStatuses", _intersection_surface_zone_output_row_statuses(output))
+    _set_preview_string_list_property(obj, "IntersectionSurfaceZoneOutputDiagnostics", list(getattr(output, "diagnostic_rows", []) or []))
+    _set_preview_string_list_property(obj, "IntersectionSurfaceZoneOutputRowDiagnostics", _intersection_surface_zone_output_row_diagnostics(output))
+    _set_preview_string_list_property(obj, "IntersectionSurfaceZoneOutputRowLineage", _intersection_surface_zone_output_row_lineage(output))
+    _set_preview_property(obj, "IntersectionSurfaceZoneOutputSummary", _intersection_surface_zone_output_summary(output))
+
+
+def _attach_intersection_surface_replacement_gate_metadata(obj, zone_surface_preview=None) -> None:
+    if obj is None:
+        return
+    patch_triangles = int(getattr(obj, "TriangleCount", 0) or 0)
+    patch_status = str(getattr(obj, "IntersectionSurfacePatchStatus", "") or "")
+    patch_contract = str(getattr(obj, "IntersectionSurfacePatchOutputContractStatus", "") or "")
+    patch_handoff = str(getattr(obj, "IntersectionSurfacePatchDigitalTwinHandoff", "") or "")
+    zone_contract = str(getattr(obj, "IntersectionSurfaceZoneOutputContractStatus", "") or "")
+    zone_handoff = str(getattr(obj, "IntersectionSurfaceZoneOutputDigitalTwinHandoff", "") or "")
+    zone_rows = int(getattr(obj, "IntersectionSurfaceZoneOutputRowCount", 0) or 0)
+    zone_triangles = 0
+    zone_vertices = 0
+    zone_surface_ref = ""
+    if zone_surface_preview is not None:
+        zone_triangles = int(
+            getattr(
+                zone_surface_preview,
+                "IntersectionSurfaceZoneSurfaceTriangleCount",
+                getattr(zone_surface_preview, "TriangleCount", 0),
+            )
+            or 0
+        )
+        zone_vertices = int(
+            getattr(
+                zone_surface_preview,
+                "IntersectionSurfaceZoneSurfaceVertexCount",
+                getattr(zone_surface_preview, "VertexCount", 0),
+            )
+            or 0
+        )
+        zone_surface_ref = str(getattr(zone_surface_preview, "Name", "") or "")
+    triangle_delta = int(zone_triangles - patch_triangles)
+    ratio = (float(zone_triangles) / float(patch_triangles)) if patch_triangles else 0.0
+    diagnostics: list[str] = []
+    acceptance_diagnostics: list[str] = []
+    if zone_triangles <= 0:
+        gate_status = "blocked"
+        recommendation = "build_accepted_zone_surface_before_replacing_patch"
+        diagnostics.append("error:intersection_surface_replacement_zone_surface_missing")
+        acceptance_diagnostics.append("error:required_evidence:accepted_zone_surface_preview_missing")
+    else:
+        gate_status = "review_required"
+        recommendation = "compare_zone_surface_before_replacing_transitional_patch"
+        diagnostics.append("warning:intersection_surface_replacement_review_required")
+        acceptance_diagnostics.extend(
+            [
+                "warning:required_evidence:accepted_zone_surface_review_required",
+                "info:required_evidence:boundary_lineage_verified",
+                "info:required_evidence:triangle_delta_reviewed",
+            ]
+        )
+    if patch_contract == "transitional_normalized":
+        diagnostics.append("info:intersection_surface_patch_is_transitional_normalized")
+    if zone_contract == "accepted_surface_zone":
+        diagnostics.append("info:intersection_surface_zone_output_is_accepted_candidate")
+    if patch_handoff == "review_required" or zone_handoff == "accepted_zone_candidate":
+        diagnostics.append(f"info:intersection_surface_handoff patch={patch_handoff or '-'} zone={zone_handoff or '-'}")
+    if zone_triangles > 0 and patch_triangles > 0 and zone_triangles < patch_triangles:
+        diagnostics.append("warning:intersection_surface_zone_surface_triangle_count_below_patch")
+    _set_preview_property(obj, "IntersectionSurfaceReplacementGateStatus", gate_status)
+    _set_preview_property(obj, "IntersectionSurfaceReplacementGateRecommendation", recommendation)
+    _set_preview_property(obj, "IntersectionSurfaceReplacementZoneSurfaceRef", zone_surface_ref)
+    _set_preview_integer_property(obj, "IntersectionSurfaceComparisonPatchTriangleCount", patch_triangles)
+    _set_preview_integer_property(obj, "IntersectionSurfaceComparisonZoneTriangleCount", zone_triangles)
+    _set_preview_integer_property(obj, "IntersectionSurfaceComparisonZoneVertexCount", zone_vertices)
+    _set_preview_integer_property(obj, "IntersectionSurfaceComparisonZoneOutputRowCount", zone_rows)
+    _set_preview_integer_property(obj, "IntersectionSurfaceComparisonTriangleDelta", triangle_delta)
+    _set_preview_float_property(obj, "IntersectionSurfaceComparisonZoneToPatchTriangleRatio", ratio)
+    _set_preview_string_list_property(obj, "IntersectionSurfaceReplacementDiagnostics", _unique_text_values(diagnostics))
+    _set_preview_string_list_property(obj, "IntersectionSurfaceReplacementAcceptanceDiagnostics", _unique_text_values(acceptance_diagnostics))
+    _set_preview_property(
+        obj,
+        "IntersectionSurfaceReplacementSummary",
+        (
+            f"gate={gate_status}; patch_triangles={patch_triangles}; "
+            f"zone_triangles={zone_triangles}; delta={triangle_delta}; "
+            f"ratio={ratio:.3f}; recommendation={recommendation}; "
+            f"acceptance_evidence={len(_unique_text_values(acceptance_diagnostics))}"
+        ),
+    )
+
+
+def _attach_intersection_surface_replacement_handoff_metadata(target_obj, gate_source_obj, *, handoff_role: str) -> None:
+    if target_obj is None or gate_source_obj is None:
+        return
+    gate_status = str(getattr(gate_source_obj, "IntersectionSurfaceReplacementGateStatus", "") or "")
+    if not gate_status:
+        return
+    readiness = intersection_surface_replacement_readiness(gate_status)
+    preference = intersection_surface_replacement_handoff_preference(readiness, handoff_role)
+    recommendation = str(getattr(gate_source_obj, "IntersectionSurfaceReplacementGateRecommendation", "") or "")
+    source_ref = str(getattr(gate_source_obj, "Name", "") or "")
+    _set_preview_property(target_obj, "IntersectionSurfaceReplacementReadinessStatus", readiness)
+    _set_preview_property(target_obj, "IntersectionSurfaceReplacementGateStatus", gate_status)
+    _set_preview_property(target_obj, "IntersectionSurfaceReplacementHandoffRole", str(handoff_role or ""))
+    _set_preview_property(target_obj, "IntersectionSurfaceReplacementHandoffPreference", preference)
+    _set_preview_property(target_obj, "IntersectionSurfaceReplacementHandoffSourceRef", source_ref)
+    _set_preview_property(target_obj, "IntersectionSurfaceReplacementHandoffRecommendation", recommendation)
+    _set_preview_property(
+        target_obj,
+        "IntersectionSurfaceReplacementHandoffSummary",
+        (
+            f"readiness={readiness or 'unknown'}; gate={gate_status or 'unknown'}; "
+            f"handoff_preference={preference or 'unknown'}; role={str(handoff_role or 'unknown')}; "
+            f"source={source_ref or 'unknown'}; recommendation={recommendation or 'review_required'}"
+        ),
+    )
+
+
+def _set_intersection_surface_downstream_handoff_selection(
+    obj,
+    *,
+    selected_ref: str,
+    selected_role: str,
+    selected: bool,
+    reason: str,
+    readiness: str,
+) -> None:
+    if obj is None:
+        return
+    _set_preview_integer_property(obj, "IntersectionSurfaceDownstreamHandoffSelected", 1 if selected else 0)
+    _set_preview_property(obj, "IntersectionSurfaceDownstreamHandoffSelectedRef", selected_ref)
+    _set_preview_property(obj, "IntersectionSurfaceDownstreamHandoffSelectedRole", selected_role)
+    _set_preview_property(obj, "IntersectionSurfaceDownstreamHandoffSelectionReason", reason)
+    blocker_kind = intersection_surface_replacement_blocker_kind(readiness, selected_role)
+    _set_preview_property(obj, "IntersectionSurfaceReplacementBlockerKind", blocker_kind)
+    _set_preview_property(
+        obj,
+        "IntersectionSurfaceDownstreamHandoffSummary",
+        (
+            f"selected_ref={selected_ref or 'unknown'}; selected_role={selected_role or 'unknown'}; "
+            f"selected={1 if selected else 0}; readiness={readiness or 'unknown'}; "
+            f"replacement_blocker={blocker_kind or 'none'}; reason={reason or 'unknown'}"
+        ),
+    )
+
+
+def _attach_intersection_surface_downstream_handoff_selection(patch_preview, zone_surface_preview=None, zone_output_preview=None) -> None:
+    if patch_preview is None:
+        return
+    patch_ref = str(getattr(patch_preview, "Name", "") or "V1CorridorIntersectionSurfacePreview")
+    zone_ref = str(getattr(zone_surface_preview, "Name", "") or "")
+    decision = decide_intersection_surface_downstream_handoff(
+        gate_status=str(getattr(patch_preview, "IntersectionSurfaceReplacementGateStatus", "") or ""),
+        patch_ref=patch_ref,
+        zone_surface_ref=zone_ref,
+    )
+    _set_intersection_surface_downstream_handoff_selection(
+        patch_preview,
+        selected_ref=decision.selected_ref,
+        selected_role=decision.selected_role,
+        selected=decision.patch_selected,
+        reason=decision.selection_reason,
+        readiness=decision.readiness,
+    )
+    for obj in (zone_surface_preview, zone_output_preview):
+        if obj is None:
+            continue
+        _set_intersection_surface_downstream_handoff_selection(
+            obj,
+            selected_ref=decision.selected_ref,
+            selected_role=decision.selected_role,
+            selected=(decision.selected_ref == str(getattr(obj, "Name", "") or "")),
+            reason=decision.selection_reason,
+            readiness=decision.readiness,
+        )
+
+
+INTERSECTION_LEGACY_PATCH_COMPATIBILITY_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("PatchBoundaryPointCount", "IntersectionSurfacePatchBoundaryRowCount"),
+    ("PatchTriangulationMode", "IntersectionSurfacePatchSummary"),
+    ("PatchSurfaceBoundaryStrategy", "IntersectionSurfacePatchSummary"),
+    ("PatchBoundaryRoleSummary", "IntersectionSurfacePatchBoundaryRowRefs"),
+    ("PatchTriangleMinQuality", "IntersectionSurfacePatchQualityRowStatuses"),
+    ("PatchTriangleSkinnyCount", "IntersectionSurfacePatchQualityRowStatuses"),
+    ("IntersectionPatchBoundaryStatus", "IntersectionSurfacePatchBoundaryRowStatuses"),
+    ("IntersectionPatchBoundaryDiagnostics", "IntersectionSurfacePatchRowDiagnostics"),
+    ("PatchBoundaryLongEdgeCount", "IntersectionSurfacePatchRowDiagnostics"),
+    ("PatchDegenerateTriangleCount", "IntersectionSurfacePatchQualityRowStatuses"),
+)
+
+
+def _has_preview_property_value(obj, attr: str) -> bool:
+    if obj is None or not hasattr(obj, attr):
+        return False
+    value = getattr(obj, attr, None)
+    if isinstance(value, (list, tuple)):
+        return bool([item for item in value if str(item or "")])
+    if isinstance(value, str):
+        return bool(value)
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return value is not None
+
+
+def _attach_intersection_legacy_patch_compatibility_audit(obj) -> None:
+    if obj is None:
+        return
+    normalized_available = bool(
+        str(getattr(obj, "IntersectionSurfacePatchResultId", "") or "")
+        or str(getattr(obj, "IntersectionSurfacePatchSummary", "") or "")
+        or list(getattr(obj, "IntersectionSurfacePatchRowDiagnostics", []) or [])
+    )
+    rows: list[str] = []
+    if normalized_available:
+        for legacy_attr, replacement_attr in INTERSECTION_LEGACY_PATCH_COMPATIBILITY_REPLACEMENTS:
+            if _has_preview_property_value(obj, legacy_attr):
+                replacement_state = "normalized_available" if _has_preview_property_value(obj, replacement_attr) else "normalized_missing"
+                rows.append(f"property_only:{legacy_attr}->{replacement_attr}:{replacement_state}")
+    review_visibility = "metadata_only" if normalized_available else "legacy_visible"
+    _set_preview_property(obj, "IntersectionLegacyPatchReviewVisibility", review_visibility)
+    _set_preview_integer_property(obj, "IntersectionLegacyPatchCompatibilityPropertyCount", len(rows))
+    _set_preview_string_list_property(obj, "IntersectionLegacyPatchCompatibilityAudit", rows)
+    _set_preview_property(
+        obj,
+        "IntersectionLegacyPatchCompatibilityAuditSummary",
+        (
+            f"review_visibility={review_visibility}; "
+            f"property_only={len(rows)}; "
+            f"normalized_replacement={'available' if normalized_available else 'missing'}"
+        ),
+    )
+
+
+def _intersection_surface_zone_output_row_statuses(output: IntersectionSurfaceZoneOutput) -> list[str]:
+    return _unique_text_values(
+        [
+            f"{str(getattr(row, 'output_row_id', '') or '')}:{str(getattr(row, 'status', '') or '')}"
+            for row in list(getattr(output, "zone_output_rows", []) or [])
+            if str(getattr(row, "output_row_id", "") or "")
+        ]
+    )
+
+
+def _intersection_surface_zone_output_row_diagnostics(output: IntersectionSurfaceZoneOutput) -> list[str]:
+    diagnostics: list[str] = []
+    for row in list(getattr(output, "zone_output_rows", []) or []):
+        row_id = str(getattr(row, "output_row_id", "") or "")
+        for diagnostic in list(getattr(row, "diagnostic_rows", ()) or ()):
+            text = str(diagnostic or "")
+            if text:
+                diagnostics.append(f"{row_id}:{text}")
+    return _unique_text_values(diagnostics)
+
+
+def _intersection_surface_zone_output_row_lineage(output: IntersectionSurfaceZoneOutput) -> list[str]:
+    rows: list[str] = []
+    for row in list(getattr(output, "zone_output_rows", []) or []):
+        row_id = str(getattr(row, "output_row_id", "") or "")
+        if not row_id:
+            continue
+        parts = _join_review_notes(
+            f"surface_zone={str(getattr(row, 'surface_zone_ref', '') or '')}",
+            f"legs={','.join(list(getattr(row, 'leg_refs', ()) or ())) or '-'}",
+            f"alignments={','.join(list(getattr(row, 'alignment_refs', ()) or ())) or '-'}",
+            f"control_areas={','.join(list(getattr(row, 'control_area_refs', ()) or ())) or '-'}",
+            f"vertical_policy={str(getattr(row, 'vertical_policy_ref', '') or '-')}",
+            f"source_edges={len(list(getattr(row, 'source_edge_refs', ()) or ())) }",
+            f"boundary_edges={len(list(getattr(row, 'boundary_edge_refs', ()) or ())) }",
+            f"inner_edges={len(list(getattr(row, 'inner_edge_refs', ()) or ())) }",
+            f"outer_edges={len(list(getattr(row, 'outer_edge_refs', ()) or ())) }",
+            f"tie_edges={len(list(getattr(row, 'tie_edge_refs', ()) or ())) }",
+            f"source_status={str(getattr(row, 'source_status', '') or 'accepted')}",
+        )
+        rows.append(f"{row_id}:{parts}")
+    return _unique_text_values(rows)
+
+
+def _intersection_surface_zone_output_summary(output: IntersectionSurfaceZoneOutput | None) -> str:
+    if output is None:
+        return ""
+    rows = list(getattr(output, "zone_output_rows", []) or [])
+    ready = len([row for row in rows if str(getattr(row, "status", "") or "") == "ready"])
+    warning = len([row for row in rows if str(getattr(row, "status", "") or "") == "warning"])
+    leg_ref_count = len(_unique_text_values(ref for row in rows for ref in list(getattr(row, "leg_refs", ()) or [])))
+    alignment_ref_count = len(_unique_text_values(ref for row in rows for ref in list(getattr(row, "alignment_refs", ()) or [])))
+    control_area_ref_count = len(_unique_text_values(ref for row in rows for ref in list(getattr(row, "control_area_refs", ()) or [])))
+    return (
+        f"status={str(getattr(output, 'status', '') or '')}; "
+        f"rows={len(rows)}; ready={ready}; warning={warning}; "
+        f"legs={leg_ref_count}; alignments={alignment_ref_count}; control_areas={control_area_ref_count}; "
+        f"contract={str(getattr(output, 'output_contract_status', '') or '')}; "
+        f"handoff={str(getattr(output, 'digital_twin_handoff', '') or '')}"
+    )
+
+
+def corridor_intersection_surface_patch_result(
+    tin_surface,
+    *,
+    patch_boundary_result: IntersectionPatchBoundaryResult | None = None,
+    consumed_contract_refs: list[str] | tuple[str, ...] = (),
+) -> IntersectionSurfacePatchResult:
+    """Normalize legacy intersection patch output metadata into a result contract."""
+
+    if tin_surface is None:
+        return IntersectionSurfacePatchResult(
+            schema_version=1,
+            project_id="corridorroad-v1",
+            status="error",
+            diagnostic_rows=["error:intersection_patch_surface_missing"],
+        )
+
+    surface_id = str(getattr(tin_surface, "surface_id", "") or "intersection-surface-patch")
+    source_refs = [str(value or "") for value in list(getattr(tin_surface, "source_refs", []) or []) if str(value or "")]
+    intersection_id = _intersection_surface_patch_intersection_id(tin_surface, patch_boundary_result)
+    patch_boundary_result_ref = str(getattr(patch_boundary_result, "patch_boundary_result_id", "") or "")
+    boundary_diagnostics = [str(value or "") for value in list(getattr(patch_boundary_result, "diagnostic_rows", []) or []) if str(value or "")]
+
+    boundary_status = str(getattr(patch_boundary_result, "status", "") or "")
+    if not boundary_status:
+        boundary_status = "ready" if int(_tin_quality_float(tin_surface, "patch_boundary_point_count") or 0) >= 3 else "warning"
+    boundary_row = IntersectionSurfacePatchBoundaryRow(
+        boundary_id=f"intersection-surface-patch-boundary:{_safe_id_fragment(intersection_id or surface_id)}",
+        intersection_id=intersection_id,
+        boundary_source=_tin_quality_text(tin_surface, "patch_boundary_source"),
+        boundary_mode=str(getattr(patch_boundary_result, "boundary_mode", "") or ""),
+        patch_boundary_result_ref=patch_boundary_result_ref,
+        point_count=int(_tin_quality_float(tin_surface, "patch_boundary_point_count") or 0),
+        source_segment_count=int(_tin_quality_float(tin_surface, "ordered_patch_boundary_source_segment_count") or 0),
+        ring_count=int(_tin_quality_float(tin_surface, "ordered_patch_boundary_ring_count") or 0),
+        hole_ring_count=int(_tin_quality_float(tin_surface, "ordered_patch_boundary_hole_ring_count") or 0),
+        island_ring_count=int(_tin_quality_float(tin_surface, "ordered_patch_boundary_island_ring_count") or 0),
+        closed=bool(int(_tin_quality_float(tin_surface, "ordered_patch_boundary_closed") or 0)),
+        self_crossing=bool(int(_tin_quality_float(tin_surface, "ordered_patch_boundary_self_crossing") or 0)),
+        polygon_area=float(_tin_quality_float(tin_surface, "ordered_patch_boundary_polygon_area") or 0.0),
+        bbox_x=float(_tin_quality_float(tin_surface, "patch_boundary_bbox_x") or 0.0),
+        bbox_y=float(_tin_quality_float(tin_surface, "patch_boundary_bbox_y") or 0.0),
+        bbox_aspect_ratio=float(_tin_quality_float(tin_surface, "patch_boundary_bbox_aspect_ratio") or 0.0),
+        status=boundary_status,
+        diagnostic_rows=tuple(boundary_diagnostics),
+        notes="Boundary row normalized from ordered patch boundary and TIN quality rows.",
+    )
+    triangulation_row = IntersectionSurfacePatchTriangulationRow(
+        triangulation_id=f"intersection-surface-patch-triangulation:{_safe_id_fragment(intersection_id or surface_id)}",
+        intersection_id=intersection_id,
+        triangulation_method=_tin_quality_text(tin_surface, "patch_triangulation_mode"),
+        boundary_strategy=_tin_quality_text(tin_surface, "patch_surface_boundary_strategy"),
+        triangle_count=int(_tin_quality_float(tin_surface, "patch_triangle_count") or len(list(getattr(tin_surface, "triangle_rows", []) or []))),
+        degenerate_triangle_count=int(_tin_quality_float(tin_surface, "patch_degenerate_triangle_count") or 0),
+        structured_strip_count=int(_tin_quality_float(tin_surface, "patch_structured_strip_count") or 0),
+        curb_return_surface_edge_count=int(_tin_quality_float(tin_surface, "patch_curb_return_surface_edge_count") or 0),
+        curb_return_arc_count=int(_tin_quality_float(tin_surface, "patch_curb_return_arc_count") or 0),
+        curb_return_arc_sample_count=int(_tin_quality_float(tin_surface, "patch_curb_return_arc_sample_count") or 0),
+        curb_return_arc_segment_count=int(_tin_quality_float(tin_surface, "patch_curb_return_arc_segment_count") or 0),
+        edge_blend_face_count=int(_tin_quality_float(tin_surface, "patch_edge_blend_face_count") or 0),
+        boundary_role_summary=_tin_quality_text(tin_surface, "patch_boundary_role_summary"),
+        pavement_tie_in_edge_count=int(_tin_quality_float(tin_surface, "patch_boundary_pavement_tie_in_edge_count") or 0),
+        stem_tie_in_edge_count=int(_tin_quality_float(tin_surface, "patch_boundary_stem_tie_in_edge_count") or 0),
+        overlap_cut_edge_count=int(_tin_quality_float(tin_surface, "patch_boundary_overlap_cut_edge_count") or 0),
+        curb_return_edge_count=int(_tin_quality_float(tin_surface, "patch_boundary_curb_return_edge_count") or 0),
+        status="warning" if int(_tin_quality_float(tin_surface, "patch_degenerate_triangle_count") or 0) else "ready",
+        notes="Triangulation row normalized from patch surface TIN quality rows.",
+    )
+    quality_diagnostics: list[str] = []
+    if float(_tin_quality_float(tin_surface, "patch_triangle_min_quality") or 0.0) <= 0.0:
+        quality_diagnostics.append("warning:intersection_surface_patch_min_quality_missing")
+    if int(_tin_quality_float(tin_surface, "patch_boundary_edge_long_count") or 0):
+        quality_diagnostics.append("warning:intersection_surface_patch_long_boundary_edges")
+    quality_row = IntersectionSurfacePatchQualityRow(
+        quality_id=f"intersection-surface-patch-quality:{_safe_id_fragment(intersection_id or surface_id)}",
+        intersection_id=intersection_id,
+        min_triangle_quality=float(_tin_quality_float(tin_surface, "patch_triangle_min_quality") or 0.0),
+        skinny_triangle_count=int(_tin_quality_float(tin_surface, "patch_triangle_skinny_count") or 0),
+        max_boundary_edge_length=float(_tin_quality_float(tin_surface, "patch_boundary_edge_max_length") or 0.0),
+        long_boundary_edge_count=int(_tin_quality_float(tin_surface, "patch_boundary_edge_long_count") or 0),
+        long_boundary_edge_factor=float(_tin_quality_float(tin_surface, "patch_boundary_edge_long_factor") or 0.0),
+        long_boundary_edge_limit=float(_tin_quality_float(tin_surface, "patch_boundary_edge_long_limit") or 0.0),
+        max_boundary_edge_length_policy=float(_tin_quality_float(tin_surface, "patch_boundary_edge_max_length_policy") or 0.0),
+        status="warning" if quality_diagnostics else "ready",
+        diagnostic_rows=tuple(quality_diagnostics),
+        notes="Quality row normalized from patch surface TIN quality rows.",
+    )
+
+    diagnostics = [*boundary_diagnostics, *quality_diagnostics]
+    if triangulation_row.degenerate_triangle_count:
+        diagnostics.append("warning:intersection_surface_patch_degenerate_triangles")
+    status = "warning" if diagnostics or boundary_row.status not in {"ready", "accepted"} or quality_row.status == "warning" else "ready"
+    return IntersectionSurfacePatchResult(
+        schema_version=int(getattr(tin_surface, "schema_version", 1) or 1),
+        project_id=str(getattr(tin_surface, "project_id", "") or "corridorroad-v1"),
+        label=f"Intersection Surface Patch - {intersection_id or surface_id}",
+        surface_patch_result_id=f"intersection-surface-patch:{_safe_id_fragment(intersection_id or surface_id)}",
+        intersection_id=intersection_id,
+        status=status,
+        output_path="legacy_output",
+        output_contract_status="transitional_normalized",
+        digital_twin_handoff="review_required",
+        transitional_reason="legacy_patch_surface_output",
+        replacement_path="accepted_intersection_surface_zone_output",
+        patch_surface_ref=surface_id,
+        patch_boundary_result_ref=patch_boundary_result_ref,
+        consumed_contract_refs=_unique_text_values([str(value or "") for value in list(consumed_contract_refs or ()) if str(value or "")]),
+        source_refs=source_refs,
+        diagnostic_rows=_unique_text_values(diagnostics),
+        boundary_rows=[boundary_row],
+        triangulation_rows=[triangulation_row],
+        quality_rows=[quality_row],
+    )
+
+
+def _intersection_surface_patch_intersection_id(tin_surface, patch_boundary_result=None) -> str:
+    if patch_boundary_result is not None:
+        value = str(getattr(patch_boundary_result, "intersection_id", "") or "")
+        if value:
+            return value
+    for value in list(getattr(tin_surface, "source_refs", []) or []):
+        text = str(value or "")
+        if text.startswith("intersection:"):
+            return text
+    surface_id = str(getattr(tin_surface, "surface_id", "") or "")
+    if surface_id.startswith("intersection-surface:"):
+        return surface_id.split(":", 1)[1]
+    return ""
+
+
+def _attach_intersection_surface_patch_result_metadata(obj, patch_result: IntersectionSurfacePatchResult | None) -> None:
+    if obj is None or patch_result is None:
+        return
+    boundary = next(iter(list(getattr(patch_result, "boundary_rows", []) or [])), None)
+    triangulation = next(iter(list(getattr(patch_result, "triangulation_rows", []) or [])), None)
+    quality = next(iter(list(getattr(patch_result, "quality_rows", []) or [])), None)
+    _set_preview_property(obj, "IntersectionSurfacePatchResultId", str(getattr(patch_result, "surface_patch_result_id", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfacePatchStatus", str(getattr(patch_result, "status", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfacePatchOutputPath", str(getattr(patch_result, "output_path", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfacePatchOutputContractStatus", str(getattr(patch_result, "output_contract_status", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfacePatchDigitalTwinHandoff", str(getattr(patch_result, "digital_twin_handoff", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfacePatchTransitionalReason", str(getattr(patch_result, "transitional_reason", "") or ""))
+    _set_preview_property(obj, "IntersectionSurfacePatchReplacementPath", str(getattr(patch_result, "replacement_path", "") or ""))
+    _set_preview_integer_property(obj, "IntersectionSurfacePatchBoundaryRowCount", len(list(getattr(patch_result, "boundary_rows", []) or [])))
+    _set_preview_integer_property(obj, "IntersectionSurfacePatchTriangulationRowCount", len(list(getattr(patch_result, "triangulation_rows", []) or [])))
+    _set_preview_integer_property(obj, "IntersectionSurfacePatchQualityRowCount", len(list(getattr(patch_result, "quality_rows", []) or [])))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchBoundaryRowRefs", _intersection_surface_patch_row_refs(patch_result, "boundary_rows", "boundary_id"))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchTriangulationRowRefs", _intersection_surface_patch_row_refs(patch_result, "triangulation_rows", "triangulation_id"))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchQualityRowRefs", _intersection_surface_patch_row_refs(patch_result, "quality_rows", "quality_id"))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchBoundaryRowStatuses", _intersection_surface_patch_row_statuses(patch_result, "boundary_rows"))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchTriangulationRowStatuses", _intersection_surface_patch_row_statuses(patch_result, "triangulation_rows"))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchQualityRowStatuses", _intersection_surface_patch_row_statuses(patch_result, "quality_rows"))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchConsumedContractRefs", list(getattr(patch_result, "consumed_contract_refs", []) or []))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchDiagnostics", list(getattr(patch_result, "diagnostic_rows", []) or []))
+    _set_preview_string_list_property(obj, "IntersectionSurfacePatchRowDiagnostics", _intersection_surface_patch_row_diagnostics(patch_result))
+    _set_preview_property(
+        obj,
+        "IntersectionSurfacePatchSummary",
+        _intersection_surface_patch_result_summary(boundary, triangulation, quality),
+    )
+    _set_preview_property(
+        obj,
+        "IntersectionSurfacePatchFootprintSummary",
+        _intersection_surface_patch_footprint_summary(boundary, triangulation),
+    )
+
+
+def _intersection_surface_patch_row_refs(patch_result: IntersectionSurfacePatchResult, rows_attr: str, id_attr: str) -> list[str]:
+    return _unique_text_values(
+        [
+            str(getattr(row, id_attr, "") or "")
+            for row in list(getattr(patch_result, rows_attr, []) or [])
+            if str(getattr(row, id_attr, "") or "")
+        ]
+    )
+
+
+def _intersection_surface_patch_row_statuses(patch_result: IntersectionSurfacePatchResult, rows_attr: str) -> list[str]:
+    values: list[str] = []
+    for row in list(getattr(patch_result, rows_attr, []) or []):
+        row_id = (
+            str(getattr(row, "boundary_id", "") or "")
+            or str(getattr(row, "triangulation_id", "") or "")
+            or str(getattr(row, "quality_id", "") or "")
+            or "row"
+        )
+        values.append(f"{row_id}:{str(getattr(row, 'status', '') or 'unknown')}")
+    return _unique_text_values(values)
+
+
+def _intersection_surface_patch_row_diagnostics(patch_result: IntersectionSurfacePatchResult) -> list[str]:
+    diagnostics: list[str] = []
+    for family, rows_attr, id_attr in (
+        ("boundary", "boundary_rows", "boundary_id"),
+        ("triangulation", "triangulation_rows", "triangulation_id"),
+        ("quality", "quality_rows", "quality_id"),
+    ):
+        for row in list(getattr(patch_result, rows_attr, []) or []):
+            row_id = str(getattr(row, id_attr, "") or family)
+            for diagnostic in tuple(getattr(row, "diagnostic_rows", ()) or ()):
+                text = str(diagnostic or "").strip()
+                if text:
+                    diagnostics.append(f"{family}:{row_id}:{text}")
+    return _unique_text_values(diagnostics)
+
+
+def _intersection_surface_patch_result_summary(boundary, triangulation, quality) -> str:
+    parts: list[str] = []
+    if boundary is not None:
+        parts.append(
+            f"boundary={getattr(boundary, 'status', '')} points={int(getattr(boundary, 'point_count', 0) or 0)} "
+            f"rings={int(getattr(boundary, 'ring_count', 0) or 0)} source={getattr(boundary, 'boundary_source', '')}"
+        )
+    if triangulation is not None:
+        parts.append(
+            f"triangulation={getattr(triangulation, 'triangulation_method', '')} "
+            f"triangles={int(getattr(triangulation, 'triangle_count', 0) or 0)} "
+            f"curb_returns={int(getattr(triangulation, 'curb_return_arc_count', 0) or 0)}"
+        )
+    if quality is not None:
+        parts.append(
+            f"quality={getattr(quality, 'status', '')} min={float(getattr(quality, 'min_triangle_quality', 0.0) or 0.0):.3f} "
+            f"skinny={int(getattr(quality, 'skinny_triangle_count', 0) or 0)}"
+        )
+    return "; ".join(parts)
+
+
+def _intersection_surface_patch_footprint_summary(boundary, triangulation) -> str:
+    if boundary is None and triangulation is None:
+        return ""
+    parts: list[str] = []
+    if boundary is not None:
+        parts.extend(
+            [
+                f"points={int(getattr(boundary, 'point_count', 0) or 0)}",
+                f"rings={int(getattr(boundary, 'ring_count', 0) or 0)}",
+                f"holes={int(getattr(boundary, 'hole_ring_count', 0) or 0)}",
+                f"islands={int(getattr(boundary, 'island_ring_count', 0) or 0)}",
+                f"closed={1 if bool(getattr(boundary, 'closed', False)) else 0}",
+                f"self_crossing={1 if bool(getattr(boundary, 'self_crossing', False)) else 0}",
+                f"area={float(getattr(boundary, 'polygon_area', 0.0) or 0.0):.3f}",
+                f"bbox={float(getattr(boundary, 'bbox_x', 0.0) or 0.0):.3f}x{float(getattr(boundary, 'bbox_y', 0.0) or 0.0):.3f}",
+                f"bbox_aspect={float(getattr(boundary, 'bbox_aspect_ratio', 0.0) or 0.0):.3f}",
+            ]
+        )
+    if triangulation is not None:
+        pavement_tie_in = int(getattr(triangulation, "pavement_tie_in_edge_count", 0) or 0)
+        stem_tie_in = int(getattr(triangulation, "stem_tie_in_edge_count", 0) or 0)
+        parts.extend(
+            [
+                f"curb_return_edges={int(getattr(triangulation, 'curb_return_edge_count', 0) or 0)}",
+                f"curb_return_arcs={int(getattr(triangulation, 'curb_return_arc_count', 0) or 0)}",
+                f"curb_return_samples={int(getattr(triangulation, 'curb_return_arc_sample_count', 0) or 0)}",
+                f"tie_in_edges={pavement_tie_in + stem_tie_in}",
+                f"pavement_tie_in_edges={pavement_tie_in}",
+                f"stem_tie_in_edges={stem_tie_in}",
+                f"overlap_cut_edges={int(getattr(triangulation, 'overlap_cut_edge_count', 0) or 0)}",
+            ]
+        )
+    return "; ".join(parts)
 
 
 def _tin_surface_without_quality_refs(surface, quality_refs: set[str]):
@@ -4702,6 +5760,7 @@ def create_corridor_daylight_surface_preview(
                 surface_transition_model=transition_model,
             )
         )
+        source_side_slope_tin_surface = tin_surface
         tin_surface = _clip_tin_surface_by_intersection_exclusion(
             tin_surface,
             doc,
@@ -4741,6 +5800,16 @@ def create_corridor_daylight_surface_preview(
             tin_surface,
             intersection_tin_surface,
             tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
+        )
+        tin_surface = _restore_daylight_surface_side_slope_strips_from_reference(
+            tin_surface,
+            source_side_slope_tin_surface,
+            intersection_tin_surface=intersection_tin_surface,
+        )
+        tin_surface = _augment_daylight_surface_with_applied_section_side_slope_strips(
+            tin_surface,
+            applied_section_set,
+            intersection_tin_surface=intersection_tin_surface,
         )
         tin_surface = _augment_daylight_surface_with_intersection_slope_face_boundary_strips(
             tin_surface,
@@ -4792,6 +5861,7 @@ def create_corridor_daylight_surface_preview(
         _attach_intersection_exclusion_zone_metadata(preview_obj, doc)
         _attach_intersection_exclusion_clip_quality(preview_obj, tin_surface)
         _attach_intersection_slope_loop_suppression_quality(preview_obj, tin_surface)
+        _attach_intersection_slope_face_boundary_strip_quality(preview_obj, tin_surface)
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -4811,11 +5881,7 @@ def create_corridor_daylight_surface_preview(
             project=project or find_project(doc),
             daylight_surface=tin_surface,
         )
-        _create_intersection_slope_face_boundary_preview(
-            document=doc,
-            project=project or find_project(doc),
-            applied_section_set=applied_section_set,
-        )
+        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceBoundaryPreview")
         _create_slope_face_diagnostic_markers(
             document=doc,
             project=project or find_project(doc),
@@ -5406,9 +6472,9 @@ class V1BuildCorridorTaskPanel:
         guided_label = QtWidgets.QLabel("Guided Review")
         guided_label.setToolTip("Follow the practical corridor check order and focus the related 3D preview layer.")
         guided_layout.addWidget(guided_label)
-        self._guided_table = QtWidgets.QTableWidget(0, 4)
-        self._guided_table.setHorizontalHeaderLabels(["Step", "Status", "Focus", "Notes"])
-        _compact_build_corridor_table(self._guided_table, [145, 76, 120, 220])
+        self._guided_table = QtWidgets.QTableWidget(0, 5)
+        self._guided_table.setHorizontalHeaderLabels(["Step", "Status", "Focus", "Output Path", "Notes"])
+        _compact_build_corridor_table(self._guided_table, [145, 76, 120, 105, 220])
         self._guided_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._guided_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._guided_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -5422,7 +6488,7 @@ class V1BuildCorridorTaskPanel:
             pass
         self._guided_table.cellDoubleClicked.connect(lambda row_index, _col: self._focus_guided_review_row(row_index))
         guided_layout.addWidget(self._guided_table, 1)
-        self._review_table = QtWidgets.QTableWidget(0, 9)
+        self._review_table = QtWidgets.QTableWidget(0, 10)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "Result",
@@ -5431,12 +6497,13 @@ class V1BuildCorridorTaskPanel:
                 "Vertices",
                 "Triangles/Points",
                 "Role",
+                "Output Path",
                 "Applied Sections",
                 "Applied Diagnostics",
                 "Notes",
             ]
         )
-        _compact_build_corridor_table(self._review_table, [110, 72, 150, 70, 105, 90, 150, 150, 220])
+        _compact_build_corridor_table(self._review_table, [110, 72, 150, 70, 105, 90, 105, 150, 150, 220])
         self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._review_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -5481,9 +6548,11 @@ class V1BuildCorridorTaskPanel:
         intersections_label = QtWidgets.QLabel("Intersection Contracts")
         intersections_label.setToolTip("Edge-network-first contracts for topology, edges, surface zones, and ordinary corridor clipping.")
         intersections_layout.addWidget(intersections_label)
-        self._intersection_contract_table = QtWidgets.QTableWidget(0, 7)
-        self._intersection_contract_table.setHorizontalHeaderLabels(["Contract", "Status", "ID", "Role", "Source", "Boundary", "Notes"])
-        _compact_build_corridor_table(self._intersection_contract_table, [105, 72, 180, 120, 180, 220, 260])
+        self._intersection_contract_table = QtWidgets.QTableWidget(0, 10)
+        self._intersection_contract_table.setHorizontalHeaderLabels(
+            ["Contract", "Status", "Source Status", "Output Path", "ID", "Role", "Source", "Boundary", "Source Diagnostics", "Notes"]
+        )
+        _compact_build_corridor_table(self._intersection_contract_table, [105, 72, 96, 105, 180, 120, 180, 220, 240, 260])
         self._intersection_contract_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._intersection_contract_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._intersection_contract_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -5905,6 +6974,7 @@ class V1BuildCorridorTaskPanel:
                 str(row.get("title", "") or ""),
                 str(row.get("status", "") or ""),
                 str(row.get("focus", "") or ""),
+                str(row.get("output_path", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
             for col, value in enumerate(values):
@@ -5934,6 +7004,7 @@ class V1BuildCorridorTaskPanel:
                 str(row.get("vertex_count", "") or ""),
                 str(row.get("triangle_or_point_count", "") or ""),
                 str(row.get("role", "") or ""),
+                str(row.get("output_path", "") or ""),
                 str(row.get("applied_section_summary", "") or ""),
                 str(row.get("applied_section_diagnostics", "") or ""),
                 str(row.get("notes", "") or ""),
@@ -5982,10 +7053,13 @@ class V1BuildCorridorTaskPanel:
             values = [
                 str(row.get("contract_family", "") or ""),
                 str(row.get("status", "") or ""),
+                str(row.get("source_status", "") or ""),
+                str(row.get("output_path", "") or ""),
                 str(row.get("row_id", "") or ""),
                 str(row.get("role", "") or ""),
                 str(row.get("source_refs", "") or ""),
                 str(row.get("boundary_refs", "") or ""),
+                str(row.get("source_diagnostics", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
             for col, value in enumerate(values):
@@ -11356,102 +12430,6 @@ def _create_corridor_intersection_exclusion_zone_preview(
     return obj
 
 
-def _create_corridor_intersection_slope_face_loop_preview(
-    document,
-    loop_result: IntersectionSlopeFaceLoopResult,
-    edge_network_result,
-    *,
-    project=None,
-):
-    """Create visible loop linework for intersection slope-face generation candidates."""
-
-    if document is None or loop_result is None or edge_network_result is None:
-        return None
-    try:
-        import FreeCAD as AppModule
-        import Part
-    except Exception:
-        return None
-    object_name = "V1CorridorIntersectionSlopeFaceLoopPreview"
-    obj = document.getObject(object_name)
-    edge_rows = list(getattr(edge_network_result, "edge_rows", []) or [])
-    shapes: list[object] = []
-    loop_refs: list[str] = []
-    edge_refs: list[str] = []
-    loop_families: list[str] = []
-    statuses: list[str] = []
-    for loop in list(getattr(loop_result, "loop_rows", []) or []):
-        loop_edge_count = 0
-        for edge_ref in _intersection_contract_loop_edge_refs(loop):
-            edge = _intersection_contract_edge_by_id(edge_rows, edge_ref)
-            shape = _intersection_contract_edge_highlight_shape(Part, AppModule, edge)
-            if shape is None:
-                continue
-            shapes.append(shape)
-            edge_refs.append(str(edge_ref or ""))
-            loop_edge_count += 1
-        if loop_edge_count:
-            loop_refs.append(str(getattr(loop, "loop_id", "") or ""))
-            loop_families.append(str(getattr(loop, "loop_family", "") or ""))
-            statuses.append(str(getattr(loop, "status", "") or ""))
-    if not shapes:
-        if obj is not None:
-            try:
-                document.removeObject(obj.Name)
-            except Exception:
-                pass
-        return None
-    if obj is None:
-        obj = document.addObject("Part::Feature", object_name)
-    try:
-        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
-        obj.Label = "Intersection Slope Face Loops"
-    except Exception:
-        return obj
-    _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_slope_face_loop_preview")
-    _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionSlopeFaceLoopPreview")
-    _set_preview_property(obj, "IntersectionId", str(getattr(loop_result, "intersection_id", "") or ""))
-    _set_preview_property(obj, "LoopStatus", str(getattr(loop_result, "status", "") or ""))
-    _set_preview_integer_property(obj, "LoopCount", int(getattr(loop_result, "loop_count", 0) or 0))
-    _set_preview_integer_property(obj, "DisplayedLoopCount", len(_unique_text_values(loop_refs)))
-    _set_preview_integer_property(obj, "DisplayedEdgeCount", len(shapes))
-    _set_preview_integer_property(obj, "ReadyLoopCount", int(getattr(loop_result, "ready_count", 0) or 0))
-    _set_preview_integer_property(obj, "WarningLoopCount", int(getattr(loop_result, "warning_count", 0) or 0))
-    _set_preview_integer_property(obj, "ErrorLoopCount", int(getattr(loop_result, "error_count", 0) or 0))
-    _set_preview_integer_property(obj, "OpenLoopCount", len([row for row in list(getattr(loop_result, "loop_rows", []) or []) if not bool(getattr(row, "closed_xy", False))]))
-    _set_preview_integer_property(obj, "SelfCrossingLoopCount", len([row for row in list(getattr(loop_result, "loop_rows", []) or []) if bool(getattr(row, "self_crossing", False))]))
-    _set_preview_integer_property(obj, "OverlapLoopCount", len([row for row in list(getattr(loop_result, "loop_rows", []) or []) if bool(getattr(row, "overlaps_intersection_surface", False))]))
-    _set_preview_integer_property(obj, "LoopPointCount", sum(int(getattr(row, "point_count", 0) or 0) for row in list(getattr(loop_result, "loop_rows", []) or [])))
-    _set_preview_string_list_property(obj, "LoopRefs", _unique_text_values(loop_refs))
-    _set_preview_string_list_property(obj, "LoopFamilies", _unique_text_values(loop_families))
-    _set_preview_string_list_property(obj, "LoopStatuses", _unique_text_values(statuses))
-    _set_preview_string_list_property(obj, "LoopEdgeRefs", _unique_text_values(edge_refs))
-    _set_preview_string_list_property(
-        obj,
-        "LoopDiagnostics",
-        [str(value or "") for value in list(getattr(loop_result, "diagnostic_rows", []) or [])],
-    )
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is not None:
-            vobj.Visibility = True
-            vobj.ShapeColor = (1.0, 1.0, 1.0)
-            vobj.LineColor = (1.0, 1.0, 1.0)
-            vobj.PointColor = (1.0, 1.0, 1.0)
-            vobj.LineWidth = 5.0
-            vobj.PointSize = 7.0
-            vobj.Transparency = 0
-    except Exception:
-        pass
-    try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    return obj
-
-
 def _create_corridor_intersection_slope_face_surface_preview(
     document,
     loop_result: IntersectionSlopeFaceLoopResult,
@@ -11486,6 +12464,7 @@ def _create_corridor_intersection_slope_face_surface_preview(
     _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionSlopeFaceSurfacePreview")
     _set_preview_property(obj, "IntersectionId", str(getattr(loop_result, "intersection_id", "") or ""))
     _set_preview_property(obj, "LoopResultId", str(getattr(loop_result, "loop_result_id", "") or ""))
+    _attach_intersection_contract_consumption_metadata(obj, slope_loop_result=loop_result)
     _set_preview_integer_property(obj, "ReadyLoopCount", int(getattr(loop_result, "ready_count", 0) or 0))
     _set_preview_integer_property(obj, "SkippedLoopCount", max(int(getattr(loop_result, "loop_count", 0) or 0) - int(getattr(loop_result, "ready_count", 0) or 0), 0))
     _set_preview_integer_property(obj, "TriangleCount", len(list(getattr(surface, "triangle_rows", []) or [])))
@@ -12244,94 +13223,87 @@ def _create_slope_face_generation_boundary_preview(
     return obj
 
 
-def _create_intersection_slope_face_boundary_preview(
-    *,
-    document,
-    project=None,
-    applied_section_set=None,
-):
-    if document is None:
-        return None
-    try:
-        import Part
-        import FreeCAD as AppModule
-    except Exception:
-        return None
-    intersection_model = to_intersection_model(find_v1_intersection_model(document))
-    prerequisite = corridor_intersection_patch_prerequisite_result(document)
-    if (
-        applied_section_set is None
-        or prerequisite is None
-        or str(getattr(prerequisite, "status", "") or "") == "missing"
-    ):
-        _remove_preview_object(document, "V1CorridorIntersectionSlopeFaceBoundaryPreview")
-        return None
-    boundary_result = corridor_intersection_slope_face_boundary_result(
-        applied_section_set,
-        prerequisite=prerequisite,
-        intersection_model=intersection_model,
+def _attach_intersection_slope_face_boundary_result_metadata(obj, boundary_result: IntersectionSlopeFaceBoundaryResult | None) -> None:
+    if obj is None or boundary_result is None:
+        return
+    boundary_refs = [
+        str(getattr(row, "boundary_id", "") or "")
+        for row in list(getattr(boundary_result, "boundary_rows", []) or [])
+        if str(getattr(row, "boundary_id", "") or "")
+    ]
+    diagnostics = [str(value or "") for value in list(getattr(boundary_result, "diagnostic_rows", []) or []) if str(value or "")]
+    _set_preview_property(obj, "IntersectionSlopeFaceBoundaryResultId", str(getattr(boundary_result, "boundary_result_id", "") or ""))
+    _set_preview_property(obj, "IntersectionSlopeFaceBoundaryStatus", str(getattr(boundary_result, "status", "") or ""))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryCount", int(getattr(boundary_result, "boundary_count", 0) or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryReadyCount", int(getattr(boundary_result, "ready_count", 0) or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryWarningCount", int(getattr(boundary_result, "warning_count", 0) or 0))
+    _set_preview_string_list_property(obj, "IntersectionSlopeFaceBoundaryRefs", _unique_text_values(boundary_refs))
+    _set_preview_string_list_property(obj, "IntersectionSlopeFaceBoundaryDiagnostics", _unique_text_values(diagnostics))
+    _set_preview_property(
+        obj,
+        "IntersectionSlopeFaceBoundarySummary",
+        (
+            f"boundary_result={str(getattr(boundary_result, 'boundary_result_id', '') or '')}; "
+            f"status={str(getattr(boundary_result, 'status', '') or '')}; "
+            f"ready={int(getattr(boundary_result, 'ready_count', 0) or 0)}/"
+            f"{int(getattr(boundary_result, 'boundary_count', 0) or 0)}; "
+            f"warnings={int(getattr(boundary_result, 'warning_count', 0) or 0)}"
+        ),
     )
-    shapes = []
 
-    def add_polyline(points) -> None:
-        ordered = [_xyz_tuple(point) for point in list(points or [])]
-        for start, end in zip(ordered, ordered[1:]):
-            try:
-                start_vec = AppModule.Vector(float(start[0]), float(start[1]), float(start[2]) + 0.16)
-                end_vec = AppModule.Vector(float(end[0]), float(end[1]), float(end[2]) + 0.16)
-                if start_vec.distanceToPoint(end_vec) <= 1.0e-9:
-                    continue
-                shapes.append(Part.makeLine(start_vec, end_vec))
-            except Exception:
-                continue
 
-    for row in list(getattr(boundary_result, "boundary_rows", []) or []):
-        add_polyline(getattr(row, "inner_points_xyz", ()) or ())
-        add_polyline(getattr(row, "outer_points_xyz", ()) or ())
-        add_polyline(getattr(row, "start_tie_edge_xyz", ()) or ())
-        add_polyline(getattr(row, "end_tie_edge_xyz", ()) or ())
-
-    object_name = "V1CorridorIntersectionSlopeFaceBoundaryPreview"
-    if not shapes:
-        _remove_preview_object(document, object_name)
-        return None
-    obj = document.getObject(object_name)
-    if obj is None:
-        obj = document.addObject("Part::Feature", object_name)
-    if obj is not None:
-        try:
-            obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
-            obj.Label = "Intersection Slope Face Boundary"
-        except Exception:
-            return obj
-        _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_slope_face_boundary_preview")
-        _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionSlopeFaceBoundaryPreview")
-        _set_preview_property(obj, "BoundaryKind", "intersection_slope_face_boundary")
-        _set_preview_property(obj, "IntersectionId", str(getattr(boundary_result, "intersection_id", "") or ""))
-        _set_preview_property(obj, "Status", str(getattr(boundary_result, "status", "") or ""))
-        _set_preview_property(obj, "Diagnostics", "; ".join(list(getattr(boundary_result, "diagnostic_rows", []) or []))[:4000])
-        _set_preview_integer_property(obj, "BoundaryCount", int(getattr(boundary_result, "boundary_count", 0) or 0))
-        _set_preview_integer_property(obj, "ReadyCount", int(getattr(boundary_result, "ready_count", 0) or 0))
-        _set_preview_integer_property(obj, "WarningCount", int(getattr(boundary_result, "warning_count", 0) or 0))
-        _set_preview_integer_property(obj, "BoundaryLineCount", len(shapes))
-        try:
-            vobj = getattr(obj, "ViewObject", None)
-            if vobj is not None:
-                vobj.Visibility = True
-                vobj.ShapeColor = (1.0, 1.0, 1.0)
-                vobj.LineColor = (1.0, 1.0, 1.0)
-                vobj.PointColor = (1.0, 1.0, 1.0)
-                vobj.LineWidth = 5.0
-                vobj.Transparency = 0
-        except Exception:
-            pass
-        try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(document), obj)
-        except Exception:
-            pass
-    return obj
+def _attach_intersection_slope_face_boundary_strip_quality(obj, surface) -> None:
+    if obj is None or surface is None:
+        return
+    result_id = _tin_quality_text(surface, "intersection_slope_face_boundary_result_id")
+    if result_id:
+        _set_preview_property(obj, "IntersectionSlopeFaceBoundaryResultId", result_id)
+    status = _tin_quality_text(surface, "intersection_slope_face_boundary_status")
+    if status:
+        _set_preview_property(obj, "IntersectionSlopeFaceBoundaryStatus", status)
+    summary = _tin_quality_text(surface, "intersection_slope_face_boundary_summary")
+    if summary:
+        _set_preview_property(obj, "IntersectionSlopeFaceBoundarySummary", summary)
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryReadyCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_ready_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryWarningCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_warning_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryDiagnosticCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_diagnostic_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryStripCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_strip_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryStripSampleCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_strip_sample_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeFaceBoundaryStripTriangleCount", int(_tin_quality_float(surface, "intersection_slope_face_boundary_strip_triangle_count") or 0))
+    strip_generation_mode = _tin_quality_text(surface, "intersection_slope_face_boundary_strip_generation_mode")
+    if strip_generation_mode:
+        _set_preview_property(obj, "IntersectionSlopeFaceBoundaryStripGenerationMode", strip_generation_mode)
+    strip_output_path = _tin_quality_text(surface, "intersection_slope_face_boundary_strip_output_path")
+    if strip_output_path:
+        _set_preview_property(obj, "IntersectionSlopeFaceBoundaryStripOutputPath", strip_output_path)
+    strip_diagnostic = _tin_quality_text(surface, "intersection_slope_face_boundary_strip_diagnostic")
+    if strip_diagnostic:
+        _set_preview_property(obj, "IntersectionSlopeFaceBoundaryStripDiagnostic", strip_diagnostic)
+    refs = _tin_quality_text(surface, "intersection_slope_face_boundary_refs")
+    if refs:
+        _set_preview_string_list_property(obj, "IntersectionSlopeFaceBoundaryRefs", [value.strip() for value in refs.split(",") if value.strip()])
+    side_slope_strip_status = _tin_quality_text(surface, "intersection_side_slope_strip_status")
+    if side_slope_strip_status:
+        _set_preview_property(obj, "IntersectionSideSlopeStripStatus", side_slope_strip_status)
+    _set_preview_integer_property(obj, "IntersectionSideSlopeStripTestedCount", int(_tin_quality_float(surface, "intersection_side_slope_strip_tested_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeStripCount", int(_tin_quality_float(surface, "intersection_side_slope_strip_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeStripTriangleCount", int(_tin_quality_float(surface, "intersection_side_slope_strip_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeStripSkippedExistingCount", int(_tin_quality_float(surface, "intersection_side_slope_strip_skipped_existing_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeStripSkippedIntersectionCount", int(_tin_quality_float(surface, "intersection_side_slope_strip_skipped_intersection_count") or 0))
+    side_slope_strip_output_path = _tin_quality_text(surface, "intersection_side_slope_strip_output_path")
+    if side_slope_strip_output_path:
+        _set_preview_property(obj, "IntersectionSideSlopeStripOutputPath", side_slope_strip_output_path)
+    side_slope_restore_status = _tin_quality_text(surface, "intersection_side_slope_reference_restore_status")
+    if side_slope_restore_status:
+        _set_preview_property(obj, "IntersectionSideSlopeReferenceRestoreStatus", side_slope_restore_status)
+    _set_preview_integer_property(obj, "IntersectionSideSlopeReferenceRestoreTestedCount", int(_tin_quality_float(surface, "intersection_side_slope_reference_restore_tested_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeReferenceRestoreTriangleCount", int(_tin_quality_float(surface, "intersection_side_slope_reference_restore_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeReferenceRestoreSkippedExistingCount", int(_tin_quality_float(surface, "intersection_side_slope_reference_restore_skipped_existing_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSideSlopeReferenceRestoreSkippedIntersectionCount", int(_tin_quality_float(surface, "intersection_side_slope_reference_restore_skipped_intersection_count") or 0))
+    side_slope_restore_output_path = _tin_quality_text(surface, "intersection_side_slope_reference_restore_output_path")
+    if side_slope_restore_output_path:
+        _set_preview_property(obj, "IntersectionSideSlopeReferenceRestoreOutputPath", side_slope_restore_output_path)
 
 
 def _slope_face_generation_boundary_segments(daylight_surface, *, z_offset: float = 0.10) -> list[tuple[tuple[float, float, float], tuple[float, float, float]]]:
@@ -13183,9 +14155,409 @@ def _augment_daylight_surface_with_intersection_slope_face_boundary_strips(
     return _augment_daylight_surface_with_slope_face_boundary_strips(surface, boundary_result)
 
 
-def _augment_daylight_surface_with_slope_face_boundary_strips(surface, boundary_result):
-    """Append triangulated strips between Intersection Surface boundary and Applied Section slope edges."""
+def _restore_daylight_surface_side_slope_strips_from_reference(
+    surface,
+    reference_surface,
+    *,
+    intersection_tin_surface=None,
+):
+    """Restore clipped side-slope triangles from the pre-clip daylight TIN."""
 
+    if surface is None or reference_surface is None or surface is reference_surface:
+        return surface
+    reference_triangles = list(getattr(reference_surface, "triangle_rows", []) or [])
+    if not reference_triangles:
+        return surface
+    current_vertices = list(getattr(surface, "vertex_rows", []) or [])
+    current_triangles = list(getattr(surface, "triangle_rows", []) or [])
+    current_triangle_ids = {
+        str(getattr(triangle, "triangle_id", "") or "")
+        for triangle in current_triangles
+        if str(getattr(triangle, "triangle_id", "") or "")
+    }
+    current_triangle_keys = {
+        tuple(sorted(str(getattr(triangle, attr, "") or "") for attr in ("v1", "v2", "v3")))
+        for triangle in current_triangles
+    }
+    current_vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in current_vertices
+        if str(getattr(vertex, "vertex_id", "") or "")
+    }
+    reference_vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(reference_surface, "vertex_rows", []) or [])
+        if str(getattr(vertex, "vertex_id", "") or "")
+    }
+    intersection_reference_triangles = _tin_surface_reference_triangles(intersection_tin_surface) if intersection_tin_surface is not None else []
+    output_vertices = list(current_vertices)
+    output_triangles = list(current_triangles)
+    restored_count = 0
+    skipped_intersection_count = 0
+    skipped_existing_count = 0
+    tested_count = 0
+    surface_id = str(getattr(surface, "surface_id", "") or "surface:daylight")
+
+    for triangle in reference_triangles:
+        triangle_id = str(getattr(triangle, "triangle_id", "") or "")
+        key = tuple(sorted(str(getattr(triangle, attr, "") or "") for attr in ("v1", "v2", "v3")))
+        if triangle_id in current_triangle_ids or key in current_triangle_keys:
+            skipped_existing_count += 1
+            continue
+        vertices = [
+            reference_vertex_map.get(str(getattr(triangle, attr, "") or ""))
+            for attr in ("v1", "v2", "v3")
+        ]
+        if any(vertex is None for vertex in vertices):
+            continue
+        tested_count += 1
+        if intersection_reference_triangles and _tin_triangle_has_sample_strictly_inside_reference_footprint(vertices, intersection_reference_triangles):
+            skipped_intersection_count += 1
+            continue
+        centroid = _tin_triangle_centroid_xy(vertices)
+        if _tin_surface_contains_xy(surface, centroid):
+            skipped_existing_count += 1
+            continue
+        for vertex in vertices:
+            vertex_id = str(getattr(vertex, "vertex_id", "") or "")
+            if vertex_id and vertex_id not in current_vertex_map:
+                output_vertices.append(vertex)
+                current_vertex_map[vertex_id] = vertex
+        output_triangles.append(
+            replace(
+                triangle,
+                triangle_id=triangle_id or f"{surface_id}:restored-side-slope:{restored_count}",
+                quality_ref="intersection_side_slope_strip",
+                notes=_append_note(
+                    str(getattr(triangle, "notes", "") or ""),
+                    "restored_from_preclip_side_slope_tin",
+                ),
+            )
+        )
+        current_triangle_ids.add(triangle_id)
+        current_triangle_keys.add(key)
+        restored_count += 1
+
+    filtered_quality = [
+        quality
+        for quality in list(getattr(surface, "quality_rows", []) or [])
+        if str(getattr(quality, "kind", "") or "") not in {
+            "intersection_side_slope_reference_restore_status",
+            "intersection_side_slope_reference_restore_tested_count",
+            "intersection_side_slope_reference_restore_triangle_count",
+            "intersection_side_slope_reference_restore_skipped_existing_count",
+            "intersection_side_slope_reference_restore_skipped_intersection_count",
+            "intersection_side_slope_reference_restore_output_path",
+        }
+    ]
+    status = "ready" if restored_count else "not_needed"
+    filtered_quality.extend(
+        [
+            TINQualityRow(f"{surface_id}:intersection_side_slope_reference_restore_status", "intersection_side_slope_reference_restore_status", status),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_reference_restore_tested_count", "intersection_side_slope_reference_restore_tested_count", tested_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_reference_restore_triangle_count", "intersection_side_slope_reference_restore_triangle_count", restored_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_reference_restore_skipped_existing_count", "intersection_side_slope_reference_restore_skipped_existing_count", skipped_existing_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_reference_restore_skipped_intersection_count", "intersection_side_slope_reference_restore_skipped_intersection_count", skipped_intersection_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_reference_restore_output_path", "intersection_side_slope_reference_restore_output_path", "preclip_side_slope_tin"),
+        ]
+    )
+    return replace(surface, vertex_rows=output_vertices, triangle_rows=output_triangles, quality_rows=filtered_quality)
+
+
+def _tin_triangle_centroid_xy(vertices) -> tuple[float, float]:
+    valid = list(vertices or [])
+    if not valid:
+        return (0.0, 0.0)
+    return (
+        sum(float(getattr(vertex, "x", 0.0) or 0.0) for vertex in valid) / len(valid),
+        sum(float(getattr(vertex, "y", 0.0) or 0.0) for vertex in valid) / len(valid),
+    )
+
+
+def _tin_triangle_has_sample_strictly_inside_reference_footprint(vertices, reference_triangles) -> bool:
+    for sample_x, sample_y, _sample_z in _tin_triangle_height_sample_points(vertices):
+        sample = (float(sample_x), float(sample_y))
+        for a, b, c in list(reference_triangles or []):
+            if _xy_point_in_triangle(sample, (_xy_point_tuple(a), _xy_point_tuple(b), _xy_point_tuple(c))):
+                return True
+    return False
+
+
+def _append_note(notes: str, addition: str) -> str:
+    base = str(notes or "").strip()
+    text = str(addition or "").strip()
+    if not text:
+        return base
+    if not base:
+        return text
+    if text in base:
+        return base
+    return f"{base}; {text}"
+
+
+def _augment_daylight_surface_with_applied_section_side_slope_strips(
+    surface,
+    applied_section_set,
+    *,
+    intersection_tin_surface=None,
+    max_gap: float = 8.0,
+):
+    """Fill clipped daylight gaps from evaluated Applied Section side-slope edges."""
+
+    if surface is None or applied_section_set is None:
+        return surface
+    sections = _station_ordered_applied_sections(applied_section_set)
+    if len(sections) < 2:
+        return surface
+    base_vertices = list(getattr(surface, "vertex_rows", []) or [])
+    base_triangles = list(getattr(surface, "triangle_rows", []) or [])
+    if not base_vertices or not base_triangles:
+        return surface
+    surface_id = str(getattr(surface, "surface_id", "") or "surface:daylight")
+    boundary_edges = _tin_surface_boundary_edge_rows(surface)
+    if not boundary_edges:
+        return surface
+    output_vertices = list(base_vertices)
+    output_triangles = list(base_triangles)
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in output_vertices
+        if str(getattr(vertex, "vertex_id", "") or "")
+    }
+    added_strip_count = 0
+    skipped_existing_count = 0
+    skipped_intersection_count = 0
+    tested_strip_count = 0
+    seen_keys: set[str] = set()
+
+    for first, second in zip(sections, sections[1:]):
+        if not _sections_can_form_side_slope_strip(first, second):
+            continue
+        for side_label in ("left", "right"):
+            first_edge = _applied_section_slope_face_edge_points(
+                first,
+                side_label=side_label,
+                fallback_band_width=0.0,
+                fallback_band_slope=0.0,
+            )
+            second_edge = _applied_section_slope_face_edge_points(
+                second,
+                side_label=side_label,
+                fallback_band_width=0.0,
+                fallback_band_slope=0.0,
+            )
+            if first_edge is None or second_edge is None:
+                continue
+            inner_first, outer_first = first_edge
+            inner_second, outer_second = second_edge
+            quad = (inner_first, inner_second, outer_second, outer_first)
+            if _side_slope_quad_area_xy(quad) <= 1.0e-6:
+                continue
+            tested_strip_count += 1
+            centroid = _quad_centroid_xy(quad)
+            if _tin_surface_contains_xy(surface, centroid):
+                skipped_existing_count += 1
+                continue
+            if _tin_surface_contains_xy(intersection_tin_surface, centroid):
+                skipped_intersection_count += 1
+                continue
+            if not _side_slope_quad_near_surface_boundary(quad, boundary_edges, vertex_map, max_gap=max_gap):
+                continue
+            station_key = (
+                round(float(getattr(first, "station", 0.0) or 0.0), 4),
+                round(float(getattr(second, "station", 0.0) or 0.0), 4),
+                str(getattr(first, "alignment_id", "") or ""),
+                str(getattr(second, "alignment_id", "") or ""),
+                side_label,
+            )
+            key = "|".join(str(value) for value in station_key)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            vertex_ids = []
+            for index, point in enumerate(quad):
+                vertex_id = (
+                    f"{surface_id}:intersection-side-slope-strip:"
+                    f"{added_strip_count}:{side_label}:v{index}"
+                )
+                vertex = TINVertex(
+                    vertex_id,
+                    float(point[0]),
+                    float(point[1]),
+                    float(point[2]),
+                    source_point_ref=(
+                        f"{str(getattr(first, 'applied_section_id', '') or '')},"
+                        f"{str(getattr(second, 'applied_section_id', '') or '')}"
+                    ),
+                    notes=f"side={side_label}; output_path=applied_section_side_slope_strip",
+                )
+                output_vertices.append(vertex)
+                vertex_map[vertex_id] = vertex
+                vertex_ids.append(vertex_id)
+            output_triangles.extend(
+                [
+                    TINTriangle(
+                        f"{surface_id}:intersection-side-slope-strip:{added_strip_count}:a",
+                        vertex_ids[0],
+                        vertex_ids[1],
+                        vertex_ids[2],
+                        triangle_kind="intersection_side_slope_strip",
+                        quality_ref="intersection_side_slope_strip",
+                        notes=f"side={side_label}; source=applied_section_slope_face_edges",
+                    ),
+                    TINTriangle(
+                        f"{surface_id}:intersection-side-slope-strip:{added_strip_count}:b",
+                        vertex_ids[0],
+                        vertex_ids[2],
+                        vertex_ids[3],
+                        triangle_kind="intersection_side_slope_strip",
+                        quality_ref="intersection_side_slope_strip",
+                        notes=f"side={side_label}; source=applied_section_slope_face_edges",
+                    ),
+                ]
+            )
+            added_strip_count += 1
+
+    filtered_quality = [
+        quality
+        for quality in list(getattr(surface, "quality_rows", []) or [])
+        if str(getattr(quality, "kind", "") or "") not in {
+            "intersection_side_slope_strip_status",
+            "intersection_side_slope_strip_tested_count",
+            "intersection_side_slope_strip_count",
+            "intersection_side_slope_strip_triangle_count",
+            "intersection_side_slope_strip_skipped_existing_count",
+            "intersection_side_slope_strip_skipped_intersection_count",
+            "intersection_side_slope_strip_output_path",
+        }
+    ]
+    status = "ready" if added_strip_count else "not_needed"
+    filtered_quality.extend(
+        [
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_status", "intersection_side_slope_strip_status", status),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_tested_count", "intersection_side_slope_strip_tested_count", tested_strip_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_count", "intersection_side_slope_strip_count", added_strip_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_triangle_count", "intersection_side_slope_strip_triangle_count", added_strip_count * 2, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_skipped_existing_count", "intersection_side_slope_strip_skipped_existing_count", skipped_existing_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_skipped_intersection_count", "intersection_side_slope_strip_skipped_intersection_count", skipped_intersection_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_side_slope_strip_output_path", "intersection_side_slope_strip_output_path", "applied_section_side_slope_edges"),
+        ]
+    )
+    return replace(surface, vertex_rows=output_vertices, triangle_rows=output_triangles, quality_rows=filtered_quality)
+
+
+def _sections_can_form_side_slope_strip(first, second) -> bool:
+    if getattr(first, "frame", None) is None or getattr(second, "frame", None) is None:
+        return False
+    first_alignment = str(getattr(first, "alignment_id", "") or "")
+    second_alignment = str(getattr(second, "alignment_id", "") or "")
+    if first_alignment and second_alignment and first_alignment != second_alignment:
+        return False
+    return True
+
+
+def _side_slope_quad_area_xy(quad: tuple[tuple[float, float, float], ...]) -> float:
+    points = list(quad or [])
+    if len(points) < 4:
+        return 0.0
+    area = 0.0
+    for index, current in enumerate(points):
+        nxt = points[(index + 1) % len(points)]
+        area += float(current[0]) * float(nxt[1])
+        area -= float(nxt[0]) * float(current[1])
+    return abs(area) * 0.5
+
+
+def _quad_centroid_xy(quad: tuple[tuple[float, float, float], ...]) -> tuple[float, float]:
+    points = list(quad or [])
+    if not points:
+        return (0.0, 0.0)
+    return (
+        sum(float(point[0]) for point in points) / len(points),
+        sum(float(point[1]) for point in points) / len(points),
+    )
+
+
+def _tin_surface_contains_xy(surface, point_xy: tuple[float, float]) -> bool:
+    if surface is None:
+        return False
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(surface, "vertex_rows", []) or [])
+        if str(getattr(vertex, "vertex_id", "") or "")
+    }
+    if not vertex_map:
+        return False
+    for triangle in list(getattr(surface, "triangle_rows", []) or []):
+        vertices = [
+            vertex_map.get(str(getattr(triangle, attr, "") or ""))
+            for attr in ("v1", "v2", "v3")
+        ]
+        if any(vertex is None for vertex in vertices):
+            continue
+        triangle_xy = tuple(_xy_point_tuple(vertex) for vertex in vertices)
+        if _xy_point_in_triangle_inclusive(point_xy, triangle_xy):
+            return True
+    return False
+
+
+def _xy_point_in_triangle_inclusive(
+    point: tuple[float, float],
+    triangle: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
+) -> bool:
+    a, b, c = triangle
+    denominator = ((b[1] - c[1]) * (a[0] - c[0])) + ((c[0] - b[0]) * (a[1] - c[1]))
+    if abs(denominator) <= 1.0e-12:
+        return False
+    first = (((b[1] - c[1]) * (point[0] - c[0])) + ((c[0] - b[0]) * (point[1] - c[1]))) / denominator
+    second = (((c[1] - a[1]) * (point[0] - c[0])) + ((a[0] - c[0]) * (point[1] - c[1]))) / denominator
+    third = 1.0 - first - second
+    tolerance = 1.0e-9
+    return first >= -tolerance and second >= -tolerance and third >= -tolerance
+
+
+def _side_slope_quad_near_surface_boundary(
+    quad: tuple[tuple[float, float, float], ...],
+    boundary_edges: list[dict[str, object]],
+    vertex_map: dict[str, object],
+    *,
+    max_gap: float,
+) -> bool:
+    if len(quad) < 4 or not boundary_edges or not vertex_map:
+        return False
+    temp_map = dict(vertex_map)
+    candidate_edges = []
+    for edge_index, pair in enumerate(((quad[0], quad[1]), (quad[3], quad[2]))):
+        first_id = f"candidate-side-slope:{edge_index}:a"
+        second_id = f"candidate-side-slope:{edge_index}:b"
+        first, second = pair
+        temp_map[first_id] = TINVertex(first_id, float(first[0]), float(first[1]), float(first[2]))
+        temp_map[second_id] = TINVertex(second_id, float(second[0]), float(second[1]), float(second[2]))
+        candidate_edges.append({"first_id": first_id, "second_id": second_id})
+    for candidate in candidate_edges:
+        for boundary in boundary_edges:
+            pairing = _near_parallel_boundary_edge_pairing(
+                candidate,
+                boundary,
+                temp_map,
+                max_gap=max_gap,
+            )
+            if pairing is None:
+                continue
+            if float(pairing[4]) <= float(max_gap):
+                return True
+    return False
+
+
+def _augment_daylight_surface_with_slope_face_boundary_strips(surface, boundary_result):
+    """Record intersection slope-face boundary metadata without adding visible strip triangles."""
+
+    if surface is None or boundary_result is None:
+        return surface
+    return _tag_daylight_surface_with_suppressed_slope_face_boundary_strips(surface, boundary_result)
+
+
+def _tag_daylight_surface_with_suppressed_slope_face_boundary_strips(surface, boundary_result):
     if surface is None or boundary_result is None:
         return surface
     from ..models.result.tin_surface import TINQualityRow, TINTriangle, TINVertex
@@ -13193,89 +14565,6 @@ def _augment_daylight_surface_with_slope_face_boundary_strips(surface, boundary_
     vertices = list(getattr(surface, "vertex_rows", []) or [])
     triangles = list(getattr(surface, "triangle_rows", []) or [])
     surface_id = str(getattr(surface, "surface_id", "") or "surface:daylight")
-    strip_count = 0
-    triangle_count = 0
-    sample_count = 0
-
-    def append_triangle(first: TINVertex, second: TINVertex, third: TINVertex, *, notes: str) -> None:
-        nonlocal triangle_count
-        v1, v2, v3 = first, second, third
-        if _xy_triangle_area(v1, v2, v3) < 0.0:
-            v2, v3 = v3, v2
-        area = abs(_xy_triangle_area(v1, v2, v3))
-        if area <= 1.0e-8:
-            return
-        triangle_count += 1
-        triangles.append(
-            TINTriangle(
-                triangle_id=f"{surface_id}:intersection-slope-face-boundary-strip:t{triangle_count}",
-                v1=str(getattr(v1, "vertex_id", "") or ""),
-                v2=str(getattr(v2, "vertex_id", "") or ""),
-                v3=str(getattr(v3, "vertex_id", "") or ""),
-                triangle_kind="daylight_surface",
-                quality_ref="intersection_slope_face_boundary_strip",
-                notes=notes,
-            )
-        )
-
-    for row_index, row in enumerate(list(getattr(boundary_result, "boundary_rows", []) or []), start=1):
-        if str(getattr(row, "status", "") or "") != "ready":
-            continue
-        inner_source = [_xyz_tuple(point) for point in list(getattr(row, "inner_points_xyz", ()) or ())]
-        outer_source = [_xyz_tuple(point) for point in list(getattr(row, "outer_points_xyz", ()) or ())]
-        if len(inner_source) < 2 or len(outer_source) < 2:
-            continue
-        target_count = max(len(inner_source), len(outer_source), 4)
-        inner_points = _resample_xyz_polyline(inner_source, target_count)
-        outer_points = _resample_xyz_polyline(outer_source, target_count)
-        if len(inner_points) != len(outer_points) or len(inner_points) < 2:
-            continue
-        pair_vertices: list[tuple[TINVertex, TINVertex]] = []
-        for point_index, (inner_xyz, outer_xyz) in enumerate(zip(inner_points, outer_points), start=1):
-            inner = TINVertex(
-                vertex_id=f"{surface_id}:intersection-slope-face-boundary-strip:r{row_index}:p{point_index}:inner",
-                x=float(inner_xyz[0]),
-                y=float(inner_xyz[1]),
-                z=float(inner_xyz[2]),
-                source_point_ref=str(getattr(row, "source_intersection_surface_ref", "") or ""),
-                notes=(
-                    "intersection_slope_face_boundary_inner; "
-                    f"alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}"
-                ),
-            )
-            outer = TINVertex(
-                vertex_id=f"{surface_id}:intersection-slope-face-boundary-strip:r{row_index}:p{point_index}:outer",
-                x=float(outer_xyz[0]),
-                y=float(outer_xyz[1]),
-                z=float(outer_xyz[2]),
-                source_point_ref=",".join(list(getattr(row, "source_applied_section_refs", ()) or ())),
-                notes=(
-                    "intersection_slope_face_boundary_outer; "
-                    f"alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}"
-                ),
-            )
-            vertices.extend([inner, outer])
-            pair_vertices.append((inner, outer))
-            sample_count += 1
-        for index in range(len(pair_vertices) - 1):
-            first_inner, first_outer = pair_vertices[index]
-            second_inner, second_outer = pair_vertices[index + 1]
-            append_triangle(
-                first_inner,
-                second_inner,
-                first_outer,
-                notes=f"intersection slope-face boundary strip; boundary={getattr(row, 'boundary_id', '')}",
-            )
-            append_triangle(
-                first_outer,
-                second_inner,
-                second_outer,
-                notes=f"intersection slope-face boundary strip; boundary={getattr(row, 'boundary_id', '')}",
-            )
-        strip_count += 1
-
-    if triangle_count <= 0:
-        return surface
     filtered_quality = [
         quality
         for quality in list(getattr(surface, "quality_rows", []) or [])
@@ -13283,27 +14572,53 @@ def _augment_daylight_surface_with_slope_face_boundary_strips(surface, boundary_
             "intersection_slope_face_boundary_strip_count",
             "intersection_slope_face_boundary_strip_sample_count",
             "intersection_slope_face_boundary_strip_triangle_count",
+            "intersection_slope_face_boundary_strip_generation_mode",
+            "intersection_slope_face_boundary_strip_output_path",
+            "intersection_slope_face_boundary_strip_diagnostic",
+            "intersection_slope_face_boundary_result_id",
+            "intersection_slope_face_boundary_status",
+            "intersection_slope_face_boundary_count",
+            "intersection_slope_face_boundary_ready_count",
+            "intersection_slope_face_boundary_warning_count",
+            "intersection_slope_face_boundary_diagnostic_count",
+            "intersection_slope_face_boundary_refs",
+            "intersection_slope_face_boundary_summary",
         }
     ]
+    boundary_refs = [
+        str(getattr(row, "boundary_id", "") or "")
+        for row in list(getattr(boundary_result, "boundary_rows", []) or [])
+        if str(getattr(row, "boundary_id", "") or "")
+    ]
+    boundary_result_id = str(getattr(boundary_result, "boundary_result_id", "") or "")
+    boundary_status = str(getattr(boundary_result, "status", "") or "")
+    boundary_count = int(getattr(boundary_result, "boundary_count", 0) or 0)
+    ready_count = int(getattr(boundary_result, "ready_count", 0) or 0)
+    warning_count = int(getattr(boundary_result, "warning_count", 0) or 0)
+    diagnostic_count = len(list(getattr(boundary_result, "diagnostic_rows", []) or []))
+    boundary_summary = (
+        f"boundary_result={boundary_result_id}; status={boundary_status}; "
+        f"ready={ready_count}/{boundary_count}; warnings={warning_count}; strip_generation=suppressed"
+    )
     filtered_quality.extend(
         [
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_result_id", "intersection_slope_face_boundary_result_id", boundary_result_id),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_status", "intersection_slope_face_boundary_status", boundary_status),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_count", "intersection_slope_face_boundary_count", boundary_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_ready_count", "intersection_slope_face_boundary_ready_count", ready_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_warning_count", "intersection_slope_face_boundary_warning_count", warning_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_diagnostic_count", "intersection_slope_face_boundary_diagnostic_count", diagnostic_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_refs", "intersection_slope_face_boundary_refs", ",".join(_unique_text_values(boundary_refs))),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_summary", "intersection_slope_face_boundary_summary", boundary_summary),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_strip_count", "intersection_slope_face_boundary_strip_count", 0, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_strip_sample_count", "intersection_slope_face_boundary_strip_sample_count", 0, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_strip_triangle_count", "intersection_slope_face_boundary_strip_triangle_count", 0, "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_strip_generation_mode", "intersection_slope_face_boundary_strip_generation_mode", "suppressed"),
+            TINQualityRow(f"{surface_id}:intersection_slope_face_boundary_strip_output_path", "intersection_slope_face_boundary_strip_output_path", "metadata_only"),
             TINQualityRow(
-                f"{surface_id}:intersection_slope_face_boundary_strip_count",
-                "intersection_slope_face_boundary_strip_count",
-                strip_count,
-                "count",
-            ),
-            TINQualityRow(
-                f"{surface_id}:intersection_slope_face_boundary_strip_sample_count",
-                "intersection_slope_face_boundary_strip_sample_count",
-                sample_count,
-                "count",
-            ),
-            TINQualityRow(
-                f"{surface_id}:intersection_slope_face_boundary_strip_triangle_count",
-                "intersection_slope_face_boundary_strip_triangle_count",
-                triangle_count,
-                "count",
+                f"{surface_id}:intersection_slope_face_boundary_strip_diagnostic",
+                "intersection_slope_face_boundary_strip_diagnostic",
+                "visible_boundary_strip_generation_suppressed",
             ),
         ]
     )
@@ -15483,6 +16798,7 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
             "status": status,
             "vertex_count": "",
             "triangle_or_point_count": "",
+            "output_path": "",
             "notes": notes,
         }
     if role == "centerline":
@@ -15502,6 +16818,7 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
             "status": "ready",
             "vertex_count": "",
             "triangle_or_point_count": point_count,
+            "output_path": _corridor_build_review_output_path(role, obj),
             "notes": notes,
         }, obj)
     vertex_count = int(getattr(obj, "VertexCount", 0) or 0)
@@ -15525,16 +16842,25 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
     watertight_note = _corridor_watertight_solid_review_note(obj)
     if watertight_note:
         notes = f"{notes} | {watertight_note}" if notes else watertight_note
+    slope_boundary_note = _intersection_slope_face_boundary_review_note(obj)
+    if slope_boundary_note:
+        notes = f"{notes} | {slope_boundary_note}" if notes else slope_boundary_note
     if role == "intersection":
         notes = _intersection_surface_review_notes(obj)
     elif role == "intersection_slope":
         ready_loops = int(getattr(obj, "ReadyLoopCount", 0) or 0)
         skipped_loops = int(getattr(obj, "SkippedLoopCount", 0) or 0)
         source_refs = list(getattr(obj, "SourceLoopRefs", []) or [])
+        consumed_contract_summary = str(getattr(obj, "ConsumedIntersectionContractSummary", "") or "")
+        consumed_diagnostics = int(getattr(obj, "ConsumedIntersectionContractDiagnosticCount", 0) or 0)
         notes = (
             f"Intersection-owned Slope Face output; ready_loops={ready_loops}; "
             f"skipped_loops={skipped_loops}; source_loops={len(source_refs)}"
         )
+        if consumed_contract_summary:
+            notes = f"{notes}; consumed_contracts={consumed_contract_summary}"
+        if consumed_diagnostics:
+            notes = f"{notes}; consumed_contract_diagnostics={consumed_diagnostics}"
     elif role in {"design", "daylight"}:
         clipped = int(getattr(obj, "IntersectionExclusionClippedTriangleCount", 0) or 0)
         kept = int(getattr(obj, "IntersectionExclusionKeptTriangleCount", 0) or 0)
@@ -15575,8 +16901,114 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
         "status": "ready" if vertex_count > 0 and triangle_count > 0 else "empty",
         "vertex_count": vertex_count,
         "triangle_or_point_count": triangle_count,
+        "output_path": _corridor_build_review_output_path(role, obj),
         "notes": notes,
     }, obj)
+
+
+def _corridor_intersection_surface_replacement_readiness_row(document=None) -> dict[str, object] | None:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = doc.getObject("V1CorridorIntersectionSurfacePreview") if doc is not None else None
+    if obj is None:
+        return None
+    gate_status = str(getattr(obj, "IntersectionSurfaceReplacementGateStatus", "") or "")
+    if not gate_status:
+        return None
+    recommendation = str(getattr(obj, "IntersectionSurfaceReplacementGateRecommendation", "") or "")
+    patch_triangles = int(getattr(obj, "IntersectionSurfaceComparisonPatchTriangleCount", 0) or 0)
+    zone_triangles = int(getattr(obj, "IntersectionSurfaceComparisonZoneTriangleCount", 0) or 0)
+    delta = int(getattr(obj, "IntersectionSurfaceComparisonTriangleDelta", 0) or 0)
+    ratio = float(getattr(obj, "IntersectionSurfaceComparisonZoneToPatchTriangleRatio", 0.0) or 0.0)
+    diagnostics = [str(value or "") for value in list(getattr(obj, "IntersectionSurfaceReplacementDiagnostics", []) or []) if str(value or "")]
+    acceptance_diagnostics = [str(value or "") for value in list(getattr(obj, "IntersectionSurfaceReplacementAcceptanceDiagnostics", []) or []) if str(value or "")]
+    if gate_status == "ready_to_replace":
+        status = "ready"
+        readiness = "ready_to_replace"
+    elif gate_status == "blocked":
+        status = "error"
+        readiness = "blocked"
+    else:
+        status = "warning"
+        readiness = "review_only"
+    notes = (
+        f"Replacement readiness={readiness}; gate={gate_status}; "
+        f"patch_triangles={patch_triangles}; zone_triangles={zone_triangles}; "
+        f"delta={delta}; ratio={ratio:.3f}; "
+        f"recommendation={recommendation or 'review_required'}; diagnostics={len(diagnostics)}; "
+        f"acceptance_evidence={len(acceptance_diagnostics)}"
+    )
+    return {
+        "role": "intersection_replacement_readiness",
+        "result": "Intersection Replacement Readiness",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Replacement Readiness",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": zone_triangles,
+        "output_path": "review_gate",
+        "notes": notes,
+    }
+
+
+def _corridor_build_review_output_path(role: str, obj) -> str:
+    """Label whether a Build Parametric result consumed a v1 contract or fallback output."""
+
+    if obj is None:
+        return ""
+    explicit = str(getattr(obj, "IntersectionOutputPath", "") or "").strip()
+    if explicit:
+        return explicit
+    role_text = str(role or "")
+    implementation_mode = str(getattr(obj, "IntersectionImplementationMode", "") or "")
+    if role_text == "intersection":
+        if not implementation_mode or implementation_mode == "legacy_patch_frozen":
+            return "legacy_output"
+        return "contract_consumed"
+    if role_text == "intersection_slope":
+        contract_refs = [str(value or "") for value in list(getattr(obj, "ConsumedIntersectionContractRefs", []) or []) if str(value or "")]
+        if contract_refs:
+            return "contract_consumed"
+        ready_loops = int(getattr(obj, "ReadyLoopCount", 0) or 0)
+        source_refs = [str(value or "") for value in list(getattr(obj, "SourceLoopRefs", []) or []) if str(value or "")]
+        return "contract_consumed" if ready_loops and source_refs else "inferred_fallback"
+    source_mode = str(getattr(obj, "ConsumedCenterlineSourceMode", "") or getattr(obj, "PreviewSource", "") or "")
+    centerline_fallback = bool(int(getattr(obj, "CenterlineConsumerFallbackActive", 0) or 0))
+    supplemental_fallback = bool(int(getattr(obj, "SupplementalCompatibilityFallbackActive", 0) or 0))
+    result_contract_fallback = bool(int(getattr(obj, "ResultContractCompatibilityFallbackActive", 0) or 0))
+    if centerline_fallback or supplemental_fallback or result_contract_fallback:
+        return "inferred_fallback"
+    if source_mode and source_mode != "centerline3d_source_geometry":
+        return "inferred_fallback"
+    return "contract_consumed"
+
+
+def _intersection_slope_face_boundary_review_note(obj) -> str:
+    result_id = str(getattr(obj, "IntersectionSlopeFaceBoundaryResultId", "") or "")
+    summary = str(getattr(obj, "IntersectionSlopeFaceBoundarySummary", "") or "")
+    strip_generation_mode = str(getattr(obj, "IntersectionSlopeFaceBoundaryStripGenerationMode", "") or "")
+    strip_output_path = str(getattr(obj, "IntersectionSlopeFaceBoundaryStripOutputPath", "") or "")
+    strip_diagnostic = str(getattr(obj, "IntersectionSlopeFaceBoundaryStripDiagnostic", "") or "")
+    strip_count = int(getattr(obj, "IntersectionSlopeFaceBoundaryStripCount", 0) or 0)
+    strip_triangles = int(getattr(obj, "IntersectionSlopeFaceBoundaryStripTriangleCount", 0) or 0)
+    strip_note_parts: list[str] = []
+    if strip_generation_mode:
+        strip_note_parts.append(f"strip_generation={strip_generation_mode}")
+    if strip_output_path:
+        strip_note_parts.append(f"strip_output={strip_output_path}")
+    if strip_count or strip_triangles:
+        strip_note_parts.append(f"strips={strip_count}, triangles={strip_triangles}")
+    if strip_diagnostic:
+        strip_note_parts.append(f"strip_diagnostic={strip_diagnostic}")
+    strip_note = f"; {'; '.join(strip_note_parts)}" if strip_note_parts else ""
+    if not result_id and not summary:
+        return strip_note.lstrip("; ")
+    if summary:
+        return f"slope_face_boundary={summary}{strip_note}"
+    status = str(getattr(obj, "IntersectionSlopeFaceBoundaryStatus", "") or "")
+    ready = int(getattr(obj, "IntersectionSlopeFaceBoundaryReadyCount", 0) or 0)
+    count = int(getattr(obj, "IntersectionSlopeFaceBoundaryCount", 0) or 0)
+    warnings = int(getattr(obj, "IntersectionSlopeFaceBoundaryWarningCount", 0) or 0)
+    return f"slope_face_boundary=boundary_result={result_id}; status={status}; ready={ready}/{count}; warnings={warnings}{strip_note}"
 
 
 def _with_corridor_consumer_hardening_warning(row: dict[str, object], obj) -> dict[str, object]:
@@ -15624,6 +17056,8 @@ def _with_corridor_consumer_hardening_warning(row: dict[str, object], obj) -> di
     output = dict(row)
     existing_notes = str(output.get("notes", "") or "").strip()
     output["notes"] = f"{existing_notes} | {' | '.join(warnings)}" if existing_notes else " | ".join(warnings)
+    if str(output.get("output_path", "") or "") != "legacy_output":
+        output["output_path"] = "inferred_fallback"
     if str(output.get("status", "") or "") == "ready":
         output["status"] = "warning"
     return output
@@ -15663,25 +17097,35 @@ def _intersection_surface_review_notes(obj) -> str:
     patch_long_edge_count = int(getattr(obj, "PatchBoundaryLongEdgeCount", 0) or 0)
     patch_triangulation_mode = str(getattr(obj, "PatchTriangulationMode", "") or "")
     patch_boundary_strategy = str(getattr(obj, "PatchSurfaceBoundaryStrategy", "") or "")
-    patch_structured_strip_count = int(getattr(obj, "PatchStructuredStripCount", 0) or 0)
-    patch_curb_return_surface_edge_count = int(getattr(obj, "PatchCurbReturnSurfaceEdgeCount", 0) or 0)
-    patch_curb_return_arc_count = int(getattr(obj, "PatchCurbReturnArcCount", 0) or 0)
-    patch_curb_return_arc_sample_count = int(getattr(obj, "PatchCurbReturnArcSampleCount", 0) or 0)
-    patch_curb_return_arc_segment_count = int(getattr(obj, "PatchCurbReturnArcSegmentCount", 0) or 0)
-    patch_edge_blend_face_count = int(getattr(obj, "PatchEdgeBlendFaceCount", 0) or 0)
     patch_boundary_role_summary = str(getattr(obj, "PatchBoundaryRoleSummary", "") or "")
-    patch_pavement_tie_in_edge_count = int(getattr(obj, "PatchPavementTieInEdgeCount", 0) or 0)
-    patch_stem_tie_in_edge_count = int(getattr(obj, "PatchStemTieInEdgeCount", 0) or 0)
-    patch_overlap_cut_edge_count = int(getattr(obj, "PatchOverlapCutEdgeCount", 0) or 0)
-    patch_curb_return_edge_count = int(getattr(obj, "PatchCurbReturnEdgeCount", 0) or 0)
-    patch_bbox_aspect_ratio = float(getattr(obj, "PatchBoundaryBBoxAspectRatio", 0.0) or 0.0)
-    patch_min_triangle_quality = float(getattr(obj, "PatchTriangleMinQuality", 0.0) or 0.0)
     patch_skinny_triangle_count = int(getattr(obj, "PatchTriangleSkinnyCount", 0) or 0)
     implementation_mode = str(getattr(obj, "IntersectionImplementationMode", "") or "")
     redesign_path = str(getattr(obj, "IntersectionRedesignPath", "") or "")
+    output_path = str(getattr(obj, "IntersectionOutputPath", "") or "")
+    contract_summary = str(getattr(obj, "ConsumedIntersectionContractSummary", "") or "")
+    surface_patch_summary = str(getattr(obj, "IntersectionSurfacePatchSummary", "") or "")
+    surface_patch_footprint_summary = str(getattr(obj, "IntersectionSurfacePatchFootprintSummary", "") or "")
+    surface_patch_result_id = str(getattr(obj, "IntersectionSurfacePatchResultId", "") or "")
+    surface_zone_output_summary = str(getattr(obj, "IntersectionSurfaceZoneOutputSummary", "") or "")
+    surface_zone_output_contract_status = str(getattr(obj, "IntersectionSurfaceZoneOutputContractStatus", "") or "")
+    surface_zone_output_handoff = str(getattr(obj, "IntersectionSurfaceZoneOutputDigitalTwinHandoff", "") or "")
+    surface_replacement_summary = str(getattr(obj, "IntersectionSurfaceReplacementSummary", "") or "")
+    surface_replacement_gate = str(getattr(obj, "IntersectionSurfaceReplacementGateStatus", "") or "")
+    surface_patch_contract_status = str(getattr(obj, "IntersectionSurfacePatchOutputContractStatus", "") or "")
+    surface_patch_handoff = str(getattr(obj, "IntersectionSurfacePatchDigitalTwinHandoff", "") or "")
+    surface_patch_transitional_reason = str(getattr(obj, "IntersectionSurfacePatchTransitionalReason", "") or "")
+    surface_patch_replacement_path = str(getattr(obj, "IntersectionSurfacePatchReplacementPath", "") or "")
+    legacy_patch_audit_summary = str(getattr(obj, "IntersectionLegacyPatchCompatibilityAuditSummary", "") or "")
+    surface_patch_row_statuses = _surface_patch_review_status_note(obj)
+    surface_patch_row_diagnostics = [
+        str(value or "")
+        for value in list(getattr(obj, "IntersectionSurfacePatchRowDiagnostics", []) or [])
+        if str(value or "")
+    ]
+    normalized_surface_patch_available = bool(surface_patch_result_id or surface_patch_summary or surface_patch_row_statuses)
     if tie_in_count:
         parts.append(f"tie-in edges={tie_in_count}")
-    if boundary_count:
+    if boundary_count and not normalized_surface_patch_available:
         parts.append(f"boundary points={boundary_count}")
     if grading_policy_ref:
         parts.append(f"grading policy={_display_source_id(grading_policy_ref, 'grading:')}")
@@ -15717,63 +17161,89 @@ def _intersection_surface_review_notes(obj) -> str:
         parts.append(f"boundary preview={boundary_preview_ref}")
     if boundary_diagnostic_count:
         parts.append(f"boundary diagnostics={boundary_diagnostic_count}")
-    if patch_boundary_status:
+    if normalized_surface_patch_available:
+        parts.append("legacy_patch_review=metadata_only")
+    if legacy_patch_audit_summary:
+        parts.append(f"legacy_patch_audit={legacy_patch_audit_summary}")
+    if patch_boundary_status and not normalized_surface_patch_available:
         parts.append(f"patch boundary={patch_boundary_status}")
-    if patch_boundary_point_count:
+    if patch_boundary_point_count and not normalized_surface_patch_available:
         parts.append(f"patch boundary points={patch_boundary_point_count}")
-    if patch_boundary_closed:
+    if patch_boundary_closed and not normalized_surface_patch_available:
         parts.append(f"patch boundary closed={patch_boundary_closed}")
-    if patch_boundary_self_crossing == "Yes":
+    if patch_boundary_self_crossing == "Yes" and not normalized_surface_patch_available:
         parts.append("patch boundary self-crossing=Yes")
-    if patch_boundary_hole_count:
+    if patch_boundary_hole_count and not normalized_surface_patch_available:
         parts.append(f"patch boundary holes={patch_boundary_hole_count}")
-    if patch_boundary_island_count:
+    if patch_boundary_island_count and not normalized_surface_patch_available:
         parts.append(f"patch boundary islands={patch_boundary_island_count}")
-    if patch_boundary_diagnostic_count:
+    if patch_boundary_diagnostic_count and not normalized_surface_patch_available:
         parts.append(f"patch boundary diagnostics={patch_boundary_diagnostic_count}")
         if patch_boundary_diagnostics:
             parts.append(f"patch boundary first diagnostic={patch_boundary_diagnostics[0]}")
-    if patch_degenerate_count:
+    if patch_degenerate_count and not normalized_surface_patch_available:
         parts.append(f"degenerate triangles={patch_degenerate_count}")
-    if patch_long_edge_count:
+    if patch_long_edge_count and not normalized_surface_patch_available:
         parts.append(f"long boundary edges={patch_long_edge_count}")
-    if patch_triangulation_mode:
+    if patch_triangulation_mode and not normalized_surface_patch_available:
         parts.append(f"triangulation={patch_triangulation_mode}")
-    if patch_boundary_strategy:
+    if patch_boundary_strategy and not normalized_surface_patch_available:
         parts.append(f"surface boundary={patch_boundary_strategy}")
-    if patch_structured_strip_count:
-        parts.append(f"structured strips={patch_structured_strip_count}")
-    if patch_curb_return_surface_edge_count:
-        parts.append(f"curb-return surface edges={patch_curb_return_surface_edge_count}")
-    if patch_curb_return_arc_count:
-        parts.append(f"curb-return arcs={patch_curb_return_arc_count}")
-    if patch_curb_return_arc_sample_count:
-        parts.append(f"arc samples={patch_curb_return_arc_sample_count}")
-    if patch_curb_return_arc_segment_count:
-        parts.append(f"arc segments={patch_curb_return_arc_segment_count}")
-    if patch_edge_blend_face_count:
-        parts.append(f"edge blend faces={patch_edge_blend_face_count}")
-    if patch_boundary_role_summary:
+    if patch_boundary_role_summary and not normalized_surface_patch_available:
         parts.append(f"boundary roles={patch_boundary_role_summary}")
-    if patch_pavement_tie_in_edge_count:
-        parts.append(f"pavement tie-in edges={patch_pavement_tie_in_edge_count}")
-    if patch_stem_tie_in_edge_count:
-        parts.append(f"stem tie-in edges={patch_stem_tie_in_edge_count}")
-    if patch_overlap_cut_edge_count:
-        parts.append(f"overlap-cut edges={patch_overlap_cut_edge_count}")
-    if patch_curb_return_edge_count:
-        parts.append(f"curb-return edges={patch_curb_return_edge_count}")
-    if patch_bbox_aspect_ratio:
-        parts.append(f"boundary bbox ratio={patch_bbox_aspect_ratio:.3f}")
-    if patch_min_triangle_quality:
-        parts.append(f"min triangle quality={patch_min_triangle_quality:.3f}")
-    if patch_skinny_triangle_count:
+    if patch_skinny_triangle_count and not normalized_surface_patch_available:
         parts.append(f"skinny triangles={patch_skinny_triangle_count}")
     if implementation_mode:
         parts.append(f"implementation={implementation_mode}")
     if redesign_path:
         parts.append(f"next={redesign_path}")
+    if output_path:
+        parts.append(f"output_path={output_path}")
+    if contract_summary:
+        parts.append(f"consumed_contracts={contract_summary}")
+    if surface_patch_result_id:
+        parts.append(f"surface_patch_result={surface_patch_result_id}")
+    if surface_patch_summary:
+        parts.append(f"surface_patch={surface_patch_summary}")
+    if surface_patch_footprint_summary:
+        parts.append(f"surface_patch_footprint={surface_patch_footprint_summary}")
+    if surface_zone_output_summary:
+        parts.append(f"surface_zone_output={surface_zone_output_summary}")
+    if surface_zone_output_contract_status:
+        parts.append(f"surface_zone_output_contract={surface_zone_output_contract_status}")
+    if surface_zone_output_handoff:
+        parts.append(f"surface_zone_output_handoff={surface_zone_output_handoff}")
+    if surface_replacement_summary:
+        parts.append(f"surface_replacement={surface_replacement_summary}")
+    if surface_replacement_gate:
+        parts.append(f"surface_replacement_gate={surface_replacement_gate}")
+    if surface_patch_contract_status:
+        parts.append(f"surface_patch_contract={surface_patch_contract_status}")
+    if surface_patch_handoff:
+        parts.append(f"surface_patch_handoff={surface_patch_handoff}")
+    if surface_patch_transitional_reason:
+        parts.append(f"surface_patch_transitional_reason={surface_patch_transitional_reason}")
+    if surface_patch_replacement_path:
+        parts.append(f"surface_patch_replacement={surface_patch_replacement_path}")
+    if surface_patch_row_statuses:
+        parts.append(f"surface_patch_rows={surface_patch_row_statuses}")
+    if surface_patch_row_diagnostics:
+        parts.append(f"surface_patch_row_diagnostics={len(surface_patch_row_diagnostics)}")
     return "; ".join(parts)
+
+
+def _surface_patch_review_status_note(obj) -> str:
+    statuses: list[str] = []
+    for label, attr in (
+        ("boundary", "IntersectionSurfacePatchBoundaryRowStatuses"),
+        ("triangulation", "IntersectionSurfacePatchTriangulationRowStatuses"),
+        ("quality", "IntersectionSurfacePatchQualityRowStatuses"),
+    ):
+        values = [str(value or "") for value in list(getattr(obj, attr, []) or []) if str(value or "")]
+        if values:
+            row_status = values[0].rsplit(":", 1)[-1]
+            statuses.append(f"{label}={row_status}")
+    return ", ".join(statuses)
 
 
 def _normalize_corridor_build_review_status(status: str, *, default: str = "missing") -> str:
@@ -16105,6 +17575,12 @@ def _corridor_build_preview_object(document, role: str):
     if document is None:
         return None
     role_text = str(role or "").strip()
+    extra_roles = {}
+    if role_text in extra_roles:
+        try:
+            return document.getObject(extra_roles[role_text])
+        except Exception:
+            return None
     for candidate_role, _title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
         if candidate_role != role_text:
             continue
@@ -16122,10 +17598,8 @@ def _corridor_build_auxiliary_preview_objects(document) -> list[object]:
         "V1CorridorIntersectionTieInEdgePreview",
         "V1CorridorIntersectionBoundarySegmentPreview",
         "V1CorridorIntersectionExclusionZonePreview",
-        "V1CorridorIntersectionSlopeFaceLoopPreview",
         "V1CorridorIntersectionSlopeFaceSurfacePreview",
         "V1CorridorSlopeFaceGenerationBoundaryPreview",
-        "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         "V1CorridorIntersectionSlopeFaceOverlapPreview",
         "V1CorridorSupplementalFrameMarkers",
     )

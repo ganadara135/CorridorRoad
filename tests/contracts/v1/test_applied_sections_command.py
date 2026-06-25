@@ -20,6 +20,7 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionControlArea,
     IntersectionCurbReturnPolicyRow,
+    IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
 )
@@ -33,6 +34,7 @@ from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     find_v1_applied_section_set,
 )
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
+from freecad.Corridor_Road.v1.objects.obj_intersection import create_or_update_v1_intersection_model_object
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
@@ -540,6 +542,77 @@ def test_intersection_supplemental_stations_are_added_to_applied_sections() -> N
     assert main_kinds[0.0] == "regular_sample"
     assert main_kinds[100.0] == "intersection_supplemental"
     assert side_kinds[40.0] == "intersection_supplemental"
+
+
+def test_applied_sections_carry_intersection_source_status_diagnostics() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=IntersectionModel(
+                schema_version=1,
+                project_id="proj-1",
+                intersection_model_id="intersections:source-status",
+                intersection_rows=[
+                    IntersectionRow(
+                        intersection_id="intersection:t-01",
+                        intersection_kind="t_intersection",
+                        primary_alignment_ref=str(alignment.AlignmentId),
+                        primary_station=60.0,
+                        leg_rows=[
+                            IntersectionLegRow(
+                                leg_id="leg:main",
+                                leg_role="primary_before",
+                                alignment_ref=str(alignment.AlignmentId),
+                                intersection_id="intersection:t-01",
+                                approach_station_start=0.0,
+                                approach_station_end=120.0,
+                            )
+                        ],
+                    )
+                ],
+                control_area_rows=[
+                    IntersectionControlArea(
+                        control_area_id="area:main",
+                        intersection_id="intersection:t-01",
+                        alignment_ref=str(alignment.AlignmentId),
+                        station_ranges=[(50.0, 70.0)],
+                    )
+                ],
+            ),
+        )
+
+        result = build_document_applied_section_set(doc, project=project)
+        section = next(section for section in result.sections if round(float(section.station), 3) == 60.0)
+        diagnostic_kinds = {row.kind for row in section.diagnostic_rows}
+
+        assert section.active_intersection_id == "intersection:t-01"
+        assert section.frame.source_mode in {"centerline3d_source_geometry", "centerline3d_result", "alignment_profile_fallback"}
+        assert section.frame.source_status
+        assert section.active_intersection_source_status == "warning"
+        assert "source_leg_profile_ref_missing" in section.active_intersection_source_diagnostic_rows
+        assert "source_control_region_refs_missing" in section.active_intersection_source_diagnostic_rows
+        source_stage_by_name = {
+            row.split("|", 1)[0]: row
+            for row in section.active_intersection_source_stage_rows
+        }
+        assert source_stage_by_name["Anchor"].startswith("Anchor|warning|intersection-source-stage:anchor|source_anchor_rows_missing")
+        assert source_stage_by_name["Control Areas"].startswith("Control Areas|warning|intersection-source-stage:control_areas|")
+        assert "source_control_region_refs_missing" in source_stage_by_name["Control Areas"]
+        assert source_stage_by_name["Edge Families"].startswith("Edge Families|warning|intersection-source-stage:edge_families|")
+        assert "source_leg_edge_policy_refs_missing" in source_stage_by_name["Edge Families"]
+        assert "source_leg_profile_ref_missing" in diagnostic_kinds
+        assert "intersections:source-status" in result.source_refs
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_show_applied_section_preview_object_creates_selected_section_line() -> None:

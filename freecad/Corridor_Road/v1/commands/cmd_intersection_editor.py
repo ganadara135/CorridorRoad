@@ -21,12 +21,15 @@ from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ..models.source.intersection_model import (
+    IntersectionAnchorRow,
     IntersectionArmPolicyRow,
     IntersectionControlArea,
+    IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
     IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
+    IntersectionLaneConnectionRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -170,21 +173,48 @@ def build_intersection_model_from_sources(
     intersection_id = intersection_ref_for_kind(kind)
     control_refs = [str(row.get("control_region_ref", "") or "") for row in control_region_choices]
     control_refs = [ref for ref in control_refs if ref]
-    secondary_refs = [str(secondary_alignment_ref or "").strip()] if str(secondary_alignment_ref or "").strip() else []
+    primary_ref = str(primary_alignment_ref or "").strip()
+    secondary_refs = _unique_text_values(
+        [
+            str(secondary_alignment_ref or "").strip(),
+            *[
+                str(row.get("alignment_ref", "") or "").strip()
+                for row in list(control_region_choices or [])
+                if str(row.get("alignment_ref", "") or "").strip()
+                and str(row.get("alignment_ref", "") or "").strip() != primary_ref
+            ],
+        ]
+    )
     primary_station = float(getattr(detection_result, "primary_station", 0.0) or 0.0) if detection_result is not None else 0.0
     secondary_station = float(getattr(detection_result, "secondary_station", 0.0) or 0.0) if detection_result is not None else 0.0
     x = float(getattr(detection_result, "x", 0.0) or 0.0) if detection_result is not None else 0.0
     y = float(getattr(detection_result, "y", 0.0) or 0.0) if detection_result is not None else 0.0
+    anchor_row = IntersectionAnchorRow(
+        anchor_id=f"anchor:{intersection_id}:main",
+        intersection_id=intersection_id,
+        source_method="detected" if detection_result is not None else "preset_default",
+        approval_status="draft",
+        primary_alignment_ref=primary_ref,
+        primary_station=primary_station,
+        secondary_station_refs={secondary_refs[0]: secondary_station} if secondary_refs else {},
+        point_x=x,
+        point_y=y,
+        tolerance=0.0,
+        diagnostic_rows=[] if detection_result is not None else ["anchor_source_defaulted"],
+        notes="Intersection anchor source row created from panel inputs.",
+    )
     control_area_rows = _control_area_rows_from_region_choices(intersection_id, control_region_choices)
     leg_rows = _leg_rows_from_region_choices(intersection_id, control_region_choices)
+    corner_rows = _default_corner_rows(intersection_id, kind, control_area_rows, leg_rows)
     arm_policy_rows = _default_arm_policy_rows(intersection_id, leg_rows)
     edge_policy_rows = _default_edge_policy_rows(intersection_id, leg_rows)
+    lane_connection_rows = _default_lane_connection_rows(intersection_id, kind, leg_rows)
     drainage_policy_row = _default_drainage_policy(intersection_id, edge_policy_rows)
     row = IntersectionRow(
         intersection_id=intersection_id,
         intersection_kind=kind,
         intersection_index=1,
-        primary_alignment_ref=str(primary_alignment_ref or "").strip(),
+        primary_alignment_ref=primary_ref,
         secondary_alignment_refs=secondary_refs,
         intersection_point_x=x,
         intersection_point_y=y,
@@ -209,26 +239,258 @@ def build_intersection_model_from_sources(
         project_id=project_id,
         label="Intersections",
         intersection_model_id="intersections:main",
+        anchor_rows=[anchor_row],
         intersection_rows=[row],
         control_area_rows=control_area_rows,
+        corner_rows=corner_rows,
         arm_policy_rows=arm_policy_rows,
         curb_return_policy_rows=[
             _default_curb_return_policy(
                 intersection_id=intersection_id,
                 intersection_kind=kind,
                 leg_rows=leg_rows,
+                corner_rows=corner_rows,
             )
         ],
         grading_policy_rows=[
             _default_grading_policy(
                 intersection_id=intersection_id,
-                primary_alignment_ref=str(primary_alignment_ref or "").strip(),
+                primary_alignment_ref=primary_ref,
                 secondary_alignment_refs=secondary_refs,
             )
         ],
         edge_policy_rows=edge_policy_rows,
+        lane_connection_rows=lane_connection_rows,
         drainage_policy_rows=[drainage_policy_row],
     )
+
+
+def intersection_source_completeness_rows(
+    intersection_model: IntersectionModel | None,
+    *,
+    alignment_errors: list[str] | tuple[str, ...] = (),
+    control_region_count: int = 0,
+) -> list[dict[str, object]]:
+    """Return staged source-completeness rows for the Intersection panel."""
+
+    rows: list[dict[str, object]] = []
+    if intersection_model is None:
+        participant_status = "warning" if control_region_count else "missing"
+        participant_diagnostics = [str(item) for item in alignment_errors if str(item)]
+        if not control_region_count:
+            participant_diagnostics.append("source_control_regions_missing")
+        return [
+            _source_stage_row("Participants", participant_status, control_region_count, participant_diagnostics),
+            _source_stage_row("Anchor", "missing", 0, ["source_anchor_rows_missing"]),
+            _source_stage_row("Legs", "missing", 0, ["source_leg_rows_missing"]),
+            _source_stage_row("Control Areas", "missing", 0, ["source_control_area_rows_missing"]),
+            _source_stage_row("Corners", "missing", 0, ["source_corner_rows_missing"]),
+            _source_stage_row("Edge Families", "missing", 0, ["source_edge_policy_rows_missing"]),
+            _source_stage_row("Lane Connections", "missing", 0, ["source_lane_connection_rows_missing"]),
+            _source_stage_row("Grading", "missing", 0, ["source_grading_policy_rows_missing"]),
+            _source_stage_row("Drainage", "missing", 0, ["source_drainage_policy_rows_missing"]),
+            _source_stage_row("Preview", "missing", 0, ["source_model_missing"]),
+        ]
+
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(intersection_model)
+    edge_network = service.evaluate_edge_network(intersection_model, topology)
+    surface_zones = service.evaluate_surface_zones(intersection_model, edge_network)
+    grading_context = service.evaluate_grading_context(intersection_model, surface_zones)
+    drainage_hints = service.evaluate_drainage_hints(intersection_model, surface_zones, grading_context)
+
+    intersection_rows = list(getattr(intersection_model, "intersection_rows", []) or [])
+    first_intersection = intersection_rows[0] if intersection_rows else None
+    participant_diagnostics = list(alignment_errors or [])
+    if first_intersection is None:
+        participant_diagnostics.append("source_intersection_row_missing")
+    elif not str(getattr(first_intersection, "primary_alignment_ref", "") or ""):
+        participant_diagnostics.append("source_primary_alignment_ref_missing")
+    elif not list(getattr(first_intersection, "secondary_alignment_refs", []) or []):
+        participant_diagnostics.append("source_secondary_alignment_refs_missing")
+    if not control_region_count and first_intersection is not None:
+        control_region_count = len(list(getattr(first_intersection, "control_region_refs", []) or []))
+    if not control_region_count:
+        participant_diagnostics.append("source_control_regions_missing")
+    rows.append(
+        _source_stage_row(
+            "Participants",
+            "warning" if participant_diagnostics else "accepted",
+            len(intersection_rows),
+            participant_diagnostics,
+        )
+    )
+    rows.append(_result_stage_row("Anchor", list(getattr(topology, "anchor_rows", []) or []), missing="source_anchor_rows_missing"))
+    rows.append(_result_stage_row("Legs", list(getattr(topology, "leg_span_rows", []) or []), missing="source_leg_rows_missing"))
+    rows.append(_result_stage_row("Control Areas", list(getattr(topology, "control_area_rows", []) or []), missing="source_control_area_rows_missing"))
+    rows.append(_source_stage_row_from_source_rows("Corners", list(getattr(intersection_model, "corner_rows", []) or []), "source_corner_rows_missing"))
+    rows.append(_source_stage_row_from_source_rows("Edge Families", list(getattr(intersection_model, "edge_policy_rows", []) or []), "source_edge_policy_rows_missing"))
+    rows.append(_result_stage_row("Lane Connections", list(getattr(topology, "lane_connection_rows", []) or []), missing="source_lane_connection_rows_missing"))
+    rows.append(_result_stage_row("Grading", list(getattr(grading_context, "context_rows", []) or []), missing="source_grading_context_rows_missing"))
+    rows.append(_result_stage_row("Drainage", list(getattr(drainage_hints, "hint_rows", []) or []), missing="source_drainage_hint_rows_missing"))
+    preview_diagnostics = [
+        *list(getattr(edge_network, "diagnostic_rows", []) or []),
+        *list(getattr(surface_zones, "diagnostic_rows", []) or []),
+    ]
+    rows.append(
+        _source_stage_row(
+            "Preview",
+            _stage_status_from_statuses([str(getattr(edge_network, "status", "") or ""), str(getattr(surface_zones, "status", "") or "")]),
+            int(getattr(edge_network, "edge_count", 0) or 0) + int(getattr(surface_zones, "zone_count", 0) or 0),
+            preview_diagnostics,
+        )
+    )
+    return rows
+
+
+def intersection_source_completeness_summary(rows: list[dict[str, object]]) -> dict[str, object]:
+    """Return compact staged source-completeness counts and next action text."""
+
+    accepted_count = _stage_count(rows, "accepted")
+    warning_count = _stage_count(rows, "warning")
+    missing_count = _stage_count(rows, "missing")
+    error_count = _stage_count(rows, "error")
+    next_row = _first_source_stage_requiring_review(rows)
+    if error_count:
+        status = "error"
+    elif missing_count:
+        status = "missing"
+    elif warning_count:
+        status = "warning"
+    else:
+        status = "accepted"
+    next_stage = str(next_row.get("stage", "") or "") if next_row else ""
+    next_diagnostic = ""
+    if next_row:
+        diagnostics = list(next_row.get("diagnostics", []) or [])
+        next_diagnostic = str(diagnostics[0]) if diagnostics else str(next_row.get("notes", "") or "")
+    return {
+        "status": status,
+        "accepted_count": accepted_count,
+        "warning_count": warning_count,
+        "missing_count": missing_count,
+        "error_count": error_count,
+        "next_stage": next_stage,
+        "next_diagnostic": next_diagnostic,
+        "preview_ready": missing_count == 0 and error_count == 0,
+        "apply_ready": missing_count == 0 and error_count == 0,
+        "notes": _source_completeness_summary_notes(
+            status=status,
+            accepted_count=accepted_count,
+            warning_count=warning_count,
+            missing_count=missing_count,
+            error_count=error_count,
+            next_stage=next_stage,
+            next_diagnostic=next_diagnostic,
+        ),
+    }
+
+
+def intersection_read_only_preview_rows(
+    intersection_model: IntersectionModel | None,
+    *,
+    source_rows: list[dict[str, object]] | None = None,
+    alignment_errors: list[str] | tuple[str, ...] = (),
+    control_region_count: int = 0,
+) -> list[dict[str, object]]:
+    """Return read-only result preview stages without creating output geometry."""
+
+    source_stage_rows = list(source_rows or [])
+    if not source_stage_rows:
+        source_stage_rows = intersection_source_completeness_rows(
+            intersection_model,
+            alignment_errors=alignment_errors,
+            control_region_count=control_region_count,
+        )
+    source_summary = intersection_source_completeness_summary(source_stage_rows)
+    rows = [
+        _preview_stage_row(
+            "Source Validation",
+            source_summary["status"],
+            len(source_stage_rows),
+            "IntersectionModel source stages",
+            [str(source_summary.get("next_diagnostic", "") or "")],
+        )
+    ]
+    if intersection_model is None:
+        rows.extend(
+            [
+                _preview_stage_row("Topology", "missing", 0, "IntersectionTopologyResult", ["source_model_missing"]),
+                _preview_stage_row("Edge Network", "missing", 0, "IntersectionEdgeNetworkResult", ["source_model_missing"]),
+                _preview_stage_row("Surface Zones", "missing", 0, "IntersectionSurfaceZoneResult", ["source_model_missing"]),
+                _preview_stage_row("Grading", "missing", 0, "IntersectionGradingContextResult", ["source_model_missing"]),
+                _preview_stage_row("Drainage", "missing", 0, "IntersectionDrainageHintResult", ["source_model_missing"]),
+                _preview_stage_row("Slope Loops", "missing", 0, "IntersectionSlopeFaceLoopResult", ["source_model_missing"]),
+            ]
+        )
+        return rows
+
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(intersection_model)
+    edge_network = service.evaluate_edge_network(intersection_model, topology)
+    surface_zones = service.evaluate_surface_zones(intersection_model, edge_network)
+    grading_context = service.evaluate_grading_context(intersection_model, surface_zones)
+    drainage_hints = service.evaluate_drainage_hints(intersection_model, surface_zones, grading_context)
+    slope_loops = service.evaluate_slope_face_loops(intersection_model, surface_zones, edge_network)
+    rows.extend(
+        [
+            _preview_stage_row(
+                "Topology",
+                getattr(topology, "status", ""),
+                int(getattr(topology, "anchor_count", 0) or 0)
+                + int(getattr(topology, "leg_span_count", 0) or 0)
+                + int(getattr(topology, "control_area_count", 0) or 0)
+                + int(getattr(topology, "lane_connection_count", 0) or 0),
+                "IntersectionTopologyResult",
+                list(getattr(topology, "diagnostic_rows", []) or []),
+            ),
+            _preview_stage_row(
+                "Edge Network",
+                getattr(edge_network, "status", ""),
+                int(getattr(edge_network, "edge_count", 0) or 0),
+                "IntersectionEdgeNetworkResult",
+                list(getattr(edge_network, "diagnostic_rows", []) or []),
+            ),
+            _preview_stage_row(
+                "Surface Zones",
+                getattr(surface_zones, "status", ""),
+                int(getattr(surface_zones, "zone_count", 0) or 0),
+                "IntersectionSurfaceZoneResult",
+                list(getattr(surface_zones, "diagnostic_rows", []) or []),
+            ),
+            _preview_stage_row(
+                "Grading",
+                getattr(grading_context, "status", ""),
+                int(getattr(grading_context, "context_count", 0) or 0),
+                "IntersectionGradingContextResult",
+                [
+                    *list(getattr(grading_context, "diagnostic_rows", []) or []),
+                    *_result_rows_stage_metadata(list(getattr(grading_context, "context_rows", []) or [])),
+                ],
+            ),
+            _preview_stage_row(
+                "Drainage",
+                getattr(drainage_hints, "status", ""),
+                int(getattr(drainage_hints, "hint_row_count", 0) or 0),
+                "IntersectionDrainageHintResult",
+                [
+                    *list(getattr(drainage_hints, "diagnostic_rows", []) or []),
+                    *_result_rows_stage_metadata(list(getattr(drainage_hints, "hint_rows", []) or [])),
+                ],
+            ),
+            _preview_stage_row(
+                "Slope Loops",
+                getattr(slope_loops, "status", ""),
+                int(getattr(slope_loops, "loop_count", 0) or 0),
+                "IntersectionSlopeFaceLoopResult",
+                [
+                    *list(getattr(slope_loops, "diagnostic_rows", []) or []),
+                    *_result_rows_stage_metadata(list(getattr(slope_loops, "loop_rows", []) or [])),
+                ],
+            ),
+        ]
+    )
+    return rows
 
 
 def show_intersection_review_overlay(
@@ -490,12 +752,38 @@ def starter_intersection_source_specs(intersection_kind: str) -> dict[str, objec
                 {"role": "secondary", "label": "Cross Road", "points": [(0.0, -120.0), (0.0, 120.0)]},
             ],
         }
+    if kind == "skewed_intersection":
+        return {
+            "kind": kind,
+            "alignments": [
+                {"role": "primary", "label": "Skew Main Road", "points": [(-130.0, 0.0), (130.0, 0.0)]},
+                {"role": "secondary_skew", "label": "Skew Crossing Road", "points": [(-70.0, -120.0), (70.0, 120.0)]},
+            ],
+        }
+    if kind == "urban_curb_gutter_intersection":
+        return {
+            "kind": kind,
+            "alignments": [
+                {"role": "primary", "label": "Urban Main Street", "points": [(-120.0, 0.0), (120.0, 0.0)]},
+                {"role": "secondary", "label": "Urban Side Street", "points": [(0.0, -110.0), (0.0, 110.0)]},
+            ],
+        }
+    if kind == "drainage_sag_intersection":
+        return {
+            "kind": kind,
+            "profile_style": "sag_low_point",
+            "alignments": [
+                {"role": "primary", "label": "Sag Main Road", "points": [(-120.0, 0.0), (120.0, 0.0)]},
+                {"role": "secondary", "label": "Sag Side Road", "points": [(0.0, -110.0), (0.0, 110.0)]},
+            ],
+        }
     if kind == "y_intersection":
         return {
             "kind": kind,
             "alignments": [
-                {"role": "primary", "label": "Y Main Approach", "points": [(0.0, -120.0), (0.0, 0.0)]},
-                {"role": "secondary", "label": "Y Branch Road", "points": [(0.0, 0.0), (90.0, 90.0)]},
+                {"role": "primary_approach", "label": "Y Main Approach", "points": [(0.0, -120.0), (0.0, 0.0)]},
+                {"role": "left_branch", "label": "Y Left Branch Road", "points": [(0.0, 0.0), (-90.0, 90.0)]},
+                {"role": "right_branch", "label": "Y Right Branch Road", "points": [(0.0, 0.0), (90.0, 90.0)]},
             ],
         }
     if kind == "roundabout":
@@ -541,7 +829,11 @@ def create_starter_intersection_sources(document, intersection_kind: str, *, pro
             label=f"{label} FG Profile",
             create_alignment_if_missing=False,
         )
-        _update_profile_to_alignment_length(profile, _polyline_length(points))
+        _update_profile_to_alignment_length(
+            profile,
+            _polyline_length(points),
+            profile_style=str(specs.get("profile_style", "") or ""),
+        )
         created.append(f"Profile: {profile.Label} | {profile.ProfileId}")
         stationing = create_v1_stationing(
             doc,
@@ -628,6 +920,8 @@ class V1IntersectionEditorTaskPanel:
         self._last_applied_intersection = ""
         self._last_overlay = ""
         self._last_edge_network_preview = ""
+        self._last_source_stage_rows: list[dict[str, object]] = []
+        self._last_preview_stage_rows: list[dict[str, object]] = []
         self._update_status()
 
     def getStandardButtons(self):
@@ -746,6 +1040,28 @@ class V1IntersectionEditorTaskPanel:
         self._status.setReadOnly(True)
         self._status.setMinimumHeight(130)
         layout.addWidget(self._status, 1)
+
+        self._source_stage_table = QtWidgets.QTableWidget(0, 6)
+        self._source_stage_table.setHorizontalHeaderLabels(["Stage", "Status", "Approval", "Count", "Target", "Diagnostics"])
+        self._source_stage_table.setMinimumHeight(150)
+        try:
+            self._source_stage_table.horizontalHeader().setStretchLastSection(True)
+            self._source_stage_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self._source_stage_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        except Exception:
+            pass
+        layout.addWidget(self._source_stage_table, 1)
+
+        self._preview_stage_table = QtWidgets.QTableWidget(0, 5)
+        self._preview_stage_table.setHorizontalHeaderLabels(["Preview", "Status", "Count", "Contract", "Diagnostics"])
+        self._preview_stage_table.setMinimumHeight(120)
+        try:
+            self._preview_stage_table.horizontalHeader().setStretchLastSection(True)
+            self._preview_stage_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self._preview_stage_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        except Exception:
+            pass
+        layout.addWidget(self._preview_stage_table, 1)
 
         action_row = QtWidgets.QHBoxLayout()
         auto_detect_button = QtWidgets.QPushButton("Auto Detect")
@@ -985,6 +1301,13 @@ class V1IntersectionEditorTaskPanel:
         created_lines = list(getattr(self, "_last_created_sources", []) or [])
         intersection_ref = intersection_ref_for_kind(kind)
         control_regions = list_intersection_control_region_choices(self.document, intersection_ref)
+        source_stage_rows = self._source_completeness_rows(control_regions, alignment_errors)
+        self._last_source_stage_rows = list(source_stage_rows)
+        source_summary = intersection_source_completeness_summary(source_stage_rows)
+        self._update_source_stage_table(source_stage_rows)
+        preview_stage_rows = self._preview_sequence_rows(control_regions, alignment_errors, source_stage_rows)
+        self._last_preview_stage_rows = list(preview_stage_rows)
+        self._update_preview_stage_table(preview_stage_rows)
         applied_line = str(getattr(self, "_last_applied_intersection", "") or "")
         overlay_line = str(getattr(self, "_last_overlay", "") or "")
         edge_preview_line = str(getattr(self, "_last_edge_network_preview", "") or "")
@@ -999,6 +1322,13 @@ class V1IntersectionEditorTaskPanel:
                 f"Source Mode: {source_mode}",
                 f"Primary Alignment: {primary_ref or '-'}",
                 f"Secondary Alignment: {secondary_ref or '-'}",
+                "",
+                f"Source Summary: {source_summary['status']} | accepted={source_summary['accepted_count']}, "
+                f"warnings={source_summary['warning_count']}, missing={source_summary['missing_count']}, errors={source_summary['error_count']}",
+                f"Next Source Stage: {source_summary['next_stage'] or 'None'}",
+                f"Next Source Diagnostic: {source_summary['next_diagnostic'] or '-'}",
+                f"Preview Ready: {'yes' if source_summary['preview_ready'] else 'no'}",
+                f"Apply Ready: {'yes' if source_summary['apply_ready'] else 'no'}",
                 "",
                 f"Validation: {'ok' if not alignment_errors else 'error'}",
                 *[f"- {error}" for error in alignment_errors],
@@ -1015,6 +1345,24 @@ class V1IntersectionEditorTaskPanel:
                     if control_regions
                     else ["- No linked control Regions found."]
                 ),
+                "",
+                "Source Completeness:",
+                *[
+                    (
+                        f"- {row['stage']}: {row['status']} / {row.get('approval_state', '-')}"
+                        f" ({row['count']})"
+                    )
+                    for row in source_stage_rows
+                ],
+                "",
+                "Read-only Preview Sequence:",
+                *[
+                    (
+                        f"- {row['stage']}: {row['status']} ({row['count']})"
+                        f" | {row.get('contract', '-')}"
+                    )
+                    for row in preview_stage_rows
+                ],
                 "",
                 "Starter Sources:",
                 *([f"- {line}" for line in created_lines] if created_lines else ["- Not created."]),
@@ -1036,6 +1384,115 @@ class V1IntersectionEditorTaskPanel:
             ]
         )
         self._status.setPlainText("\n".join(lines))
+
+    def _source_completeness_rows(self, control_regions: list[dict[str, object]], alignment_errors: list[str]) -> list[dict[str, object]]:
+        model = None
+        if not alignment_errors and control_regions:
+            try:
+                model = build_intersection_model_from_sources(
+                    intersection_kind=self.selected_intersection_kind(),
+                    source_mode=self.selected_source_mode(),
+                    primary_alignment_ref=self.selected_primary_alignment_ref(),
+                    secondary_alignment_ref=self.selected_secondary_alignment_ref(),
+                    control_region_choices=control_regions,
+                    detection_result=getattr(self, "_last_detection", None),
+                    project_id=_project_id(find_project(self.document)),
+                )
+            except Exception:
+                model = None
+        return intersection_source_completeness_rows(
+            model,
+            alignment_errors=alignment_errors,
+            control_region_count=len(control_regions),
+        )
+
+    def _preview_sequence_rows(
+        self,
+        control_regions: list[dict[str, object]],
+        alignment_errors: list[str],
+        source_stage_rows: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        model = None
+        if not alignment_errors and control_regions:
+            try:
+                model = build_intersection_model_from_sources(
+                    intersection_kind=self.selected_intersection_kind(),
+                    source_mode=self.selected_source_mode(),
+                    primary_alignment_ref=self.selected_primary_alignment_ref(),
+                    secondary_alignment_ref=self.selected_secondary_alignment_ref(),
+                    control_region_choices=control_regions,
+                    detection_result=getattr(self, "_last_detection", None),
+                    project_id=_project_id(find_project(self.document)),
+                )
+            except Exception:
+                model = None
+        return intersection_read_only_preview_rows(
+            model,
+            source_rows=source_stage_rows,
+            alignment_errors=alignment_errors,
+            control_region_count=len(control_regions),
+        )
+
+    def _update_source_stage_table(self, rows: list[dict[str, object]]) -> None:
+        table = getattr(self, "_source_stage_table", None)
+        if table is None:
+            return
+        try:
+            table.setRowCount(len(rows))
+            for row_index, row in enumerate(rows):
+                diagnostics = "; ".join(list(row.get("diagnostics", []) or []))
+                values = [
+                    str(row.get("stage", "") or ""),
+                    str(row.get("status", "") or ""),
+                    str(row.get("approval_state", "") or ""),
+                    str(int(row.get("count", 0) or 0)),
+                    str(row.get("handoff_target", "") or ""),
+                    diagnostics,
+                ]
+                for column, value in enumerate(values):
+                    table.setItem(row_index, column, QtWidgets.QTableWidgetItem(value))
+            table.resizeColumnsToContents()
+        except Exception:
+            pass
+
+    def _update_preview_stage_table(self, rows: list[dict[str, object]]) -> None:
+        table = getattr(self, "_preview_stage_table", None)
+        if table is None:
+            return
+        try:
+            table.setRowCount(len(rows))
+            for row_index, row in enumerate(rows):
+                diagnostics = "; ".join(list(row.get("diagnostics", []) or []))
+                values = [
+                    str(row.get("stage", "") or ""),
+                    str(row.get("status", "") or ""),
+                    str(int(row.get("count", 0) or 0)),
+                    str(row.get("contract", "") or ""),
+                    diagnostics,
+                ]
+                for column, value in enumerate(values):
+                    table.setItem(row_index, column, QtWidgets.QTableWidgetItem(value))
+            table.resizeColumnsToContents()
+        except Exception:
+            pass
+
+    def focus_source_stage(self, target: str) -> bool:
+        rows = getattr(self, "_last_source_stage_rows", []) or []
+        table = getattr(self, "_source_stage_table", None)
+        for index, row in enumerate(rows):
+            if not _source_stage_row_matches(row, target):
+                continue
+            self._update_status(prefix=f"Focused source stage: {row.get('stage', '')}")
+            table = getattr(self, "_source_stage_table", None)
+            if table is not None:
+                try:
+                    table.selectRow(index)
+                    table.scrollToItem(table.item(index, 0))
+                except Exception:
+                    pass
+            return True
+        self._update_status(prefix=f"Source stage was not found: {target}")
+        return False
 
 
 class CmdV1IntersectionEditor:
@@ -1073,6 +1530,224 @@ def _combo_data_or_text(combo) -> str:
     if "|" in text:
         text = text.rsplit("|", 1)[-1].strip()
     return text
+
+
+def _source_stage_row(
+    stage: str,
+    status: str,
+    count: int,
+    diagnostics: list[str] | tuple[str, ...],
+    *,
+    approval_states: list[str] | tuple[str, ...] = (),
+    source_methods: list[str] | tuple[str, ...] = (),
+) -> dict[str, object]:
+    clean_diagnostics = _unique_text_values([str(item) for item in list(diagnostics or []) if str(item)])
+    stage_id = _source_stage_id(stage)
+    approval_state = _source_stage_approval_state(approval_states, status)
+    clean_source_methods = _unique_text_values([str(item) for item in list(source_methods or []) if str(item)])
+    return {
+        "stage_id": stage_id,
+        "stage": str(stage or ""),
+        "status": str(status or "accepted"),
+        "approval_state": approval_state,
+        "source_methods": clean_source_methods,
+        "count": int(count or 0),
+        "diagnostics": clean_diagnostics,
+        "handoff_target": f"intersection-source-stage:{stage_id}",
+        "notes": "; ".join(clean_diagnostics),
+    }
+
+
+def _preview_stage_row(
+    stage: str,
+    status: str,
+    count: int,
+    contract: str,
+    diagnostics: list[str] | tuple[str, ...],
+) -> dict[str, object]:
+    clean_diagnostics = _unique_text_values([str(item) for item in list(diagnostics or []) if str(item)])
+    stage_id = _source_stage_id(stage)
+    return {
+        "stage_id": stage_id,
+        "stage": str(stage or ""),
+        "status": _preview_stage_status(status, clean_diagnostics),
+        "count": int(count or 0),
+        "contract": str(contract or ""),
+        "diagnostics": clean_diagnostics,
+        "handoff_target": f"intersection-preview-stage:{stage_id}",
+        "notes": "; ".join(clean_diagnostics),
+    }
+
+
+def _preview_stage_status(status: str, diagnostics: list[str] | tuple[str, ...]) -> str:
+    raw_status = str(status or "").strip()
+    clean_diagnostics = [str(item) for item in list(diagnostics or []) if str(item)]
+    if raw_status in {"error", "missing"}:
+        return raw_status
+    if any(item.startswith("error:") for item in clean_diagnostics):
+        return "error"
+    if raw_status in {"warning", "warn"}:
+        return "warning"
+    if any(item.startswith("warning:") for item in clean_diagnostics):
+        return "warning"
+    if raw_status in {"", "not_evaluated"}:
+        return "missing"
+    return "accepted"
+
+
+def _result_stage_row(stage: str, rows: list[object], *, missing: str) -> dict[str, object]:
+    if not rows:
+        return _source_stage_row(stage, "missing", 0, [missing])
+    diagnostics: list[str] = []
+    statuses: list[str] = []
+    approval_states: list[str] = []
+    source_methods: list[str] = []
+    for row in rows:
+        statuses.append(str(getattr(row, "source_status", "") or getattr(row, "status", "") or "accepted"))
+        approval_states.append(_source_stage_row_approval_status(row))
+        source_methods.append(_source_stage_row_source_method(row))
+        diagnostics.extend(str(item) for item in list(getattr(row, "source_diagnostic_rows", ()) or ()) if str(item))
+        diagnostics.extend(str(item) for item in list(getattr(row, "diagnostic_rows", ()) or ()) if str(item))
+        diagnostics.extend(_result_row_stage_metadata(row))
+    return _source_stage_row(
+        stage,
+        _stage_status_from_statuses(statuses),
+        len(rows),
+        diagnostics,
+        approval_states=approval_states,
+        source_methods=source_methods,
+    )
+
+
+def _result_rows_stage_metadata(rows: list[object]) -> list[str]:
+    diagnostics: list[str] = []
+    for row in list(rows or []):
+        diagnostics.extend(_result_row_stage_metadata(row))
+    return diagnostics
+
+
+def _result_row_stage_metadata(row: object) -> list[str]:
+    diagnostics: list[str] = []
+    handoff_target = str(getattr(row, "handoff_target", "") or "").strip()
+    if handoff_target:
+        diagnostics.append(f"handoff_target:{handoff_target}")
+    source_lineage_status = str(getattr(row, "source_lineage_status", "") or "").strip()
+    if source_lineage_status:
+        diagnostics.append(f"source_lineage_status:{source_lineage_status}")
+    return diagnostics
+
+
+def _source_stage_row_approval_status(row: object) -> str:
+    for attr_name in ("approval_status", "drainage_approval_status", "control_area_approval_status"):
+        approval_status = str(getattr(row, attr_name, "") or "").strip()
+        if approval_status:
+            return approval_status
+    return "accepted"
+
+
+def _source_stage_row_source_method(row: object) -> str:
+    for attr_name in ("source_method", "drainage_source_method", "control_area_source_method"):
+        source_method = str(getattr(row, attr_name, "") or "").strip()
+        if source_method:
+            return source_method
+    return ""
+
+
+def _source_stage_row_from_source_rows(stage: str, rows: list[object], missing: str) -> dict[str, object]:
+    if not rows:
+        return _source_stage_row(stage, "missing", 0, [missing])
+    diagnostics: list[str] = []
+    statuses: list[str] = []
+    approval_states: list[str] = []
+    source_methods: list[str] = []
+    for row in rows:
+        approval_status = str(getattr(row, "approval_status", "") or "accepted")
+        approval_states.append(approval_status)
+        source_methods.append(str(getattr(row, "source_method", "") or ""))
+        statuses.append("accepted" if approval_status in {"accepted", "locked"} else "warning")
+        diagnostics.extend(str(item) for item in list(getattr(row, "diagnostic_rows", []) or []) if str(item))
+        if approval_status not in {"accepted", "locked"}:
+            diagnostics.append(f"source_approval_pending:{approval_status}")
+    return _source_stage_row(
+        stage,
+        _stage_status_from_statuses(statuses),
+        len(rows),
+        diagnostics,
+        approval_states=approval_states,
+        source_methods=source_methods,
+    )
+
+
+def _stage_status_from_statuses(statuses: list[str]) -> str:
+    clean = [str(status or "").strip() for status in statuses if str(status or "").strip()]
+    if not clean:
+        return "missing"
+    if any(status == "error" or status == "missing" for status in clean):
+        return "missing" if any(status == "missing" for status in clean) else "error"
+    if any(status in {"warning", "warn", "candidate", "draft"} for status in clean):
+        return "warning"
+    return "accepted"
+
+
+def _source_stage_id(stage: str) -> str:
+    return str(stage or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _source_stage_approval_state(approval_states: list[str] | tuple[str, ...], status: str) -> str:
+    states = _unique_text_values([str(item) for item in list(approval_states or []) if str(item)])
+    if not states:
+        return "missing" if str(status or "") == "missing" else "accepted"
+    if any(state == "draft" for state in states):
+        return "draft"
+    if any(state not in {"accepted", "locked"} for state in states):
+        return "review"
+    if states and all(state == "locked" for state in states):
+        return "locked"
+    return "accepted"
+
+
+def _source_stage_row_matches(row: dict[str, object], target: str) -> bool:
+    wanted = str(target or "").strip()
+    if not wanted:
+        return False
+    return wanted in {
+        str(row.get("stage_id", "") or ""),
+        str(row.get("stage", "") or ""),
+        str(row.get("handoff_target", "") or ""),
+    }
+
+
+def _stage_count(rows: list[dict[str, object]], status: str) -> int:
+    return len([row for row in list(rows or []) if str(row.get("status", "") or "") == str(status or "")])
+
+
+def _first_source_stage_requiring_review(rows: list[dict[str, object]]) -> dict[str, object] | None:
+    for wanted_status in ("error", "missing", "warning"):
+        for row in list(rows or []):
+            if str(row.get("status", "") or "") == wanted_status:
+                return row
+    return None
+
+
+def _source_completeness_summary_notes(
+    *,
+    status: str,
+    accepted_count: int,
+    warning_count: int,
+    missing_count: int,
+    error_count: int,
+    next_stage: str,
+    next_diagnostic: str,
+) -> str:
+    base = (
+        f"accepted={accepted_count}, warning={warning_count}, "
+        f"missing={missing_count}, error={error_count}"
+    )
+    if str(status or "") == "accepted":
+        return f"All source stages are accepted ({base})."
+    if next_stage:
+        return f"Review {next_stage}: {next_diagnostic or 'source stage requires attention'} ({base})."
+    return f"Source stages require review ({base})."
 
 
 def _format_detection_lines(result) -> list[str]:
@@ -1126,7 +1801,12 @@ def _control_area_rows_from_region_choices(
                     for row in region_rows
                 ],
                 control_region_refs=[str(row.get("control_region_ref", "") or "") for row in region_rows],
+                source_method="region_derived",
+                approval_status="draft",
+                intent_status="region_derived",
+                source_region_refs=[str(row.get("control_region_ref", "") or "") for row in region_rows],
                 grading_policy_ref=f"grading:{intersection_id}:default",
+                diagnostic_rows=["control_area_region_derived", "control_area_approval_pending"],
                 notes="Linked from Region rows tagged with intersection_ref.",
             )
         )
@@ -1152,6 +1832,9 @@ def _leg_rows_from_region_choices(
                 region_ref=str(row.get("control_region_ref", "") or ""),
                 approach_station_start=min(start, end),
                 approach_station_end=max(start, end),
+                source_method="region_derived",
+                approval_status="draft",
+                span_source="control_region",
                 arm_policy_ref=f"arm-policy:{intersection_id}:leg:{index:02d}",
                 edge_policy_refs=[
                     f"edge-policy:{intersection_id}:leg:{index:02d}:pavement",
@@ -1159,6 +1842,7 @@ def _leg_rows_from_region_choices(
                 ],
                 grading_policy_ref=f"grading:{intersection_id}:default",
                 priority=index,
+                diagnostic_rows=["leg_source_region_derived", "leg_approval_pending"],
                 notes="Linked from intersection control Region.",
             )
         )
@@ -1205,6 +1889,11 @@ def _default_edge_policy_rows(intersection_id: str, leg_rows: list[IntersectionL
                     offset_rule="lane_width_from_arm_policy",
                     elevation_rule="from_grading_policy",
                     source_policy_ref=str(getattr(leg, "arm_policy_ref", "") or ""),
+                    edge_family_intent="lane",
+                    source_method="subassembly_default",
+                    approval_status="draft",
+                    subassembly_kind="lane",
+                    diagnostic_rows=["edge_family_subassembly_defaulted", "edge_family_approval_pending"],
                     notes="Pavement edge source policy for future intersection edge network.",
                 ),
                 IntersectionEdgePolicyRow(
@@ -1216,11 +1905,72 @@ def _default_edge_policy_rows(intersection_id: str, leg_rows: list[IntersectionL
                     offset_rule="assembly_daylight",
                     elevation_rule="from_surface_zone",
                     source_policy_ref=str(getattr(leg, "arm_policy_ref", "") or ""),
+                    edge_family_intent="side_slope",
+                    source_method="subassembly_default",
+                    approval_status="draft",
+                    subassembly_kind="side_slope",
+                    diagnostic_rows=["edge_family_subassembly_defaulted", "edge_family_approval_pending"],
                     notes="Daylight hinge source policy for future intersection slope face zones.",
                 ),
             ]
         )
     return rows
+
+
+def _default_lane_connection_rows(
+    intersection_id: str,
+    intersection_kind: str,
+    leg_rows: list[IntersectionLegRow],
+) -> list[IntersectionLaneConnectionRow]:
+    legs = [row for row in list(leg_rows or []) if str(getattr(row, "leg_id", "") or "")]
+    if len(legs) < 2:
+        return []
+    rows: list[IntersectionLaneConnectionRow] = []
+    for index, from_leg in enumerate(legs, start=1):
+        to_leg = legs[index % len(legs)]
+        from_leg_ref = str(getattr(from_leg, "leg_id", "") or "")
+        to_leg_ref = str(getattr(to_leg, "leg_id", "") or "")
+        movement_type = _default_lane_movement_type(intersection_kind, from_leg, to_leg, index)
+        rows.append(
+            IntersectionLaneConnectionRow(
+                connection_id=f"lane-connection:{intersection_id}:{index:02d}",
+                intersection_id=intersection_id,
+                movement_type=movement_type,
+                from_leg_ref=from_leg_ref,
+                to_leg_ref=to_leg_ref,
+                from_edge_policy_ref=_first_edge_policy_ref(from_leg),
+                to_edge_policy_ref=_first_edge_policy_ref(to_leg),
+                from_lane_index=1,
+                to_lane_index=1,
+                source_method="preset_default",
+                approval_status="draft",
+                diagnostic_rows=["lane_connection_source_defaulted", "lane_connection_approval_pending"],
+                notes="Default first-slice lane connection source row for topology review.",
+            )
+        )
+    return rows
+
+
+def _default_lane_movement_type(
+    intersection_kind: str,
+    from_leg: IntersectionLegRow,
+    to_leg: IntersectionLegRow,
+    index: int,
+) -> str:
+    from_role = str(getattr(from_leg, "leg_role", "") or "").lower()
+    to_role = str(getattr(to_leg, "leg_role", "") or "").lower()
+    if "before" in from_role and "after" in to_role:
+        return "through"
+    if "after" in from_role and "before" in to_role:
+        return "through"
+    if str(intersection_kind or "") == "y_intersection":
+        return "diverge" if index == 1 else "merge"
+    return "turn"
+
+
+def _first_edge_policy_ref(leg: IntersectionLegRow) -> str:
+    refs = [str(ref) for ref in list(getattr(leg, "edge_policy_refs", []) or []) if str(ref)]
+    return refs[0] if refs else ""
 
 
 def _default_drainage_policy(
@@ -1238,12 +1988,22 @@ def _default_drainage_policy(
         capture_mode="review_low_points",
         low_point_tolerance=0.05,
         gutter_edge_refs=[ref for ref in gutter_refs if ref],
+        intent_status="hint_only",
+        source_method="preset_default",
+        approval_status="draft",
+        diagnostic_rows=["drainage_policy_hint_only", "drainage_policy_approval_pending"],
         notes="Default intersection drainage handoff policy for low-point review.",
     )
 
 
 def _leg_role_from_region_id(region_id: str, index: int) -> str:
     text = str(region_id or "").lower()
+    if "primary_approach" in text:
+        return "primary_approach"
+    if "left_branch" in text:
+        return "left_branch"
+    if "right_branch" in text:
+        return "right_branch"
     if "primary" in text:
         return "primary_control"
     if "secondary" in text or "side" in text:
@@ -1258,16 +2018,77 @@ def _source_mode_id(source_mode: str) -> str:
     return "use_existing_alignments"
 
 
+def _default_corner_rows(
+    intersection_id: str,
+    intersection_kind: str,
+    control_area_rows: list[IntersectionControlArea],
+    leg_rows: list[IntersectionLegRow],
+) -> list[IntersectionCornerRow]:
+    leg_ids = [
+        str(getattr(row, "leg_id", "") or "")
+        for row in list(leg_rows or [])
+        if str(getattr(row, "leg_id", "") or "")
+    ]
+    if len(leg_ids) < 2:
+        return []
+    kind = str(intersection_kind or "").strip()
+    corner_labels = _default_corner_labels(kind)
+    control_area_ref = str(getattr(control_area_rows[0], "control_area_id", "") or "") if control_area_rows else ""
+    rows: list[IntersectionCornerRow] = []
+    for index, label in enumerate(corner_labels, start=1):
+        from_leg_ref = leg_ids[(index - 1) % len(leg_ids)]
+        to_leg_ref = leg_ids[index % len(leg_ids)]
+        rows.append(
+            IntersectionCornerRow(
+                corner_id=f"corner:{intersection_id}:{label}",
+                intersection_id=intersection_id,
+                control_area_ref=control_area_ref,
+                from_leg_ref=from_leg_ref,
+                to_leg_ref=to_leg_ref,
+                side=label,
+                quadrant=label,
+                curb_return_policy_ref=f"curb-return:{intersection_id}:default",
+                source_method="preset_default",
+                approval_status="draft",
+                diagnostic_rows=["corner_source_defaulted", "corner_approval_pending"],
+                notes="Default corner source row for first-slice curb-return review.",
+            )
+        )
+    return rows
+
+
+def _default_corner_labels(intersection_kind: str) -> tuple[str, ...]:
+    kind = str(intersection_kind or "").strip()
+    if kind == "cross_intersection":
+        return ("quadrant_01", "quadrant_02", "quadrant_03", "quadrant_04")
+    if kind == "urban_curb_gutter_intersection":
+        return ("urban_quadrant_01", "urban_quadrant_02", "urban_quadrant_03", "urban_quadrant_04")
+    if kind == "drainage_sag_intersection":
+        return ("sag_quadrant_01", "sag_quadrant_02", "sag_quadrant_03", "sag_quadrant_04")
+    if kind == "skewed_intersection":
+        return ("skew_quadrant_01", "skew_quadrant_02", "skew_quadrant_03", "skew_quadrant_04")
+    if kind == "y_intersection":
+        return ("left_branch", "right_branch")
+    return ("left", "right")
+
+
 def _default_curb_return_policy(
     *,
     intersection_id: str,
     intersection_kind: str,
     leg_rows: list[IntersectionLegRow],
+    corner_rows: list[IntersectionCornerRow] | None = None,
 ) -> IntersectionCurbReturnPolicyRow:
     kind = str(intersection_kind or "").strip()
     radius = 12.0
     if kind == "cross_intersection":
         radius = 10.0
+    elif kind == "skewed_intersection":
+        radius = 11.0
+    elif kind == "urban_curb_gutter_intersection":
+        radius = 8.0
+    elif kind == "drainage_sag_intersection":
+        radius = 9.0
     elif kind == "y_intersection":
         radius = 15.0
     return IntersectionCurbReturnPolicyRow(
@@ -1280,6 +2101,11 @@ def _default_curb_return_policy(
             str(getattr(row, "leg_id", "") or "")
             for row in list(leg_rows or [])
             if str(getattr(row, "leg_id", "") or "")
+        ],
+        corner_refs=[
+            str(getattr(row, "corner_id", "") or "")
+            for row in list(corner_rows or [])
+            if str(getattr(row, "corner_id", "") or "")
         ],
         notes="Default first-slice curb return radius for 3D review preview.",
     )
@@ -1298,6 +2124,13 @@ def _default_grading_policy(
         target_crossfall_percent=0.0,
         primary_alignment_ref=primary_alignment_ref,
         secondary_alignment_refs=list(secondary_alignment_refs or []),
+        crown_behavior="flatten",
+        tie_in_rule="blend_to_leg_profiles",
+        crossfall_transition="linear",
+        low_point_strategy="review_low_points",
+        source_method="preset_default",
+        approval_status="draft",
+        diagnostic_rows=["grading_policy_source_defaulted", "grading_policy_approval_pending"],
         notes="Default first-slice intersection grading policy. Overrides normal superelevation inside the control area.",
     )
 
@@ -1417,6 +2250,9 @@ def _curb_return_preview_shapes(
     secondary_dir = _unit_vector(secondary_dir) or App.Vector(0.0, 1.0, 0.0)
     quadrants = {
         "cross_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
+        "skewed_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
+        "urban_curb_gutter_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
+        "drainage_sag_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
         "t_intersection": ((1.0, -1.0), (-1.0, -1.0)),
         "y_intersection": ((1.0, 1.0), (-1.0, 1.0)),
     }.get(kind, ((1.0, 1.0), (-1.0, 1.0)))
@@ -1456,6 +2292,12 @@ def _positive_radius_or_default(radius: float | None, kind: str) -> float:
         return value
     if kind == "cross_intersection":
         return 10.0
+    if kind == "skewed_intersection":
+        return 11.0
+    if kind == "urban_curb_gutter_intersection":
+        return 8.0
+    if kind == "drainage_sag_intersection":
+        return 9.0
     if kind == "y_intersection":
         return 15.0
     return 12.0
@@ -1671,7 +2513,9 @@ def _edge_preview_offsets(row) -> tuple[float, ...]:
         "lane_edge": 1.75,
         "pavement_edge": 3.5,
         "shoulder_edge": 5.0,
+        "curb_edge": 4.0,
         "gutter_edge": 4.2,
+        "sidewalk_edge": 6.0,
         "daylight_hinge": 6.5,
     }.get(role, 3.5)
     if side in {"left", "l"}:
@@ -1836,15 +2680,20 @@ def _unique_alignment_id(document, base_alignment_id: str) -> str:
     return f"{base}-{index}"
 
 
-def _update_profile_to_alignment_length(profile, length: float) -> None:
+def _update_profile_to_alignment_length(profile, length: float, *, profile_style: str = "") -> None:
+    style = str(profile_style or "").strip()
     profile.ControlPointIds = [
         f"{profile.ProfileId}:pvi:1",
         f"{profile.ProfileId}:pvi:2",
         f"{profile.ProfileId}:pvi:3",
     ]
     profile.ControlStations = [0.0, max(float(length) * 0.5, 0.0), max(float(length), 0.0)]
-    profile.ControlElevations = [60.0, 60.8, 60.2]
-    profile.ControlKinds = ["grade_break", "pvi", "grade_break"]
+    if style == "sag_low_point":
+        profile.ControlElevations = [60.8, 59.6, 60.7]
+        profile.ControlKinds = ["grade_break", "sag_low_point", "grade_break"]
+    else:
+        profile.ControlElevations = [60.0, 60.8, 60.2]
+        profile.ControlKinds = ["grade_break", "pvi", "grade_break"]
     profile.VerticalCurveIds = [f"{profile.ProfileId}:curve:1"]
     profile.VerticalCurveKinds = ["parabolic_vertical_curve"]
     mid = max(float(length) * 0.5, 0.0)

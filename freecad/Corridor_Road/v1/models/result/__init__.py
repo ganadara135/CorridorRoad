@@ -34,9 +34,17 @@ from .intersection_edge_network import IntersectionEdgeNetworkResult, Intersecti
 from .intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
 from .intersection_slope_face_boundary import IntersectionSlopeFaceBoundaryResult, IntersectionSlopeFaceBoundaryRow
 from .intersection_slope_face_loop import IntersectionSlopeFaceLoopResult, IntersectionSlopeFaceLoopRow
+from .intersection_surface_patch import (
+    IntersectionSurfacePatchBoundaryRow,
+    IntersectionSurfacePatchQualityRow,
+    IntersectionSurfacePatchResult,
+    IntersectionSurfacePatchTriangulationRow,
+)
 from .intersection_surface_zone import IntersectionSurfaceZoneResult, IntersectionSurfaceZoneRow
 from .intersection_topology import (
+    IntersectionTopologyAnchorRow,
     IntersectionTopologyControlAreaRow,
+    IntersectionTopologyLaneConnectionRow,
     IntersectionTopologyLegSpanRow,
     IntersectionTopologyResult,
 )
@@ -92,9 +100,15 @@ __all__ = [
     "IntersectionSlopeFaceBoundaryRow",
     "IntersectionSlopeFaceLoopResult",
     "IntersectionSlopeFaceLoopRow",
+    "IntersectionSurfacePatchBoundaryRow",
+    "IntersectionSurfacePatchQualityRow",
+    "IntersectionSurfacePatchResult",
+    "IntersectionSurfacePatchTriangulationRow",
     "IntersectionSurfaceZoneResult",
     "IntersectionSurfaceZoneRow",
+    "IntersectionTopologyAnchorRow",
     "IntersectionTopologyControlAreaRow",
+    "IntersectionTopologyLaneConnectionRow",
     "IntersectionTopologyLegSpanRow",
     "IntersectionTopologyResult",
     "IntersectionTrimBoundaryPair",

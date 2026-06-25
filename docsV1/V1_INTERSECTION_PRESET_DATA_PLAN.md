@@ -20,7 +20,7 @@ Depends on:
 
 This document defines the next Preset Data plan for Intersections.
 
-The goal is to make T-intersection, cross intersection, and roundabout presets behave like engineering starter contracts, not only visual examples.
+The goal is to make T-intersection, cross intersection, skewed intersection, Y intersection, urban curb/gutter, drainage-sensitive sag, and roundabout presets behave like engineering starter contracts, not only visual examples.
 
 Each preset should create enough source and policy data for:
 
@@ -140,7 +140,213 @@ Expected outputs:
 - central blended intersection surface
 - topology diagnostics for all four corners
 
-### 3.3 Roundabout
+### 3.3 Skewed Intersection
+
+Purpose:
+
+- model a four-leg crossing where the secondary road intersects at a non-orthogonal angle
+- preserve skew angle as source geometry instead of correcting it in generated surfaces
+- expose skew-aware corner, edge-family, grading, and drainage defaults for review
+- keep future asymmetric curb-return and transition logic as source diagnostics
+
+Recommended preset id:
+
+- `intersection-preset:skewed-basic`
+
+Required source rows:
+
+- one primary through Alignment
+- one skewed secondary Alignment
+- primary and skewed-secondary intersection Regions
+- one `IntersectionRow` with `intersection_kind = skewed_intersection`
+- leg rows derived from each control Region
+- four skew-aware corner rows
+- one curb-return policy
+- one grading policy
+- one drainage policy
+
+Geometry starter values:
+
+| Item | Default |
+| --- | --- |
+| Primary length | 260 m |
+| Skewed secondary length | 278 m |
+| Skew angle | non-orthogonal, about 60 degrees to primary |
+| Control length each alignment | 30 m |
+| Curb-return radius | 11 m |
+| Lane width | 3.5 m |
+| Shoulder width | 1.5 m |
+
+Expected outputs:
+
+- primary through pavement strip
+- skewed secondary pavement strip
+- four skew-aware corner policies
+- central blended intersection surface
+- warning diagnostics for skew corner geometry and edge-family assumptions before final design
+
+First implemented slice:
+
+- `Skewed Intersection - Basic` is exposed in the Intersection preset panel.
+- Starter sources create non-orthogonal primary and skewed secondary Alignments and Regions.
+- `skewed_intersection` is a supported source kind.
+- Skew corner and edge-family defaults are marked review-required.
+
+### 3.4 Y Intersection
+
+Purpose:
+
+- model one primary approach that diverges into two branch roads
+- create left and right branch roles as source rows
+- expose diverge and merge lane-connection defaults for review
+- keep branch angle, branch grading, and future nose/island details as review-required source diagnostics
+
+Recommended preset id:
+
+- `intersection-preset:y-basic`
+
+Required source rows:
+
+- one primary approach Alignment
+- one left branch Alignment
+- one right branch Alignment
+- primary approach, left branch, and right branch intersection Regions
+- one `IntersectionRow` with `intersection_kind = y_intersection`
+- three leg rows: `primary_approach`, `left_branch`, and `right_branch`
+- two branch corner rows
+- diverge/merge lane-connection rows
+- one grading policy
+- one drainage policy
+
+Geometry starter values:
+
+| Item | Default |
+| --- | --- |
+| Primary approach length | 120 m |
+| Branch length | 127 m |
+| Branch angle | 45 degrees from the primary approach |
+| Control length each leg | 26 m |
+| Curb-return radius | 15 m |
+| Lane width | 3.5 m |
+| Shoulder width | 1.5 m |
+
+Expected outputs:
+
+- primary approach pavement strip
+- left and right branch pavement strips
+- two branch corner policies
+- diverge/merge lane-connection review rows
+- warning diagnostics for branch geometry and movement review before final design
+
+First implemented slice:
+
+- `Y Intersection - Basic` is exposed in the Intersection preset panel.
+- Starter sources create primary approach, left branch, and right branch Alignments and Regions.
+- Both branch Alignment refs are preserved on the `IntersectionRow`.
+- Branch geometry and diverge/merge defaults are marked review-required.
+
+### 3.5 Urban Curb/Gutter Intersection
+
+Purpose:
+
+- model an urban four-leg intersection with curb, gutter, sidewalk, and inlet handoff intent
+- expose curb/gutter/sidewalk edge families as source rows
+- expose inlet candidates and low-point refs as drainage handoff rows
+- keep final inlet placement, hydraulic sizing, and outlet design as follow-up drainage work
+
+Recommended preset id:
+
+- `intersection-preset:urban-curb-gutter-basic`
+
+Required source rows:
+
+- one urban main street Alignment
+- one urban side street Alignment
+- primary and side-street intersection Regions
+- one `IntersectionRow` with `intersection_kind = urban_curb_gutter_intersection`
+- pavement, daylight, curb, gutter, and sidewalk edge-family policy rows
+- one curb-return policy
+- one grading policy
+- one drainage policy with gutter edge refs, inlet candidate refs, and low-point refs
+- DrainageModel inlet candidate rows
+
+Geometry starter values:
+
+| Item | Default |
+| --- | --- |
+| Main street length | 240 m |
+| Side street length | 220 m |
+| Control length each alignment | 28 m |
+| Curb-return radius | 8 m |
+| Lane width | 3.5 m |
+| Gutter offset | 4.2 m |
+| Sidewalk offset | 6.0 m |
+| Inlet spacing hint | 45 m |
+
+Expected outputs:
+
+- pavement edge review rows
+- curb, gutter, and sidewalk edge-family review rows
+- inlet candidate and low-point drainage handoff rows
+- warnings that final inlet/outlet design and hydraulic sizing remain required
+
+First implemented slice:
+
+- `Urban Curb/Gutter - Basic` is exposed in the Intersection preset panel.
+- Starter sources create urban main/side street Alignments and Regions.
+- `urban_curb_gutter_intersection` is a supported source kind.
+- Curb, gutter, sidewalk, inlet candidate, and low-point defaults are marked review-required.
+
+### 3.6 Drainage-Sensitive Sag Intersection
+
+Purpose:
+
+- model a sag-sensitive intersection where Profile low points must drive drainage review
+- expose sag low-point Profile controls as source intent
+- expose low-point refs, inlet candidate refs, and flow-route refs as drainage handoff rows
+- keep final hydraulic sizing and outlet replacement as follow-up drainage work
+
+Recommended preset id:
+
+- `intersection-preset:drainage-sag-basic`
+
+Required source rows:
+
+- one sag main road Alignment and Profile
+- one sag side road Alignment and Profile
+- Profile control rows with a middle `sag_low_point`
+- primary and side-road intersection Regions
+- one `IntersectionRow` with `intersection_kind = drainage_sag_intersection`
+- one grading policy with `low_point_strategy = sag_low_point_review`
+- one drainage policy with low-point refs, inlet candidate refs, and flow-route refs
+- DrainageModel sag low-point and inlet candidate rows
+
+Geometry starter values:
+
+| Item | Default |
+| --- | --- |
+| Main road length | 240 m |
+| Side road length | 220 m |
+| Control length each alignment | 32 m |
+| Curb-return radius | 9 m |
+| Middle Profile control | `sag_low_point` |
+| Inlet spacing hint | 35 m |
+
+Expected outputs:
+
+- sag low-point Profile controls
+- low-point and inlet candidate drainage handoff rows
+- critical flow-route review diagnostic
+- warnings that hydraulic sizing and real inlet/outlet Structures remain required
+
+First implemented slice:
+
+- `Drainage-Sensitive Sag - Basic` is exposed in the Intersection preset panel.
+- Starter sources create sag-oriented Alignments, Profiles, Stationing, and Regions.
+- `drainage_sag_intersection` is a supported source kind.
+- Sag low-point, inlet, flow-route, hydraulic sizing, and outlet replacement defaults are marked review-required.
+
+### 3.7 Roundabout
 
 Purpose:
 
@@ -345,9 +551,9 @@ For each preset, show a short capability note:
 - grading policy
 - drainage handoff status
 
-The preset panel creates editable source objects and policy rows.
+The `Intersection` panel creates editable source objects and policy rows.
 
-It should not replace the existing Intersections panel and should not directly create final corridor geometry.
+It should not directly create final corridor geometry.
 
 ### 6.2 Preset Options
 
@@ -405,7 +611,7 @@ Work:
 
 Acceptance:
 
-- docs describe T, Cross, and Roundabout preset scope clearly
+- docs describe T, Cross, Skewed, Y, Urban, Sag, and Roundabout preset scope clearly
 - unsupported roundabout advanced behavior is explicit
 
 ### Phase IP2: Preset Data Source Builders
@@ -416,7 +622,7 @@ Work:
 
 - added an `Intersection` command and task panel
 - keep the existing `Intersections` command and panel behavior unchanged
-- added preset source builders for T, Cross, and Roundabout starter alignments
+- added preset source builders for T, Cross, Skewed, Y, Urban, Sag, and Roundabout starter alignments
 - generate Alignment/Profile/Stationing/Region rows through the existing starter-source service
 - generated `IntersectionModel` rows and first-slice policy rows are now created from preset control Regions
 - Superelevation handoff source and Drainage low-point handoff source are now created as preset-owned source objects
@@ -432,17 +638,23 @@ Acceptance:
 First-slice implementation note:
 
 - `Intersection` is placed after `Regions` and before `Structures` in the Assembly & Regions workflow.
-- The panel exposes T, Cross, and Roundabout starter presets.
+- The panel exposes T, Cross, Skewed, Y, Urban, Sag, and Roundabout starter presets.
 - The panel now has two source modes:
   - `Create From Preset`
   - `Use Existing Alignments`
 - `Preview Edge Network` is available in both source modes.
 - In `Create From Preset`, the preview uses the preset-created Alignment and control Region source rows, so users run `Create Sources` before previewing.
 - `Use Existing Alignments` lets users select Primary and Secondary Alignment refs, run Auto Detect, preview the edge network, and apply an `IntersectionModel` from the same preset panel.
-- The existing `Intersections` panel remains available as the source-model editor and review surface.
-- Roundabout is not yet promoted into the existing `Intersections` editor's final `IntersectionModel` kind workflow.
+- The older `Intersections` command is no longer exposed in the workbench workflow.
+- Roundabout is not yet promoted beyond the first-slice `Intersection` source workflow.
 - The first code slice creates source objects and a stored `IntersectionModel` contract only.
 - The stored model includes leg, control-area, arm, edge, curb-return, grading, and drainage-policy rows.
+- T and Cross presets now add source-completeness source refs and review-required diagnostics to preset default/draft rows for Anchor, Control Areas, Corners, Edge Families, Lane Connections, Grading, and Drainage.
+- Preset-authored default/draft row notes include `source_completeness_ref=intersection-preset:<kind>:source-completeness` so row-level diagnostics can be traced back to the preset source-completeness audit.
+- Y preset branch, corner, and diverge/merge lane-connection notes include `branch_review_ref=intersection-preset:y_intersection:branch-review` so branch-specific review diagnostics remain traceable.
+- Skewed preset intersection, corner, and edge-family notes include `skew_review_ref=intersection-preset:skewed_intersection:skew-review` so skew-specific review diagnostics remain traceable.
+- Urban curb/gutter preset intersection, curb/gutter/sidewalk edge, and drainage policy notes include `urban_review_ref=intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review` so urban drainage and edge diagnostics remain traceable.
+- Drainage-sensitive sag preset intersection, grading policy, and drainage policy notes include `sag_review_ref=intersection-preset:drainage_sag_intersection:sag-drainage-review` so sag Profile, low-point, inlet candidate, and flow-route diagnostics remain traceable.
 - Presets also create separated `Intersection Preset Superelevation` and `Intersection Preset Drainage` source objects.
 - Superelevation preset rows intentionally avoid hard-coded crossfall controls; they store constraints and require Auto Calculate review.
 - Drainage preset rows create low-point/outlet handoff intent only; users should replace them with real inlet/outfall Structures during drainage design.
@@ -562,7 +774,7 @@ Status: First code slice done
 
 Work:
 
-- create manual QA steps for T, Cross, and Roundabout presets
+- create manual QA steps for T, Cross, Skewed, Y, Urban, Sag, and Roundabout presets
 - include screenshot checkpoints for edge network, Applied Sections, surfaces, drainage, and topology diagnostics
 - update the user-facing wiki to describe the active `Intersection` panel
 - document current Roundabout preset limitations clearly

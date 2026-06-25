@@ -37,6 +37,8 @@ from ..objects.obj_watertight_solid import create_or_update_v1_watertight_solid_
 from ..objects.obj_simulation_qa import create_or_update_v1_simulation_qa_output_object
 from ..objects.obj_simulation_package import create_or_update_v1_simulation_package_output_object, find_v1_simulation_package_output
 from ..exchange import export_simulation_package_to_json
+from ..models.output.simulation_qa_output import SimulationQaDiagnosticRow
+from ..models.output.surface_output import intersection_surface_replacement_blocker_kind
 from ..models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow, WatertightSolidSegmentRow
 from ..models.result.intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
 from ..services.builders import (
@@ -168,6 +170,7 @@ class IntersectionWatertightHandoffSummary:
     source_status: str = "missing"
     intersection_id: str = ""
     target_count: int = 0
+    patch_target_count: int = 0
     pavement_target_count: int = 0
     subgrade_target_count: int = 0
     slope_target_count: int = 0
@@ -184,6 +187,43 @@ class IntersectionWatertightHandoffSummary:
     patch_boundary_status: str = ""
     review_summary: str = ""
     patch_quality_summary: str = ""
+    replacement_gate_status: str = ""
+    replacement_readiness_status: str = ""
+    replacement_handoff_preference: str = ""
+    downstream_selected_role: str = ""
+    legacy_patch_review_visibility: str = ""
+    legacy_patch_compatibility_audit_summary: str = ""
+
+    @property
+    def accepted_zone_target_count(self) -> int:
+        return (
+            int(self.pavement_target_count or 0)
+            + int(self.subgrade_target_count or 0)
+            + int(self.slope_target_count or 0)
+            + int(self.curb_return_target_count or 0)
+        )
+
+    @property
+    def final_quality_status(self) -> str:
+        if self.source_status != "ready":
+            return "missing"
+        if self.target_count <= 0:
+            return "missing"
+        if self.patch_boundary_status and self.patch_boundary_status.lower() not in {"yes", "true", "1", "closed"}:
+            return "blocked"
+        if self.patch_target_count > 0 and self.accepted_zone_target_count <= 0:
+            return "blocked"
+        if self.accepted_zone_target_count > 0:
+            return "candidate"
+        return "check"
+
+    @property
+    def digital_twin_handoff_status(self) -> str:
+        if self.final_quality_status == "blocked":
+            return "review_required"
+        if self.accepted_zone_target_count > 0:
+            return "accepted_zone_candidate"
+        return "missing"
 
     @property
     def readiness_status(self) -> str:
@@ -1292,12 +1332,7 @@ class V1WatertightSolidsTaskPanel:
             self._update_action_state()
             self._status.setPlainText(
                 self._status_text()
-                + (
-                    f"\n\nSimulation package: {str(getattr(obj, 'Name', '') or '')}; "
-                    f"status={str(getattr(package_output, 'package_status', '') or '')}; "
-                    f"outputs={int(getattr(package_output, 'output_count', 0) or 0)}; "
-                    f"volume={_volume_text(float(getattr(package_output, 'total_volume', 0.0) or 0.0))}"
-                )
+                + f"\n\n{_simulation_package_status_line(obj, package_output)}"
             )
         except Exception as exc:
             self._status.setPlainText(self._status_text() + f"\n\nSimulation package was not built: {exc}")
@@ -1325,6 +1360,8 @@ class V1WatertightSolidsTaskPanel:
                     f"\nGeometry files: {info.get('geometry_file_count', 0)}"
                     f"\nGeometry export: {info.get('geometry_export_status', 'not_available')}"
                     f"\nGeometry folder: {info.get('geometry_directory', '-') or '-'}"
+                    f"\nTrim handoff: {info.get('intersection_trim_handoff_status', 'not_available')}"
+                    f"\nTrim fuse: {info.get('intersection_trim_fuse_status', 'not_available')}"
                     f"\nDiagnostics: {info['diagnostic_count']}"
                     f"\nVolume: {_volume_text(float(info['total_volume'] or 0.0))}"
                 )
@@ -1591,7 +1628,7 @@ def _target_display_label(row: object) -> str:
     if family == "intersection_patch_body":
         source_refs = list(getattr(row, "source_refs", []) or [])
         intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
-        return f"Intersection Patch Solid - {intersection_ref}" if intersection_ref else "Intersection Patch Solid"
+        return f"Intersection Patch Solid (Transitional) - {intersection_ref}" if intersection_ref else "Intersection Patch Solid (Transitional)"
     if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
         source_refs = list(getattr(row, "source_refs", []) or [])
         intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
@@ -1626,7 +1663,7 @@ def _target_family_label(row: object) -> str:
     if family == "drainage_pipeline_network_body":
         return "Drainage: Pipe Network"
     if family == "intersection_patch_body":
-        return "Intersection Patch"
+        return "Intersection Patch (Transitional)"
     if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
         return {
             "intersection_pavement_body": "Intersection: Pavement",
@@ -3813,6 +3850,7 @@ def _intersection_watertight_handoff_lines(document, target_model=None) -> list[
         "Intersection Solid QA:",
         (
             f"status={summary.readiness_status}; source={summary.source_status}; "
+            f"final_quality={summary.final_quality_status}; handoff={summary.digital_twin_handoff_status}; "
             f"targets={summary.target_count}; intersection={summary.intersection_id or '-'}; "
             f"triangulation={summary.triangulation_mode or '-'}; boundary={summary.surface_boundary_strategy or '-'}; "
             f"edge_blend_faces={summary.edge_blend_face_count}; curb_return_arcs={summary.curb_return_arc_count}; "
@@ -3823,6 +3861,7 @@ def _intersection_watertight_handoff_lines(document, target_model=None) -> list[
             f"clipping_boundary={summary.exclusion_boundary_strategy or '-'}; "
             f"aligned={'practical' if summary.exclusion_practical_aligned else 'check'}; "
             f"patch_boundary={summary.patch_boundary_status or '-'}; "
+            f"patch_targets={summary.patch_target_count}; accepted_zone_targets={summary.accepted_zone_target_count}; "
             f"zone_targets: pavement={summary.pavement_target_count}; subgrade={summary.subgrade_target_count}; "
             f"slope={summary.slope_target_count}; curb_return={summary.curb_return_target_count}"
         ),
@@ -3846,6 +3885,7 @@ def intersection_watertight_handoff_summary(document=None, *, target_model=None)
         source_status="ready",
         intersection_id=str(getattr(preview, "IntersectionId", "") or ""),
         target_count=target_count,
+        patch_target_count=_solid_target_family_count(target_rows, "intersection_patch_body"),
         pavement_target_count=_solid_target_family_count(target_rows, "intersection_pavement_body"),
         subgrade_target_count=_solid_target_family_count(target_rows, "intersection_subgrade_body"),
         slope_target_count=_solid_target_family_count(target_rows, "intersection_slope_body"),
@@ -3862,6 +3902,12 @@ def intersection_watertight_handoff_summary(document=None, *, target_model=None)
         patch_boundary_status=str(getattr(preview, "IntersectionPatchBoundaryClosed", "") or ""),
         review_summary=str(getattr(preview, "IntersectionReviewSummary", "") or ""),
         patch_quality_summary=str(getattr(preview, "IntersectionPatchQualitySummary", "") or ""),
+        replacement_gate_status=str(getattr(preview, "IntersectionSurfaceReplacementGateStatus", "") or ""),
+        replacement_readiness_status=str(getattr(preview, "IntersectionSurfaceReplacementReadinessStatus", "") or ""),
+        replacement_handoff_preference=str(getattr(preview, "IntersectionSurfaceReplacementHandoffPreference", "") or ""),
+        downstream_selected_role=str(getattr(preview, "IntersectionSurfaceDownstreamHandoffSelectedRole", "") or ""),
+        legacy_patch_review_visibility=str(getattr(preview, "IntersectionLegacyPatchReviewVisibility", "") or ""),
+        legacy_patch_compatibility_audit_summary=str(getattr(preview, "IntersectionLegacyPatchCompatibilityAuditSummary", "") or ""),
     )
 
 
@@ -3922,7 +3968,15 @@ def _intersection_handoff_target_notes(summary: IntersectionWatertightHandoffSum
         f"aligned={'practical' if summary.exclusion_practical_aligned else 'check'}; "
         f"edge_blend_faces={summary.edge_blend_face_count}; "
         f"curb_return_arcs={summary.curb_return_arc_count}; "
-        f"arc_segments={summary.curb_return_arc_segment_count}."
+        f"arc_segments={summary.curb_return_arc_segment_count}; "
+        f"quality_status=transitional; final_quality={summary.final_quality_status}; "
+        f"digital_twin_handoff={summary.digital_twin_handoff_status}; "
+        f"replacement_gate={summary.replacement_gate_status or 'not_available'}; "
+        f"replacement_readiness={summary.replacement_readiness_status or 'not_available'}; "
+        f"handoff_preference={summary.replacement_handoff_preference or 'not_available'}; "
+        f"downstream_selected_role={summary.downstream_selected_role or 'not_available'}; "
+        f"legacy_patch_review={summary.legacy_patch_review_visibility or 'not_available'}; "
+        f"legacy_patch_audit={summary.legacy_patch_compatibility_audit_summary or 'not_available'}."
     )
 
 
@@ -4060,6 +4114,15 @@ def _simulation_ready_qa_lines(document) -> list[str]:
             f"terrain_issues={int(getattr(qa, 'terrain_issue_count', 0) or 0)}; "
             f"port_connection={str(getattr(qa, 'port_connection_status', '') or 'not_checked')}; "
             f"port_issues={int(getattr(qa, 'port_issue_count', 0) or 0)}; "
+            f"intersection_trim={str(getattr(qa, 'intersection_trim_status', '') or 'not_available')}; "
+            f"trim_handoff={str(getattr(qa, 'intersection_trim_handoff_status', '') or 'not_available')}; "
+            f"trim_ready_pairs={int(getattr(qa, 'intersection_trim_ready_pair_count', 0) or 0)}; "
+            f"trim_blocked_pairs={int(getattr(qa, 'intersection_trim_blocked_pair_count', 0) or 0)}; "
+            f"trim_fuse={str(getattr(qa, 'intersection_trim_fuse_status', '') or 'not_available')}; "
+            f"intersection_final_quality={str(getattr(qa, 'intersection_handoff_final_quality_status', '') or 'not_available')}; "
+            f"intersection_handoff={str(getattr(qa, 'intersection_handoff_status', '') or 'not_available')}; "
+            f"replacement_readiness={str(getattr(qa, 'intersection_replacement_readiness_status', '') or 'not_available')}; "
+            f"replacement_blocker={str(getattr(qa, 'intersection_replacement_blocker_kind', '') or 'none')}; "
             f"total_volume={_volume_text(float(getattr(qa, 'total_volume', 0.0) or 0.0))}; "
             f"simulation_ready={'yes' if bool(getattr(qa, 'simulation_ready', False)) else 'no'}; "
             f"missing={','.join(list(getattr(qa, 'missing_contexts', []) or [])) or '-'}"
@@ -4071,15 +4134,92 @@ def _simulation_ready_qa_lines(document) -> list[str]:
     ]
 
 
+def _simulation_package_status_line(package_obj, package_output) -> str:
+    return (
+        f"Simulation package: {str(getattr(package_obj, 'Name', '') or '')}; "
+        f"status={str(getattr(package_output, 'package_status', '') or '')}; "
+        f"outputs={int(getattr(package_output, 'output_count', 0) or 0)}; "
+        f"trim_handoff={str(getattr(package_output, 'intersection_trim_handoff_status', '') or 'not_available')}; "
+        f"trim_fuse={str(getattr(package_output, 'intersection_trim_fuse_status', '') or 'not_available')}; "
+        f"volume={_volume_text(float(getattr(package_output, 'total_volume', 0.0) or 0.0))}"
+    )
+
+
 def _build_simulation_qa_output(document):
-    return WatertightSimulationQaService().build(
+    output = WatertightSimulationQaService().build(
         WatertightSimulationQaBuildRequest(
             project_id=_document_project_id(document),
             output_refs=[str(getattr(obj, "Name", "") or "") for obj in _watertight_output_objects(document)],
             solid_inputs=_simulation_qa_solid_inputs(document),
             terrain_ready=_terrain_context_ready(document),
             terrain_bound_box=_terrain_context_bound_box_tuple(document),
+            intersection_trim=_intersection_trim_handoff_dict(document),
         )
+    )
+    return _attach_intersection_replacement_handoff_to_simulation_qa(output, document)
+
+
+def _intersection_replacement_blocker_kind_from_summary(summary: IntersectionWatertightHandoffSummary) -> str:
+    if summary.final_quality_status != "blocked" and summary.digital_twin_handoff_status != "review_required":
+        return ""
+    return intersection_surface_replacement_blocker_kind(
+        str(getattr(summary, "replacement_readiness_status", "") or ""),
+        str(getattr(summary, "downstream_selected_role", "") or ""),
+    )
+
+
+def _attach_intersection_replacement_handoff_to_simulation_qa(output, document):
+    if output is None:
+        return output
+    summary = intersection_watertight_handoff_summary(
+        document,
+        target_model=discover_watertight_solid_targets(document) if document is not None else None,
+    )
+    if summary.source_status != "ready":
+        return output
+    blocker_kind = _intersection_replacement_blocker_kind_from_summary(summary)
+    diagnostics = list(getattr(output, "diagnostic_rows", []) or [])
+    if blocker_kind:
+        diagnostics.append(
+            SimulationQaDiagnosticRow(
+                diagnostic_id="simulation-qa:intersection:intersection_final_handoff_blocked",
+                severity="warning",
+                kind="intersection_final_handoff_blocked",
+                source_ref="V1CorridorIntersectionSurfacePreview",
+                message="Intersection final Digital Twin handoff is blocked by transitional patch fallback.",
+                notes=(
+                    f"blocker_kind={blocker_kind}; "
+                    f"final_quality={summary.final_quality_status}; "
+                    f"digital_twin_handoff={summary.digital_twin_handoff_status}; "
+                    f"replacement_readiness={summary.replacement_readiness_status or 'not_available'}; "
+                    f"replacement_gate={summary.replacement_gate_status or 'not_available'}"
+                ),
+            )
+        )
+        diagnostics.append(
+            SimulationQaDiagnosticRow(
+                diagnostic_id=f"simulation-qa:intersection:{blocker_kind}",
+                severity="warning",
+                kind=blocker_kind,
+                source_ref="V1CorridorIntersectionSurfacePreview",
+                message="Intersection replacement readiness blocks final Digital Twin handoff.",
+                notes=(
+                    f"final_quality={summary.final_quality_status}; "
+                    f"digital_twin_handoff={summary.digital_twin_handoff_status}; "
+                    f"replacement_readiness={summary.replacement_readiness_status or 'not_available'}; "
+                    f"replacement_gate={summary.replacement_gate_status or 'not_available'}; "
+                    f"downstream_selected_role={summary.downstream_selected_role or 'not_available'}"
+                ),
+            )
+        )
+    return replace(
+        output,
+        intersection_handoff_final_quality_status=summary.final_quality_status,
+        intersection_handoff_status=summary.digital_twin_handoff_status,
+        intersection_replacement_readiness_status=summary.replacement_readiness_status,
+        intersection_replacement_blocker_kind=blocker_kind,
+        diagnostic_rows=diagnostics,
+        simulation_ready=bool(getattr(output, "simulation_ready", False)) and not bool(blocker_kind),
     )
 
 
@@ -5200,6 +5340,9 @@ def _build_simulation_package_output(document, *, qa_output=None):
             drainage_readiness=_drainage_watertight_handoff_dict(
                 drainage_watertight_handoff_summary(document, target_model=discover_watertight_solid_targets(document))
             ),
+            intersection_handoff=_intersection_watertight_handoff_dict(
+                intersection_watertight_handoff_summary(document, target_model=discover_watertight_solid_targets(document))
+            ),
             intersection_trim=_intersection_trim_handoff_dict(document),
         )
     )
@@ -5220,6 +5363,25 @@ def _drainage_watertight_handoff_dict(summary: DrainageWatertightHandoffSummary)
         "structure_body_target_count": summary.structure_body_target_count,
         "built_drainage_output_count": summary.built_drainage_output_count,
         "network_fuse_status": summary.network_fuse_status,
+    }
+
+
+def _intersection_watertight_handoff_dict(summary: IntersectionWatertightHandoffSummary) -> dict[str, object]:
+    return {
+        "readiness_status": summary.readiness_status,
+        "final_quality_status": summary.final_quality_status,
+        "digital_twin_handoff": summary.digital_twin_handoff_status,
+        "source_status": summary.source_status,
+        "intersection_id": summary.intersection_id,
+        "target_count": summary.target_count,
+        "patch_target_count": summary.patch_target_count,
+        "accepted_zone_target_count": summary.accepted_zone_target_count,
+        "replacement_gate_status": summary.replacement_gate_status,
+        "replacement_readiness_status": summary.replacement_readiness_status,
+        "replacement_handoff_preference": summary.replacement_handoff_preference,
+        "downstream_selected_role": summary.downstream_selected_role,
+        "legacy_patch_review_visibility": summary.legacy_patch_review_visibility,
+        "legacy_patch_compatibility_audit_summary": summary.legacy_patch_compatibility_audit_summary,
     }
 
 
@@ -5368,7 +5530,15 @@ def _simulation_qa_solid_inputs(document) -> list[WatertightSimulationQaSolidInp
                 subassembly_refs=[str(value or "") for value in list(getattr(obj, "SubassemblyRefs", []) or [])],
                 structure_refs=[str(value or "") for value in list(getattr(obj, "StructureRefs", []) or [])],
                 flow_route_refs=[str(value or "") for value in list(getattr(obj, "FlowRouteRefs", []) or [])],
-                source_refs=[str(value or "") for value in list(getattr(obj, "SourceRefs", []) or [])],
+                material_refs=[str(value or "") for value in list(getattr(obj, "MaterialRefs", []) or [])],
+                source_refs=_unique_refs(
+                    [str(value or "") for value in list(getattr(obj, "SourceRefs", []) or [])]
+                    + [
+                        part.strip()
+                        for value in list(getattr(obj, "SolidSourceRefs", []) or [])
+                        for part in str(value or "").replace("|", ",").split(",")
+                    ]
+                ),
             )
         )
     return rows

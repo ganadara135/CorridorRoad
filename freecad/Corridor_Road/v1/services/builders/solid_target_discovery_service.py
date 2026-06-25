@@ -241,7 +241,9 @@ def _intersection_surface_zone_target_rows(
         intersection_id = str(getattr(intersection, "intersection_id", "") or "").strip()
         if not intersection_id:
             continue
-        surface_zones = service.evaluate_surface_zones(intersection_model, intersection_id=intersection_id)
+        topology = service.evaluate_topology(intersection_model, intersection_id=intersection_id)
+        edge_network = service.evaluate_edge_network(intersection_model, topology, intersection_id=intersection_id)
+        surface_zones = service.evaluate_surface_zones(intersection_model, edge_network, intersection_id=intersection_id)
         if str(getattr(surface_zones, "status", "") or "") == "error":
             target_id = f"solid-target:intersection-zone:{_safe_id(intersection_id)}"
             diagnostics.append(
@@ -263,6 +265,12 @@ def _intersection_surface_zone_target_rows(
             zone_id = str(getattr(zone, "zone_id", "") or "").strip()
             zone_token = _safe_id(zone_id or str(getattr(zone, "zone_role", "") or "zone"))
             zone_status = str(getattr(zone, "status", "") or "").strip().lower()
+            source_status = str(getattr(zone, "source_status", "") or "").strip().lower() or "accepted"
+            source_diagnostics = [
+                str(value or "")
+                for value in list(getattr(zone, "source_diagnostic_rows", ()) or ())
+                if str(value or "")
+            ]
             readiness = "planned" if zone_status in {"candidate", "ready", "warning", "warn"} else "blocked"
             diagnostic_refs: list[str] = []
             if readiness == "blocked":
@@ -272,6 +280,16 @@ def _intersection_surface_zone_target_rows(
                     f"solid-target:intersection-zone:{_safe_id(intersection_id)}:{zone_token}",
                     "Intersection surface-zone target is blocked because the source zone is not ready.",
                     notes=f"zone={zone_id};status={zone_status or '-'}",
+                )
+                diagnostics.append(diagnostic)
+                diagnostic_refs.append(diagnostic.diagnostic_id)
+            if source_status not in {"accepted", "ready"} or source_diagnostics:
+                diagnostic = _diagnostic(
+                    "warning",
+                    "intersection_zone_target_source_warning",
+                    f"solid-target:intersection-zone:{_safe_id(intersection_id)}:{zone_token}",
+                    "Intersection zone solid target consumes a surface-zone contract with source warnings.",
+                    notes=f"zone={zone_id};source_status={source_status};diagnostics={';'.join(source_diagnostics) or '-'}",
                 )
                 diagnostics.append(diagnostic)
                 diagnostic_refs.append(diagnostic.diagnostic_id)
@@ -293,6 +311,8 @@ def _intersection_surface_zone_target_rows(
                             + [
                                 str(getattr(intersection_model, "intersection_model_id", "") or ""),
                                 intersection_id,
+                                str(getattr(edge_network, "edge_network_result_id", "") or ""),
+                                str(getattr(surface_zones, "surface_zone_result_id", "") or ""),
                                 zone_id,
                                 *list(getattr(zone, "source_edge_refs", ()) or ()),
                                 *list(getattr(zone, "boundary_edge_refs", ()) or ()),
@@ -307,6 +327,13 @@ def _intersection_surface_zone_target_rows(
                             f"zone_family={str(getattr(zone, 'zone_family', '') or '')}; "
                             f"design_zone_role={str(getattr(zone, 'design_zone_role', '') or '')}; "
                             f"surface_role={str(getattr(zone, 'surface_role', '') or '')}; "
+                            f"source_status={source_status}; "
+                            f"contract_status=accepted_surface_zone; "
+                            f"quality_status=accepted_contract_pending_builder; "
+                            f"digital_twin_handoff=accepted_zone_candidate; "
+                            f"edge_network={str(getattr(edge_network, 'edge_network_result_id', '') or '')}; "
+                            f"surface_zone_result={str(getattr(surface_zones, 'surface_zone_result_id', '') or '')}; "
+                            "builder_state=pending_accepted_zone_solid_builder; "
                             "build_backend=planned_edge_network_zone_solid."
                         ),
                     )
@@ -457,6 +484,21 @@ def _intersection_patch_target_rows(
             station_start, station_end, _station_count = _station_range(applied)
         section_count = _intersection_applied_section_count(sections, intersection_id, control_refs)
         diagnostic_refs: list[str] = []
+        transitional_diagnostic = _diagnostic(
+            "warning",
+            "intersection_patch_body_transitional",
+            target_id,
+            "Intersection patch body is a transitional watertight solid target pending accepted edge-network zone solids.",
+            notes=(
+                f"intersection={intersection_id};quality_status=transitional;"
+                "handoff=review_before_digital_twin_use;"
+                "transitional_reason=legacy_patch_prism;"
+                "replacement_target_families=intersection_pavement_body,intersection_subgrade_body,intersection_slope_body,intersection_curb_return_body;"
+                "replacement_guidance=accepted_zone_solids_required"
+            ),
+        )
+        diagnostics.append(transitional_diagnostic)
+        diagnostic_refs.append(transitional_diagnostic.diagnostic_id)
         if section_count < 2:
             diagnostic = _diagnostic(
                 "error",
@@ -492,7 +534,12 @@ def _intersection_patch_target_rows(
                     "Intersection patch body target discovered from IntersectionModel control Regions. "
                     f"intersection={intersection_id}; kind={str(getattr(intersection, 'intersection_kind', '') or '')}; "
                     f"control_regions={len(control_refs)}; applied_sections={section_count}; "
-                    "boundary_source=refined_patch_boundary_preferred; build_backend=thin_patch_prism."
+                    "boundary_source=refined_patch_boundary_preferred; build_backend=thin_patch_prism; "
+                    "quality_status=transitional; digital_twin_handoff=review_required; "
+                    "transitional_reason=legacy_patch_prism; "
+                    "replacement_target_families=intersection_pavement_body,intersection_subgrade_body,intersection_slope_body,intersection_curb_return_body; "
+                    "replacement_guidance=accepted_zone_solids_required; "
+                    "source_contract_required=accepted_surface_zone."
                 ),
             )
         )

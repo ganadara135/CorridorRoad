@@ -437,7 +437,139 @@ Architectural rule:
 
 This keeps output contracts lighter while preserving engineering meaning.
 
-## 22. Relationship to Earthwork and Exchange
+## 22. Intersection Slope Face Boundary Output Metadata
+
+Intersection Slope Face output should prefer `IntersectionSlopeFaceBoundaryResult` metadata before showing fallback strip details.
+
+Build Parametric preview/review objects should expose:
+
+- `IntersectionSlopeFaceBoundaryResultId`
+- `IntersectionSlopeFaceBoundarySummary`
+- `IntersectionSlopeFaceBoundaryStripGenerationMode`
+- `IntersectionSlopeFaceBoundaryStripOutputPath`
+- `IntersectionSlopeFaceBoundaryStripDiagnostic`
+
+Guided Review should label this path as `boundary_review=intersection_slope_face_boundary_result` when boundary-result metadata is available.
+
+Visible boundary strip generation is suppressed by default.
+
+Fallback strip details remain diagnostic only. They should not replace the boundary result as the review contract.
+
+When suppressed, Build Parametric should report `IntersectionSlopeFaceBoundaryStripGenerationMode=suppressed`, `IntersectionSlopeFaceBoundaryStripOutputPath=metadata_only`, and zero strip triangles.
+
+`Slope Face Surface` may still receive `intersection_side_slope_strip` triangles.
+
+Those triangles are not boundary fallback patches. They are restored from the pre-clip Side Slope TIN when intersection clipping removes a triangle that is outside the final `Intersection Surface` footprint.
+
+When the pre-clip reference cannot cover the gap, they may also be generated from adjacent evaluated `AppliedSection` side-slope edges when intersection clipping leaves an uncovered side-slope quad next to the current daylight TIN boundary.
+
+The TIN should expose:
+
+- `intersection_side_slope_reference_restore_status`
+- `intersection_side_slope_reference_restore_triangle_count`
+- `intersection_side_slope_reference_restore_output_path=preclip_side_slope_tin`
+- `intersection_side_slope_strip_status`
+- `intersection_side_slope_strip_tested_count`
+- `intersection_side_slope_strip_count`
+- `intersection_side_slope_strip_triangle_count`
+- `intersection_side_slope_strip_output_path=applied_section_side_slope_edges`
+
+This path must not fill inside the `Intersection Surface` footprint and must not duplicate already covered Slope Face triangles.
+
+Intersection-owned Slope Face review rows should also expose consumed Slope Face Loop contract summary and diagnostic counts from `ConsumedIntersectionContractSummary` and `ConsumedIntersectionContractDiagnosticCount`.
+
+If `ConsumedIntersectionContractRefs` is present for `intersection_slope`, the review row should use `output_path=contract_consumed` even when the consumed rows are warning-only or produce no ready loop geometry.
+
+## 23. Transitional Intersection Surface Patch Rows
+
+Transitional Intersection Surface Patch rows normalize the current legacy patch output while accepted Surface Zone output matures.
+
+Recommended row families:
+
+- boundary rows: footprint point count, ring count, hole/island count, closed/self-crossing flags, area, bbox, and boundary diagnostics
+- triangulation rows: triangulation method, boundary strategy, triangle count, structured strip count, curb-return edge/arc/sample counts, tie-in edge counts, overlap-cut counts, and row diagnostics
+- quality rows: min triangle quality, skinny triangle count, long boundary edge counts, and quality diagnostics
+
+Build Parametric preview objects should expose:
+
+- `IntersectionSurfacePatchSummary`
+- `IntersectionSurfacePatchFootprintSummary`
+- `IntersectionSurfacePatchBoundaryRowStatuses`
+- `IntersectionSurfacePatchTriangulationRowStatuses`
+- `IntersectionSurfacePatchQualityRowStatuses`
+- `IntersectionSurfacePatchRowDiagnostics`
+
+`IntersectionSurfacePatchFootprintSummary` should be derived from normalized boundary and triangulation rows. It should summarize footprint, curb-return, and tie-in evidence without reintroducing legacy patch-only review details.
+
+These rows remain `output_contract_status=transitional_normalized` and `digital_twin_handoff=review_required` until accepted Surface Zone output is approved as the replacement path.
+
+## 24. Intersection Surface Zone Output Rows
+
+Accepted Intersection Surface Zone output rows consume `IntersectionSurfaceZoneResult` and `IntersectionEdgeNetworkResult` directly.
+
+Recommended row fields:
+
+- `output_row_id`
+- `intersection_id`
+- `surface_zone_ref`
+- `surface_zone_result_ref`
+- `edge_network_result_ref`
+- `zone_family`
+- `design_zone_role`
+- `surface_role`
+- `source_edge_refs`
+- `boundary_edge_refs`
+- `inner_edge_refs`
+- `outer_edge_refs`
+- `tie_edge_refs`
+- `leg_refs`
+- `alignment_refs`
+- `control_area_refs`
+- `vertical_policy_ref`
+- `output_contract_status`
+- `digital_twin_handoff`
+- `build_backend`
+- `source_status`
+- `status`
+- `diagnostic_rows`
+- `notes`
+
+The row must preserve source/result lineage from the consumed Surface Zone row. Preview objects may summarize this as `IntersectionSurfaceZoneOutputRowLineage`, but the row contract remains the authoritative output handoff.
+
+Build Parametric review rows that describe accepted Surface Zone output should consume the same `IntersectionSurfaceZoneOutputRowLineage` summary. They should report lineage row counts and a short lineage preview from the main Intersection preview metadata, not infer lineage from transitional patch preview properties.
+
+Build Parametric does not create `V1CorridorIntersectionSurfaceZoneOutputPreview` by default.
+
+That visible linework preview was removed because accepted Surface Zone edge previews could appear outside the actual intersection control area.
+
+Build Parametric does not create `V1CorridorIntersectionSurfaceZoneSurfacePreview` by default.
+
+That visible TIN preview was removed because early fan triangulation could draw edge strips outside the actual intersection control area.
+
+The accepted Surface Zone output contract remains the handoff source until a control-area-safe zone-surface builder is implemented.
+
+## 25. Intersection Replacement Handoff Metadata
+
+Intersection patch replacement metadata belongs to the surface output contract layer because the decision compares a transitional patch surface with accepted Intersection Surface Zone output.
+
+Build Parametric preview objects should expose:
+
+- `IntersectionSurfaceReplacementReadinessStatus`
+- `IntersectionSurfaceReplacementGateStatus`
+- `IntersectionSurfaceDownstreamHandoffSelectedRole`
+- `IntersectionSurfaceReplacementBlockerKind`
+
+`IntersectionSurfaceReplacementBlockerKind` is a shared output-contract value. Watertight Simulation QA, Simulation Package, ExchangePackage, JSON export, IFC export, and preview summaries should consume this value instead of reinterpreting legacy patch preview properties independently.
+
+Recommended blocker kinds:
+
+- `intersection_replacement_gate_review_required`
+- `intersection_replacement_gate_blocked`
+- `intersection_replacement_ready_patch_fallback`
+
+`intersection_replacement_ready_patch_fallback` applies only when the replacement readiness is `ready_to_replace` but downstream handoff still selects the transitional patch fallback.
+
+## 26. Relationship to Earthwork and Exchange
 
 Surface outputs are a major upstream input to:
 
@@ -447,7 +579,7 @@ Surface outputs are a major upstream input to:
 
 Earthwork and exchange systems should consume normalized surface rows and provenance instead of reconstructing surfaces from display state.
 
-## 23. Relationship to Viewer and Reports
+## 27. Relationship to Viewer and Reports
 
 Viewer and report systems may consume:
 
@@ -455,10 +587,15 @@ Viewer and report systems may consume:
 - boundary and void rows for display context
 - comparison rows for review
 - quality and provenance rows for diagnostics
+- output-path labels such as `contract_consumed`, `legacy_output`, `inferred_fallback`, `review_gate`, and `missing_source`
 
 But they must not become the new surface source.
 
-## 24. Validation Rules
+`missing_source` is reserved for rows where the source contract is absent. It must not be reported as `contract_consumed`.
+
+Intersection Contract summaries should include a compact `source status=...` distribution so accepted, warning, error, and missing source states remain visible outside the detailed table.
+
+## 28. Validation Rules
 
 Validation should check for:
 
@@ -470,7 +607,7 @@ Validation should check for:
 
 Validation results should appear in `diagnostic_rows`.
 
-## 25. Anti-Patterns
+## 29. Anti-Patterns
 
 The following should be avoided:
 
@@ -480,7 +617,7 @@ The following should be avoided:
 - losing provenance during clipping or export packaging
 - mixing earthwork totals directly into surface rows with no clear meaning
 
-## 26. Summary
+## 30. Summary
 
 In v1, `SurfaceOutput` is the normalized output contract for:
 

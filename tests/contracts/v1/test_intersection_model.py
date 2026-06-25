@@ -1,11 +1,14 @@
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     INTERSECTION_KIND_PRESETS,
+    IntersectionAnchorRow,
     IntersectionArmPolicyRow,
     IntersectionControlArea,
+    IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
     IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
+    IntersectionLaneConnectionRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -82,16 +85,51 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
         station_ranges=[(480.0, 560.0)],
         influence_ranges=[(460.0, 580.0)],
         control_region_refs=["region:main-intersection"],
+        source_method="region_derived",
+        approval_status="draft",
+        intent_status="region_derived",
+        source_region_refs=["region:main-intersection"],
         curb_return_policy_ref="policy:curb-return-basic",
         grading_policy_ref="policy:intersection-grading-basic",
         drainage_policy_ref="policy:intersection-drainage-basic",
+        diagnostic_rows=["control_area_region_derived"],
+    )
+    corner = IntersectionCornerRow(
+        corner_id="corner:intersection:x-01:nw",
+        intersection_id="intersection:x-01",
+        control_area_ref="intersection:x-01:control-main",
+        from_leg_ref="intersection:x-01:leg-primary",
+        to_leg_ref="intersection:x-01:leg-secondary",
+        side="left",
+        quadrant="northwest",
+        curb_return_policy_ref="policy:curb-return-basic",
+        source_method="manual",
+        approval_status="locked",
+        diagnostic_rows=["corner_locked_by_user"],
     )
     model = IntersectionModel(
         schema_version=1,
         project_id="project:demo",
         intersection_model_id="intersection-model:main",
+        anchor_rows=[
+            IntersectionAnchorRow(
+                anchor_id="anchor:intersection:x-01:main",
+                intersection_id="intersection:x-01",
+                source_method="manual",
+                approval_status="locked",
+                primary_alignment_ref="alignment:main",
+                primary_station=500.0,
+                secondary_station_refs={"alignment:cross": 80.0},
+                point_x=100.0,
+                point_y=50.0,
+                point_z=10.0,
+                tolerance=0.05,
+                diagnostic_rows=["anchor_locked_by_user"],
+            )
+        ],
         intersection_rows=[row],
         control_area_rows=[control],
+        corner_rows=[corner],
         arm_policy_rows=[
             IntersectionArmPolicyRow(
                 policy_id="policy:arm-primary",
@@ -111,6 +149,7 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
                 radius=12.0,
                 side="all",
                 approach_leg_refs=["intersection:x-01:leg-primary"],
+                corner_refs=["corner:intersection:x-01:nw"],
             )
         ],
         grading_policy_rows=[
@@ -121,6 +160,14 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
                 target_crossfall_percent=0.0,
                 primary_alignment_ref="alignment:main",
                 secondary_alignment_refs=["alignment:cross"],
+                controlling_profile_ref="profile:main",
+                crown_behavior="preserve_primary_crown",
+                tie_in_rule="tie_to_primary_profile",
+                crossfall_transition="linear",
+                low_point_strategy="review_low_points",
+                source_method="manual",
+                approval_status="locked",
+                diagnostic_rows=["grading_locked_by_user"],
             )
         ],
         edge_policy_rows=[
@@ -132,6 +179,28 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
                 side="both",
                 offset_rule="lane_width_from_arm_policy",
                 elevation_rule="from_grading_policy",
+                edge_family_intent="lane",
+                source_method="subassembly_derived",
+                approval_status="locked",
+                assembly_ref="assembly:basic-road",
+                template_ref="template:basic-road",
+                subassembly_ref="subassembly:lane-left",
+                subassembly_kind="lane",
+                diagnostic_rows=["edge_family_locked_by_user"],
+            )
+        ],
+        lane_connection_rows=[
+            IntersectionLaneConnectionRow(
+                connection_id="lane-connection:intersection:x-01:through-01",
+                intersection_id="intersection:x-01",
+                movement_type="through",
+                from_leg_ref="intersection:x-01:leg-primary",
+                to_leg_ref="intersection:x-01:leg-secondary",
+                from_edge_policy_ref="policy:edge-primary-pavement",
+                to_edge_policy_ref="policy:edge-secondary-pavement",
+                source_method="manual",
+                approval_status="locked",
+                diagnostic_rows=["lane_connection_locked_by_user"],
             )
         ],
         drainage_policy_rows=[
@@ -141,20 +210,58 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
                 capture_mode="review_low_points",
                 low_point_tolerance=0.04,
                 gutter_edge_refs=["policy:edge-primary-pavement"],
+                drainage_element_refs=["drainage:inlet-01"],
+                flow_route_refs=["flow-route:intersection-main"],
+                inlet_candidate_refs=["inlet-candidate:01"],
+                low_point_refs=["low-point:central"],
+                intent_status="accepted",
+                source_method="manual",
+                approval_status="locked",
+                diagnostic_rows=["drainage_locked_by_user"],
             )
         ],
     )
 
     assert model.intersection_rows[0].intersection_kind == "cross_intersection"
+    assert model.anchor_rows[0].approval_status == "locked"
+    assert model.anchor_rows[0].secondary_station_refs["alignment:cross"] == 80.0
+    assert model.anchor_rows[0].diagnostic_rows == ["anchor_locked_by_user"]
     assert model.intersection_rows[0].secondary_station_refs["alignment:cross"] == 80.0
     assert model.intersection_rows[0].leg_rows[0].centerline3d_ref == "centerline3d:main"
     assert model.control_area_rows[0].control_region_refs == ["region:main-intersection"]
+    assert model.control_area_rows[0].source_method == "region_derived"
+    assert model.control_area_rows[0].approval_status == "draft"
+    assert model.control_area_rows[0].intent_status == "region_derived"
+    assert model.control_area_rows[0].source_region_refs == ["region:main-intersection"]
+    assert model.control_area_rows[0].diagnostic_rows == ["control_area_region_derived"]
+    assert model.corner_rows[0].approval_status == "locked"
+    assert model.corner_rows[0].curb_return_policy_ref == "policy:curb-return-basic"
+    assert model.corner_rows[0].diagnostic_rows == ["corner_locked_by_user"]
     assert model.arm_policy_rows[0].lane_width == 3.6
     assert model.curb_return_policy_rows[0].radius == 12.0
     assert model.curb_return_policy_rows[0].approach_leg_refs == ["intersection:x-01:leg-primary"]
+    assert model.curb_return_policy_rows[0].corner_refs == ["corner:intersection:x-01:nw"]
     assert model.edge_policy_rows[0].elevation_rule == "from_grading_policy"
+    assert model.edge_policy_rows[0].edge_family_intent == "lane"
+    assert model.edge_policy_rows[0].approval_status == "locked"
+    assert model.edge_policy_rows[0].assembly_ref == "assembly:basic-road"
+    assert model.edge_policy_rows[0].subassembly_kind == "lane"
+    assert model.edge_policy_rows[0].diagnostic_rows == ["edge_family_locked_by_user"]
+    assert model.lane_connection_rows[0].movement_type == "through"
+    assert model.lane_connection_rows[0].approval_status == "locked"
+    assert model.lane_connection_rows[0].diagnostic_rows == ["lane_connection_locked_by_user"]
     assert model.grading_policy_rows[0].mode == "flatten_intersection"
+    assert model.grading_policy_rows[0].controlling_profile_ref == "profile:main"
+    assert model.grading_policy_rows[0].crown_behavior == "preserve_primary_crown"
+    assert model.grading_policy_rows[0].tie_in_rule == "tie_to_primary_profile"
+    assert model.grading_policy_rows[0].approval_status == "locked"
+    assert model.grading_policy_rows[0].diagnostic_rows == ["grading_locked_by_user"]
     assert model.drainage_policy_rows[0].gutter_edge_refs == ["policy:edge-primary-pavement"]
+    assert model.drainage_policy_rows[0].drainage_element_refs == ["drainage:inlet-01"]
+    assert model.drainage_policy_rows[0].flow_route_refs == ["flow-route:intersection-main"]
+    assert model.drainage_policy_rows[0].intent_status == "accepted"
+    assert model.drainage_policy_rows[0].approval_status == "locked"
+    assert model.drainage_policy_rows[0].diagnostic_rows == ["drainage_locked_by_user"]
 
 
 def test_intersection_kind_helper_rejects_unsupported_kind() -> None:

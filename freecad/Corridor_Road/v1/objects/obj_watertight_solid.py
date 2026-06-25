@@ -77,6 +77,9 @@ def ensure_v1_watertight_solid_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "StructureRefs", "Solid Rows", "structure refs")
     _add_property(obj, "App::PropertyStringList", "DrainageRefs", "Solid Rows", "drainage refs")
     _add_property(obj, "App::PropertyStringList", "FlowRouteRefs", "Solid Rows", "flow route refs")
+    _add_property(obj, "App::PropertyStringList", "MaterialRefs", "Solid Rows", "material refs")
+    _add_property(obj, "App::PropertyStringList", "SolidSourceRefs", "Solid Rows", "row-level source refs")
+    _add_property(obj, "App::PropertyStringList", "SolidNotes", "Solid Rows", "row-level notes")
     _add_property(obj, "App::PropertyStringList", "PathSources", "Solid Rows", "solid path source contracts")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRefs", "Solid Rows", "diagnostic refs")
     _add_property(obj, "App::PropertyInteger", "SegmentCount", "Segments", "segment row count")
@@ -190,6 +193,9 @@ def update_v1_watertight_solid_output_object(
     obj.StructureRefs = [str(row.structure_ref) for row in rows]
     obj.DrainageRefs = [str(row.drainage_ref) for row in rows]
     obj.FlowRouteRefs = [str(getattr(row, "flow_route_ref", "") or "") for row in rows]
+    obj.MaterialRefs = [str(getattr(row, "material_ref", "") or "") for row in rows]
+    obj.SolidSourceRefs = [_join_refs(getattr(row, "source_refs", []) or []) for row in rows]
+    obj.SolidNotes = [str(getattr(row, "notes", "") or "") for row in rows]
     obj.PathSources = [str(getattr(row, "path_source", "") or "") for row in rows]
     obj.DiagnosticRefs = [_join_refs(row.diagnostic_refs) for row in rows]
     obj.SegmentCount = len(segments)
@@ -247,7 +253,10 @@ def to_watertight_solid_output(obj) -> WatertightSolidOutput | None:
             structure_ref=_list_value(getattr(obj, "StructureRefs", []), index, ""),
             drainage_ref=_list_value(getattr(obj, "DrainageRefs", []), index, ""),
             flow_route_ref=_list_value(getattr(obj, "FlowRouteRefs", []), index, ""),
+            material_ref=_list_value(getattr(obj, "MaterialRefs", []), index, ""),
+            source_refs=_split_refs(_list_value(getattr(obj, "SolidSourceRefs", []), index, "")),
             path_source=_list_value(getattr(obj, "PathSources", []), index, ""),
+            notes=_list_value(getattr(obj, "SolidNotes", []), index, ""),
         )
         for index, _output_id in enumerate(output_ids)
     ]

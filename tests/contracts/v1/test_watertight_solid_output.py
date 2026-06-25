@@ -173,6 +173,9 @@ def test_watertight_solid_output_object_roundtrips_flow_route_ref() -> None:
         station_end=100.0,
         drainage_ref="drainage:right",
         flow_route_ref="flow-route:right",
+        material_ref="material:ditch-lining",
+        source_refs=["intersection:t-01", "intersection-zone:intersection:t-01:slope"],
+        notes="source_lineage=intersection_zone",
     )
     output = WatertightSolidOutput(
         schema_version=1,
@@ -188,7 +191,13 @@ def test_watertight_solid_output_object_roundtrips_flow_route_ref() -> None:
         )
 
         assert list(obj.FlowRouteRefs) == ["flow-route:right"]
+        assert list(obj.MaterialRefs) == ["material:ditch-lining"]
+        assert list(obj.SolidSourceRefs) == ["intersection:t-01|intersection-zone:intersection:t-01:slope"]
+        assert list(obj.SolidNotes) == ["source_lineage=intersection_zone"]
         roundtrip = to_watertight_solid_output(obj)
         assert roundtrip.solid_rows[0].flow_route_ref == "flow-route:right"
+        assert roundtrip.solid_rows[0].material_ref == "material:ditch-lining"
+        assert roundtrip.solid_rows[0].source_refs == ["intersection:t-01", "intersection-zone:intersection:t-01:slope"]
+        assert roundtrip.solid_rows[0].notes == "source_lineage=intersection_zone"
     finally:
         App.closeDocument(doc.Name)
