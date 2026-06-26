@@ -82,6 +82,9 @@ def _solid_pipeline():
             edge_network=edge_network,
             part_result=part_result,
             generated_object_ref="V1WatertightSolidOutput",
+            boundary_trace_rows=[
+                "shared-breakline:trace:edge|control_area_entry|intersection_control_area|control-area:main|alignment:main|0.000000|0.000000|design_surface|ready|section:0,control-area:main|design_surface|intersection_control_area"
+            ],
         )
     )
     return output, part_result
@@ -132,6 +135,12 @@ def test_watertight_solid_output_mapper_preserves_shape_metadata_and_refs() -> N
     assert row.profile_count == 2
     assert "corridor:main" in row.source_refs
     assert row.path_source == "applied_section_frame"
+    assert row.boundary_trace_rows == [
+        "shared-breakline:trace:edge|control_area_entry|intersection_control_area|control-area:main|alignment:main|0.000000|0.000000|design_surface|ready|section:0,control-area:main|design_surface|intersection_control_area"
+    ]
+    assert row.boundary_adjacency_rows == [
+        "adjacency_id=watertight-solid:solid-target-road-body-envelope:shared-breakline-adjacency:1|output_ref=watertight-solid:solid-target-road-body-envelope|breakline_id=shared-breakline:trace:edge|role=control_area_entry|domain_kind=intersection_control_area|domain_ref=control-area:main|material_role=design_surface|consumer_refs=design_surface|handoff_target=intersection_control_area|adjacency_status=candidate|source=shared_breakline_boundary_trace"
+    ]
     assert output.segment_rows[0].station_start == 0.0
     assert output.segment_rows[0].station_end == 100.0
 
@@ -158,6 +167,10 @@ def test_v1_watertight_solid_output_object_roundtrips_summary_and_shape() -> Non
         assert roundtrip.solid_rows[0].validation_status == "ok"
         assert roundtrip.solid_rows[0].volume == output.solid_rows[0].volume
         assert roundtrip.solid_rows[0].path_source == "applied_section_frame"
+        assert roundtrip.solid_rows[0].boundary_trace_rows == output.solid_rows[0].boundary_trace_rows
+        assert roundtrip.solid_rows[0].boundary_adjacency_rows == output.solid_rows[0].boundary_adjacency_rows
+        assert list(obj.SolidBoundaryTraceRows) == [";;".join(output.solid_rows[0].boundary_trace_rows)]
+        assert list(obj.SolidBoundaryAdjacencyRows) == [";;".join(output.solid_rows[0].boundary_adjacency_rows)]
         assert roundtrip.segment_rows[0].profile_refs == output.segment_rows[0].profile_refs
     finally:
         App.closeDocument(doc.Name)

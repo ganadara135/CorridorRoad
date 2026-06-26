@@ -54,6 +54,7 @@ from ..models.result.intersection_slope_face_boundary import (
 from ..models.result.intersection_slope_face_loop import IntersectionSlopeFaceLoopResult
 from ..models.result.intersection_tie_in_edge import IntersectionTieInEdgeResult, IntersectionTieInEdgeRow
 from ..models.result.tin_surface import TINQualityRow, TINSurface, TINTriangle, TINVertex
+from ..models.result.shared_breakline import SharedBreaklinePointRow, SharedBreaklineResult, SharedBreaklineRow
 from ..services.builders import (
     CorridorDesignSurfaceGeometryRequest,
     CorridorModelBuildRequest,
@@ -78,7 +79,7 @@ from ..services.evaluation.surface_transition_validation_service import SurfaceT
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService, IntersectionPatchPrerequisiteResult
 from ..services.evaluation.station_context_resolver import StationContextResolver
 from ..services.mapping import ExchangeOutputMapper, ExchangePackageRequest, QuantityOutputMapper, SectionOutputMapper
-from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper
+from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper, tin_mesh_preview_style
 
 
 @dataclass(frozen=True)
@@ -586,7 +587,264 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
                         applied_summary,
                     )
                 )
+            tie_in_row = _corridor_intersection_tie_in_continuity_row(doc)
+            if tie_in_row is not None:
+                rows.append(
+                    _with_applied_section_review_summary(
+                        tie_in_row,
+                        applied_summary,
+                    )
+                )
+            grading_row = _corridor_intersection_grading_ownership_row(doc)
+            if grading_row is not None:
+                rows.append(
+                    _with_applied_section_review_summary(
+                        grading_row,
+                        applied_summary,
+                    )
+                )
+            drainage_handoff_row = _corridor_intersection_drainage_handoff_gate_row(doc)
+            if drainage_handoff_row is not None:
+                rows.append(
+                    _with_applied_section_review_summary(
+                        drainage_handoff_row,
+                        applied_summary,
+                    )
+                )
     return rows
+
+
+def corridor_shared_breakline_audit_rows(document=None) -> list[dict[str, object]]:
+    """Return panel-friendly shared breakline audit rows from built preview objects."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return []
+    rows: list[dict[str, object]] = []
+    for role, title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
+        obj = _corridor_build_preview_object(doc, role)
+        if obj is None:
+            continue
+        result_id = str(getattr(obj, "SharedBreaklineResultId", "") or "")
+        audit_status = str(getattr(obj, "SharedBreaklineAuditStatus", "") or "")
+        if not result_id and not audit_status:
+            continue
+        geometry_match = int(getattr(obj, "SharedBreaklineGeometryMatchCount", 0) or 0)
+        geometry_mismatch = int(getattr(obj, "SharedBreaklineGeometryMismatchCount", 0) or 0)
+        mesh_match = int(getattr(obj, "SharedBreaklineMeshMatchCount", 0) or 0)
+        mesh_mismatch = int(getattr(obj, "SharedBreaklineMeshMismatchCount", 0) or 0)
+        missing = int(getattr(obj, "SharedBreaklineMissingConsumerCount", 0) or 0)
+        mismatch = int(getattr(obj, "SharedBreaklineMismatchCount", 0) or 0)
+        reversed_count = int(getattr(obj, "SharedBreaklineReversedEdgeCount", 0) or 0)
+        consumed = int(getattr(obj, "SharedBreaklineConsumedCount", 0) or 0)
+        total = int(getattr(obj, "SharedBreaklineCount", 0) or 0)
+        notes = "; ".join(str(value or "") for value in list(getattr(obj, "SharedBreaklineAuditNotes", []) or []) if str(value or ""))
+        if not notes:
+            notes = str(getattr(obj, "SharedBreaklineAuditSummary", "") or "")
+        status = _normalize_corridor_build_review_status(audit_status or str(getattr(obj, "SharedBreaklineStatus", "") or "missing"), default="missing")
+        if geometry_mismatch or mesh_mismatch or missing or mismatch:
+            status = "warning"
+        action = _shared_breakline_recommended_action(
+            geometry_mismatch_count=geometry_mismatch,
+            mesh_mismatch_count=mesh_mismatch,
+            missing_consumer_count=missing,
+            mismatch_count=mismatch,
+            reversed_edge_count=reversed_count,
+            notes=notes,
+        )
+        rows.append(
+            {
+                "role": role,
+                "surface": title,
+                "object_name": str(getattr(obj, "Name", "") or object_name),
+                "object_label": str(getattr(obj, "Label", "") or object_name),
+                "status": status,
+                "result_id": result_id,
+                "material_summary": str(getattr(obj, "SharedBreaklineMaterialSummary", "") or ""),
+                "role_summary": str(getattr(obj, "SharedBreaklineRoleSummary", "") or ""),
+                "consumed": consumed,
+                "total": total,
+                "geometry_match_count": geometry_match,
+                "geometry_mismatch_count": geometry_mismatch,
+                "mesh_match_count": mesh_match,
+                "mesh_mismatch_count": mesh_mismatch,
+                "missing_consumer_count": missing,
+                "mismatch_count": mismatch,
+                "reversed_edge_count": reversed_count,
+                "solid_readiness_status": str(getattr(obj, "SharedBreaklineSolidReadinessStatus", "") or ""),
+                "solid_open_end_count": int(getattr(obj, "SharedBreaklineSolidOpenEndCount", 0) or 0),
+                "solid_duplicate_edge_count": int(getattr(obj, "SharedBreaklineSolidDuplicateEdgeCount", 0) or 0),
+                "solid_non_manifold_node_count": int(getattr(obj, "SharedBreaklineSolidNonManifoldNodeCount", 0) or 0),
+                "recommended_action": action,
+                "notes": notes,
+            }
+        )
+    return rows
+
+
+def _shared_breakline_recommended_action(
+    *,
+    geometry_mismatch_count: int,
+    missing_consumer_count: int,
+    mismatch_count: int,
+    reversed_edge_count: int,
+    mesh_mismatch_count: int = 0,
+    notes: str = "",
+) -> str:
+    if int(mismatch_count or 0) > 0:
+        return "Review Intersection Source"
+    if int(missing_consumer_count or 0) > 0:
+        return "Rebuild Build Parametric"
+    role_action = _shared_breakline_recommended_action_from_notes(notes)
+    if role_action:
+        return role_action
+    if int(mesh_mismatch_count or 0) > 0:
+        return "Rebuild constrained surface mesh"
+    if int(geometry_mismatch_count or 0) > 0:
+        return "Rebuild Applied Sections, then Build Parametric"
+    if int(reversed_edge_count or 0) > 0:
+        return "Monitor; check Watertight normals if needed"
+    return "No action needed"
+
+
+def _shared_breakline_recommended_action_from_notes(notes: str) -> str:
+    text = str(notes or "")
+    if not text:
+        return ""
+    if "patch-to-slope-face" in text or "patch_to_slope_face" in text:
+        return "Rebuild Intersection and Slope Face constraints"
+    if "curb_return_to_slope_face" in text or "curb-return-to-slope-face" in text:
+        return "Rebuild Intersection and Slope Face constraints"
+    if "patch-to-design" in text or "patch_to_design" in text:
+        return "Rebuild Intersection and Design constraints"
+    if "curb_return_to_pavement" in text or "curb-return-to-pavement" in text:
+        return "Rebuild Intersection and Design constraints"
+    if "curb_return_to_shoulder" in text or "curb-return-to-shoulder" in text:
+        return "Rebuild Intersection and Design constraints"
+    if "patch-to-shoulder" in text or "patch_to_shoulder" in text:
+        return "Rebuild Intersection and Design constraints"
+    if "shoulder-to-slope-face" in text or "shoulder_to_slope_face" in text:
+        return "Rebuild Applied Sections, then constrained surfaces"
+    if "curb_return_inner" in text or "curb-return-inner" in text or "curb_return_outer" in text or "curb-return-outer" in text:
+        return "Rebuild Intersection curb-return constraints"
+    if (
+        "region-transition" in text
+        or "region_start_boundary" in text
+        or "region_end_boundary" in text
+        or "assembly_change_boundary" in text
+        or "surface_transition_boundary" in text
+    ):
+        return "Review Region spans, then Build Parametric"
+    if (
+        "control_area_entry" in text
+        or "control-area-entry" in text
+        or "control_area_exit" in text
+        or "control-area-exit" in text
+        or "region_to_intersection_control" in text
+        or "region-to-intersection-control" in text
+    ):
+        return "Review Intersection control areas and Region spans, then Build Parametric"
+    if (
+        "lane_to_lane" in text
+        or "lane_to_shoulder" in text
+        or "shoulder_edge" in text
+        or "shoulder_to_side_slope" in text
+        or "side_slope_to_daylight" in text
+    ):
+        return "Rebuild Applied Sections, then constrained surfaces"
+    if (
+        "intersection_gutter_handoff" in text
+        or "intersection-gutter-handoff" in text
+        or "intersection_ditch_handoff" in text
+        or "intersection-ditch-handoff" in text
+        or "low_point_flow_split" in text
+        or "low-point-flow-split" in text
+        or "drainage_capture_edge" in text
+        or "drainage-capture-edge" in text
+    ):
+        return "Review Intersection Drainage source, then rebuild Intersection"
+    if (
+        "corridor_gutter_handoff" in text
+        or "corridor-ditch-handoff" in text
+        or "corridor_ditch_handoff" in text
+        or "corridor-gutter-handoff" in text
+    ):
+        return "Review Drainage source, then rebuild Applied Sections"
+    return ""
+
+
+def corridor_shared_breakline_audit_summary(document=None) -> dict[str, object]:
+    rows = corridor_shared_breakline_audit_rows(document)
+    if not rows:
+        return {
+            "status": "missing",
+            "title": "Shared breakline audit not available",
+            "notes": "Build Parametric has not produced shared breakline audit metadata yet.",
+            "issue_count": 0,
+        }
+    issue_rows = [
+        row for row in rows
+        if str(row.get("status", "") or "") != "ready"
+        or int(row.get("geometry_mismatch_count", 0) or 0)
+        or int(row.get("mesh_mismatch_count", 0) or 0)
+        or int(row.get("missing_consumer_count", 0) or 0)
+        or int(row.get("mismatch_count", 0) or 0)
+    ]
+    if not issue_rows:
+        return {
+            "status": "ready",
+            "title": "No shared breakline issues",
+            "notes": f"{len(rows)} audited surface(s); contract and mesh endpoints match the shared breakline contract.",
+            "issue_count": 0,
+        }
+    mismatch_count = sum(int(row.get("geometry_mismatch_count", 0) or 0) for row in issue_rows)
+    mesh_mismatch_count = sum(int(row.get("mesh_mismatch_count", 0) or 0) for row in issue_rows)
+    missing_count = sum(int(row.get("missing_consumer_count", 0) or 0) for row in issue_rows)
+    return {
+        "status": "warning",
+        "title": f"Shared breakline issues found: {len(issue_rows)} surface(s)",
+        "notes": f"geometry_mismatch={mismatch_count}; mesh_mismatch={mesh_mismatch_count}; missing_consumer={missing_count}",
+        "issue_count": len(issue_rows),
+    }
+
+
+def shared_breakline_audit_display_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Expand surface-level audit rows with role-level rows for the panel."""
+
+    output: list[dict[str, object]] = []
+    for row in list(rows or []):
+        surface_row = dict(row)
+        surface_row["row_kind"] = "surface"
+        output.append(surface_row)
+        for role, count in _shared_breakline_summary_count_items(str(row.get("role_summary", "") or "")):
+            detail = dict(row)
+            detail["row_kind"] = "role"
+            detail["surface"] = f"  Role: {role}"
+            detail["consumed"] = count
+            detail["total"] = count
+            detail["material_summary"] = str(row.get("material_summary", "") or "")
+            detail["role_summary"] = f"{role}={count}"
+            detail["breakline_role_filter"] = role
+            detail["recommended_action"] = _shared_breakline_recommended_action_from_notes(role) or str(row.get("recommended_action", "") or "")
+            output.append(detail)
+    return output
+
+
+def _shared_breakline_summary_count_items(summary: str) -> list[tuple[str, int]]:
+    items: list[tuple[str, int]] = []
+    for part in str(summary or "").split(","):
+        text = str(part or "").strip()
+        if not text or "=" not in text:
+            continue
+        key, value = text.split("=", 1)
+        key = key.strip()
+        try:
+            count = int(str(value or "0").strip() or 0)
+        except Exception:
+            count = 0
+        if key:
+            items.append((key, count))
+    return items
 
 
 def corridor_build_review_outcome_matrix() -> list[dict[str, str]]:
@@ -3585,6 +3843,78 @@ def set_all_corridor_build_preview_visibility(document=None, visible: bool = Tru
     return changed
 
 
+def corridor_build_visibility_groups() -> list[dict[str, object]]:
+    """Return user-facing Build Parametric visibility groups."""
+
+    return [
+        {
+            "group_id": group_id,
+            "title": title,
+            "roles": tuple(roles),
+            "object_names": tuple(object_names),
+        }
+        for group_id, title, roles, object_names in CORRIDOR_BUILD_VISIBILITY_GROUPS
+    ]
+
+
+def set_corridor_build_visibility_group(document=None, group_id: str = "", visible: bool = True) -> int:
+    """Set grouped visibility for Build Parametric review layers."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return 0
+    group = _corridor_build_visibility_group(str(group_id or ""))
+    if group is None:
+        return 0
+    changed = 0
+    for role in tuple(group[2] or ()):
+        if set_corridor_build_preview_visibility(doc, str(role), bool(visible)) is not None:
+            changed += 1
+    for name in tuple(group[3] or ()):
+        obj = doc.getObject(str(name or ""))
+        if obj is not None:
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+    if str(group[0]) == "diagnostics":
+        for obj in _corridor_build_issue_marker_objects(doc):
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+        for obj in _corridor_build_daylight_marker_objects(doc):
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+    return changed
+
+
+def corridor_build_visibility_group_visible(document=None, group_id: str = "") -> bool:
+    """Return whether any object in one Build Parametric visibility group is visible."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return False
+    group = _corridor_build_visibility_group(str(group_id or ""))
+    if group is None:
+        return False
+    for role in tuple(group[2] or ()):
+        obj = _corridor_build_preview_object(doc, str(role))
+        if obj is not None and _object_visibility(obj):
+            return True
+    for name in tuple(group[3] or ()):
+        obj = doc.getObject(str(name or ""))
+        if obj is not None and _object_visibility(obj):
+            return True
+    if str(group[0]) == "diagnostics":
+        return any(_object_visibility(obj) for obj in [*_corridor_build_issue_marker_objects(doc), *_corridor_build_daylight_marker_objects(doc)])
+    return False
+
+
+def _corridor_build_visibility_group(group_id: str):
+    target = str(group_id or "").strip()
+    for group in CORRIDOR_BUILD_VISIBILITY_GROUPS:
+        if str(group[0]) == target:
+            return group
+    return None
+
+
 def set_corridor_guided_review_step_visibility(document=None, step_id: str = "", visible: bool = True) -> int:
     """Set visibility for objects represented by one Guided Review row."""
 
@@ -4328,6 +4658,39 @@ def create_corridor_design_surface_preview(
             applied_section_set=applied_section_set,
             surface_role="design",
         )
+        general_shared_breakline_result = corridor_general_shared_breakline_result(applied_section_set)
+        region_shared_breakline_result = corridor_region_transition_shared_breakline_result(applied_section_set)
+        intersection_shared_breakline_result = None
+        try:
+            design_prerequisite = corridor_intersection_patch_prerequisite_result(doc)
+            if str(getattr(design_prerequisite, "status", "") or "") != "missing":
+                design_intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+                intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
+                    applied_section_set,
+                    prerequisite=design_prerequisite,
+                    intersection_model=design_intersection_model,
+                )
+        except Exception:
+            intersection_shared_breakline_result = None
+        design_shared_breakline_result = combined_shared_breakline_result(
+            general_shared_breakline_result,
+            region_shared_breakline_result,
+            intersection_shared_breakline_result,
+        )
+        tin_surface = _tin_surface_with_shared_breakline_constraint_edges(
+            tin_surface,
+            design_shared_breakline_result,
+            consumer_ref="design_surface",
+        )
+        tin_surface = _tin_surface_with_shared_breakline_metadata(
+            tin_surface,
+            design_shared_breakline_result,
+            consumer_ref="design_surface",
+        )
+        shared_breakline_audit_result = shared_breakline_audit(
+            design_shared_breakline_result,
+            {"design_surface": tin_surface},
+        )
     except Exception as exc:
         _record_corridor_build_preview_diagnostic(
             doc,
@@ -4371,6 +4734,12 @@ def create_corridor_design_surface_preview(
         )
         _attach_intersection_exclusion_zone_metadata(preview_obj, doc)
         _attach_intersection_exclusion_clip_quality(preview_obj, tin_surface)
+        _attach_shared_breakline_preview_metadata(
+            preview_obj,
+            design_shared_breakline_result if "design_shared_breakline_result" in locals() else None,
+            consumer_ref="design_surface",
+            audit=shared_breakline_audit_result if "shared_breakline_audit_result" in locals() else None,
+        )
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -4596,6 +4965,42 @@ def create_corridor_intersection_surface_preview(
         if boundary_preview is not None:
             _set_preview_property(preview_obj, "IntersectionBoundaryPreviewRef", str(getattr(boundary_preview, "Name", "") or ""))
         patch_boundary_result = corridor_intersection_patch_boundary_result(boundary_result)
+        drainage_hint_result_for_breaklines = None
+        try:
+            service_for_breaklines = IntersectionEvaluationService()
+            topology_for_breaklines = service_for_breaklines.evaluate_topology(intersection_model)
+            edge_network_for_breaklines = service_for_breaklines.evaluate_edge_network(intersection_model, topology_for_breaklines)
+            surface_zones_for_breaklines = service_for_breaklines.evaluate_surface_zones(intersection_model, edge_network_for_breaklines)
+            grading_for_breaklines = service_for_breaklines.evaluate_grading_context(intersection_model, surface_zones_for_breaklines)
+            drainage_hint_result_for_breaklines = service_for_breaklines.evaluate_drainage_hints(
+                intersection_model,
+                surface_zones_for_breaklines,
+                grading_for_breaklines,
+            )
+        except Exception:
+            drainage_hint_result_for_breaklines = None
+        shared_breakline_result = corridor_intersection_shared_breakline_result(
+            intersection_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            patch_boundary_result=patch_boundary_result,
+            drainage_hint_result=drainage_hint_result_for_breaklines,
+        )
+        shared_breakline_intersection_surface = _tin_surface_with_shared_breakline_metadata(
+            tin_surface,
+            shared_breakline_result,
+            consumer_ref="intersection_surface",
+        )
+        shared_breakline_audit_result = shared_breakline_audit(
+            shared_breakline_result,
+            {"intersection_surface": shared_breakline_intersection_surface},
+        )
+        _attach_shared_breakline_preview_metadata(
+            preview_obj,
+            shared_breakline_result,
+            consumer_ref="intersection_surface",
+            audit=shared_breakline_audit_result,
+        )
         _set_preview_property(preview_obj, "IntersectionPatchBoundaryMode", str(getattr(patch_boundary_result, "boundary_mode", "") or ""))
         _set_preview_property(preview_obj, "IntersectionPatchBoundaryStatus", str(getattr(patch_boundary_result, "status", "") or ""))
         _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryOrderedPointCount", int(getattr(patch_boundary_result, "boundary_point_count", 0) or 0))
@@ -4729,6 +5134,7 @@ def create_corridor_intersection_surface_preview(
             "IntersectionImplementationStatus",
             "Frozen first-slice patch path; next redesign work must use Intersection Edge Network.",
         )
+        _attach_intersection_manual_qa_capture_metadata(preview_obj)
         _set_preview_property(preview_obj, "IntersectionReviewSummary", _intersection_surface_review_notes(preview_obj))
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
@@ -5097,6 +5503,94 @@ def _attach_intersection_surface_replacement_handoff_metadata(target_obj, gate_s
             f"source={source_ref or 'unknown'}; recommendation={recommendation or 'review_required'}"
         ),
     )
+    _apply_intersection_surface_replacement_visual_style(
+        target_obj,
+        readiness=readiness,
+        handoff_role=handoff_role,
+        gate_status=gate_status,
+    )
+
+
+def _apply_intersection_surface_replacement_visual_style(
+    obj,
+    *,
+    readiness: str = "",
+    handoff_role: str = "",
+    gate_status: str = "",
+) -> str:
+    if obj is None:
+        return ""
+    role = str(handoff_role or "").strip()
+    if role in {"accepted_surface_zone", "accepted_surface_zone_candidate", "replacement_candidate"}:
+        style_name = "intersection_accepted_candidate"
+        visual_role = "accepted_candidate"
+    elif str(readiness or "") == "ready_to_replace":
+        style_name = "intersection_accepted_candidate"
+        visual_role = "accepted_candidate"
+    else:
+        style_name = "intersection_transitional_patch"
+        visual_role = "transitional_review_patch"
+    style = tin_mesh_preview_style(style_name)
+    _set_preview_property(obj, "IntersectionSurfaceReplacementVisualStyle", style_name)
+    _set_preview_property(obj, "IntersectionSurfaceReplacementVisualRole", visual_role)
+    _set_preview_property(obj, "IntersectionSurfaceReplacementVisualGate", str(gate_status or ""))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.ShapeColor = style["shape_color"]
+            vobj.LineColor = style["line_color"]
+            vobj.PointColor = style["point_color"]
+            vobj.LineWidth = float(style["line_width"])
+            if hasattr(vobj, "Transparency"):
+                vobj.Transparency = int(style["transparency"])
+            if hasattr(vobj, "DisplayMode"):
+                vobj.DisplayMode = "Flat Lines"
+    except Exception:
+        pass
+    return style_name
+
+
+def _attach_intersection_manual_qa_capture_metadata(obj) -> None:
+    if obj is None:
+        return
+    intersection_id = str(getattr(obj, "IntersectionId", "") or "intersection").strip() or "intersection"
+    safe_id = _safe_id_fragment(intersection_id).lower()
+    gate_status = str(getattr(obj, "IntersectionSurfaceReplacementGateStatus", "") or "unknown")
+    shared_status = str(getattr(obj, "SharedBreaklineAuditStatus", "") or "not_available")
+    tie_in_count = int(getattr(obj, "PatchPavementTieInEdgeCount", 0) or 0) + int(getattr(obj, "PatchStemTieInEdgeCount", 0) or 0)
+    curb_count = int(getattr(obj, "PatchCurbReturnEdgeCount", 0) or 0)
+    overlap_count = int(getattr(obj, "PatchOverlapCutEdgeCount", 0) or 0)
+    before_name = f"manual-qa-{safe_id}-tie-in-before.png"
+    after_name = f"manual-qa-{safe_id}-tie-in-after.png"
+    context = (
+        "visibility_groups=intersection,breaklines,diagnostics; "
+        "view=top_or_isometric; focus=intersection_tie_in_continuity"
+    )
+    checklist = [
+        f"capture_before={before_name}",
+        f"capture_after={after_name}",
+        "show_groups=Intersection,Breaklines,Diagnostics",
+        f"confirm_tie_in_edges={tie_in_count}",
+        f"confirm_curb_return_edges={curb_count}",
+        f"confirm_overlap_cut_edges={overlap_count}",
+        f"confirm_shared_breakline_audit={shared_status}",
+        f"confirm_replacement_gate={gate_status}",
+    ]
+    _set_preview_property(obj, "IntersectionManualQACaptureStatus", "pending")
+    _set_preview_property(obj, "IntersectionManualQACaptureScope", "intersection_tie_in")
+    _set_preview_property(obj, "IntersectionManualQABeforeScreenshotName", before_name)
+    _set_preview_property(obj, "IntersectionManualQAAfterScreenshotName", after_name)
+    _set_preview_property(obj, "IntersectionManualQAVisibilityContext", context)
+    _set_preview_string_list_property(obj, "IntersectionManualQAChecklist", checklist)
+    _set_preview_property(
+        obj,
+        "IntersectionManualQASummary",
+        (
+            f"qa_capture=pending; scope=intersection_tie_in; before={before_name}; after={after_name}; "
+            f"tie_in_edges={tie_in_count}; curb_return_edges={curb_count}; overlap_cut_edges={overlap_count}; "
+            f"shared_breakline_audit={shared_status}; replacement_gate={gate_status}"
+        ),
+    )
 
 
 def _set_intersection_surface_downstream_handoff_selection(
@@ -5169,6 +5663,26 @@ INTERSECTION_LEGACY_PATCH_COMPATIBILITY_REPLACEMENTS: tuple[tuple[str, str], ...
     ("IntersectionPatchBoundaryDiagnostics", "IntersectionSurfacePatchRowDiagnostics"),
     ("PatchBoundaryLongEdgeCount", "IntersectionSurfacePatchRowDiagnostics"),
     ("PatchDegenerateTriangleCount", "IntersectionSurfacePatchQualityRowStatuses"),
+)
+CORRIDOR_BUILD_VISIBILITY_GROUPS = (
+    ("design", "Design", ("design", "subgrade", "drainage"), ()),
+    ("intersection", "Intersection", ("intersection", "intersection_slope"), ("V1CorridorIntersectionSurfaceZoneOutputPreview",)),
+    ("slope_face", "Slope Face", ("daylight", "intersection_slope"), ()),
+    ("breaklines", "Breaklines", (), ("ReviewSharedBreaklineHighlight",)),
+    (
+        "diagnostics",
+        "Diagnostics",
+        (),
+        (
+            "ReviewDiagnosticSlopeFaceIntersectionMarkers",
+            "ReviewDiagnosticSlopeFaceSampledEdgeMarkers",
+            "ReviewDiagnosticSlopeFaceFallbackMarkers",
+            "ReviewIssueSlopeFaceIntersectionMarkers",
+            "ReviewIssueSlopeFaceSampledEdgeMarkers",
+            "ReviewIssueSlopeFaceFallbackMarkers",
+            "ReviewIssueDrainageFlowRoutes",
+        ),
+    ),
 )
 
 
@@ -5735,6 +6249,11 @@ def create_corridor_daylight_surface_preview(
     )
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "daylight_surface") or f"{corridor_model.corridor_id}:daylight"
+    general_shared_breakline_result = None
+    region_shared_breakline_result = None
+    intersection_shared_breakline_result = None
+    shared_breakline_result = None
+    shared_breakline_audit_result = None
     effective_supplemental_sampling_enabled = _build_corridor_effective_hidden_supplemental_sampling_enabled(
         doc,
         applied_section_set=applied_section_set,
@@ -5816,6 +6335,38 @@ def create_corridor_daylight_surface_preview(
             doc,
             applied_section_set=applied_section_set,
         )
+        general_shared_breakline_result = corridor_general_shared_breakline_result(applied_section_set)
+        region_shared_breakline_result = corridor_region_transition_shared_breakline_result(applied_section_set)
+        try:
+            slope_prerequisite = corridor_intersection_patch_prerequisite_result(doc)
+            if str(getattr(slope_prerequisite, "status", "") or "") != "missing":
+                slope_intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+                intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
+                    applied_section_set,
+                    prerequisite=slope_prerequisite,
+                    intersection_model=slope_intersection_model,
+                )
+        except Exception:
+            intersection_shared_breakline_result = None
+        shared_breakline_result = combined_shared_breakline_result(
+            general_shared_breakline_result,
+            region_shared_breakline_result,
+            intersection_shared_breakline_result,
+        )
+        tin_surface = _tin_surface_with_shared_breakline_constraint_edges(
+            tin_surface,
+            shared_breakline_result,
+            consumer_ref="slope_face_surface",
+        )
+        tin_surface = _tin_surface_with_shared_breakline_metadata(
+            tin_surface,
+            shared_breakline_result,
+            consumer_ref="slope_face_surface",
+        )
+        shared_breakline_audit_result = shared_breakline_audit(
+            shared_breakline_result,
+            {"slope_face_surface": tin_surface},
+        )
     except Exception as exc:
         _record_corridor_build_preview_diagnostic(
             doc,
@@ -5862,6 +6413,12 @@ def create_corridor_daylight_surface_preview(
         _attach_intersection_exclusion_clip_quality(preview_obj, tin_surface)
         _attach_intersection_slope_loop_suppression_quality(preview_obj, tin_surface)
         _attach_intersection_slope_face_boundary_strip_quality(preview_obj, tin_surface)
+        _attach_shared_breakline_preview_metadata(
+            preview_obj,
+            shared_breakline_result,
+            consumer_ref="slope_face_surface",
+            audit=shared_breakline_audit_result,
+        )
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -6448,6 +7005,9 @@ class V1BuildCorridorTaskPanel:
         intersections_tab = QtWidgets.QWidget()
         intersections_layout = QtWidgets.QVBoxLayout(intersections_tab)
         intersections_layout.setContentsMargins(8, 8, 8, 8)
+        breakline_tab = QtWidgets.QWidget()
+        breakline_layout = QtWidgets.QVBoxLayout(breakline_tab)
+        breakline_layout.setContentsMargins(8, 8, 8, 8)
         regions_tab = QtWidgets.QWidget()
         regions_layout = QtWidgets.QVBoxLayout(regions_tab)
         regions_layout.setContentsMargins(8, 8, 8, 8)
@@ -6464,6 +7024,7 @@ class V1BuildCorridorTaskPanel:
         tabs.addTab(results_tab, "Results")
         tabs.addTab(issues_tab, "Slope Diagnostics")
         tabs.addTab(intersections_tab, "Intersections")
+        tabs.addTab(breakline_tab, "Breakline Audit")
         tabs.addTab(regions_tab, "Regions")
         tabs.addTab(drainage_tab, "Drainage")
         tabs.addTab(options_tab, "Options")
@@ -6566,6 +7127,47 @@ class V1BuildCorridorTaskPanel:
             pass
         self._intersection_contract_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_intersection_contract_review_row(row_index))
         intersections_layout.addWidget(self._intersection_contract_table, 1)
+        breakline_title = QtWidgets.QLabel("Shared Breakline Audit")
+        breakline_title.setToolTip("Checks whether surfaces that share a boundary consume the same breakline contract and match its endpoints.")
+        breakline_layout.addWidget(breakline_title)
+        self._breakline_audit_status_label = QtWidgets.QLabel("Shared breakline audit not available")
+        self._breakline_audit_status_label.setWordWrap(True)
+        self._breakline_audit_status_label.setMinimumHeight(34)
+        breakline_layout.addWidget(self._breakline_audit_status_label)
+        self._breakline_audit_detail_label = QtWidgets.QLabel("")
+        self._breakline_audit_detail_label.setWordWrap(True)
+        breakline_layout.addWidget(self._breakline_audit_detail_label)
+        self._breakline_audit_table = QtWidgets.QTableWidget(0, 12)
+        self._breakline_audit_table.setHorizontalHeaderLabels(
+            ["Surface", "Audit", "Consumed", "Geometry", "Mesh", "Missing", "Mismatch", "Reversed", "Roles", "Recommended Action", "Object", "Notes"]
+        )
+        _compact_build_corridor_table(self._breakline_audit_table, [130, 72, 72, 78, 78, 65, 70, 70, 185, 170, 145, 260])
+        self._breakline_audit_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._breakline_audit_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._breakline_audit_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._breakline_audit_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._breakline_audit_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._breakline_audit_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_breakline_audit_row(row_index))
+        self._breakline_audit_table.itemSelectionChanged.connect(self._sync_breakline_highlight_filter_options)
+        breakline_layout.addWidget(self._breakline_audit_table, 1)
+        breakline_button_row = QtWidgets.QHBoxLayout()
+        self._breakline_highlight_filter_combo = QtWidgets.QComboBox()
+        self._breakline_highlight_filter_combo.addItem("All roles", ("", ""))
+        breakline_button_row.addWidget(self._breakline_highlight_filter_combo, 1)
+        focus_breakline_button = QtWidgets.QPushButton("Highlight Breakline")
+        focus_breakline_button.clicked.connect(self._show_selected_breakline_audit_row)
+        breakline_button_row.addWidget(focus_breakline_button)
+        refresh_breakline_button = QtWidgets.QPushButton("Refresh Audit")
+        refresh_breakline_button.clicked.connect(self._refresh_shared_breakline_audit)
+        breakline_button_row.addWidget(refresh_breakline_button)
+        breakline_button_row.addStretch(1)
+        breakline_layout.addLayout(breakline_button_row)
         regions_label = QtWidgets.QLabel("Region Boundaries")
         regions_label.setToolTip("Double-click a Region row to select its built 3D Region surface object.")
         regions_layout.addWidget(regions_label)
@@ -6703,6 +7305,20 @@ class V1BuildCorridorTaskPanel:
         visibility_label = QtWidgets.QLabel("Preview Visibility")
         visibility_label.setToolTip("Toggle corridor review objects in the 3D View without rebuilding the corridor.")
         visibility_layout.addWidget(visibility_label)
+        group_visibility_label = QtWidgets.QLabel("Grouped Visibility")
+        group_visibility_label.setToolTip("Toggle common review layer groups together.")
+        visibility_layout.addWidget(group_visibility_label)
+        group_visibility_grid = QtWidgets.QGridLayout()
+        self._visibility_group_checks = {}
+        for index, group in enumerate(corridor_build_visibility_groups()):
+            group_id = str(group.get("group_id", "") or "")
+            check = QtWidgets.QCheckBox(str(group.get("title", "") or group_id))
+            check.setChecked(False)
+            check.toggled.connect(lambda checked, group_id=group_id: self._set_visibility_group(group_id, checked))
+            self._visibility_group_checks[group_id] = check
+            group_visibility_grid.addWidget(check, index // 2, index % 2)
+        visibility_layout.addLayout(group_visibility_grid)
+        visibility_layout.addSpacing(8)
         visibility_grid = QtWidgets.QGridLayout()
         self._visibility_checks = {}
         for index, (role, title, _object_name) in enumerate(CORRIDOR_BUILD_REVIEW_OBJECTS):
@@ -6766,6 +7382,7 @@ class V1BuildCorridorTaskPanel:
             self._set_review_rows(corridor_build_review_rows(self.document))
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
             self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
+            self._refresh_shared_breakline_audit()
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
             self._sync_surface_transition_station_options_from_selected_region()
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
@@ -6791,6 +7408,7 @@ class V1BuildCorridorTaskPanel:
         self._set_review_rows(corridor_build_review_rows(self.document))
         self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
         self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
+        self._refresh_shared_breakline_audit()
         self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
         self._sync_surface_transition_station_options_from_selected_region()
         self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
@@ -6841,6 +7459,7 @@ class V1BuildCorridorTaskPanel:
             self._set_review_rows(review_rows)
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
             self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
+            self._refresh_shared_breakline_audit()
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
             self._sync_surface_transition_station_options_from_selected_region()
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
@@ -7070,6 +7689,188 @@ class V1BuildCorridorTaskPanel:
                 self._intersection_contract_table.selectRow(0)
             except Exception:
                 pass
+
+    def _refresh_shared_breakline_audit(self) -> None:
+        self._set_shared_breakline_audit_rows(corridor_shared_breakline_audit_rows(self.document))
+
+    def _set_shared_breakline_audit_rows(self, rows: list[dict[str, object]]) -> None:
+        summary = corridor_shared_breakline_audit_summary(self.document)
+        status_label = getattr(self, "_breakline_audit_status_label", None)
+        detail_label = getattr(self, "_breakline_audit_detail_label", None)
+        if status_label is not None:
+            title = str(summary.get("title", "") or "")
+            status = str(summary.get("status", "") or "")
+            status_label.setText(title)
+            if status == "ready":
+                status_label.setStyleSheet("QLabel { color: #14532d; font-weight: 700; }")
+            elif status == "warning":
+                status_label.setStyleSheet("QLabel { color: #92400e; font-weight: 700; }")
+            else:
+                status_label.setStyleSheet("QLabel { color: #4b5563; font-weight: 700; }")
+        if detail_label is not None:
+            detail_label.setText(str(summary.get("notes", "") or ""))
+        if not hasattr(self, "_breakline_audit_table"):
+            return
+        self._breakline_audit_table.setRowCount(0)
+        display_rows = shared_breakline_audit_display_rows(rows)
+        self._breakline_audit_display_rows = display_rows
+        for row in display_rows:
+            row_index = self._breakline_audit_table.rowCount()
+            self._breakline_audit_table.insertRow(row_index)
+            geometry_match = int(row.get("geometry_match_count", 0) or 0)
+            geometry_mismatch = int(row.get("geometry_mismatch_count", 0) or 0)
+            mesh_match = int(row.get("mesh_match_count", 0) or 0)
+            mesh_mismatch = int(row.get("mesh_mismatch_count", 0) or 0)
+            values = [
+                str(row.get("surface", "") or ""),
+                str(row.get("status", "") or ""),
+                f"{int(row.get('consumed', 0) or 0)}/{int(row.get('total', 0) or 0)}",
+                f"{geometry_match}/{geometry_match + geometry_mismatch}",
+                f"{mesh_match}/{mesh_match + mesh_mismatch}",
+                str(row.get("missing_consumer_count", "") or "0"),
+                str(row.get("mismatch_count", "") or "0"),
+                str(row.get("reversed_edge_count", "") or "0"),
+                str(row.get("role_summary", "") or row.get("material_summary", "") or ""),
+                str(row.get("recommended_action", "") or ""),
+                str(row.get("object_label", "") or row.get("object_name", "") or ""),
+                str(row.get("notes", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(32, str(row.get("role", "") or ""))
+                    item.setData(33, str(row.get("breakline_role_filter", "") or ""))
+                    item.setData(34, str(row.get("material_filter", "") or ""))
+                self._breakline_audit_table.setItem(row_index, col, item)
+            self._apply_breakline_audit_row_style(row_index, str(row.get("status", "") or ""))
+        if self._breakline_audit_table.rowCount() > 0:
+            try:
+                self._breakline_audit_table.selectRow(0)
+            except Exception:
+                pass
+        self._sync_breakline_highlight_filter_options()
+
+    def _sync_breakline_highlight_filter_options(self) -> None:
+        combo = getattr(self, "_breakline_highlight_filter_combo", None)
+        table = getattr(self, "_breakline_audit_table", None)
+        if combo is None or table is None:
+            return
+        selected = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        selected_index = int(selected[0].row()) if selected else 0
+        rows = list(getattr(self, "_breakline_audit_display_rows", []) or shared_breakline_audit_display_rows(corridor_shared_breakline_audit_rows(self.document)))
+        try:
+            row = rows[selected_index]
+        except Exception:
+            row = {}
+        previous = combo.currentData()
+        try:
+            combo.blockSignals(True)
+        except Exception:
+            pass
+        combo.clear()
+        combo.addItem("All roles", ("", ""))
+        current_role = str(row.get("breakline_role_filter", "") or "")
+        if current_role:
+            combo.addItem(f"Selected role: {current_role}", ("role", current_role))
+            combo.setCurrentIndex(1)
+        for key in _shared_breakline_summary_keys(str(row.get("material_summary", "") or "")):
+            combo.addItem(f"Material: {key}", ("material", key))
+        for key in _shared_breakline_summary_keys(str(row.get("role_summary", "") or "")):
+            combo.addItem(f"Role: {key}", ("role", key))
+        if previous and not current_role:
+            for index in range(combo.count()):
+                if combo.itemData(index) == previous:
+                    combo.setCurrentIndex(index)
+                    break
+        try:
+            combo.blockSignals(False)
+        except Exception:
+            pass
+
+    def _apply_breakline_audit_row_style(self, row_index: int, status: str) -> None:
+        table = getattr(self, "_breakline_audit_table", None)
+        if table is None:
+            return
+        color = corridor_build_review_row_color("empty" if str(status or "") in {"warn", "warning"} else status)
+        if color is None:
+            return
+        for col in range(table.columnCount()):
+            item = table.item(row_index, col)
+            if item is not None:
+                try:
+                    from freecad.Corridor_Road.qt_compat import QtGui
+
+                    item.setBackground(QtGui.QBrush(QtGui.QColor(*color)))
+                    item.setForeground(QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR)))
+                except Exception:
+                    pass
+
+    def _show_selected_breakline_audit_row(self) -> None:
+        table = getattr(self, "_breakline_audit_table", None)
+        if table is None:
+            return
+        rows = table.selectionModel().selectedRows()
+        if not rows:
+            _show_message(self.form, "Build Parametric", "Select one Breakline Audit row first.")
+            return
+        role_filter = ""
+        material_filter = ""
+        combo = getattr(self, "_breakline_highlight_filter_combo", None)
+        try:
+            filter_kind, filter_value = combo.currentData() if combo is not None else ("", "")
+        except Exception:
+            filter_kind, filter_value = ("", "")
+        if str(filter_kind or "") == "role":
+            role_filter = str(filter_value or "")
+        elif str(filter_kind or "") == "material":
+            material_filter = str(filter_value or "")
+        self._show_breakline_audit_row(int(rows[0].row()), role_filter=role_filter, material_filter=material_filter)
+
+    def _show_breakline_audit_row(self, row_index: int, *, role_filter: str = "", material_filter: str = "") -> None:
+        rows = list(getattr(self, "_breakline_audit_display_rows", []) or shared_breakline_audit_display_rows(corridor_shared_breakline_audit_rows(self.document)))
+        try:
+            row = rows[int(row_index)]
+        except Exception:
+            _show_message(self.form, "Build Parametric", "Breakline Audit row is not available.")
+            return
+        obj = _corridor_build_preview_object(self.document, str(row.get("role", "") or ""))
+        if obj is None:
+            _show_message(self.form, "Build Parametric", "Breakline Audit surface object is not available.")
+            return
+        if not role_filter:
+            role_filter = str(row.get("breakline_role_filter", "") or "")
+        if not material_filter:
+            material_filter = str(row.get("material_filter", "") or "")
+        try:
+            highlight = show_shared_breakline_highlight(
+                self.document,
+                obj,
+                role_filter=role_filter,
+                material_filter=material_filter,
+            )
+            self._sync_visibility_checks()
+        except Exception as exc:
+            _show_message(self.form, "Build Parametric", f"Shared Breakline highlight was not shown.\n{exc}")
+            return
+        self._summary.setPlainText(
+            "\n".join(
+                [
+                    "Shared Breakline Audit highlight shown.",
+                    f"Surface: {row.get('surface', '')}",
+                    f"Audit: {row.get('status', '')}",
+                    f"Geometry: {int(row.get('geometry_match_count', 0) or 0)}/"
+                    f"{int(row.get('geometry_match_count', 0) or 0) + int(row.get('geometry_mismatch_count', 0) or 0)}",
+                    f"Mesh: {int(row.get('mesh_match_count', 0) or 0)}/"
+                    f"{int(row.get('mesh_match_count', 0) or 0) + int(row.get('mesh_mismatch_count', 0) or 0)}",
+                    f"Roles: {row.get('material_summary', '') or row.get('role_summary', '')}",
+                    f"Filter: {material_filter or role_filter or 'all'}",
+                    f"Missing consumers: {int(row.get('missing_consumer_count', 0) or 0)}",
+                    f"Recommended Action: {row.get('recommended_action', '')}",
+                    f"Surface Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    f"Highlight Object: {getattr(highlight, 'Label', getattr(highlight, 'Name', ''))}",
+                ]
+            )
+        )
 
     def _set_drainage_review_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_drainage_table"):
@@ -7610,6 +8411,12 @@ class V1BuildCorridorTaskPanel:
         state = "shown" if visible else "hidden"
         self._summary.setPlainText(f"Corridor previews {state}.\nObjects updated: {count}")
 
+    def _set_visibility_group(self, group_id: str, visible: bool) -> None:
+        count = set_corridor_build_visibility_group(self.document, group_id, bool(visible))
+        self._sync_visibility_checks()
+        state = "shown" if visible else "hidden"
+        self._summary.setPlainText(f"Visibility group {state}.\nGroup: {group_id}\nObjects updated: {count}")
+
     def _sync_visibility_checks(self) -> None:
         if not hasattr(self, "_visibility_checks"):
             return
@@ -7628,6 +8435,21 @@ class V1BuildCorridorTaskPanel:
                     pass
         self._sync_daylight_contact_marker_check()
         self._sync_guided_visibility_checks()
+        self._sync_visibility_group_checks()
+
+    def _sync_visibility_group_checks(self) -> None:
+        checks = getattr(self, "_visibility_group_checks", None)
+        if not checks:
+            return
+        for group_id, check in dict(checks).items():
+            try:
+                check.blockSignals(True)
+                check.setChecked(corridor_build_visibility_group_visible(self.document, group_id))
+            finally:
+                try:
+                    check.blockSignals(False)
+                except Exception:
+                    pass
 
     def _set_guided_visibility_checks(self, rows: list[dict[str, object]]) -> None:
         grid = getattr(self, "_guided_visibility_grid", None)
@@ -14155,6 +14977,2313 @@ def _augment_daylight_surface_with_intersection_slope_face_boundary_strips(
     return _augment_daylight_surface_with_slope_face_boundary_strips(surface, boundary_result)
 
 
+def corridor_intersection_shared_breakline_result(
+    applied_section_set,
+    *,
+    prerequisite=None,
+    intersection_model=None,
+    patch_boundary_result=None,
+    boundary_segment_result=None,
+    slope_face_boundary_result=None,
+    drainage_hint_result=None,
+) -> SharedBreaklineResult:
+    """Build the first shared breakline contract for intersection consumers."""
+
+    intersection_id = str(getattr(prerequisite, "intersection_id", "") or "")
+    project_id = str(getattr(applied_section_set, "project_id", "") or "")
+    result_id = f"shared-breakline:intersection:{intersection_id or 'main'}"
+    point_rows: list[SharedBreaklinePointRow] = []
+    breakline_rows: list[SharedBreaklineRow] = []
+    diagnostics: list[str] = []
+    if prerequisite is None or str(getattr(prerequisite, "status", "") or "") == "missing":
+        return SharedBreaklineResult(
+            schema_version=1,
+            project_id=project_id,
+            breakline_result_id=result_id,
+            domain_kind="intersection",
+            domain_ref=intersection_id,
+            status="missing",
+            diagnostic_rows=["intersection_prerequisite_missing"],
+        )
+    boundary_result = boundary_segment_result
+    if boundary_result is None:
+        tie_in_result = corridor_intersection_tie_in_edge_result(
+            applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+        boundary_result = corridor_intersection_boundary_segment_result(
+            tie_in_result,
+            intersection_model=intersection_model,
+        )
+    patch_result = patch_boundary_result or corridor_intersection_patch_boundary_result(boundary_result)
+    slope_boundary_result = slope_face_boundary_result
+    if slope_boundary_result is None:
+        slope_boundary_result = corridor_intersection_slope_face_boundary_result(
+            applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+    if patch_result is not None:
+        _append_intersection_patch_to_design_breaklines(
+            result_id=result_id,
+            intersection_id=intersection_id,
+            patch_result=patch_result,
+            boundary_result=boundary_result,
+            intersection_model=intersection_model,
+            breakline_rows=breakline_rows,
+            point_rows=point_rows,
+            diagnostics=diagnostics,
+        )
+    for index, row in enumerate(list(getattr(slope_boundary_result, "boundary_rows", []) or []), start=1):
+        inner_points = list(getattr(row, "inner_points_xyz", ()) or ())
+        if len(inner_points) < 2:
+            diagnostics.append(f"patch_to_slope_face_points_missing:{str(getattr(row, 'boundary_id', '') or index)}")
+            continue
+        breakline_id = f"{result_id}:patch-to-slope-face:{index}"
+        refs = []
+        for point_index, point in enumerate(inner_points):
+            x, y, z = _xyz_tuple(point)
+            point_id = f"{breakline_id}:p{point_index + 1}"
+            refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=breakline_id,
+                    sequence=point_index,
+                    x=x,
+                    y=y,
+                    z=z,
+                    source_point_ref=str(getattr(row, "boundary_id", "") or ""),
+                    notes="shared patch-to-slope-face breakline from Applied Section side-slope edge",
+                )
+            )
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role="patch_to_slope_face",
+                source_contract_refs=(
+                    str(getattr(slope_boundary_result, "boundary_result_id", "") or ""),
+                    str(getattr(row, "boundary_id", "") or ""),
+                ),
+                consumer_refs=("intersection_surface", "slope_face_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="slope_face_surface",
+                point_refs=tuple(refs),
+                alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                side=str(getattr(row, "side", "") or ""),
+                material_role="side_slope",
+                source_status=str(getattr(row, "status", "") or "candidate"),
+                diagnostic_rows=tuple(str(value) for value in list(getattr(row, "diagnostics", ()) or ())),
+                notes="Shared boundary between Intersection Surface and Slope Face Surface.",
+            )
+        )
+        shoulder_breakline_id = f"{result_id}:patch-to-shoulder:{index}"
+        shoulder_refs = []
+        for point_index, point in enumerate(inner_points):
+            x, y, z = _xyz_tuple(point)
+            point_id = f"{shoulder_breakline_id}:p{point_index + 1}"
+            shoulder_refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=shoulder_breakline_id,
+                    sequence=point_index,
+                    x=x,
+                    y=y,
+                    z=z,
+                    source_point_ref=str(getattr(row, "boundary_id", "") or ""),
+                    notes="shared patch-to-shoulder breakline from Applied Section shoulder edge",
+                )
+            )
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=shoulder_breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role="patch_to_shoulder",
+                source_contract_refs=(
+                    str(getattr(slope_boundary_result, "boundary_result_id", "") or ""),
+                    str(getattr(row, "boundary_id", "") or ""),
+                ),
+                consumer_refs=("intersection_surface", "design_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="design_surface",
+                point_refs=tuple(shoulder_refs),
+                alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                side=str(getattr(row, "side", "") or ""),
+                material_role="shoulder",
+                source_status=str(getattr(row, "status", "") or "candidate"),
+                diagnostic_rows=tuple(str(value) for value in list(getattr(row, "diagnostics", ()) or ())),
+                notes="Shared shoulder-role boundary between Intersection Surface and Design Surface.",
+            )
+        )
+        shoulder_slope_breakline_id = f"{result_id}:shoulder-to-slope-face:{index}"
+        shoulder_slope_refs = []
+        for point_index, point in enumerate(inner_points):
+            x, y, z = _xyz_tuple(point)
+            point_id = f"{shoulder_slope_breakline_id}:p{point_index + 1}"
+            shoulder_slope_refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=shoulder_slope_breakline_id,
+                    sequence=point_index,
+                    x=x,
+                    y=y,
+                    z=z,
+                    source_point_ref=str(getattr(row, "boundary_id", "") or ""),
+                    notes="shared shoulder-to-slope-face breakline from Applied Section shoulder edge",
+                )
+            )
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=shoulder_slope_breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role="shoulder_to_slope_face",
+                source_contract_refs=(
+                    str(getattr(slope_boundary_result, "boundary_result_id", "") or ""),
+                    str(getattr(row, "boundary_id", "") or ""),
+                ),
+                consumer_refs=("design_surface", "slope_face_surface"),
+                from_output_role="design_surface",
+                to_output_role="slope_face_surface",
+                point_refs=tuple(shoulder_slope_refs),
+                alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                side=str(getattr(row, "side", "") or ""),
+                material_role="shoulder",
+                source_status=str(getattr(row, "status", "") or "candidate"),
+                diagnostic_rows=tuple(str(value) for value in list(getattr(row, "diagnostics", ()) or ())),
+                notes="Shared shoulder-to-slope-face boundary between Design Surface and Slope Face Surface.",
+            )
+        )
+    curb_return_rows = [
+        row for row in list(getattr(boundary_result, "segment_rows", []) or [])
+        if str(getattr(row, "segment_role", "") or "") == "curb_return"
+    ]
+    for index, row in enumerate(curb_return_rows, start=1):
+        points = list(getattr(row, "chord_points_xyz", ()) or ())
+        if len(points) < 2:
+            points = [getattr(row, "start_xyz", ()), getattr(row, "end_xyz", ())]
+        points = [point for point in points if len(tuple(point or ())) >= 3]
+        if len(points) < 2:
+            diagnostics.append(f"curb_return_outer_points_missing:{str(getattr(row, 'boundary_segment_id', '') or index)}")
+            continue
+        breakline_id = f"{result_id}:curb-return-outer:{index}"
+        refs = []
+        for point_index, point in enumerate(points):
+            x, y, z = _xyz_tuple(point)
+            point_id = f"{breakline_id}:p{point_index + 1}"
+            refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=breakline_id,
+                    sequence=point_index,
+                    x=x,
+                    y=y,
+                    z=z,
+                    source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+                    notes="shared curb-return outer breakline from IntersectionBoundarySegmentResult curb_return arc",
+                )
+            )
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role="curb_return_outer",
+                source_contract_refs=(
+                    str(getattr(boundary_result, "boundary_segment_result_id", "") or ""),
+                    str(getattr(row, "boundary_segment_id", "") or ""),
+                ),
+                consumer_refs=("intersection_surface",),
+                from_output_role="intersection_edge_network",
+                to_output_role="intersection_surface",
+                point_refs=tuple(refs),
+                alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                side=str(getattr(row, "side", "") or ""),
+                material_role="curb_return",
+                source_status=str(getattr(row, "status", "") or "candidate"),
+                notes="First-class curb-return outer breakline consumed by the Intersection Surface.",
+            )
+        )
+        center = _xyz_tuple(getattr(row, "center_xyz", (0.0, 0.0, 0.0)))
+        inner_points = [_lerp_xyz(center, _xyz_tuple(point), 0.58) for point in points]
+        if len(inner_points) >= 2:
+            inner_breakline_id = f"{result_id}:curb-return-inner:{index}"
+            inner_refs = []
+            for point_index, point in enumerate(inner_points):
+                x, y, z = _xyz_tuple(point)
+                point_id = f"{inner_breakline_id}:p{point_index + 1}"
+                inner_refs.append(point_id)
+                point_rows.append(
+                    SharedBreaklinePointRow(
+                        point_id=point_id,
+                        breakline_ref=inner_breakline_id,
+                        sequence=point_index,
+                        x=x,
+                        y=y,
+                        z=z,
+                        source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+                        notes="shared curb-return inner breakline from deterministic curb-return blend offset",
+                    )
+                )
+            breakline_rows.append(
+                SharedBreaklineRow(
+                    breakline_id=inner_breakline_id,
+                    domain_kind="intersection",
+                    domain_ref=intersection_id,
+                    breakline_role="curb_return_inner",
+                    source_contract_refs=(
+                        str(getattr(boundary_result, "boundary_segment_result_id", "") or ""),
+                        str(getattr(row, "boundary_segment_id", "") or ""),
+                    ),
+                    consumer_refs=("intersection_surface",),
+                    from_output_role="intersection_edge_network",
+                    to_output_role="intersection_surface",
+                    point_refs=tuple(inner_refs),
+                    alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                    side=str(getattr(row, "side", "") or ""),
+                    material_role="curb_return",
+                    source_status=str(getattr(row, "status", "") or "candidate"),
+                    notes="First-class curb-return inner breakline consumed by the Intersection Surface.",
+                )
+            )
+        contact_segments = []
+        if len(points) >= 2:
+            contact_segments.append(("start", points[:2]))
+            contact_segments.append(("end", points[-2:]))
+        for contact_role, contact_points in contact_segments:
+            contact_breakline_id = f"{result_id}:curb-return-to-pavement:{index}:{contact_role}"
+            contact_refs = []
+            for point_index, point in enumerate(contact_points):
+                x, y, z = _xyz_tuple(point)
+                point_id = f"{contact_breakline_id}:p{point_index + 1}"
+                contact_refs.append(point_id)
+                point_rows.append(
+                    SharedBreaklinePointRow(
+                        point_id=point_id,
+                        breakline_ref=contact_breakline_id,
+                        sequence=point_index,
+                        x=x,
+                        y=y,
+                        z=z,
+                        source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+                        notes=f"shared curb-return to pavement contact segment at {contact_role} arc endpoint",
+                    )
+                )
+            breakline_rows.append(
+                SharedBreaklineRow(
+                    breakline_id=contact_breakline_id,
+                    domain_kind="intersection",
+                    domain_ref=intersection_id,
+                    breakline_role="curb_return_to_pavement",
+                    source_contract_refs=(
+                        str(getattr(boundary_result, "boundary_segment_result_id", "") or ""),
+                        str(getattr(row, "boundary_segment_id", "") or ""),
+                    ),
+                    consumer_refs=("intersection_surface", "design_surface"),
+                    from_output_role="intersection_edge_network",
+                    to_output_role="intersection_surface",
+                    point_refs=tuple(contact_refs),
+                    alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                    side=str(getattr(row, "side", "") or ""),
+                    material_role="pavement",
+                    source_status=str(getattr(row, "status", "") or "candidate"),
+                    notes=f"First-slice curb-return to pavement contact at {contact_role} arc endpoint.",
+                )
+            )
+            shoulder_contact_breakline_id = f"{result_id}:curb-return-to-shoulder:{index}:{contact_role}"
+            shoulder_contact_refs = []
+            for point_index, point in enumerate(contact_points):
+                x, y, z = _xyz_tuple(point)
+                point_id = f"{shoulder_contact_breakline_id}:p{point_index + 1}"
+                shoulder_contact_refs.append(point_id)
+                point_rows.append(
+                    SharedBreaklinePointRow(
+                        point_id=point_id,
+                        breakline_ref=shoulder_contact_breakline_id,
+                        sequence=point_index,
+                        x=x,
+                        y=y,
+                        z=z,
+                        source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+                        notes=f"shared curb-return to shoulder contact segment at {contact_role} arc endpoint",
+                    )
+                )
+            breakline_rows.append(
+                SharedBreaklineRow(
+                    breakline_id=shoulder_contact_breakline_id,
+                    domain_kind="intersection",
+                    domain_ref=intersection_id,
+                    breakline_role="curb_return_to_shoulder",
+                    source_contract_refs=(
+                        str(getattr(boundary_result, "boundary_segment_result_id", "") or ""),
+                        str(getattr(row, "boundary_segment_id", "") or ""),
+                    ),
+                    consumer_refs=("intersection_surface", "design_surface"),
+                    from_output_role="intersection_edge_network",
+                    to_output_role="design_surface",
+                    point_refs=tuple(shoulder_contact_refs),
+                    alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                    side=str(getattr(row, "side", "") or ""),
+                    material_role="shoulder",
+                    source_status=str(getattr(row, "status", "") or "candidate"),
+                    notes=f"First-slice curb-return to shoulder contact at {contact_role} arc endpoint.",
+                )
+            )
+            slope_contact_breakline_id = f"{result_id}:curb-return-to-slope-face:{index}:{contact_role}"
+            slope_contact_refs = []
+            for point_index, point in enumerate(contact_points):
+                x, y, z = _xyz_tuple(point)
+                point_id = f"{slope_contact_breakline_id}:p{point_index + 1}"
+                slope_contact_refs.append(point_id)
+                point_rows.append(
+                    SharedBreaklinePointRow(
+                        point_id=point_id,
+                        breakline_ref=slope_contact_breakline_id,
+                        sequence=point_index,
+                        x=x,
+                        y=y,
+                        z=z,
+                        source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+                        notes=f"shared curb-return to slope-face contact segment at {contact_role} arc endpoint",
+                    )
+                )
+            breakline_rows.append(
+                SharedBreaklineRow(
+                    breakline_id=slope_contact_breakline_id,
+                    domain_kind="intersection",
+                    domain_ref=intersection_id,
+                    breakline_role="curb_return_to_slope_face",
+                    source_contract_refs=(
+                        str(getattr(boundary_result, "boundary_segment_result_id", "") or ""),
+                        str(getattr(row, "boundary_segment_id", "") or ""),
+                    ),
+                    consumer_refs=("intersection_surface", "slope_face_surface"),
+                    from_output_role="intersection_edge_network",
+                    to_output_role="slope_face_surface",
+                    point_refs=tuple(slope_contact_refs),
+                    alignment_ref=str(getattr(row, "alignment_ref", "") or ""),
+                    side=str(getattr(row, "side", "") or ""),
+                    material_role="side_slope",
+                    source_status=str(getattr(row, "status", "") or "candidate"),
+                    notes=f"First-slice curb-return to slope-face contact at {contact_role} arc endpoint.",
+                )
+            )
+    _append_intersection_control_area_boundary_breaklines(
+        result_id=result_id,
+        applied_section_set=applied_section_set,
+        intersection_id=intersection_id,
+        intersection_model=intersection_model,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+        diagnostics=diagnostics,
+    )
+    _append_intersection_drainage_handoff_breaklines(
+        result_id=result_id,
+        intersection_id=intersection_id,
+        drainage_hint_result=drainage_hint_result,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+        diagnostics=diagnostics,
+    )
+    breakline_rows = _shared_breakline_rows_with_intersection_profile_refs(
+        breakline_rows,
+        intersection_model=intersection_model,
+        intersection_id=intersection_id,
+    )
+    ready_count = sum(1 for row in breakline_rows if str(getattr(row, "source_status", "") or "") in {"ready", "accepted"})
+    warning_count = sum(1 for row in breakline_rows if str(getattr(row, "source_status", "") or "") in {"warning", "candidate", "defaulted"})
+    error_count = sum(1 for row in breakline_rows if str(getattr(row, "source_status", "") or "") == "error")
+    status = "ready" if breakline_rows and error_count == 0 else "missing" if not breakline_rows else "warning"
+    return SharedBreaklineResult(
+        schema_version=1,
+        project_id=project_id,
+        breakline_result_id=result_id,
+        domain_kind="intersection",
+        domain_ref=intersection_id,
+        status=status,
+        breakline_count=len(breakline_rows),
+        ready_count=ready_count,
+        warning_count=warning_count,
+        error_count=error_count,
+        diagnostic_rows=diagnostics,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+    )
+
+
+def _shared_breakline_rows_with_intersection_profile_refs(
+    rows: list[SharedBreaklineRow],
+    *,
+    intersection_model,
+    intersection_id: str,
+) -> list[SharedBreaklineRow]:
+    profile_refs = _intersection_profile_source_refs(intersection_model, intersection_id)
+    if not profile_refs:
+        return rows
+    output: list[SharedBreaklineRow] = []
+    for row in list(rows or []):
+        refs = _unique_text_values([
+            *list(tuple(getattr(row, "source_contract_refs", ()) or ())),
+            *profile_refs,
+        ])
+        output.append(replace(row, source_contract_refs=tuple(refs)))
+    return output
+
+
+def _intersection_profile_source_refs(intersection_model, intersection_id: str) -> list[str]:
+    if intersection_model is None:
+        return []
+    target = str(intersection_id or "").strip()
+    refs: list[str] = []
+    for row in list(getattr(intersection_model, "intersection_rows", []) or []):
+        if target and str(getattr(row, "intersection_id", "") or "").strip() != target:
+            continue
+        for leg in list(getattr(row, "leg_rows", []) or []):
+            profile_ref = str(getattr(leg, "profile_ref", "") or "").strip()
+            if profile_ref:
+                refs.append(profile_ref)
+            grading_ref = str(getattr(leg, "grading_policy_ref", "") or "").strip()
+            if grading_ref:
+                refs.append(grading_ref)
+    for row in list(getattr(intersection_model, "grading_policy_rows", []) or []):
+        if target and str(getattr(row, "intersection_id", "") or "").strip() != target:
+            continue
+        for attr in ("policy_id", "controlling_profile_ref"):
+            ref = str(getattr(row, attr, "") or "").strip()
+            if ref:
+                refs.append(ref)
+    return _unique_text_values(refs)
+
+
+def _append_intersection_control_area_boundary_breaklines(
+    *,
+    result_id: str,
+    applied_section_set,
+    intersection_id: str,
+    intersection_model,
+    breakline_rows: list[SharedBreaklineRow],
+    point_rows: list[SharedBreaklinePointRow],
+    diagnostics: list[str],
+) -> None:
+    control_area_ids = {
+        str(getattr(row, "control_area_id", "") or "").strip()
+        for row in list(getattr(intersection_model, "control_area_rows", []) or [])
+        if str(getattr(row, "control_area_id", "") or "").strip()
+    }
+    grouped: dict[tuple[str, str, str], list[object]] = {}
+    for section in _ordered_applied_sections_for_breaklines(applied_section_set):
+        section_intersection = str(getattr(section, "active_intersection_id", "") or "").strip()
+        if intersection_id and section_intersection != intersection_id:
+            continue
+        if not intersection_id and not section_intersection:
+            continue
+        control_area_ref = str(getattr(section, "active_intersection_control_area_id", "") or "").strip()
+        if control_area_ids and control_area_ref not in control_area_ids:
+            continue
+        if not control_area_ref:
+            diagnostics.append(f"control_area_boundary_ref_missing:{getattr(section, 'applied_section_id', '')}")
+            continue
+        key = (
+            str(getattr(section, "alignment_id", "") or "").strip(),
+            control_area_ref,
+            str(getattr(section, "region_id", "") or "").strip(),
+        )
+        grouped.setdefault(key, []).append(section)
+    if not grouped:
+        diagnostics.append("control_area_boundary_shared_breakline_rows_missing")
+        return
+    for group_index, ((alignment_ref, control_area_ref, region_ref), sections) in enumerate(sorted(grouped.items(), key=lambda item: item[0]), start=1):
+        ordered_sections = sorted(sections, key=lambda section: float(getattr(section, "station", 0.0) or 0.0))
+        for boundary_kind, section in (("control_area_entry", ordered_sections[0]), ("control_area_exit", ordered_sections[-1])):
+            role_points = _section_surface_role_boundary_points(section)
+            for surface_role, points in sorted(role_points.items()):
+                if len(points) < 2:
+                    continue
+                consumer = _general_breakline_consumer_for_surface_role(surface_role)
+                station = float(getattr(section, "station", 0.0) or 0.0)
+                safe_boundary = _safe_breakline_id_part(boundary_kind)
+                safe_control = _safe_breakline_id_part(control_area_ref)
+                safe_surface = _safe_breakline_id_part(surface_role)
+                breakline_id = f"{result_id}:{safe_boundary}:{group_index}:{safe_control}:{safe_surface}"
+                refs: list[str] = []
+                for point_index, point in enumerate(points):
+                    point_id = f"{breakline_id}:p{point_index + 1}"
+                    refs.append(point_id)
+                    point_rows.append(
+                        SharedBreaklinePointRow(
+                            point_id=point_id,
+                            breakline_ref=breakline_id,
+                            sequence=point_index,
+                            x=float(getattr(point, "x", 0.0) or 0.0),
+                            y=float(getattr(point, "y", 0.0) or 0.0),
+                            z=float(getattr(point, "z", 0.0) or 0.0),
+                            station=station,
+                            offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                            source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{getattr(point, 'point_id', '')}",
+                            notes="intersection control-area handoff breakline from Applied Section surface-role endpoints",
+                        )
+                    )
+                breakline_rows.append(
+                    SharedBreaklineRow(
+                        breakline_id=breakline_id,
+                        domain_kind="intersection_control_area",
+                        domain_ref=control_area_ref,
+                        breakline_role=boundary_kind,
+                        source_contract_refs=(
+                            str(getattr(section, "applied_section_id", "") or ""),
+                            control_area_ref,
+                            region_ref,
+                        ),
+                        consumer_refs=("intersection_surface", consumer),
+                        from_output_role="intersection_surface",
+                        to_output_role=consumer,
+                        point_refs=tuple(refs),
+                        station_start=station,
+                        station_end=station,
+                        alignment_ref=alignment_ref,
+                        side="cross_section",
+                        material_role=surface_role,
+                        source_status="ready",
+                        handoff_target="intersection_control_area",
+                        notes=(
+                            f"Region to Intersection control-area handoff; role=region_to_intersection_control; "
+                            f"boundary={boundary_kind}; region={region_ref}; control_area={control_area_ref}; surface={surface_role}"
+                        ),
+                    )
+                )
+
+
+def _append_intersection_patch_to_design_breaklines(
+    *,
+    result_id: str,
+    intersection_id: str,
+    patch_result,
+    boundary_result,
+    intersection_model,
+    breakline_rows: list[SharedBreaklineRow],
+    point_rows: list[SharedBreaklinePointRow],
+    diagnostics: list[str],
+) -> None:
+    tie_in_rows = [
+        row for row in list(getattr(boundary_result, "segment_rows", []) or [])
+        if str(getattr(row, "segment_kind", "") or "") == "tie_in"
+    ]
+    source_row = _intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
+    primary_ref = str(getattr(source_row, "primary_alignment_ref", "") or "")
+    appended = 0
+    for index, row in enumerate(tie_in_rows, start=1):
+        start = _xyz_tuple(getattr(row, "start_xyz", (0.0, 0.0, 0.0)))
+        end = _xyz_tuple(getattr(row, "end_xyz", (0.0, 0.0, 0.0)))
+        if _xyz_distance(start, end) <= 1.0e-9:
+            diagnostics.append(f"patch_to_design_contact_points_missing:{str(getattr(row, 'boundary_segment_id', '') or index)}")
+            continue
+        alignment_ref = str(getattr(row, "alignment_ref", "") or "")
+        contact_role = "pavement_tie_in" if primary_ref and alignment_ref == primary_ref else "stem_tie_in"
+        breakline_role = f"patch_to_design_{contact_role}"
+        breakline_id = f"{result_id}:{breakline_role.replace('_', '-')}:{index}"
+        refs: list[str] = []
+        for point_index, point in enumerate((start, end)):
+            point_id = f"{breakline_id}:p{point_index + 1}"
+            refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=breakline_id,
+                    sequence=point_index,
+                    x=float(point[0]),
+                    y=float(point[1]),
+                    z=float(point[2]),
+                    source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+                    notes=f"shared patch-to-design {contact_role} contact from IntersectionBoundarySegmentResult",
+                )
+            )
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role=breakline_role,
+                source_contract_refs=(
+                    str(getattr(patch_result, "patch_boundary_result_id", "") or ""),
+                    str(getattr(boundary_result, "boundary_segment_result_id", "") or ""),
+                    str(getattr(row, "boundary_segment_id", "") or ""),
+                ),
+                consumer_refs=("intersection_surface", "design_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="design_surface",
+                point_refs=tuple(refs),
+                alignment_ref=alignment_ref,
+                side=str(getattr(row, "side", "") or ""),
+                material_role="pavement",
+                source_status=str(getattr(row, "status", "") or getattr(patch_result, "status", "") or "candidate"),
+                diagnostic_rows=tuple(str(value) for value in list(getattr(patch_result, "diagnostic_rows", []) or [])),
+                handoff_target="intersection_patch_to_design",
+                notes=(
+                    f"Per-contact shared boundary between Intersection Surface and Design Surface; "
+                    f"contact_role={contact_role}; source_segment_role={getattr(row, 'segment_role', '')}"
+                ),
+            )
+        )
+        appended += 1
+    if appended:
+        return
+    patch_points = [
+        row for row in list(getattr(patch_result, "point_rows", []) or [])
+        if str(getattr(row, "ring_role", "") or "outer") == "outer"
+    ]
+    if len(patch_points) >= 2:
+        breakline_id = f"{result_id}:patch-to-design"
+        refs = []
+        for index, point in enumerate(patch_points):
+            point_id = f"{breakline_id}:p{index + 1}"
+            refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=breakline_id,
+                    sequence=index,
+                    x=float(getattr(point, "x", 0.0) or 0.0),
+                    y=float(getattr(point, "y", 0.0) or 0.0),
+                    z=float(getattr(point, "z", 0.0) or 0.0),
+                    source_point_ref=str(getattr(point, "boundary_point_id", "") or ""),
+                    notes="shared fallback patch-to-design breakline from intersection patch boundary",
+                )
+            )
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role="patch_to_design",
+                source_contract_refs=(str(getattr(patch_result, "patch_boundary_result_id", "") or ""),),
+                consumer_refs=("intersection_surface", "design_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="design_surface",
+                point_refs=tuple(refs),
+                source_status=str(getattr(patch_result, "status", "") or "candidate"),
+                diagnostic_rows=tuple(str(value) for value in list(getattr(patch_result, "diagnostic_rows", []) or [])),
+                notes="Fallback broad shared boundary between Intersection Surface and Design Surface.",
+            )
+        )
+    else:
+        diagnostics.append("patch_to_design_breakline_points_missing")
+
+
+def corridor_general_shared_breakline_result(applied_section_set) -> SharedBreaklineResult:
+    """Build corridor-wide shared breakline rows from ordinary Applied Section link roles."""
+
+    project_id = str(getattr(applied_section_set, "project_id", "") or "")
+    corridor_id = str(getattr(applied_section_set, "corridor_id", "") or "corridor")
+    result_id = f"shared-breakline:corridor:{corridor_id or 'main'}"
+    point_rows: list[SharedBreaklinePointRow] = []
+    breakline_rows: list[SharedBreaklineRow] = []
+    diagnostics: list[str] = []
+    groups: dict[tuple[str, str, str, str, str, str], list[dict[str, object]]] = {}
+    for section in _ordered_applied_sections_for_breaklines(applied_section_set):
+        if str(getattr(section, "active_intersection_id", "") or ""):
+            continue
+        point_lookup = _applied_section_subassembly_point_lookup(section)
+        station = float(getattr(section, "station", 0.0) or 0.0)
+        alignment_ref = str(getattr(section, "alignment_id", "") or "")
+        region_ref = str(getattr(section, "region_id", "") or "")
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            surface_role = _normal_shared_breakline_surface_role(getattr(link, "surface_role", ""))
+            if surface_role not in {"design_surface", "slope_face_surface", "drainage_surface"}:
+                continue
+            for endpoint_kind, point_ref in (("start", getattr(link, "start_point_ref", "")), ("end", getattr(link, "end_point_ref", ""))):
+                point = point_lookup.get(str(point_ref or ""))
+                if point is None:
+                    diagnostics.append(f"missing_link_point:{getattr(section, 'applied_section_id', '')}:{getattr(link, 'link_id', '')}:{point_ref}")
+                    continue
+                point_code = str(getattr(point, "point_code", "") or point_ref or endpoint_kind)
+                side = str(getattr(point, "side", "") or _subassembly_side_for_ref(section, getattr(link, "subassembly_ref", "")) or "")
+                breakline_role = _general_breakline_role_for_link(link, endpoint_kind=endpoint_kind)
+                key = (
+                    alignment_ref,
+                    region_ref,
+                    surface_role,
+                    breakline_role,
+                    side,
+                    f"{str(getattr(link, 'subassembly_ref', '') or '')}:{point_code}:{endpoint_kind}",
+                )
+                groups.setdefault(key, []).append(
+                    {
+                        "section": section,
+                        "link": link,
+                        "point": point,
+                        "station": station,
+                        "alignment_ref": alignment_ref,
+                        "region_ref": region_ref,
+                        "side": side,
+                    }
+                )
+    for index, (key, entries) in enumerate(sorted(groups.items(), key=lambda item: item[0]), start=1):
+        ordered = sorted(entries, key=lambda entry: float(entry.get("station", 0.0) or 0.0))
+        if len(ordered) < 2:
+            continue
+        alignment_ref, region_ref, surface_role, breakline_role, side, endpoint_key = key
+        safe_role = _safe_breakline_id_part(breakline_role)
+        safe_endpoint = _safe_breakline_id_part(endpoint_key)
+        breakline_id = f"{result_id}:{safe_role}:{index}:{safe_endpoint}"
+        refs: list[str] = []
+        for point_index, entry in enumerate(ordered):
+            point = entry["point"]
+            section = entry["section"]
+            point_id = f"{breakline_id}:p{point_index + 1}"
+            refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=breakline_id,
+                    sequence=point_index,
+                    x=float(getattr(point, "x", 0.0) or 0.0),
+                    y=float(getattr(point, "y", 0.0) or 0.0),
+                    z=float(getattr(point, "z", 0.0) or 0.0),
+                    station=float(entry.get("station", 0.0) or 0.0),
+                    offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                    source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{getattr(point, 'point_id', '')}",
+                    notes="corridor-wide shared breakline from Applied Section subassembly link endpoint",
+                )
+            )
+        consumer = _general_breakline_consumer_for_surface_role(surface_role)
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="corridor",
+                domain_ref=corridor_id,
+                breakline_role=breakline_role,
+                source_contract_refs=tuple(
+                    _unique_text_values(
+                        [
+                            *[
+                                f"{getattr(entry['section'], 'applied_section_id', '')}:{getattr(entry['link'], 'link_id', '')}"
+                                for entry in ordered
+                            ],
+                            *[
+                                ref
+                                for entry in ordered
+                                for ref in _applied_section_profile_source_refs(entry["section"])
+                            ],
+                        ]
+                    )
+                ),
+                consumer_refs=(consumer,),
+                from_output_role=consumer,
+                to_output_role=consumer,
+                point_refs=tuple(refs),
+                station_start=float(ordered[0].get("station", 0.0) or 0.0),
+                station_end=float(ordered[-1].get("station", 0.0) or 0.0),
+                alignment_ref=alignment_ref,
+                side=side,
+                material_role=surface_role,
+                source_status="ready",
+                handoff_target="applied_sections",
+                notes=f"Ordinary corridor breakline for {surface_role}; region={region_ref}; endpoint={endpoint_key}",
+            )
+        )
+    status = "ready" if breakline_rows else "missing"
+    if not breakline_rows and not diagnostics:
+        diagnostics.append("corridor_shared_breakline_rows_missing")
+    return SharedBreaklineResult(
+        schema_version=1,
+        project_id=project_id,
+        breakline_result_id=result_id,
+        domain_kind="corridor",
+        domain_ref=corridor_id,
+        status=status,
+        breakline_count=len(breakline_rows),
+        ready_count=len(breakline_rows),
+        warning_count=0,
+        error_count=0,
+        diagnostic_rows=diagnostics,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+    )
+
+
+def _applied_section_profile_source_refs(section) -> list[str]:
+    refs: list[str] = []
+    for attr in ("profile_id", "active_profile_id", "profile_ref"):
+        ref = str(getattr(section, attr, "") or "").strip()
+        if ref:
+            refs.append(ref)
+    frame = getattr(section, "frame", None)
+    if frame is not None:
+        for attr in ("active_profile_segment_start_id", "active_profile_segment_end_id", "active_vertical_curve_id"):
+            ref = str(getattr(frame, attr, "") or "").strip()
+            if ref:
+                refs.append(ref)
+    return _unique_text_values(refs)
+
+
+def _append_intersection_drainage_handoff_breaklines(
+    *,
+    result_id: str,
+    intersection_id: str,
+    drainage_hint_result,
+    breakline_rows: list[SharedBreaklineRow],
+    point_rows: list[SharedBreaklinePointRow],
+    diagnostics: list[str],
+) -> None:
+    if drainage_hint_result is None:
+        return
+    hint_rows = list(getattr(drainage_hint_result, "hint_rows", []) or [])
+    if not hint_rows:
+        return
+    for index, hint in enumerate(hint_rows, start=1):
+        role = _intersection_drainage_handoff_role(hint)
+        source_breakline = _intersection_drainage_source_breakline_for_role(role, breakline_rows)
+        if source_breakline is None:
+            diagnostics.append(f"{role}_source_breakline_missing:{str(getattr(hint, 'hint_id', '') or index)}")
+            continue
+        source_points = _shared_breakline_points_for_ref(point_rows, str(getattr(source_breakline, "breakline_id", "") or ""))
+        if len(source_points) < 2:
+            diagnostics.append(f"{role}_source_points_missing:{str(getattr(hint, 'hint_id', '') or index)}")
+            continue
+        breakline_id = f"{result_id}:{_safe_breakline_id_part(role)}:{index}"
+        refs: list[str] = []
+        for point_index, source_point in enumerate(source_points):
+            point_id = f"{breakline_id}:p{point_index + 1}"
+            refs.append(point_id)
+            point_rows.append(
+                SharedBreaklinePointRow(
+                    point_id=point_id,
+                    breakline_ref=breakline_id,
+                    sequence=point_index,
+                    x=float(getattr(source_point, "x", 0.0) or 0.0),
+                    y=float(getattr(source_point, "y", 0.0) or 0.0),
+                    z=float(getattr(source_point, "z", 0.0) or 0.0),
+                    station=float(getattr(source_point, "station", 0.0) or 0.0),
+                    offset=float(getattr(source_point, "offset", 0.0) or 0.0),
+                    source_point_ref=str(getattr(source_point, "point_id", "") or ""),
+                    notes=f"intersection drainage handoff copied from {getattr(source_breakline, 'breakline_role', '')}",
+                )
+            )
+        source_status = str(getattr(hint, "status", "") or getattr(hint, "source_status", "") or "candidate")
+        breakline_rows.append(
+            SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref=intersection_id,
+                breakline_role=role,
+                source_contract_refs=(
+                    str(getattr(drainage_hint_result, "drainage_hint_result_id", "") or ""),
+                    str(getattr(hint, "hint_id", "") or ""),
+                    str(getattr(source_breakline, "breakline_id", "") or ""),
+                ),
+                consumer_refs=("intersection_surface", "drainage_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="drainage_surface",
+                point_refs=tuple(refs),
+                alignment_ref=str(getattr(source_breakline, "alignment_ref", "") or ""),
+                side=str(getattr(source_breakline, "side", "") or ""),
+                material_role="drainage_surface",
+                source_status=source_status,
+                diagnostic_rows=tuple(
+                    str(value)
+                    for value in (
+                        list(getattr(hint, "diagnostic_rows", ()) or ())
+                        + list(getattr(hint, "source_diagnostic_rows", ()) or ())
+                    )
+                    if str(value)
+                ),
+                handoff_target=str(getattr(hint, "handoff_target", "") or "intersection_drainage"),
+                notes=(
+                    f"Intersection drainage handoff; hint={getattr(hint, 'hint_kind', '')}; "
+                    f"mode={getattr(hint, 'drainage_mode', '')}; source={getattr(source_breakline, 'breakline_role', '')}"
+                ),
+            )
+        )
+
+
+def _intersection_drainage_handoff_role(hint) -> str:
+    kind = str(getattr(hint, "hint_kind", "") or "").lower()
+    recommended = str(getattr(hint, "recommended_element_kind", "") or "").lower()
+    mode = str(getattr(hint, "drainage_mode", "") or "").lower()
+    if "low_point" in kind or "low_point" in recommended:
+        return "low_point_flow_split"
+    if "inlet" in kind or "inlet" in recommended or "gutter" in mode:
+        return "intersection_gutter_handoff"
+    return "intersection_ditch_handoff"
+
+
+def _intersection_drainage_source_breakline_for_role(role: str, breakline_rows: list[SharedBreaklineRow]):
+    if role == "intersection_gutter_handoff":
+        candidates = ("curb_return_to_pavement", "curb_return_to_shoulder", "patch_to_shoulder", "patch_to_design")
+    elif role == "low_point_flow_split":
+        candidates = ("patch_to_design", "patch_to_shoulder", "curb_return_to_pavement")
+    else:
+        candidates = ("shoulder_to_slope_face", "patch_to_slope_face", "curb_return_to_slope_face")
+    for candidate in candidates:
+        for row in list(breakline_rows or []):
+            if str(getattr(row, "breakline_role", "") or "") == candidate:
+                return row
+    return None
+
+
+def _shared_breakline_points_for_ref(point_rows: list[SharedBreaklinePointRow], breakline_ref: str) -> list[SharedBreaklinePointRow]:
+    return sorted(
+        [
+            point for point in list(point_rows or [])
+            if str(getattr(point, "breakline_ref", "") or "") == str(breakline_ref or "")
+        ],
+        key=lambda point: int(getattr(point, "sequence", 0) or 0),
+    )
+
+
+def combined_shared_breakline_result(*results) -> SharedBreaklineResult | None:
+    """Combine multiple SharedBreaklineResult values for one preview/audit surface."""
+
+    clean = [result for result in list(results or []) if result is not None]
+    if not clean:
+        return None
+    if len(clean) == 1:
+        return clean[0]
+    first = clean[0]
+    breakline_rows: list[SharedBreaklineRow] = []
+    point_rows: list[SharedBreaklinePointRow] = []
+    diagnostics: list[str] = []
+    for result in clean:
+        breakline_rows.extend(list(getattr(result, "breakline_rows", []) or []))
+        point_rows.extend(list(getattr(result, "point_rows", []) or []))
+        diagnostics.extend(str(row) for row in list(getattr(result, "diagnostic_rows", []) or []) if str(row))
+    error_count = sum(int(getattr(result, "error_count", 0) or 0) for result in clean)
+    warning_count = sum(int(getattr(result, "warning_count", 0) or 0) for result in clean)
+    ready_count = sum(int(getattr(result, "ready_count", 0) or 0) for result in clean)
+    status = "ready" if breakline_rows and error_count == 0 else "missing" if not breakline_rows else "warning"
+    return SharedBreaklineResult(
+        schema_version=1,
+        project_id=str(getattr(first, "project_id", "") or ""),
+        breakline_result_id="shared-breakline:combined:" + ",".join(str(getattr(result, "breakline_result_id", "") or "") for result in clean),
+        domain_kind="combined",
+        domain_ref=",".join(str(getattr(result, "domain_ref", "") or "") for result in clean if str(getattr(result, "domain_ref", "") or "")),
+        status=status,
+        breakline_count=len(breakline_rows),
+        ready_count=ready_count,
+        warning_count=warning_count,
+        error_count=error_count,
+        diagnostic_rows=diagnostics,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+    )
+
+
+def corridor_region_transition_shared_breakline_result(applied_section_set) -> SharedBreaklineResult:
+    """Build shared breaklines for ordinary corridor Region start/end boundaries."""
+
+    project_id = str(getattr(applied_section_set, "project_id", "") or "")
+    corridor_id = str(getattr(applied_section_set, "corridor_id", "") or "corridor")
+    result_id = f"shared-breakline:region-transition:{corridor_id or 'main'}"
+    point_rows: list[SharedBreaklinePointRow] = []
+    breakline_rows: list[SharedBreaklineRow] = []
+    grouped: dict[tuple[str, str], list[object]] = {}
+    for section in _ordered_applied_sections_for_breaklines(applied_section_set):
+        if str(getattr(section, "active_intersection_id", "") or ""):
+            continue
+        key = (str(getattr(section, "alignment_id", "") or ""), str(getattr(section, "region_id", "") or ""))
+        grouped.setdefault(key, []).append(section)
+    for group_index, ((alignment_ref, region_ref), sections) in enumerate(sorted(grouped.items(), key=lambda item: item[0]), start=1):
+        ordered_sections = sorted(sections, key=lambda section: float(getattr(section, "station", 0.0) or 0.0))
+        for boundary_kind, section in (("region_start_boundary", ordered_sections[0]), ("region_end_boundary", ordered_sections[-1])):
+            role_points = _section_surface_role_boundary_points(section)
+            for surface_role, points in sorted(role_points.items()):
+                if len(points) < 2:
+                    continue
+                consumer = _general_breakline_consumer_for_surface_role(surface_role)
+                safe_role = _safe_breakline_id_part(boundary_kind)
+                safe_surface = _safe_breakline_id_part(surface_role)
+                breakline_id = f"{result_id}:{safe_role}:{group_index}:{safe_surface}"
+                refs: list[str] = []
+                for point_index, point in enumerate(points):
+                    point_id = f"{breakline_id}:p{point_index + 1}"
+                    refs.append(point_id)
+                    point_rows.append(
+                        SharedBreaklinePointRow(
+                            point_id=point_id,
+                            breakline_ref=breakline_id,
+                            sequence=point_index,
+                            x=float(getattr(point, "x", 0.0) or 0.0),
+                            y=float(getattr(point, "y", 0.0) or 0.0),
+                            z=float(getattr(point, "z", 0.0) or 0.0),
+                            station=float(getattr(section, "station", 0.0) or 0.0),
+                            offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                            source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{getattr(point, 'point_id', '')}",
+                            notes="corridor Region boundary shared breakline from Applied Section surface-role endpoints",
+                        )
+                    )
+                breakline_rows.append(
+                    SharedBreaklineRow(
+                        breakline_id=breakline_id,
+                        domain_kind="region_transition",
+                        domain_ref=region_ref,
+                        breakline_role=boundary_kind,
+                        source_contract_refs=(str(getattr(section, "applied_section_id", "") or ""),),
+                        consumer_refs=(consumer,),
+                        from_output_role=consumer,
+                        to_output_role=consumer,
+                        point_refs=tuple(refs),
+                        station_start=float(getattr(section, "station", 0.0) or 0.0),
+                        station_end=float(getattr(section, "station", 0.0) or 0.0),
+                        alignment_ref=alignment_ref,
+                        side="cross_section",
+                        material_role=surface_role,
+                        source_status="ready",
+                        handoff_target="region_model",
+                        notes=f"Region {boundary_kind}; region={region_ref}; surface={surface_role}",
+                    )
+                )
+    _append_region_assembly_change_breaklines(
+        applied_section_set=applied_section_set,
+        result_id=result_id,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+    )
+    status = "ready" if breakline_rows else "missing"
+    diagnostics = [] if breakline_rows else ["region_transition_shared_breakline_rows_missing"]
+    return SharedBreaklineResult(
+        schema_version=1,
+        project_id=project_id,
+        breakline_result_id=result_id,
+        domain_kind="region_transition",
+        domain_ref=corridor_id,
+        status=status,
+        breakline_count=len(breakline_rows),
+        ready_count=len(breakline_rows),
+        warning_count=0,
+        error_count=0,
+        diagnostic_rows=diagnostics,
+        breakline_rows=breakline_rows,
+        point_rows=point_rows,
+    )
+
+
+def _append_region_assembly_change_breaklines(
+    *,
+    applied_section_set,
+    result_id: str,
+    breakline_rows: list[SharedBreaklineRow],
+    point_rows: list[SharedBreaklinePointRow],
+) -> None:
+    sections_by_alignment: dict[str, list[object]] = {}
+    for section in _ordered_applied_sections_for_breaklines(applied_section_set):
+        if str(getattr(section, "active_intersection_id", "") or ""):
+            continue
+        alignment_ref = str(getattr(section, "alignment_id", "") or "")
+        sections_by_alignment.setdefault(alignment_ref, []).append(section)
+    next_index = len(breakline_rows) + 1
+    for alignment_ref, sections in sorted(sections_by_alignment.items()):
+        ordered = sorted(
+            sections,
+            key=lambda section: (
+                float(getattr(section, "station", 0.0) or 0.0),
+                str(getattr(section, "region_id", "") or ""),
+                str(getattr(section, "applied_section_id", "") or ""),
+            ),
+        )
+        for previous, current in zip(ordered[:-1], ordered[1:]):
+            previous_region = str(getattr(previous, "region_id", "") or "")
+            current_region = str(getattr(current, "region_id", "") or "")
+            if not previous_region or previous_region == current_region:
+                continue
+            previous_assembly = str(getattr(previous, "assembly_id", "") or "")
+            current_assembly = str(getattr(current, "assembly_id", "") or "")
+            if not previous_assembly or not current_assembly or previous_assembly == current_assembly:
+                continue
+            boundary_section = current
+            role_points = _section_surface_role_boundary_points(boundary_section)
+            for surface_role, points in sorted(role_points.items()):
+                if len(points) < 2:
+                    continue
+                consumer = _general_breakline_consumer_for_surface_role(surface_role)
+                safe_surface = _safe_breakline_id_part(surface_role)
+                breakline_id = f"{result_id}:assembly_change_boundary:{next_index}:{safe_surface}"
+                next_index += 1
+                refs: list[str] = []
+                for point_index, point in enumerate(points):
+                    point_id = f"{breakline_id}:p{point_index + 1}"
+                    refs.append(point_id)
+                    point_rows.append(
+                        SharedBreaklinePointRow(
+                            point_id=point_id,
+                            breakline_ref=breakline_id,
+                            sequence=point_index,
+                            x=float(getattr(point, "x", 0.0) or 0.0),
+                            y=float(getattr(point, "y", 0.0) or 0.0),
+                            z=float(getattr(point, "z", 0.0) or 0.0),
+                            station=float(getattr(boundary_section, "station", 0.0) or 0.0),
+                            offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                            source_point_ref=f"{getattr(boundary_section, 'applied_section_id', '')}:{getattr(point, 'point_id', '')}",
+                            notes="corridor Region assembly-change shared breakline from Applied Section surface-role endpoints",
+                        )
+                    )
+                breakline_rows.append(
+                    SharedBreaklineRow(
+                        breakline_id=breakline_id,
+                        domain_kind="region_transition",
+                        domain_ref=f"{previous_region}->{current_region}",
+                        breakline_role="assembly_change_boundary",
+                        source_contract_refs=(
+                            str(getattr(previous, "applied_section_id", "") or ""),
+                            str(getattr(current, "applied_section_id", "") or ""),
+                            previous_assembly,
+                            current_assembly,
+                        ),
+                        consumer_refs=(consumer,),
+                        from_output_role=consumer,
+                        to_output_role=consumer,
+                        point_refs=tuple(refs),
+                        station_start=float(getattr(boundary_section, "station", 0.0) or 0.0),
+                        station_end=float(getattr(boundary_section, "station", 0.0) or 0.0),
+                        alignment_ref=alignment_ref,
+                        side="cross_section",
+                        material_role=surface_role,
+                        source_status="ready",
+                        handoff_target="region_assembly_change",
+                        notes=(
+                            "Region assembly_change_boundary; "
+                            f"from_region={previous_region}; to_region={current_region}; "
+                            f"from_assembly={previous_assembly}; to_assembly={current_assembly}; surface={surface_role}"
+                        ),
+                    )
+                )
+
+
+def _section_surface_role_boundary_points(section) -> dict[str, list[object]]:
+    point_lookup = _applied_section_subassembly_point_lookup(section)
+    grouped: dict[str, dict[str, object]] = {}
+    for link in list(getattr(section, "subassembly_link_rows", []) or []):
+        surface_role = _normal_shared_breakline_surface_role(getattr(link, "surface_role", ""))
+        if surface_role not in {"design_surface", "slope_face_surface", "drainage_surface"}:
+            continue
+        role_points = grouped.setdefault(surface_role, {})
+        for point_ref in (getattr(link, "start_point_ref", ""), getattr(link, "end_point_ref", "")):
+            point = point_lookup.get(str(point_ref or ""))
+            if point is None:
+                continue
+            key = f"{round(float(getattr(point, 'x', 0.0) or 0.0), 6)}:{round(float(getattr(point, 'y', 0.0) or 0.0), 6)}:{round(float(getattr(point, 'z', 0.0) or 0.0), 6)}"
+            role_points[key] = point
+    output: dict[str, list[object]] = {}
+    for surface_role, points in grouped.items():
+        output[surface_role] = sorted(
+            points.values(),
+            key=lambda point: (
+                float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                str(getattr(point, "point_id", "") or ""),
+            ),
+        )
+    return output
+
+
+def _ordered_applied_sections_for_breaklines(applied_section_set) -> list[object]:
+    return sorted(
+        list(getattr(applied_section_set, "sections", []) or []),
+        key=lambda section: (
+            str(getattr(section, "alignment_id", "") or ""),
+            str(getattr(section, "region_id", "") or ""),
+            float(getattr(section, "station", 0.0) or 0.0),
+            str(getattr(section, "applied_section_id", "") or ""),
+        ),
+    )
+
+
+def _applied_section_subassembly_point_lookup(section) -> dict[str, object]:
+    return {
+        str(getattr(point, "point_id", "") or ""): point
+        for point in list(getattr(section, "subassembly_point_rows", []) or [])
+        if str(getattr(point, "point_id", "") or "")
+    }
+
+
+def _subassembly_side_for_ref(section, subassembly_ref: object) -> str:
+    target = str(subassembly_ref or "")
+    for row in list(getattr(section, "subassembly_rows", []) or []):
+        if str(getattr(row, "subassembly_id", "") or "") == target:
+            return str(getattr(row, "side", "") or "")
+    return ""
+
+
+def _normal_shared_breakline_surface_role(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"design", "fg", "fg_surface", "finished_grade", "finished-grade"}:
+        return "design_surface"
+    if text in {"slope_face", "side_slope", "side-slope", "daylight", "daylight_surface"}:
+        return "slope_face_surface"
+    if text in {"drainage", "ditch", "gutter"}:
+        return "drainage_surface"
+    return text
+
+
+def _general_breakline_consumer_for_surface_role(surface_role: str) -> str:
+    if surface_role == "design_surface":
+        return "design_surface"
+    if surface_role == "slope_face_surface":
+        return "slope_face_surface"
+    if surface_role == "drainage_surface":
+        return "drainage_surface"
+    return str(surface_role or "")
+
+
+def _general_breakline_role_for_link(link, *, endpoint_kind: str) -> str:
+    surface_role = _normal_shared_breakline_surface_role(getattr(link, "surface_role", ""))
+    text = " ".join(
+        [
+            str(getattr(link, "link_code", "") or ""),
+            str(getattr(link, "link_id", "") or ""),
+            str(getattr(link, "subassembly_ref", "") or ""),
+        ]
+    ).lower()
+    endpoint = str(endpoint_kind or "")
+    if surface_role == "design_surface":
+        if "shoulder" in text:
+            return "lane_to_shoulder" if endpoint == "start" else "shoulder_edge"
+        return "lane_to_lane" if endpoint == "start" else "lane_to_shoulder"
+    if surface_role == "slope_face_surface":
+        if endpoint == "start":
+            return "shoulder_to_side_slope"
+        return "side_slope_to_daylight"
+    if surface_role == "drainage_surface":
+        if "gutter" in text:
+            return "corridor_gutter_handoff"
+        return "corridor_ditch_handoff"
+    return f"{surface_role}_boundary"
+
+
+def _safe_breakline_id_part(value: object) -> str:
+    text = str(value or "").strip()
+    output = []
+    for char in text:
+        output.append(char if char.isalnum() or char in {"_", "-"} else "-")
+    return "".join(output).strip("-") or "boundary"
+
+
+def _shared_breakline_refs_for_consumer(shared_result, consumer_ref: str) -> list[str]:
+    target = str(consumer_ref or "").strip()
+    if shared_result is None or not target:
+        return []
+    return [
+        str(getattr(row, "breakline_id", "") or "")
+        for row in list(getattr(shared_result, "breakline_rows", []) or [])
+        if target in {str(value or "").strip() for value in tuple(getattr(row, "consumer_refs", ()) or ())}
+        and str(getattr(row, "breakline_id", "") or "")
+    ]
+
+
+def _tin_surface_with_shared_breakline_metadata(surface, shared_result, *, consumer_ref: str):
+    if surface is None or shared_result is None:
+        return surface
+    surface_id = str(getattr(surface, "surface_id", "") or "surface")
+    refs = _shared_breakline_refs_for_consumer(shared_result, consumer_ref)
+    boundary_refs = list(getattr(surface, "boundary_refs", []) or [])
+    for ref in refs:
+        if ref not in boundary_refs:
+            boundary_refs.append(ref)
+    filtered_quality = [
+        quality
+        for quality in list(getattr(surface, "quality_rows", []) or [])
+        if str(getattr(quality, "kind", "") or "") not in {
+            "shared_breakline_result_id",
+            "shared_breakline_status",
+            "shared_breakline_count",
+            "shared_breakline_consumed_count",
+            "shared_breakline_refs",
+            "shared_breakline_constraint_segment_rows",
+        }
+    ]
+    filtered_quality.extend(
+        [
+            TINQualityRow(f"{surface_id}:shared_breakline_result_id", "shared_breakline_result_id", str(getattr(shared_result, "breakline_result_id", "") or "")),
+            TINQualityRow(f"{surface_id}:shared_breakline_status", "shared_breakline_status", str(getattr(shared_result, "status", "") or "")),
+            TINQualityRow(f"{surface_id}:shared_breakline_count", "shared_breakline_count", len(refs), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_consumed_count", "shared_breakline_consumed_count", len(refs), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_refs", "shared_breakline_refs", ",".join(refs)),
+            TINQualityRow(
+                f"{surface_id}:shared_breakline_constraint_segment_rows",
+                "shared_breakline_constraint_segment_rows",
+                ";;".join(_shared_breakline_segment_rows(shared_result, refs)),
+                "rows",
+                "Surface consumes these SharedBreaklineResult segments as normalized constraint edges.",
+            ),
+        ]
+    )
+    return replace(surface, boundary_refs=boundary_refs, quality_rows=filtered_quality)
+
+
+def _tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, *, consumer_ref: str):
+    if surface is None or shared_result is None or not consumer_ref:
+        return surface
+    surface_id = str(getattr(surface, "surface_id", "") or "surface")
+    vertices, triangles, stats = _tin_rows_with_shared_breakline_constraint_edges(
+        vertices=list(getattr(surface, "vertex_rows", []) or []),
+        triangles=list(getattr(surface, "triangle_rows", []) or []),
+        shared_result=shared_result,
+        surface_id=surface_id,
+        consumer_ref=consumer_ref,
+    )
+    filtered_quality = [
+        quality
+        for quality in list(getattr(surface, "quality_rows", []) or [])
+        if str(getattr(quality, "kind", "") or "") not in {
+            "shared_breakline_constraint_mode",
+            "shared_breakline_constraint_segment_count",
+            "shared_breakline_constraint_edge_count",
+            "shared_breakline_constraint_vertex_count",
+            "shared_breakline_constraint_snap_count",
+            "shared_breakline_constraint_snap_max_distance",
+            "shared_breakline_constraint_snap_diagnostics",
+        }
+    ]
+    filtered_quality.extend(
+        [
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_mode", "shared_breakline_constraint_mode", str(stats["mode"])),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_segment_count", "shared_breakline_constraint_segment_count", int(stats["segment_count"]), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_edge_count", "shared_breakline_constraint_edge_count", int(stats["edge_count"]), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_vertex_count", "shared_breakline_constraint_vertex_count", int(stats["vertex_count"]), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_snap_count", "shared_breakline_constraint_snap_count", int(stats.get("snap_count", 0) or 0), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_snap_max_distance", "shared_breakline_constraint_snap_max_distance", float(stats.get("snap_max_distance", 0.0) or 0.0), "m"),
+            TINQualityRow(
+                f"{surface_id}:shared_breakline_constraint_snap_diagnostics",
+                "shared_breakline_constraint_snap_diagnostics",
+                "; ".join(list(stats.get("snap_diagnostics", []) or [])),
+            ),
+        ]
+    )
+    return replace(surface, vertex_rows=vertices, triangle_rows=triangles, quality_rows=filtered_quality)
+
+
+def _attach_shared_breakline_preview_metadata(obj, shared_result, *, consumer_ref: str = "", audit=None) -> None:
+    if obj is None or shared_result is None:
+        return
+    refs = _shared_breakline_refs_for_consumer(shared_result, consumer_ref) if consumer_ref else [
+        str(getattr(row, "breakline_id", "") or "")
+        for row in list(getattr(shared_result, "breakline_rows", []) or [])
+        if str(getattr(row, "breakline_id", "") or "")
+    ]
+    _set_preview_property(obj, "SharedBreaklineResultId", str(getattr(shared_result, "breakline_result_id", "") or ""))
+    _set_preview_property(obj, "SharedBreaklineStatus", str(getattr(shared_result, "status", "") or ""))
+    _set_preview_integer_property(obj, "SharedBreaklineCount", len(refs))
+    _set_preview_integer_property(obj, "SharedBreaklineGlobalCount", int(getattr(shared_result, "breakline_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineReadyCount", int(getattr(shared_result, "ready_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineWarningCount", int(getattr(shared_result, "warning_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineErrorCount", int(getattr(shared_result, "error_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineConsumedCount", len(refs))
+    _set_preview_string_list_property(obj, "SharedBreaklineRefs", refs)
+    _set_preview_property(obj, "SharedBreaklineMaterialSummary", _shared_breakline_material_summary(shared_result, refs))
+    _set_preview_property(obj, "SharedBreaklineRoleSummary", _shared_breakline_role_summary(shared_result, refs))
+    _set_preview_string_list_property(obj, "SharedBreaklineSegmentRows", _shared_breakline_segment_rows(shared_result, refs))
+    _set_preview_string_list_property(obj, "SharedBreaklineSolidBoundaryTraceRows", shared_breakline_solid_boundary_trace_rows(shared_result, refs))
+    _set_preview_string_list_property(obj, "SharedBreaklineDiagnostics", list(getattr(shared_result, "diagnostic_rows", []) or []))
+    if audit is not None:
+        _attach_shared_breakline_audit_preview_metadata(obj, audit)
+
+
+def _shared_breakline_material_summary(shared_result, refs: list[str] | None = None) -> str:
+    return _shared_breakline_count_summary(shared_result, refs, attr_name="material_role")
+
+
+def _shared_breakline_role_summary(shared_result, refs: list[str] | None = None) -> str:
+    return _shared_breakline_count_summary(shared_result, refs, attr_name="breakline_role")
+
+
+def _shared_breakline_count_summary(shared_result, refs: list[str] | None = None, *, attr_name: str) -> str:
+    if shared_result is None:
+        return ""
+    wanted = {str(ref or "") for ref in list(refs or []) if str(ref or "")}
+    counts: dict[str, int] = {}
+    for row in list(getattr(shared_result, "breakline_rows", []) or []):
+        breakline_id = str(getattr(row, "breakline_id", "") or "")
+        if wanted and breakline_id not in wanted:
+            continue
+        key = str(getattr(row, attr_name, "") or "").strip()
+        if not key:
+            key = str(getattr(row, "breakline_role", "") or "unknown").strip() or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
+
+
+def _shared_breakline_summary_keys(summary: str) -> list[str]:
+    keys: list[str] = []
+    for part in str(summary or "").split(","):
+        key = str(part or "").strip().split("=", 1)[0].strip()
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _shared_breakline_segment_rows(shared_result, refs: list[str] | None = None) -> list[str]:
+    """Serialize breakline segment geometry for presentation-only 3D audit highlights."""
+
+    if shared_result is None:
+        return []
+    wanted = {str(ref or "") for ref in list(refs or []) if str(ref or "")}
+    point_by_ref: dict[str, list[object]] = {}
+    for point in list(getattr(shared_result, "point_rows", []) or []):
+        ref = str(getattr(point, "breakline_ref", "") or "")
+        if not ref:
+            continue
+        point_by_ref.setdefault(ref, []).append(point)
+    rows: list[str] = []
+    for breakline in list(getattr(shared_result, "breakline_rows", []) or []):
+        breakline_id = str(getattr(breakline, "breakline_id", "") or "")
+        if not breakline_id or (wanted and breakline_id not in wanted):
+            continue
+        points = sorted(point_by_ref.get(breakline_id, []), key=lambda point: int(getattr(point, "sequence", 0) or 0))
+        if len(points) < 2:
+            continue
+        role = str(getattr(breakline, "breakline_role", "") or "")
+        material = str(getattr(breakline, "material_role", "") or "") or role
+        status = str(getattr(breakline, "source_status", "") or "")
+        for index, (start, end) in enumerate(zip(points[:-1], points[1:])):
+            try:
+                values = [
+                    breakline_id,
+                    role,
+                    status,
+                    str(index),
+                    f"{float(getattr(start, 'x', 0.0) or 0.0):.9g}",
+                    f"{float(getattr(start, 'y', 0.0) or 0.0):.9g}",
+                    f"{float(getattr(start, 'z', 0.0) or 0.0):.9g}",
+                    f"{float(getattr(end, 'x', 0.0) or 0.0):.9g}",
+                    f"{float(getattr(end, 'y', 0.0) or 0.0):.9g}",
+                    f"{float(getattr(end, 'z', 0.0) or 0.0):.9g}",
+                    material,
+                ]
+                rows.append("|".join(value.replace("|", "_") for value in values))
+            except Exception:
+                continue
+    return rows
+
+
+def shared_breakline_solid_boundary_trace_rows(shared_result, refs: list[str] | None = None) -> list[str]:
+    """Serialize source traceability rows for downstream solid boundary consumers."""
+
+    if shared_result is None:
+        return []
+    wanted = {str(ref or "") for ref in list(refs or []) if str(ref or "")}
+    rows: list[str] = []
+    for breakline in list(getattr(shared_result, "breakline_rows", []) or []):
+        breakline_id = str(getattr(breakline, "breakline_id", "") or "")
+        if not breakline_id or (wanted and breakline_id not in wanted):
+            continue
+        source_refs = ",".join(str(value or "") for value in tuple(getattr(breakline, "source_contract_refs", ()) or ()) if str(value or ""))
+        consumer_refs = ",".join(str(value or "") for value in tuple(getattr(breakline, "consumer_refs", ()) or ()) if str(value or ""))
+        values = [
+            breakline_id,
+            str(getattr(breakline, "breakline_role", "") or ""),
+            str(getattr(breakline, "domain_kind", "") or ""),
+            str(getattr(breakline, "domain_ref", "") or ""),
+            str(getattr(breakline, "alignment_ref", "") or ""),
+            f"{float(getattr(breakline, 'station_start', 0.0) or 0.0):.6f}",
+            f"{float(getattr(breakline, 'station_end', 0.0) or 0.0):.6f}",
+            str(getattr(breakline, "material_role", "") or ""),
+            str(getattr(breakline, "source_status", "") or ""),
+            source_refs,
+            consumer_refs,
+            str(getattr(breakline, "handoff_target", "") or ""),
+        ]
+        rows.append("|".join(value.replace("|", "_") for value in values))
+    return rows
+
+
+def _parse_shared_breakline_segment_row(row: object) -> dict[str, object] | None:
+    parts = str(row or "").split("|")
+    if len(parts) not in {10, 11}:
+        return None
+    try:
+        return {
+            "breakline_id": parts[0],
+            "role": parts[1],
+            "status": parts[2],
+            "segment_index": int(parts[3] or 0),
+            "start": (float(parts[4]), float(parts[5]), float(parts[6])),
+            "end": (float(parts[7]), float(parts[8]), float(parts[9])),
+            "material": parts[10] if len(parts) > 10 else "",
+        }
+    except Exception:
+        return None
+
+
+def show_shared_breakline_highlight(document=None, source_obj=None, *, role_filter: str = "", material_filter: str = ""):
+    """Create/select a 3D highlight for the shared breakline rows stored on a preview object."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    if source_obj is None:
+        raise RuntimeError("No shared breakline source object.")
+    rows = [
+        parsed
+        for parsed in (_parse_shared_breakline_segment_row(row) for row in list(getattr(source_obj, "SharedBreaklineSegmentRows", []) or []))
+        if parsed is not None
+    ]
+    role_text = str(role_filter or "").strip()
+    material_text = str(material_filter or "").strip()
+    if role_text:
+        rows = [row for row in rows if str(row.get("role", "") or "") == role_text]
+    if material_text:
+        rows = [row for row in rows if str(row.get("material", "") or "") == material_text]
+    if not rows:
+        raise RuntimeError("Selected surface has no matching shared breakline geometry to highlight. Rebuild Build Parametric first or choose another role.")
+    highlight = _create_shared_breakline_highlight(
+        document=doc,
+        source_obj=source_obj,
+        rows=rows,
+        role_filter=role_text,
+        material_filter=material_text,
+    )
+    if highlight is None:
+        raise RuntimeError("Shared breakline highlight was not created.")
+    _set_object_visibility(highlight, True)
+    _select_and_fit_object(highlight)
+    return highlight
+
+
+def _create_shared_breakline_highlight(
+    *,
+    document=None,
+    source_obj=None,
+    rows: list[dict[str, object]] | None = None,
+    role_filter: str = "",
+    material_filter: str = "",
+):
+    if document is None:
+        return None
+    try:
+        import FreeCAD as AppModule
+        import Part
+    except Exception:
+        return None
+    shapes: list[object] = []
+    refs: list[str] = []
+    z_lift = 0.02
+    for row in list(rows or []):
+        try:
+            start = tuple(float(value) for value in row.get("start", ()))
+            end = tuple(float(value) for value in row.get("end", ()))
+            if len(start) != 3 or len(end) != 3:
+                continue
+            start_vec = AppModule.Vector(start[0], start[1], start[2] + z_lift)
+            end_vec = AppModule.Vector(end[0], end[1], end[2] + z_lift)
+            shapes.append(Part.makeLine(start_vec, end_vec))
+            refs.append(str(row.get("breakline_id", "") or ""))
+        except Exception:
+            continue
+    if not shapes:
+        return None
+    object_name = "ReviewSharedBreaklineHighlight"
+    obj = document.getObject(object_name)
+    if obj is None:
+        obj = document.addObject("Part::Feature", object_name)
+    try:
+        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+        obj.Label = "Shared Breakline Highlight"
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_shared_breakline_highlight")
+    _set_preview_property(obj, "V1ObjectType", "ReviewDiagnostic")
+    _set_preview_property(obj, "DiagnosticKind", "shared_breakline_highlight")
+    _set_preview_property(obj, "SourceObject", str(getattr(source_obj, "Name", "") or ""))
+    _set_preview_property(obj, "SourceObjectLabel", str(getattr(source_obj, "Label", "") or ""))
+    _set_preview_property(obj, "SharedBreaklineResultId", str(getattr(source_obj, "SharedBreaklineResultId", "") or ""))
+    _set_preview_property(obj, "SharedBreaklineAuditStatus", str(getattr(source_obj, "SharedBreaklineAuditStatus", "") or ""))
+    _set_preview_property(obj, "SharedBreaklineRoleFilter", str(role_filter or ""))
+    _set_preview_property(obj, "SharedBreaklineMaterialFilter", str(material_filter or ""))
+    _set_preview_string_list_property(obj, "SharedBreaklineRefs", _unique_text_values(refs))
+    _set_preview_integer_property(obj, "SharedBreaklineSegmentCount", len(shapes))
+    highlight_color = _shared_breakline_highlight_color(role_filter=role_filter, material_filter=material_filter)
+    _set_preview_property(
+        obj,
+        "SharedBreaklineHighlightColor",
+        ",".join(f"{float(value):.3f}" for value in highlight_color),
+    )
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = True
+            vobj.ShapeColor = highlight_color
+            vobj.LineColor = highlight_color
+            vobj.PointColor = highlight_color
+            vobj.LineWidth = 11.0
+            vobj.PointSize = 6.0
+    except Exception:
+        pass
+    try:
+        document.recompute()
+    except Exception:
+        pass
+    return obj
+
+
+def _shared_breakline_highlight_color(*, role_filter: str = "", material_filter: str = "") -> tuple[float, float, float]:
+    material = str(material_filter or "").strip().lower()
+    role = str(role_filter or "").strip().lower()
+    if role in {"lane_to_lane", "lane-to-lane"}:
+        return (1.00, 0.88, 0.05)
+    if role in {"lane_to_shoulder", "lane-to-shoulder", "shoulder_edge", "shoulder-edge"}:
+        return (0.65, 1.00, 0.35)
+    if role in {"shoulder_to_side_slope", "shoulder-to-side-slope", "side_slope_to_daylight", "side-slope-to-daylight"}:
+        return (0.05, 0.95, 0.25)
+    if role in {"corridor_gutter_handoff", "corridor-gutter-handoff", "corridor_ditch_handoff", "corridor-ditch-handoff"}:
+        return (0.10, 0.55, 1.00)
+    if material in {"pavement", "design_surface"}:
+        return (1.00, 0.88, 0.05)
+    if material == "shoulder":
+        return (0.65, 1.00, 0.35)
+    if material in {"side_slope", "slope_face_surface"}:
+        return (0.05, 0.95, 0.25)
+    if material == "drainage_surface" or "gutter" in role or "ditch" in role:
+        return (0.10, 0.55, 1.00)
+    if material == "curb_return" or "curb_return" in role or "curb-return" in role:
+        return (1.00, 0.52, 0.05)
+    if "patch_to_design" in role or "patch-to-design" in role:
+        return (1.00, 0.88, 0.05)
+    if "patch_to_slope_face" in role or "patch-to-slope-face" in role:
+        return (0.05, 0.95, 0.25)
+    return (0.00, 0.95, 1.00)
+
+
+def _attach_shared_breakline_audit_preview_metadata(obj, audit) -> None:
+    if obj is None or audit is None:
+        return
+    notes = str(audit.get("notes", "") or "")
+    note_rows = [value.strip() for value in notes.split(";") if value.strip()] if notes else []
+    _set_preview_property(obj, "SharedBreaklineAuditStatus", str(audit.get("status", "") or ""))
+    _set_preview_integer_property(obj, "SharedBreaklineMissingConsumerCount", int(audit.get("missing_consumer_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineMismatchCount", int(audit.get("mismatch_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineGeometryMatchCount", int(audit.get("geometry_match_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineGeometryMismatchCount", int(audit.get("geometry_mismatch_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineMeshMatchCount", int(audit.get("mesh_match_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineMeshMismatchCount", int(audit.get("mesh_mismatch_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineReversedEdgeCount", int(audit.get("reversed_edge_count", 0) or 0))
+    _set_preview_property(obj, "SharedBreaklineSolidReadinessStatus", str(audit.get("solid_readiness_status", "") or ""))
+    _set_preview_integer_property(obj, "SharedBreaklineSolidOpenEndCount", int(audit.get("solid_open_end_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineSolidDuplicateEdgeCount", int(audit.get("solid_duplicate_edge_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineSolidReversedEdgeCount", int(audit.get("solid_reversed_edge_count", 0) or 0))
+    _set_preview_integer_property(obj, "SharedBreaklineSolidNonManifoldNodeCount", int(audit.get("solid_non_manifold_node_count", 0) or 0))
+    _set_preview_property(obj, "SharedBreaklineSolidReadinessNotes", str(audit.get("solid_readiness_notes", "") or ""))
+    _set_preview_property(obj, "SharedBreaklineAuditSummary", _shared_breakline_audit_summary(audit))
+    _set_preview_string_list_property(obj, "SharedBreaklineAuditNotes", note_rows)
+
+
+def _shared_breakline_audit_summary(audit) -> str:
+    if audit is None:
+        return ""
+    return (
+        f"audit={str(audit.get('status', '') or 'unknown')} "
+        f"geometry={int(audit.get('geometry_match_count', 0) or 0)}/"
+        f"{int(audit.get('geometry_match_count', 0) or 0) + int(audit.get('geometry_mismatch_count', 0) or 0)} "
+        f"mesh={int(audit.get('mesh_match_count', 0) or 0)}/"
+        f"{int(audit.get('mesh_match_count', 0) or 0) + int(audit.get('mesh_mismatch_count', 0) or 0)} "
+        f"missing={int(audit.get('missing_consumer_count', 0) or 0)} "
+        f"mismatch={int(audit.get('mismatch_count', 0) or 0)} "
+        f"reversed={int(audit.get('reversed_edge_count', 0) or 0)}"
+    )
+
+
+def shared_breakline_adjacency_graph(shared_result, *, tolerance: float = 1.0e-6) -> dict[str, object]:
+    """Build a solid-readiness adjacency graph from SharedBreakline rows."""
+
+    if shared_result is None:
+        return {
+            "status": "missing",
+            "node_count": 0,
+            "edge_count": 0,
+            "open_end_count": 0,
+            "duplicate_edge_count": 0,
+            "reversed_edge_count": 0,
+            "non_manifold_node_count": 0,
+            "notes": "shared_breakline_result_missing",
+        }
+    point_map = {
+        str(getattr(point, "point_id", "") or ""): point
+        for point in list(getattr(shared_result, "point_rows", []) or [])
+        if str(getattr(point, "point_id", "") or "")
+    }
+    node_refs: dict[tuple[int, int, int], list[str]] = {}
+    node_degree: dict[tuple[int, int, int], int] = {}
+    edge_seen: dict[tuple[tuple[int, int, int], tuple[int, int, int]], tuple[str, str]] = {}
+    edge_count = 0
+    duplicate_edge_count = 0
+    reversed_edge_count = 0
+    notes: list[str] = []
+    for row in list(getattr(shared_result, "breakline_rows", []) or []):
+        breakline_id = str(getattr(row, "breakline_id", "") or "")
+        points = [point_map.get(str(ref or "")) for ref in tuple(getattr(row, "point_refs", ()) or ())]
+        points = [point for point in points if point is not None]
+        if len(points) < 2:
+            notes.append(f"open_breakline_points_missing:{breakline_id}")
+            continue
+        for start_point, end_point in zip(points[:-1], points[1:]):
+            start_key = _shared_breakline_adjacency_node_key(start_point, tolerance=tolerance)
+            end_key = _shared_breakline_adjacency_node_key(end_point, tolerance=tolerance)
+            if start_key == end_key:
+                notes.append(f"zero_length_edge:{breakline_id}")
+                continue
+            node_refs.setdefault(start_key, []).append(str(getattr(start_point, "point_id", "") or ""))
+            node_refs.setdefault(end_key, []).append(str(getattr(end_point, "point_id", "") or ""))
+            node_degree[start_key] = int(node_degree.get(start_key, 0) or 0) + 1
+            node_degree[end_key] = int(node_degree.get(end_key, 0) or 0) + 1
+            edge_count += 1
+            canonical = tuple(sorted((start_key, end_key)))
+            previous = edge_seen.get(canonical)
+            direction = ("forward" if canonical == (start_key, end_key) else "reverse", breakline_id)
+            if previous is not None:
+                duplicate_edge_count += 1
+                notes.append(f"duplicate_edge:{breakline_id}:{previous[1]}")
+                if previous[0] != direction[0]:
+                    reversed_edge_count += 1
+                    notes.append(f"reversed_edge:{breakline_id}:{previous[1]}")
+            else:
+                edge_seen[canonical] = direction
+    open_nodes = [node for node, degree in node_degree.items() if int(degree or 0) == 1]
+    non_manifold_nodes = [node for node, degree in node_degree.items() if int(degree or 0) > 2]
+    issue_count = len(open_nodes) + int(duplicate_edge_count or 0) + int(reversed_edge_count or 0) + len(non_manifold_nodes)
+    if open_nodes:
+        notes.append(f"open_end_count={len(open_nodes)}")
+    if non_manifold_nodes:
+        notes.append(f"non_manifold_node_count={len(non_manifold_nodes)}")
+    return {
+        "status": "ready" if edge_count and issue_count == 0 else "warning" if edge_count else "missing",
+        "node_count": len(node_degree),
+        "edge_count": edge_count,
+        "open_end_count": len(open_nodes),
+        "duplicate_edge_count": duplicate_edge_count,
+        "reversed_edge_count": reversed_edge_count,
+        "non_manifold_node_count": len(non_manifold_nodes),
+        "notes": "; ".join(notes) if notes else "shared_breakline_adjacency=closed",
+    }
+
+
+def _shared_breakline_adjacency_node_key(point, *, tolerance: float) -> tuple[int, int, int]:
+    scale = 1.0 / max(float(tolerance or 0.0), 1.0e-9)
+    x, y, z = _row_xyz_tuple(point)
+    return (int(round(x * scale)), int(round(y * scale)), int(round(z * scale)))
+
+
+def shared_breakline_audit(shared_result, consumer_surfaces: dict[str, object] | None = None) -> dict[str, object]:
+    """Audit whether expected consumers reference shared breaklines."""
+
+    if shared_result is None:
+        return {
+            "status": "missing",
+            "missing_consumer_count": 0,
+            "mismatch_count": 0,
+            "geometry_match_count": 0,
+            "geometry_mismatch_count": 0,
+            "mesh_match_count": 0,
+            "mesh_mismatch_count": 0,
+            "reversed_edge_count": 0,
+            "solid_readiness_status": "missing",
+            "solid_open_end_count": 0,
+            "solid_duplicate_edge_count": 0,
+            "solid_reversed_edge_count": 0,
+            "solid_non_manifold_node_count": 0,
+            "solid_readiness_notes": "shared_breakline_result_missing",
+            "notes": "shared_breakline_result_missing",
+        }
+    surfaces = dict(consumer_surfaces or {})
+    point_map = {
+        str(getattr(point, "point_id", "") or ""): point
+        for point in list(getattr(shared_result, "point_rows", []) or [])
+        if str(getattr(point, "point_id", "") or "")
+    }
+    missing_consumer_count = 0
+    mismatch_count = 0
+    geometry_match_count = 0
+    geometry_mismatch_count = 0
+    mesh_match_count = 0
+    mesh_mismatch_count = 0
+    reversed_edge_count = 0
+    notes: list[str] = []
+    for row in list(getattr(shared_result, "breakline_rows", []) or []):
+        breakline_id = str(getattr(row, "breakline_id", "") or "")
+        breakline_points = [
+            point_map.get(str(ref or ""))
+            for ref in tuple(getattr(row, "point_refs", ()) or ())
+        ]
+        breakline_points = [point for point in breakline_points if point is not None]
+        for consumer_ref in tuple(getattr(row, "consumer_refs", ()) or ()):
+            consumer = str(consumer_ref or "")
+            surface = surfaces.get(consumer)
+            if surface is None:
+                continue
+            if breakline_id not in list(getattr(surface, "boundary_refs", []) or []):
+                missing_consumer_count += 1
+                notes.append(f"missing_consumer:{consumer}:{breakline_id}")
+                continue
+            contract_geometry = _surface_shared_breakline_constraint_matches(surface, breakline_id, breakline_points)
+            contract_matched = bool(contract_geometry["matched"])
+            mesh_geometry = None
+            if len(breakline_points) >= 2 and list(getattr(surface, "triangle_rows", []) or []):
+                mesh_geometry = _surface_boundary_edge_matches_shared_breakline(surface, breakline_points)
+                if mesh_geometry["matched"]:
+                    mesh_match_count += 1
+                else:
+                    mesh_mismatch_count += 1
+                    distance = mesh_geometry.get("distance", None)
+                    if distance is None:
+                        notes.append(f"mesh_drift:{consumer}:{breakline_id}")
+                    else:
+                        notes.append(f"mesh_drift:{consumer}:{breakline_id}:distance={float(distance):.4g}m")
+            if contract_matched:
+                geometry_match_count += 1
+                if contract_geometry["reversed"]:
+                    reversed_edge_count += 1
+                    notes.append(f"reversed_constraint_edge:{consumer}:{breakline_id}")
+                continue
+            if mesh_geometry is not None:
+                if mesh_geometry["matched"]:
+                    geometry_match_count += 1
+                else:
+                    geometry_mismatch_count += 1
+                    distance = mesh_geometry.get("distance", None)
+                    if distance is None:
+                        notes.append(f"geometry_mismatch:{consumer}:{breakline_id}")
+                    else:
+                        notes.append(f"geometry_mismatch:{consumer}:{breakline_id}:distance={float(distance):.4g}m")
+    if int(getattr(shared_result, "error_count", 0) or 0):
+        mismatch_count += int(getattr(shared_result, "error_count", 0) or 0)
+    status = (
+        "ready"
+        if missing_consumer_count == 0
+        and mismatch_count == 0
+        and geometry_mismatch_count == 0
+        and mesh_mismatch_count == 0
+        and int(getattr(shared_result, "breakline_count", 0) or 0)
+        else "warning"
+    )
+    solid_graph = shared_breakline_adjacency_graph(shared_result)
+    return {
+        "status": status,
+        "missing_consumer_count": missing_consumer_count,
+        "mismatch_count": mismatch_count,
+        "geometry_match_count": geometry_match_count,
+        "geometry_mismatch_count": geometry_mismatch_count,
+        "mesh_match_count": mesh_match_count,
+        "mesh_mismatch_count": mesh_mismatch_count,
+        "reversed_edge_count": reversed_edge_count,
+        "solid_readiness_status": str(solid_graph.get("status", "") or ""),
+        "solid_open_end_count": int(solid_graph.get("open_end_count", 0) or 0),
+        "solid_duplicate_edge_count": int(solid_graph.get("duplicate_edge_count", 0) or 0),
+        "solid_reversed_edge_count": int(solid_graph.get("reversed_edge_count", 0) or 0),
+        "solid_non_manifold_node_count": int(solid_graph.get("non_manifold_node_count", 0) or 0),
+        "solid_readiness_notes": str(solid_graph.get("notes", "") or ""),
+        "notes": "; ".join(notes) if notes else "shared_breakline=ready",
+    }
+
+
+def _surface_shared_breakline_constraint_matches(surface, breakline_id: str, breakline_points: list[object], *, tolerance: float = 5.0e-2) -> dict[str, object]:
+    target_points = [_row_xyz_tuple(point) for point in list(breakline_points or [])]
+    if len(target_points) < 2:
+        return {"matched": False, "reversed": False}
+    rows = _surface_shared_breakline_constraint_segment_rows(surface)
+    matching_rows = [
+        row for row in rows
+        if str(row.get("breakline_id", "") or "") == str(breakline_id or "")
+    ]
+    if not matching_rows:
+        return {"matched": False, "reversed": False}
+    stations = _polyline_station_values(target_points)
+    coverage = _constraint_segment_rows_cover_polyline(matching_rows, target_points, stations, tolerance=tolerance)
+    return coverage
+
+
+def _surface_shared_breakline_constraint_segment_rows(surface) -> list[dict[str, object]]:
+    text = _tin_quality_text(surface, "shared_breakline_constraint_segment_rows")
+    if not text:
+        return []
+    rows: list[dict[str, object]] = []
+    for raw in str(text or "").split(";;"):
+        parsed = _parse_shared_breakline_segment_row(raw)
+        if parsed is not None:
+            rows.append(parsed)
+    return rows
+
+
+def _constraint_segment_rows_cover_polyline(
+    rows: list[dict[str, object]],
+    target_points: list[tuple[float, float, float]],
+    stations: list[float],
+    *,
+    tolerance: float,
+) -> dict[str, object]:
+    total_length = stations[-1] if stations else 0.0
+    if total_length <= tolerance:
+        return {"matched": False, "reversed": False, "coverage": 0.0}
+    intervals: list[tuple[float, float]] = []
+    forward_count = 0
+    reversed_count = 0
+    distances: list[float] = []
+    for row in list(rows or []):
+        start = tuple(float(value) for value in row.get("start", ()))
+        end = tuple(float(value) for value in row.get("end", ()))
+        if len(start) != 3 or len(end) != 3:
+            continue
+        start_projection = _project_point_to_polyline_station(start, target_points, stations)
+        end_projection = _project_point_to_polyline_station(end, target_points, stations)
+        start_distance = float(start_projection.get("distance", 0.0) or 0.0)
+        end_distance = float(end_projection.get("distance", 0.0) or 0.0)
+        distances.extend([start_distance, end_distance])
+        if start_distance > tolerance or end_distance > tolerance:
+            continue
+        start_station = float(start_projection.get("station", 0.0) or 0.0)
+        end_station = float(end_projection.get("station", 0.0) or 0.0)
+        if abs(end_station - start_station) <= tolerance:
+            continue
+        intervals.append((min(start_station, end_station), max(start_station, end_station)))
+        if end_station >= start_station:
+            forward_count += 1
+        else:
+            reversed_count += 1
+    merged = _merge_station_intervals(intervals, gap_tolerance=max(tolerance, total_length * 0.01))
+    covered = sum(max(0.0, end - start) for start, end in merged)
+    coverage = covered / total_length if total_length > 0.0 else 0.0
+    start_covered = any(start <= tolerance and end >= min(total_length, tolerance) for start, end in merged)
+    end_covered = any(start <= max(0.0, total_length - tolerance) and end >= total_length - tolerance for start, end in merged)
+    return {
+        "matched": coverage >= 0.95 and start_covered and end_covered,
+        "reversed": reversed_count > forward_count,
+        "coverage": coverage,
+        "distance": min(distances) if distances else 0.0,
+    }
+
+
+def _surface_boundary_edge_matches_shared_breakline(surface, breakline_points, *, tolerance: float = 5.0e-2) -> dict[str, object]:
+    first = breakline_points[0]
+    last = breakline_points[-1]
+    target_start = _row_xyz_tuple(first)
+    target_end = _row_xyz_tuple(last)
+    target_points = [_row_xyz_tuple(point) for point in list(breakline_points or [])]
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(surface, "vertex_rows", []) or [])
+        if str(getattr(vertex, "vertex_id", "") or "")
+    }
+    audit_edges = _tin_surface_all_edge_rows(surface)
+    for edge in audit_edges:
+        start = vertex_map.get(str(edge.get("first_id", "") or ""))
+        end = vertex_map.get(str(edge.get("second_id", "") or ""))
+        if start is None or end is None:
+            continue
+        start_xyz = _row_xyz_tuple(start)
+        end_xyz = _row_xyz_tuple(end)
+        if _xyz_distance(start_xyz, target_start) <= tolerance and _xyz_distance(end_xyz, target_end) <= tolerance:
+            return {"matched": True, "reversed": False}
+        if _xyz_distance(start_xyz, target_end) <= tolerance and _xyz_distance(end_xyz, target_start) <= tolerance:
+            return {"matched": True, "reversed": True}
+    chain = _surface_boundary_chain_matches_shared_breakline(
+        surface,
+        vertex_map,
+        audit_edges,
+        target_points,
+        tolerance=tolerance,
+    )
+    if chain["matched"]:
+        return chain
+    coverage = _surface_boundary_coverage_matches_shared_breakline(
+        vertex_map,
+        audit_edges,
+        target_points,
+        tolerance=tolerance,
+    )
+    if coverage["matched"]:
+        return coverage
+    return {
+        "matched": False,
+        "reversed": False,
+        "distance": coverage.get(
+            "distance",
+            _surface_boundary_min_distance_to_polyline(vertex_map, audit_edges, target_points),
+        ),
+        "coverage": coverage.get("coverage", 0.0),
+    }
+
+
+def _surface_boundary_chain_matches_shared_breakline(
+    surface,
+    vertex_map: dict[str, object],
+    boundary_edges: list[dict[str, object]],
+    target_points: list[tuple[float, float, float]],
+    *,
+    tolerance: float,
+) -> dict[str, object]:
+    """Match a shared breakline against a boundary chain that may be split by triangulation."""
+
+    if len(target_points) < 2:
+        return {"matched": False, "reversed": False}
+    target_start = target_points[0]
+    target_end = target_points[-1]
+    target_length = sum(_xyz_distance(first, second) for first, second in zip(target_points[:-1], target_points[1:]))
+    if target_length <= tolerance:
+        return {"matched": False, "reversed": False}
+    candidate_edges: list[tuple[str, str]] = []
+    candidate_vertex_ids: set[str] = set()
+    for edge in list(boundary_edges or []):
+        first_id = str(edge.get("first_id", "") or "")
+        second_id = str(edge.get("second_id", "") or "")
+        first = vertex_map.get(first_id)
+        second = vertex_map.get(second_id)
+        if first is None or second is None:
+            continue
+        first_xyz = _row_xyz_tuple(first)
+        second_xyz = _row_xyz_tuple(second)
+        if (
+            _point_near_polyline3(first_xyz, target_points, tolerance=tolerance)
+            and _point_near_polyline3(second_xyz, target_points, tolerance=tolerance)
+        ):
+            candidate_edges.append((first_id, second_id))
+            candidate_vertex_ids.add(first_id)
+            candidate_vertex_ids.add(second_id)
+    if not candidate_edges:
+        return {"matched": False, "reversed": False}
+    start_ids = [
+        vertex_id
+        for vertex_id in candidate_vertex_ids
+        if _xyz_distance(_row_xyz_tuple(vertex_map[vertex_id]), target_start) <= tolerance
+    ]
+    end_ids = [
+        vertex_id
+        for vertex_id in candidate_vertex_ids
+        if _xyz_distance(_row_xyz_tuple(vertex_map[vertex_id]), target_end) <= tolerance
+    ]
+    if not start_ids or not end_ids:
+        return {"matched": False, "reversed": False}
+    graph: dict[str, set[str]] = {}
+    oriented_edges = {(first_id, second_id) for first_id, second_id in candidate_edges}
+    for first_id, second_id in candidate_edges:
+        graph.setdefault(first_id, set()).add(second_id)
+        graph.setdefault(second_id, set()).add(first_id)
+    for start_id in start_ids:
+        for end_id in end_ids:
+            path = _boundary_graph_path(graph, start_id, end_id)
+            if not path:
+                continue
+            reversed_count = 0
+            forward_count = 0
+            for first_id, second_id in zip(path[:-1], path[1:]):
+                if (first_id, second_id) in oriented_edges:
+                    forward_count += 1
+                elif (second_id, first_id) in oriented_edges:
+                    reversed_count += 1
+            return {"matched": True, "reversed": reversed_count > forward_count}
+    return {"matched": False, "reversed": False}
+
+
+def _surface_boundary_coverage_matches_shared_breakline(
+    vertex_map: dict[str, object],
+    boundary_edges: list[dict[str, object]],
+    target_points: list[tuple[float, float, float]],
+    *,
+    tolerance: float,
+) -> dict[str, object]:
+    stations = _polyline_station_values(target_points)
+    total_length = stations[-1] if stations else 0.0
+    if total_length <= tolerance:
+        return {"matched": False, "reversed": False, "coverage": 0.0}
+    intervals: list[tuple[float, float]] = []
+    distances: list[float] = []
+    forward_count = 0
+    reversed_count = 0
+    for edge in list(boundary_edges or []):
+        first = vertex_map.get(str(edge.get("first_id", "") or ""))
+        second = vertex_map.get(str(edge.get("second_id", "") or ""))
+        if first is None or second is None:
+            continue
+        first_xyz = _row_xyz_tuple(first)
+        second_xyz = _row_xyz_tuple(second)
+        first_projection = _project_point_to_polyline_station(first_xyz, target_points, stations)
+        second_projection = _project_point_to_polyline_station(second_xyz, target_points, stations)
+        first_distance = float(first_projection.get("distance", 0.0) or 0.0)
+        second_distance = float(second_projection.get("distance", 0.0) or 0.0)
+        distances.extend([first_distance, second_distance])
+        if first_distance > tolerance or second_distance > tolerance:
+            continue
+        first_station = float(first_projection.get("station", 0.0) or 0.0)
+        second_station = float(second_projection.get("station", 0.0) or 0.0)
+        span = abs(second_station - first_station)
+        edge_length = _xyz_distance(first_xyz, second_xyz)
+        if span <= tolerance or edge_length <= tolerance:
+            continue
+        # Avoid accepting diagonal boundary edges that only touch the breakline at their endpoints.
+        if abs(edge_length - span) > max(tolerance * 2.0, span * 0.15):
+            continue
+        intervals.append((min(first_station, second_station), max(first_station, second_station)))
+        if second_station >= first_station:
+            forward_count += 1
+        else:
+            reversed_count += 1
+    merged = _merge_station_intervals(intervals, gap_tolerance=max(tolerance, total_length * 0.01))
+    covered = sum(max(0.0, end - start) for start, end in merged)
+    coverage = covered / total_length if total_length > 0.0 else 0.0
+    start_covered = any(start <= tolerance and end >= min(total_length, tolerance) for start, end in merged)
+    end_covered = any(start <= max(0.0, total_length - tolerance) and end >= total_length - tolerance for start, end in merged)
+    matched = coverage >= 0.95 and start_covered and end_covered
+    return {
+        "matched": matched,
+        "reversed": reversed_count > forward_count,
+        "coverage": coverage,
+        "distance": min(distances) if distances else 0.0,
+    }
+
+
+def _polyline_station_values(points: list[tuple[float, float, float]]) -> list[float]:
+    stations = [0.0]
+    for first, second in zip(list(points or [])[:-1], list(points or [])[1:]):
+        stations.append(stations[-1] + _xyz_distance(first, second))
+    return stations
+
+
+def _project_point_to_polyline_station(
+    point: tuple[float, float, float],
+    points: list[tuple[float, float, float]],
+    stations: list[float],
+) -> dict[str, float]:
+    best_distance = None
+    best_station = 0.0
+    for index, (start, end) in enumerate(zip(list(points or [])[:-1], list(points or [])[1:])):
+        projection = _project_point_to_segment3(point, start, end)
+        distance = float(projection.get("distance", 0.0) or 0.0)
+        if best_distance is None or distance < best_distance:
+            ratio = float(projection.get("ratio", 0.0) or 0.0)
+            segment_length = _xyz_distance(start, end)
+            best_distance = distance
+            best_station = float(stations[index]) + segment_length * ratio
+    return {"station": best_station, "distance": float(best_distance if best_distance is not None else 0.0)}
+
+
+def _merge_station_intervals(intervals: list[tuple[float, float]], *, gap_tolerance: float) -> list[tuple[float, float]]:
+    ordered = sorted((float(start), float(end)) for start, end in list(intervals or []) if float(end) >= float(start))
+    if not ordered:
+        return []
+    merged = [ordered[0]]
+    for start, end in ordered[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end + gap_tolerance:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _point_near_polyline3(point: tuple[float, float, float], points: list[tuple[float, float, float]], *, tolerance: float) -> bool:
+    for start, end in zip(list(points or [])[:-1], list(points or [])[1:]):
+        if _point_near_segment3(point, start, end, tolerance=tolerance):
+            return True
+    return False
+
+
+def _surface_boundary_min_distance_to_polyline(
+    vertex_map: dict[str, object],
+    boundary_edges: list[dict[str, object]],
+    target_points: list[tuple[float, float, float]],
+) -> float:
+    distances: list[float] = []
+    for edge in list(boundary_edges or []):
+        for vertex_id in (str(edge.get("first_id", "") or ""), str(edge.get("second_id", "") or "")):
+            vertex = vertex_map.get(vertex_id)
+            if vertex is None:
+                continue
+            point = _row_xyz_tuple(vertex)
+            distances.append(_point_to_polyline_distance3(point, target_points))
+    return min(distances) if distances else 0.0
+
+
+def _point_to_polyline_distance3(point: tuple[float, float, float], points: list[tuple[float, float, float]]) -> float:
+    distances = [
+        _point_to_segment_distance3(point, start, end)
+        for start, end in zip(list(points or [])[:-1], list(points or [])[1:])
+    ]
+    return min(distances) if distances else 0.0
+
+
+def _boundary_graph_path(graph: dict[str, set[str]], start_id: str, end_id: str) -> list[str]:
+    if start_id == end_id:
+        return [start_id]
+    pending: list[list[str]] = [[start_id]]
+    visited = {start_id}
+    while pending:
+        path = pending.pop(0)
+        current = path[-1]
+        for next_id in sorted(graph.get(current, set())):
+            if next_id in visited:
+                continue
+            next_path = path + [next_id]
+            if next_id == end_id:
+                return next_path
+            visited.add(next_id)
+            pending.append(next_path)
+    return []
+
+
+def _point_near_segment3(
+    point: tuple[float, float, float],
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    *,
+    tolerance: float,
+) -> bool:
+    vx = float(end[0]) - float(start[0])
+    vy = float(end[1]) - float(start[1])
+    vz = float(end[2]) - float(start[2])
+    wx = float(point[0]) - float(start[0])
+    wy = float(point[1]) - float(start[1])
+    wz = float(point[2]) - float(start[2])
+    length_sq = vx * vx + vy * vy + vz * vz
+    if length_sq <= tolerance * tolerance:
+        return _xyz_distance(point, start) <= tolerance
+    ratio = (wx * vx + wy * vy + wz * vz) / length_sq
+    if ratio < -tolerance or ratio > 1.0 + tolerance:
+        return False
+    ratio = max(0.0, min(1.0, ratio))
+    return _point_to_segment_distance3(point, start, end) <= tolerance
+
+
+def _point_to_segment_distance3(
+    point: tuple[float, float, float],
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> float:
+    return float(_project_point_to_segment3(point, start, end).get("distance", 0.0) or 0.0)
+
+
+def _project_point_to_segment3(
+    point: tuple[float, float, float],
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> dict[str, float]:
+    vx = float(end[0]) - float(start[0])
+    vy = float(end[1]) - float(start[1])
+    vz = float(end[2]) - float(start[2])
+    wx = float(point[0]) - float(start[0])
+    wy = float(point[1]) - float(start[1])
+    wz = float(point[2]) - float(start[2])
+    length_sq = vx * vx + vy * vy + vz * vz
+    if length_sq <= 1.0e-18:
+        return {"distance": _xyz_distance(point, start), "ratio": 0.0}
+    ratio = (wx * vx + wy * vy + wz * vz) / length_sq
+    ratio = max(0.0, min(1.0, ratio))
+    closest = (
+        float(start[0]) + vx * ratio,
+        float(start[1]) + vy * ratio,
+        float(start[2]) + vz * ratio,
+    )
+    return {"distance": _xyz_distance(point, closest), "ratio": ratio}
+
+
+def _row_xyz_tuple(row) -> tuple[float, float, float]:
+    return (
+        float(getattr(row, "x", 0.0) or 0.0),
+        float(getattr(row, "y", 0.0) or 0.0),
+        float(getattr(row, "z", 0.0) or 0.0),
+    )
+
+
 def _restore_daylight_surface_side_slope_strips_from_reference(
     surface,
     reference_surface,
@@ -14649,6 +17778,38 @@ def _tin_surface_boundary_edge_rows(surface) -> list[dict[str, object]]:
                 },
             )
     return [edge_values[key] for key, count in edge_counts.items() if count == 1]
+
+
+def _tin_surface_all_edge_rows(surface) -> list[dict[str, object]]:
+    edge_counts: dict[tuple[str, str], int] = {}
+    edge_values: dict[tuple[str, str], dict[str, object]] = {}
+    for triangle in list(getattr(surface, "triangle_rows", []) or []):
+        ids = [
+            str(getattr(triangle, "v1", "") or ""),
+            str(getattr(triangle, "v2", "") or ""),
+            str(getattr(triangle, "v3", "") or ""),
+        ]
+        for first_id, second_id in ((ids[0], ids[1]), (ids[1], ids[2]), (ids[2], ids[0])):
+            if not first_id or not second_id:
+                continue
+            key = tuple(sorted((first_id, second_id)))
+            edge_counts[key] = edge_counts.get(key, 0) + 1
+            edge_values.setdefault(
+                key,
+                {
+                    "first_id": first_id,
+                    "second_id": second_id,
+                    "quality_ref": str(getattr(triangle, "quality_ref", "") or ""),
+                    "triangle_id": str(getattr(triangle, "triangle_id", "") or ""),
+                },
+            )
+    rows: list[dict[str, object]] = []
+    for key, row in edge_values.items():
+        item = dict(row)
+        item["edge_count"] = int(edge_counts.get(key, 0) or 0)
+        item["is_boundary"] = int(edge_counts.get(key, 0) or 0) == 1
+        rows.append(item)
+    return rows
 
 
 def _edge_midpoint_xy(edge_row: dict[str, object], vertex_map: dict[str, object]) -> tuple[float, float]:
@@ -15646,6 +18807,7 @@ def _build_intersection_surface_patch_tin(
     patch_boundary_island_ring_count = 0
     patch_boundary_source = "convex_hull_fallback"
     boundary_segment_result = None
+    intersection_shared_breakline_result = None
     try:
         tie_in_result = corridor_intersection_tie_in_edge_result(
             applied_section_set,
@@ -15666,6 +18828,13 @@ def _build_intersection_surface_patch_tin(
         patch_boundary_ring_count = int(getattr(patch_boundary_result, "ring_count", 0) or 0)
         patch_boundary_hole_ring_count = int(getattr(patch_boundary_result, "hole_ring_count", 0) or 0)
         patch_boundary_island_ring_count = int(getattr(patch_boundary_result, "island_ring_count", 0) or 0)
+        intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
+            applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            patch_boundary_result=patch_boundary_result,
+            boundary_segment_result=boundary_segment_result,
+        )
         if patch_boundary_closed_value and patch_boundary_point_count >= 3:
             ordered_vertices = _intersection_patch_boundary_tin_vertices(
                 patch_boundary_result,
@@ -15715,6 +18884,12 @@ def _build_intersection_surface_patch_tin(
     all_vertices = list(triangulation.get("vertices", all_vertices) or all_vertices)
     if len(triangles) < 1:
         raise ValueError("intersection_patch_degenerate_triangle: ordered patch boundary did not produce usable triangles.")
+    all_vertices, triangles, shared_constraint_stats = _intersection_surface_tin_with_shared_breakline_constraint_edges(
+        vertices=all_vertices,
+        triangles=triangles,
+        shared_result=intersection_shared_breakline_result,
+        surface_id=surface_id,
+    )
     shape_quality = _intersection_patch_shape_quality(all_vertices, triangles)
     return TINSurface(
         schema_version=1,
@@ -15756,6 +18931,17 @@ def _build_intersection_surface_patch_tin(
             TINQualityRow(f"{surface_id}:patch_boundary_stem_tie_in_edge_count", "patch_boundary_stem_tie_in_edge_count", int(triangulation.get("stem_tie_in_edge_count", 0) or 0), "count"),
             TINQualityRow(f"{surface_id}:patch_boundary_overlap_cut_edge_count", "patch_boundary_overlap_cut_edge_count", int(triangulation.get("overlap_cut_edge_count", 0) or 0), "count"),
             TINQualityRow(f"{surface_id}:patch_boundary_curb_return_edge_count", "patch_boundary_curb_return_edge_count", int(triangulation.get("curb_return_edge_count", 0) or 0), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_mode", "shared_breakline_constraint_mode", str(shared_constraint_stats["mode"])),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_segment_count", "shared_breakline_constraint_segment_count", int(shared_constraint_stats["segment_count"]), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_edge_count", "shared_breakline_constraint_edge_count", int(shared_constraint_stats["edge_count"]), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_vertex_count", "shared_breakline_constraint_vertex_count", int(shared_constraint_stats["vertex_count"]), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_snap_count", "shared_breakline_constraint_snap_count", int(shared_constraint_stats.get("snap_count", 0) or 0), "count"),
+            TINQualityRow(f"{surface_id}:shared_breakline_constraint_snap_max_distance", "shared_breakline_constraint_snap_max_distance", float(shared_constraint_stats.get("snap_max_distance", 0.0) or 0.0), "m"),
+            TINQualityRow(
+                f"{surface_id}:shared_breakline_constraint_snap_diagnostics",
+                "shared_breakline_constraint_snap_diagnostics",
+                "; ".join(list(shared_constraint_stats.get("snap_diagnostics", []) or [])),
+            ),
             TINQualityRow(f"{surface_id}:patch_boundary_bbox_x", "patch_boundary_bbox_x", float(shape_quality["bbox_x"]), "m"),
             TINQualityRow(f"{surface_id}:patch_boundary_bbox_y", "patch_boundary_bbox_y", float(shape_quality["bbox_y"]), "m"),
             TINQualityRow(f"{surface_id}:patch_boundary_bbox_aspect_ratio", "patch_boundary_bbox_aspect_ratio", float(shape_quality["bbox_aspect_ratio"]), "ratio"),
@@ -15795,6 +18981,303 @@ def _build_intersection_surface_patch_tin(
                 notes=f"intersection={intersection_id}; control_regions={','.join(sorted(control_refs))}",
             )
         ],
+    )
+
+
+def _intersection_surface_tin_with_shared_breakline_constraint_edges(
+    *,
+    vertices: list[object],
+    triangles: list[object],
+    shared_result,
+    surface_id: str,
+) -> tuple[list[object], list[object], dict[str, object]]:
+    """Return intersection TIN rows with shared breakline segments preserved as TIN edges."""
+
+    return _tin_rows_with_shared_breakline_constraint_edges(
+        vertices=vertices,
+        triangles=triangles,
+        shared_result=shared_result,
+        surface_id=surface_id,
+        consumer_ref="intersection_surface",
+    )
+
+
+def _tin_rows_with_shared_breakline_constraint_edges(
+    *,
+    vertices: list[object],
+    triangles: list[object],
+    shared_result,
+    surface_id: str,
+    consumer_ref: str,
+) -> tuple[list[object], list[object], dict[str, object]]:
+    """Return TIN rows with shared breakline segments preserved as TIN edges."""
+
+    output_vertices = list(vertices or [])
+    output_triangles = list(triangles or [])
+    stats = {
+        "mode": "none",
+        "segment_count": 0,
+        "edge_count": 0,
+        "vertex_count": 0,
+        "snap_count": 0,
+        "snap_max_distance": 0.0,
+        "snap_diagnostics": [],
+    }
+    if shared_result is None:
+        return output_vertices, output_triangles, stats
+
+    breakline_refs = set(_shared_breakline_refs_for_consumer(shared_result, consumer_ref))
+    if not breakline_refs:
+        return output_vertices, output_triangles, stats
+
+    point_rows_by_id = {
+        str(getattr(point, "point_id", "") or ""): point
+        for point in list(getattr(shared_result, "point_rows", []) or [])
+        if str(getattr(point, "point_id", "") or "")
+    }
+    breakline_rows = [
+        row
+        for row in list(getattr(shared_result, "breakline_rows", []) or [])
+        if str(getattr(row, "breakline_id", "") or "") in breakline_refs
+    ]
+    if not breakline_rows:
+        return output_vertices, output_triangles, stats
+
+    vertex_by_xyz = {
+        _tin_vertex_xyz_key(vertex): str(getattr(vertex, "vertex_id", "") or "")
+        for vertex in output_vertices
+        if str(getattr(vertex, "vertex_id", "") or "")
+    }
+    edge_keys = _tin_triangle_vertex_edge_keys(output_triangles)
+    next_vertex_index = len(output_vertices) + 1
+    next_triangle_index = len(output_triangles) + 1
+    snapped_vertex_ids: set[str] = set()
+    stats["mode"] = "support_triangle_edge_preservation"
+
+    for breakline in breakline_rows:
+        breakline_id = str(getattr(breakline, "breakline_id", "") or "")
+        points = [
+            point_rows_by_id.get(str(point_ref or ""))
+            for point_ref in list(getattr(breakline, "point_refs", ()) or ())
+        ]
+        points = sorted((point for point in points if point is not None), key=lambda point: int(getattr(point, "sequence", 0) or 0))
+        for start_point, end_point in zip(points, points[1:]):
+            stats["segment_count"] = int(stats["segment_count"]) + 1
+            start_id, next_vertex_index, added_start = _ensure_tin_vertex_for_breakline_point(
+                output_vertices,
+                vertex_by_xyz,
+                start_point,
+                surface_id=surface_id,
+                breakline_id=breakline_id,
+                next_vertex_index=next_vertex_index,
+                stats=stats,
+                snapped_vertex_ids=snapped_vertex_ids,
+            )
+            end_id, next_vertex_index, added_end = _ensure_tin_vertex_for_breakline_point(
+                output_vertices,
+                vertex_by_xyz,
+                end_point,
+                surface_id=surface_id,
+                breakline_id=breakline_id,
+                next_vertex_index=next_vertex_index,
+                stats=stats,
+                snapped_vertex_ids=snapped_vertex_ids,
+            )
+            stats["vertex_count"] = int(stats["vertex_count"]) + added_start + added_end
+            segment_edge_key = tuple(sorted((start_id, end_id)))
+            if start_id == end_id or segment_edge_key in edge_keys:
+                continue
+            support_vertex, next_vertex_index = _shared_breakline_support_tin_vertex(
+                start_point,
+                end_point,
+                surface_id=surface_id,
+                breakline_id=breakline_id,
+                next_vertex_index=next_vertex_index,
+            )
+            if support_vertex is None:
+                continue
+            output_vertices.append(support_vertex)
+            vertex_by_xyz[_tin_vertex_xyz_key(support_vertex)] = support_vertex.vertex_id
+            stats["vertex_count"] = int(stats["vertex_count"]) + 1
+            triangle_id = f"{surface_id}:shared-breakline-constraint:{next_triangle_index}"
+            next_triangle_index += 1
+            output_triangles.append(
+                TINTriangle(
+                    triangle_id=triangle_id,
+                    v1=start_id,
+                    v2=end_id,
+                    v3=support_vertex.vertex_id,
+                    triangle_kind="constraint_support_triangle",
+                    quality_ref="shared_breakline_constraint_edge",
+                    notes=f"shared_breakline_ref={breakline_id}",
+                )
+            )
+            edge_keys.update(
+                {
+                    segment_edge_key,
+                    tuple(sorted((start_id, support_vertex.vertex_id))),
+                    tuple(sorted((end_id, support_vertex.vertex_id))),
+                }
+            )
+            stats["edge_count"] = int(stats["edge_count"]) + 1
+
+    return output_vertices, output_triangles, stats
+
+
+def _tin_vertex_xyz_key(vertex) -> tuple[float, float, float]:
+    return (
+        round(float(getattr(vertex, "x", 0.0) or 0.0), 6),
+        round(float(getattr(vertex, "y", 0.0) or 0.0), 6),
+        round(float(getattr(vertex, "z", 0.0) or 0.0), 6),
+    )
+
+
+def _tin_triangle_vertex_edge_keys(triangles: list[object]) -> set[tuple[str, str]]:
+    edges: set[tuple[str, str]] = set()
+    for triangle in list(triangles or []):
+        vertex_ids = [
+            str(getattr(triangle, "v1", "") or ""),
+            str(getattr(triangle, "v2", "") or ""),
+            str(getattr(triangle, "v3", "") or ""),
+        ]
+        for first, second in ((vertex_ids[0], vertex_ids[1]), (vertex_ids[1], vertex_ids[2]), (vertex_ids[2], vertex_ids[0])):
+            if first and second and first != second:
+                edges.add(tuple(sorted((first, second))))
+    return edges
+
+
+def _ensure_tin_vertex_for_breakline_point(
+    vertices: list[object],
+    vertex_by_xyz: dict[tuple[float, float, float], str],
+    point,
+    *,
+    surface_id: str,
+    breakline_id: str,
+    next_vertex_index: int,
+    stats: dict[str, object] | None = None,
+    snapped_vertex_ids: set[str] | None = None,
+) -> tuple[str, int, int]:
+    key = _tin_vertex_xyz_key(point)
+    existing_id = vertex_by_xyz.get(key)
+    if existing_id:
+        return existing_id, next_vertex_index, 0
+    snap = _snap_near_tin_vertex_to_breakline_point(
+        vertices,
+        vertex_by_xyz,
+        point,
+        breakline_id=breakline_id,
+        stats=stats,
+        snapped_vertex_ids=snapped_vertex_ids,
+    )
+    if snap:
+        return snap, next_vertex_index, 0
+    vertex_id = f"{surface_id}:shared-breakline-point:{next_vertex_index}"
+    vertices.append(
+        TINVertex(
+            vertex_id=vertex_id,
+            x=float(getattr(point, "x", 0.0) or 0.0),
+            y=float(getattr(point, "y", 0.0) or 0.0),
+            z=float(getattr(point, "z", 0.0) or 0.0),
+            source_point_ref=str(getattr(point, "source_point_ref", "") or ""),
+            notes=f"shared_breakline_ref={breakline_id}",
+        )
+    )
+    vertex_by_xyz[key] = vertex_id
+    return vertex_id, next_vertex_index + 1, 1
+
+
+def _snap_near_tin_vertex_to_breakline_point(
+    vertices: list[object],
+    vertex_by_xyz: dict[tuple[float, float, float], str],
+    point,
+    *,
+    breakline_id: str,
+    stats: dict[str, object] | None = None,
+    snapped_vertex_ids: set[str] | None = None,
+    tolerance: float = 5.0e-2,
+) -> str:
+    target = _row_xyz_tuple(point)
+    best_index = -1
+    best_distance = float(tolerance)
+    for index, vertex in enumerate(list(vertices or [])):
+        vertex_id = str(getattr(vertex, "vertex_id", "") or "")
+        if not vertex_id:
+            continue
+        if snapped_vertex_ids is not None and vertex_id in snapped_vertex_ids:
+            continue
+        distance = _distance_3d(_row_xyz_tuple(vertex), target)
+        if distance <= best_distance:
+            best_index = index
+            best_distance = distance
+    if best_index < 0:
+        return ""
+    original = vertices[best_index]
+    vertex_id = str(getattr(original, "vertex_id", "") or "")
+    original_key = _tin_vertex_xyz_key(original)
+    original_notes = str(getattr(original, "notes", "") or "")
+    snap_note = f"shared_breakline_ref={breakline_id}; snapped_to_accepted_breakline; snap_distance={best_distance:.6g}m"
+    vertices[best_index] = replace(
+        original,
+        x=float(getattr(point, "x", 0.0) or 0.0),
+        y=float(getattr(point, "y", 0.0) or 0.0),
+        z=float(getattr(point, "z", 0.0) or 0.0),
+        source_point_ref=str(getattr(original, "source_point_ref", "") or getattr(point, "source_point_ref", "") or ""),
+        notes=f"{original_notes}; {snap_note}" if original_notes else snap_note,
+    )
+    if vertex_by_xyz.get(original_key) == vertex_id:
+        vertex_by_xyz.pop(original_key, None)
+    vertex_by_xyz[_tin_vertex_xyz_key(vertices[best_index])] = vertex_id
+    if snapped_vertex_ids is not None:
+        snapped_vertex_ids.add(vertex_id)
+    if stats is not None:
+        stats["snap_count"] = int(stats.get("snap_count", 0) or 0) + 1
+        stats["snap_max_distance"] = max(float(stats.get("snap_max_distance", 0.0) or 0.0), float(best_distance))
+        diagnostics = list(stats.get("snap_diagnostics", []) or [])
+        diagnostics.append(f"snapped_result_vertex:{vertex_id}:{breakline_id}:distance={best_distance:.6g}m")
+        stats["snap_diagnostics"] = diagnostics
+    return vertex_id
+
+
+def _distance_3d(first: tuple[float, float, float], second: tuple[float, float, float]) -> float:
+    return math.sqrt(
+        (float(first[0]) - float(second[0])) ** 2
+        + (float(first[1]) - float(second[1])) ** 2
+        + (float(first[2]) - float(second[2])) ** 2
+    )
+
+
+def _shared_breakline_support_tin_vertex(
+    start_point,
+    end_point,
+    *,
+    surface_id: str,
+    breakline_id: str,
+    next_vertex_index: int,
+):
+    sx = float(getattr(start_point, "x", 0.0) or 0.0)
+    sy = float(getattr(start_point, "y", 0.0) or 0.0)
+    sz = float(getattr(start_point, "z", 0.0) or 0.0)
+    ex = float(getattr(end_point, "x", 0.0) or 0.0)
+    ey = float(getattr(end_point, "y", 0.0) or 0.0)
+    ez = float(getattr(end_point, "z", 0.0) or 0.0)
+    dx = ex - sx
+    dy = ey - sy
+    length_xy = math.hypot(dx, dy)
+    if length_xy <= 1.0e-9:
+        return None, next_vertex_index
+    offset = max(0.02, min(0.10, length_xy * 0.01))
+    nx = -dy / length_xy
+    ny = dx / length_xy
+    return (
+        TINVertex(
+            vertex_id=f"{surface_id}:shared-breakline-support:{next_vertex_index}",
+            x=(sx + ex) * 0.5 + nx * offset,
+            y=(sy + ey) * 0.5 + ny * offset,
+            z=(sz + ez) * 0.5,
+            source_point_ref=breakline_id,
+            notes="support vertex for shared breakline constraint edge",
+        ),
+        next_vertex_index + 1,
     )
 
 
@@ -16890,6 +20373,9 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
                 suffix_parts.append(f"loop_suppress={loop_status} suppressed={loop_suppressed}/{loop_tested} ready_loops={loop_ready}")
             suffix = "; ".join(suffix_parts)
             notes = f"{notes} | {suffix}" if notes else suffix
+    shared_breakline_note = _shared_breakline_review_note(obj)
+    if shared_breakline_note:
+        notes = f"{notes} | {shared_breakline_note}" if notes else shared_breakline_note
     if not notes:
         surface_kind = str(getattr(obj, "SurfaceKind", "") or "")
         notes = f"Surface kind: {surface_kind or 'unknown'}"
@@ -16904,6 +20390,46 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
         "output_path": _corridor_build_review_output_path(role, obj),
         "notes": notes,
     }, obj)
+
+
+def _shared_breakline_review_note(obj) -> str:
+    status = str(getattr(obj, "SharedBreaklineStatus", "") or "")
+    result_id = str(getattr(obj, "SharedBreaklineResultId", "") or "")
+    if not status and not result_id:
+        return ""
+    count = int(getattr(obj, "SharedBreaklineCount", 0) or 0)
+    consumed = int(getattr(obj, "SharedBreaklineConsumedCount", 0) or 0)
+    warnings = int(getattr(obj, "SharedBreaklineWarningCount", 0) or 0)
+    errors = int(getattr(obj, "SharedBreaklineErrorCount", 0) or 0)
+    parts = [
+        f"shared_breakline={status or 'unknown'} "
+        f"consumed={consumed}/{count} warnings={warnings} errors={errors}"
+    ]
+    audit_status = str(getattr(obj, "SharedBreaklineAuditStatus", "") or "")
+    if audit_status:
+        geometry_match = int(getattr(obj, "SharedBreaklineGeometryMatchCount", 0) or 0)
+        geometry_mismatch = int(getattr(obj, "SharedBreaklineGeometryMismatchCount", 0) or 0)
+        mesh_match = int(getattr(obj, "SharedBreaklineMeshMatchCount", 0) or 0)
+        mesh_mismatch = int(getattr(obj, "SharedBreaklineMeshMismatchCount", 0) or 0)
+        missing = int(getattr(obj, "SharedBreaklineMissingConsumerCount", 0) or 0)
+        mismatch = int(getattr(obj, "SharedBreaklineMismatchCount", 0) or 0)
+        reversed_count = int(getattr(obj, "SharedBreaklineReversedEdgeCount", 0) or 0)
+        parts.append(
+            f"audit={audit_status} geometry={geometry_match}/{geometry_match + geometry_mismatch} "
+            f"mesh={mesh_match}/{mesh_match + mesh_mismatch} "
+            f"missing={missing} mismatch={mismatch} reversed={reversed_count}"
+        )
+    solid_status = str(getattr(obj, "SharedBreaklineSolidReadinessStatus", "") or "")
+    if solid_status:
+        open_end_count = int(getattr(obj, "SharedBreaklineSolidOpenEndCount", 0) or 0)
+        duplicate_edge_count = int(getattr(obj, "SharedBreaklineSolidDuplicateEdgeCount", 0) or 0)
+        solid_reversed_count = int(getattr(obj, "SharedBreaklineSolidReversedEdgeCount", 0) or 0)
+        non_manifold_count = int(getattr(obj, "SharedBreaklineSolidNonManifoldNodeCount", 0) or 0)
+        parts.append(
+            f"solid_readiness={solid_status} open={open_end_count} "
+            f"duplicate={duplicate_edge_count} reversed={solid_reversed_count} non_manifold={non_manifold_count}"
+        )
+    return "; ".join(parts)
 
 
 def _corridor_intersection_surface_replacement_readiness_row(document=None) -> dict[str, object] | None:
@@ -16948,6 +20474,241 @@ def _corridor_intersection_surface_replacement_readiness_row(document=None) -> d
         "output_path": "review_gate",
         "notes": notes,
     }
+
+
+def _corridor_intersection_tie_in_continuity_row(document=None) -> dict[str, object] | None:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = doc.getObject("V1CorridorIntersectionSurfacePreview") if doc is not None else None
+    if obj is None:
+        return None
+    tie_in_count = int(getattr(obj, "PatchPavementTieInEdgeCount", 0) or 0) + int(getattr(obj, "PatchStemTieInEdgeCount", 0) or 0)
+    curb_return_count = int(getattr(obj, "PatchCurbReturnEdgeCount", 0) or 0)
+    overlap_count = int(getattr(obj, "PatchOverlapCutEdgeCount", 0) or 0)
+    boundary_diagnostic_count = int(getattr(obj, "IntersectionPatchBoundaryDiagnosticCount", 0) or 0)
+    shared_status = str(getattr(obj, "SharedBreaklineAuditStatus", "") or "")
+    geometry_mismatch = int(getattr(obj, "SharedBreaklineGeometryMismatchCount", 0) or 0)
+    mesh_mismatch = int(getattr(obj, "SharedBreaklineMeshMismatchCount", 0) or 0)
+    missing_consumer = int(getattr(obj, "SharedBreaklineMissingConsumerCount", 0) or 0)
+    reversed_count = int(getattr(obj, "SharedBreaklineReversedEdgeCount", 0) or 0)
+    if not any([tie_in_count, curb_return_count, overlap_count, boundary_diagnostic_count, shared_status]):
+        return None
+    if boundary_diagnostic_count > 0 or geometry_mismatch > 0 or missing_consumer > 0:
+        status = "error"
+    elif mesh_mismatch > 0 or reversed_count > 0 or shared_status in {"warning", "error"}:
+        status = "warning"
+    else:
+        status = "ready"
+    station_span = _intersection_applied_section_station_span(doc, str(getattr(obj, "IntersectionId", "") or ""))
+    notes = (
+        f"tie-in edges={tie_in_count}; curb_return_edges={curb_return_count}; overlap_cut_edges={overlap_count}; "
+        f"boundary_diagnostics={boundary_diagnostic_count}; shared_breakline_audit={shared_status or 'not_available'}; "
+        f"geometry_mismatch={geometry_mismatch}; mesh_mismatch={mesh_mismatch}; "
+        f"missing_consumer={missing_consumer}; reversed={reversed_count}; "
+        f"station_span={station_span or 'unavailable'}"
+    )
+    qa_summary = str(getattr(obj, "IntersectionManualQASummary", "") or "")
+    if qa_summary:
+        notes = f"{notes}; {qa_summary}"
+    return {
+        "role": "intersection_tie_in_continuity",
+        "result": "Intersection Tie-In Continuity",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Tie-In Continuity",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": tie_in_count + curb_return_count + overlap_count,
+        "output_path": "review_gate",
+        "notes": notes,
+    }
+
+
+def _intersection_applied_section_station_span(document, intersection_id: str = "") -> str:
+    applied = to_applied_section_set(find_v1_applied_section_set(document)) if document is not None else None
+    if applied is None:
+        return ""
+    target = str(intersection_id or "").strip()
+    stations: list[float] = []
+    for section in list(getattr(applied, "sections", []) or []):
+        section_intersection = str(getattr(section, "active_intersection_id", "") or "").strip()
+        if target and section_intersection != target:
+            continue
+        try:
+            stations.append(float(getattr(section, "station", getattr(getattr(section, "frame", None), "station", 0.0)) or 0.0))
+        except Exception:
+            continue
+    if not stations:
+        return ""
+    return f"{min(stations):.3f}-{max(stations):.3f}"
+
+
+def _corridor_intersection_grading_ownership_row(document=None) -> dict[str, object] | None:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = doc.getObject("V1CorridorIntersectionSurfacePreview") if doc is not None else None
+    if obj is None:
+        return None
+    grading_policy_ref = str(getattr(obj, "IntersectionGradingPolicyRef", "") or "")
+    grading_mode = str(getattr(obj, "IntersectionGradingMode", "") or "")
+    target_crossfall = str(getattr(obj, "IntersectionTargetCrossfallPercent", "") or "")
+    superelevation_sources = int(getattr(obj, "IntersectionSuperelevationSourceCount", 0) or 0)
+    transition_count = int(getattr(obj, "IntersectionSuperelevationTransitionCount", 0) or 0)
+    superelevation_context = str(getattr(obj, "IntersectionSuperelevationContext", "") or "")
+    consumed_grading_ref = str(getattr(obj, "ConsumedIntersectionGradingContextResultId", "") or "")
+    if not any([grading_policy_ref, grading_mode, target_crossfall, superelevation_sources, transition_count, consumed_grading_ref]):
+        return None
+    left_min = float(getattr(obj, "IntersectionSuperelevationLeftMin", 0.0) or 0.0)
+    left_max = float(getattr(obj, "IntersectionSuperelevationLeftMax", 0.0) or 0.0)
+    right_min = float(getattr(obj, "IntersectionSuperelevationRightMin", 0.0) or 0.0)
+    right_max = float(getattr(obj, "IntersectionSuperelevationRightMax", 0.0) or 0.0)
+    left_delta = abs(left_max - left_min)
+    right_delta = abs(right_max - right_min)
+    max_delta = max(left_delta, right_delta)
+    if max_delta > 0.5 or transition_count > 0:
+        status = "warning"
+    else:
+        status = "ready"
+    station_span = _intersection_applied_section_station_span(doc, str(getattr(obj, "IntersectionId", "") or ""))
+    controlling_source = "intersection_policy" if grading_policy_ref or grading_mode else "normal_superelevation"
+    profile_refs = _intersection_grading_profile_refs(doc, str(getattr(obj, "IntersectionId", "") or ""))
+    notes = (
+        f"owner={controlling_source}; grading_policy={_display_source_id(grading_policy_ref, 'grading:') or '-'}; "
+        f"mode={grading_mode or '-'}; target_crossfall={target_crossfall or '-'}%; "
+        f"superelevation_sources={superelevation_sources}; transitions={transition_count}; "
+        f"left_crossfall={left_min:.3f}%..{left_max:.3f}%; right_crossfall={right_min:.3f}%..{right_max:.3f}%; "
+        f"max_crossfall_delta={max_delta:.3f}%; grading_context={consumed_grading_ref or '-'}; "
+        f"profile_refs={','.join(profile_refs) if profile_refs else '-'}; station_span={station_span or 'unavailable'}"
+    )
+    if superelevation_context:
+        notes = f"{notes}; context={superelevation_context}"
+    return {
+        "role": "intersection_grading_ownership",
+        "result": "Intersection Grading Ownership",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Grading Ownership",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": transition_count,
+        "output_path": "review_gate",
+        "notes": notes,
+    }
+
+
+def _intersection_grading_profile_refs(document, intersection_id: str = "") -> list[str]:
+    applied = to_applied_section_set(find_v1_applied_section_set(document)) if document is not None else None
+    if applied is None:
+        return []
+    target = str(intersection_id or "").strip()
+    refs: list[str] = []
+    for section in list(getattr(applied, "sections", []) or []):
+        section_intersection = str(getattr(section, "active_intersection_id", "") or "").strip()
+        if target and section_intersection != target:
+            continue
+        for attr in ("active_profile_id", "profile_id", "profile_ref"):
+            text = str(getattr(section, attr, "") or "").strip()
+            if text:
+                refs.append(text)
+    return _unique_text_values(refs)
+
+
+def _corridor_intersection_drainage_handoff_gate_row(document=None) -> dict[str, object] | None:
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = doc.getObject("V1CorridorIntersectionSurfacePreview") if doc is not None else None
+    if obj is None:
+        return None
+    intersection_id = str(getattr(obj, "IntersectionId", "") or "").strip()
+    hint_ref = str(getattr(obj, "ConsumedIntersectionDrainageHintResultId", "") or "").strip()
+    low_point_count = int(getattr(obj, "IntersectionTINLowPointCandidateCount", 0) or 0)
+    flow_hint_count = int(getattr(obj, "IntersectionBoundaryToLowFlowHintCount", 0) or 0)
+    flow_hint_summary = str(getattr(obj, "IntersectionBoundaryToLowFlowHintSummary", "") or "").strip()
+    policy_rows = _intersection_drainage_policy_rows(doc, intersection_id)
+    drainage_model = to_drainage_model(find_v1_drainage_model(doc)) if doc is not None else None
+    element_ids = {
+        str(getattr(row, "drainage_element_id", "") or "").strip()
+        for row in list(getattr(drainage_model, "element_rows", []) or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    } if drainage_model is not None else set()
+    route_ids = {
+        str(getattr(row, "flow_route_id", "") or "").strip()
+        for row in list(getattr(drainage_model, "flow_route_rows", []) or [])
+        if str(getattr(row, "flow_route_id", "") or "").strip()
+    } if drainage_model is not None else set()
+    accepted_policies = [
+        row for row in policy_rows
+        if str(getattr(row, "intent_status", "") or "").strip().lower() == "accepted"
+        or str(getattr(row, "approval_status", "") or "").strip().lower() in {"accepted", "locked"}
+    ]
+    policy_element_refs = _unique_text_values([
+        str(value or "").strip()
+        for row in policy_rows
+        for value in list(getattr(row, "drainage_element_refs", []) or [])
+        if str(value or "").strip()
+    ])
+    policy_route_refs = _unique_text_values([
+        str(value or "").strip()
+        for row in policy_rows
+        for value in list(getattr(row, "flow_route_refs", []) or [])
+        if str(value or "").strip()
+    ])
+    matched_elements = [ref for ref in policy_element_refs if ref in element_ids]
+    matched_routes = [ref for ref in policy_route_refs if ref in route_ids]
+    missing_elements = [ref for ref in policy_element_refs if ref and ref not in element_ids]
+    missing_routes = [ref for ref in policy_route_refs if ref and ref not in route_ids]
+    has_hint = bool(hint_ref or low_point_count or flow_hint_count or flow_hint_summary)
+    has_policy = bool(policy_rows)
+    has_model_refs = bool(policy_element_refs or policy_route_refs)
+    if not any([has_hint, has_policy, drainage_model is not None]):
+        return None
+    if missing_elements or missing_routes:
+        status = "error"
+        handoff = "accepted_drainage_refs_missing"
+        action = "Create or relink the referenced DrainageModel elements and flow routes."
+    elif accepted_policies and (matched_elements or matched_routes):
+        status = "ready"
+        handoff = "accepted_drainage"
+        action = "No action needed."
+    elif has_hint:
+        status = "warning"
+        handoff = "hint_only"
+        action = "Convert low-point hints into accepted DrainageModel elements and flow routes."
+    else:
+        status = "missing"
+        handoff = "drainage_source_missing"
+        action = "Add an Intersection drainage policy and DrainageModel handoff rows."
+    notes = (
+        f"handoff={handoff}; intersection={intersection_id or '-'}; "
+        f"hint_ref={hint_ref or '-'}; low_points={low_point_count}; flow_hints={flow_hint_count}; "
+        f"policies={len(policy_rows)}; accepted_policies={len(accepted_policies)}; "
+        f"elements={len(matched_elements)}/{len(policy_element_refs)}; routes={len(matched_routes)}/{len(policy_route_refs)}; "
+        f"missing_elements={','.join(missing_elements) if missing_elements else '-'}; "
+        f"missing_routes={','.join(missing_routes) if missing_routes else '-'}; "
+        f"recommended_action={action}"
+    )
+    if flow_hint_summary:
+        notes = f"{notes}; hint_summary={flow_hint_summary}"
+    return {
+        "role": "intersection_drainage_handoff_gate",
+        "result": "Intersection Drainage Handoff Gate",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Drainage Handoff Gate",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": max(low_point_count, len(matched_elements) + len(matched_routes)),
+        "output_path": "review_gate",
+        "notes": notes,
+    }
+
+
+def _intersection_drainage_policy_rows(document, intersection_id: str = "") -> list[object]:
+    intersection_model = to_intersection_model(find_v1_intersection_model(document)) if document is not None else None
+    if intersection_model is None:
+        return []
+    target = str(intersection_id or "").strip()
+    rows = list(getattr(intersection_model, "drainage_policy_rows", []) or [])
+    if not target:
+        return rows
+    return [
+        row for row in rows
+        if str(getattr(row, "intersection_id", "") or "").strip() == target
+    ]
 
 
 def _corridor_build_review_output_path(role: str, obj) -> str:

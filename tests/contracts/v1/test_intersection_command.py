@@ -38,6 +38,18 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
     intersection_preset_labels,
     _route_intersection_preset_objects,
 )
+from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
+    apply_v1_applied_section_set,
+    build_document_applied_section_set,
+)
+from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
+    build_document_corridor_model,
+    build_document_corridor_surface_model,
+    corridor_build_review_rows,
+    create_corridor_daylight_surface_preview,
+    create_corridor_design_surface_preview,
+    create_corridor_intersection_surface_preview,
+)
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_drainage import to_drainage_model
 from freecad.Corridor_Road.v1.objects.obj_intersection import find_v1_intersection_model, to_intersection_model
@@ -295,6 +307,97 @@ def test_intersection_preset_source_creation_stores_intersection_model() -> None
         assert preview_by_stage["Grading"]["contract"] == "IntersectionGradingContextResult"
         assert preview_by_stage["Drainage"]["contract"] == "IntersectionDrainageHintResult"
         assert preview_by_stage["Slope Loops"]["contract"] == "IntersectionSlopeFaceLoopResult"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_preview() -> None:
+    doc = App.newDocument("CRV1IntersectionPresetTBreaklineE2E")
+    try:
+        create_intersection_preset_sources(
+            doc,
+            preset_label="T Intersection - Basic",
+            grading_policy="blend_primary_side",
+            drainage_mode="outside_gutter",
+        )
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        design_preview = create_corridor_design_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        slope_preview = create_corridor_daylight_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        rows = corridor_build_review_rows(doc)
+        intersection_row = [row for row in rows if row["role"] == "intersection"][0]
+        design_row = [row for row in rows if row["role"] == "design"][0]
+        slope_row = [row for row in rows if row["role"] == "daylight"][0]
+
+        assert len(applied.sections) > 0
+        assert preview is not None
+        assert design_preview is not None
+        assert slope_preview is not None
+        assert preview.SharedBreaklineResultId == "shared-breakline:intersection:intersection:starter-t_intersection"
+        assert preview.SharedBreaklineAuditStatus == "ready"
+        assert int(preview.SharedBreaklineCount) == 36
+        assert int(preview.SharedBreaklineConsumedCount) == 36
+        assert int(preview.SharedBreaklineGeometryMismatchCount) == 0
+        assert int(preview.SharedBreaklineMeshMismatchCount) == 0
+        assert int(preview.SharedBreaklineReversedEdgeCount) == 0
+        assert any("curb-return-outer" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-inner" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-to-pavement" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-to-shoulder" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-to-slope-face" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("patch-to-shoulder" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("control_area_entry" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("control_area_exit" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("intersection_gutter_handoff" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("low_point_flow_split" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert preview.SharedBreaklineMaterialSummary == "curb_return=4, design_surface=4, drainage_surface=6, pavement=8, shoulder=5, side_slope=5, slope_face_surface=4"
+        assert "control_area_entry=4" in preview.SharedBreaklineRoleSummary
+        assert "control_area_exit=4" in preview.SharedBreaklineRoleSummary
+        assert "patch_to_design_pavement_tie_in=2" in preview.SharedBreaklineRoleSummary
+        assert "patch_to_design_stem_tie_in=2" in preview.SharedBreaklineRoleSummary
+        assert "shared_breakline=ready consumed=36/36" in intersection_row["notes"]
+        assert "audit=ready geometry=36/36 mesh=36/36" in intersection_row["notes"]
+        assert any("curb-return-to-pavement" in ref for ref in list(design_preview.SharedBreaklineRefs))
+        assert any("curb-return-to-shoulder" in ref for ref in list(design_preview.SharedBreaklineRefs))
+        assert "pavement=8" in design_preview.SharedBreaklineMaterialSummary
+        assert "shoulder=6" in design_preview.SharedBreaklineMaterialSummary
+        assert "design_surface=34" in design_preview.SharedBreaklineMaterialSummary
+        assert "control_area_entry=2" in design_preview.SharedBreaklineRoleSummary
+        assert "control_area_exit=2" in design_preview.SharedBreaklineRoleSummary
+        assert "patch_to_design_pavement_tie_in=2" in design_preview.SharedBreaklineRoleSummary
+        assert "patch_to_design_stem_tie_in=2" in design_preview.SharedBreaklineRoleSummary
+        assert int(design_preview.SharedBreaklineGeometryMismatchCount) == 0
+        assert int(design_preview.SharedBreaklineMeshMismatchCount) == 0
+        assert "audit=ready" in design_row["notes"]
+        assert any("curb-return-to-slope-face" in ref for ref in list(slope_preview.SharedBreaklineRefs))
+        assert "side_slope=5" in slope_preview.SharedBreaklineMaterialSummary
+        assert "slope_face_surface=31" in slope_preview.SharedBreaklineMaterialSummary
+        assert "shoulder=1" in slope_preview.SharedBreaklineMaterialSummary
+        assert "control_area_entry=2" in slope_preview.SharedBreaklineRoleSummary
+        assert "control_area_exit=2" in slope_preview.SharedBreaklineRoleSummary
+        assert int(slope_preview.SharedBreaklineGeometryMismatchCount) == 0
+        assert int(slope_preview.SharedBreaklineMeshMismatchCount) == 0
+        assert "audit=ready" in slope_row["notes"]
     finally:
         App.closeDocument(doc.Name)
 

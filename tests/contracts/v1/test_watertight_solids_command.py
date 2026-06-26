@@ -907,6 +907,60 @@ def test_watertight_solids_discovers_intersection_surface_zone_target_handoff_ro
         App.closeDocument(doc.Name)
 
 
+def test_watertight_target_discovery_blocks_intersection_zone_when_shared_breakline_solid_readiness_warns() -> None:
+    doc, project = _new_project_doc("V1WatertightIntersectionSharedBreaklineSolidReadinessTargetTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project)
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_surface_zone_intersection_model(),
+        )
+        preview = doc.addObject("App::FeaturePython", "V1CorridorIntersectionSurfacePreview")
+        preview.addProperty("App::PropertyString", "SharedBreaklineSolidReadinessStatus", "Test").SharedBreaklineSolidReadinessStatus = "warning"
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineSolidOpenEndCount", "Test").SharedBreaklineSolidOpenEndCount = 2
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineSolidDuplicateEdgeCount", "Test").SharedBreaklineSolidDuplicateEdgeCount = 1
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineSolidReversedEdgeCount", "Test").SharedBreaklineSolidReversedEdgeCount = 0
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineSolidNonManifoldNodeCount", "Test").SharedBreaklineSolidNonManifoldNodeCount = 1
+        preview.addProperty("App::PropertyStringList", "SharedBreaklineSolidBoundaryTraceRows", "Test").SharedBreaklineSolidBoundaryTraceRows = [
+            "breakline_id=shared-breakline:intersection:t-01:patch-to-design;role=patch_to_design;handoff_target=watertight_solid"
+        ]
+
+        target_model = discover_watertight_solid_targets(doc)
+        zone_targets = [
+            row
+            for row in target_model.target_rows
+            if row.target_family
+            in {
+                "intersection_pavement_body",
+                "intersection_subgrade_body",
+                "intersection_slope_body",
+                "intersection_curb_return_body",
+            }
+        ]
+
+        assert zone_targets
+        assert all(row.readiness_status == "blocked" for row in zone_targets)
+        assert all("shared-breakline-solid-readiness" in row.source_refs for row in zone_targets)
+        assert all("shared-breakline-boundary-trace" in row.source_refs for row in zone_targets)
+        assert all("SharedBreaklineSolidReadiness: status=warning" in row.notes for row in zone_targets)
+        assert all("boundary_trace_rows=1" in row.notes for row in zone_targets)
+        assert all(
+            "solid-target-diagnostic:shared-breakline-solid-readiness" in row.diagnostic_refs
+            for row in zone_targets
+        )
+        assert any(
+            diagnostic.kind == "shared_breakline_solid_readiness_blocked"
+            and diagnostic.severity == "error"
+            and "open_ends=2" in diagnostic.notes
+            and "duplicate_edges=1" in diagnostic.notes
+            and "non_manifold_nodes=1" in diagnostic.notes
+            for diagnostic in target_model.target_diagnostic_rows
+        )
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_watertight_solids_builds_intersection_patch_body_target() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchBuildTest")
@@ -1201,6 +1255,74 @@ def test_intersection_watertight_handoff_blocks_transitional_only_patch_final_qu
         assert "downstream_selected_role=transitional_patch_fallback" in target.notes
         assert "legacy_patch_review=metadata_only" in target.notes
         assert "legacy_patch_audit=review_visibility=metadata_only" in target.notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_watertight_handoff_blocks_shared_breakline_audit_failure() -> None:
+    doc, _project = _new_project_doc("V1WatertightIntersectionSharedBreaklineAuditBlockTest")
+    try:
+        preview = doc.addObject("App::FeaturePython", "V1CorridorIntersectionSurfacePreview")
+        preview.addProperty("App::PropertyString", "IntersectionId", "Test").IntersectionId = "intersection:t-01"
+        preview.addProperty("App::PropertyString", "IntersectionPatchBoundaryClosed", "Test").IntersectionPatchBoundaryClosed = "Yes"
+        preview.addProperty("App::PropertyString", "PatchTriangulationMode", "Test").PatchTriangulationMode = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyString", "PatchBoundaryStrategy", "Test").PatchBoundaryStrategy = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyInteger", "PatchSkinnyTriangleCount", "Test").PatchSkinnyTriangleCount = 0
+        preview.addProperty("App::PropertyString", "SharedBreaklineAuditStatus", "Test").SharedBreaklineAuditStatus = "error"
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineGeometryMismatchCount", "Test").SharedBreaklineGeometryMismatchCount = 1
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineMeshMismatchCount", "Test").SharedBreaklineMeshMismatchCount = 2
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineMissingConsumerCount", "Test").SharedBreaklineMissingConsumerCount = 0
+        preview.addProperty("App::PropertyInteger", "SharedBreaklineReversedEdgeCount", "Test").SharedBreaklineReversedEdgeCount = 0
+
+        target_model = SolidTargetModel(
+            schema_version=1,
+            project_id="corridorroad-v1",
+            target_rows=[
+                SolidTargetRow(
+                    target_id="solid-target:intersection-pavement:test",
+                    target_family="intersection_pavement_body",
+                    scope_kind="intersection",
+                    enabled=True,
+                    source_refs=[],
+                    notes="",
+                )
+            ],
+        )
+
+        summary = watertight_cmd.intersection_watertight_handoff_summary(doc, target_model=target_model)
+        annotated = watertight_cmd._annotate_intersection_watertight_handoff_targets(target_model, doc)
+
+        assert summary.readiness_status == "blocked"
+        assert summary.final_quality_status == "blocked"
+        assert summary.digital_twin_handoff_status == "review_required"
+        assert summary.accepted_zone_target_count == 1
+        assert summary.shared_breakline_audit_status == "error"
+        assert summary.shared_breakline_geometry_mismatch_count == 1
+        assert summary.shared_breakline_mesh_mismatch_count == 2
+        assert "shared_breakline_audit=error" in annotated.target_rows[0].notes
+
+        package_output = WatertightSimulationPackageService().build(
+            WatertightSimulationPackageBuildRequest(
+                project_id="corridorroad-v1",
+                simulation_qa_output=SimulationQaOutput(
+                    schema_version=1,
+                    project_id="corridorroad-v1",
+                    simulation_ready=True,
+                    terrain_status="ready",
+                ),
+                intersection_handoff=watertight_cmd._intersection_watertight_handoff_dict(summary),
+            )
+        )
+
+        assert package_output.package_status == "blocked"
+        assert package_output.simulation_ready is False
+        assert package_output.intersection_handoff_final_quality_status == "blocked"
+        assert package_output.intersection_handoff_status == "review_required"
+        assert package_output.intersection_handoff_shared_breakline_audit_status == "error"
+        assert package_output.intersection_handoff_shared_breakline_geometry_mismatch_count == 1
+        assert package_output.intersection_handoff_shared_breakline_mesh_mismatch_count == 2
+        assert "intersection_final_handoff_blocked" in package_output.diagnostic_kinds
+        assert "intersection_shared_breakline_audit_blocked" in package_output.diagnostic_kinds
     finally:
         App.closeDocument(doc.Name)
 
@@ -2845,5 +2967,31 @@ def test_watertight_solids_panel_build_enabled_builds_each_enabled_target_indepe
         assert road_state.output_object_ref in names
         assert subassembly_state.output_object_ref in names
         assert "Build Enabled summary: built=2; failed=0; targets=2; volume=" in panel._status.toPlainText()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_build_collects_shared_breakline_boundary_trace_rows_from_previews() -> None:
+    doc, _project = _new_project_doc("V1WatertightSharedBreaklineTraceCollectionTest")
+    try:
+        preview_a = doc.addObject("Part::Feature", "V1CorridorDesignSurfacePreview")
+        preview_a.addProperty("App::PropertyStringList", "SharedBreaklineSolidBoundaryTraceRows", "Test", "")
+        preview_a.SharedBreaklineSolidBoundaryTraceRows = [
+            "shared-breakline:trace:a|control_area_entry|intersection_control_area|control-area:main",
+            "",
+        ]
+        preview_b = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
+        preview_b.addProperty("App::PropertyStringList", "SharedBreaklineSolidBoundaryTraceRows", "Test", "")
+        preview_b.SharedBreaklineSolidBoundaryTraceRows = [
+            "shared-breakline:trace:a|control_area_entry|intersection_control_area|control-area:main",
+            "shared-breakline:trace:b|control_area_exit|intersection_control_area|control-area:main",
+        ]
+
+        rows = watertight_cmd._document_shared_breakline_solid_boundary_trace_rows(doc)
+
+        assert rows == [
+            "shared-breakline:trace:a|control_area_entry|intersection_control_area|control-area:main",
+            "shared-breakline:trace:b|control_area_exit|intersection_control_area|control-area:main",
+        ]
     finally:
         App.closeDocument(doc.Name)

@@ -66,13 +66,28 @@ class WatertightSimulationPackageService:
         intersection_handoff = dict(getattr(request, "intersection_handoff", {}) or {})
         intersection_final_quality_status = _drainage_text(intersection_handoff, "final_quality_status", "not_available")
         intersection_handoff_status = _drainage_text(intersection_handoff, "digital_twin_handoff", "not_available")
+        shared_breakline_audit_status = _drainage_text(intersection_handoff, "shared_breakline_audit_status", "")
+        shared_breakline_geometry_mismatch_count = _drainage_int(intersection_handoff, "shared_breakline_geometry_mismatch_count")
+        shared_breakline_mesh_mismatch_count = _drainage_int(intersection_handoff, "shared_breakline_mesh_mismatch_count")
+        shared_breakline_missing_consumer_count = _drainage_int(intersection_handoff, "shared_breakline_missing_consumer_count")
+        shared_breakline_reversed_edge_count = _drainage_int(intersection_handoff, "shared_breakline_reversed_edge_count")
+        shared_breakline_blocks_final_handoff = (
+            shared_breakline_audit_status in {"error", "blocked", "warning"}
+            or shared_breakline_geometry_mismatch_count > 0
+            or shared_breakline_mesh_mismatch_count > 0
+            or shared_breakline_missing_consumer_count > 0
+            or shared_breakline_reversed_edge_count > 0
+        )
         intersection_blocks_final_handoff = (
             intersection_final_quality_status == "blocked"
             or intersection_handoff_status == "review_required"
+            or shared_breakline_blocks_final_handoff
         )
         replacement_blocker_kind = ""
         if intersection_blocks_final_handoff:
             diagnostic_kinds = _unique_refs([*diagnostic_kinds, "intersection_final_handoff_blocked"])
+            if shared_breakline_blocks_final_handoff:
+                diagnostic_kinds = _unique_refs([*diagnostic_kinds, "intersection_shared_breakline_audit_blocked"])
             replacement_readiness = _drainage_text(intersection_handoff, "replacement_readiness_status", "")
             replacement_selected_role = _drainage_text(intersection_handoff, "downstream_selected_role", "")
             replacement_blocker_kind = intersection_surface_replacement_blocker_kind(
@@ -168,6 +183,11 @@ class WatertightSimulationPackageService:
             intersection_handoff_legacy_patch_review_visibility=_drainage_text(intersection_handoff, "legacy_patch_review_visibility", ""),
             intersection_handoff_legacy_patch_compatibility_audit_summary=_drainage_text(intersection_handoff, "legacy_patch_compatibility_audit_summary", ""),
             intersection_handoff_replacement_blocker_kind=replacement_blocker_kind,
+            intersection_handoff_shared_breakline_audit_status=shared_breakline_audit_status,
+            intersection_handoff_shared_breakline_geometry_mismatch_count=shared_breakline_geometry_mismatch_count,
+            intersection_handoff_shared_breakline_mesh_mismatch_count=shared_breakline_mesh_mismatch_count,
+            intersection_handoff_shared_breakline_missing_consumer_count=shared_breakline_missing_consumer_count,
+            intersection_handoff_shared_breakline_reversed_edge_count=shared_breakline_reversed_edge_count,
             output_count=len(solids),
             total_volume=sum(float(getattr(row, "volume", 0.0) or 0.0) for row in solids),
             target_families=family_refs,

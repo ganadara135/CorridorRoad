@@ -82,6 +82,8 @@ def ensure_v1_watertight_solid_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SolidNotes", "Solid Rows", "row-level notes")
     _add_property(obj, "App::PropertyStringList", "PathSources", "Solid Rows", "solid path source contracts")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRefs", "Solid Rows", "diagnostic refs")
+    _add_property(obj, "App::PropertyStringList", "SolidBoundaryTraceRows", "Solid Rows", "solid boundary trace rows")
+    _add_property(obj, "App::PropertyStringList", "SolidBoundaryAdjacencyRows", "Solid Rows", "solid boundary adjacency rows")
     _add_property(obj, "App::PropertyInteger", "SegmentCount", "Segments", "segment row count")
     _add_property(obj, "App::PropertyStringList", "SegmentIds", "Segments", "segment ids")
     _add_property(obj, "App::PropertyStringList", "SegmentStationRanges", "Segments", "segment station ranges")
@@ -198,6 +200,8 @@ def update_v1_watertight_solid_output_object(
     obj.SolidNotes = [str(getattr(row, "notes", "") or "") for row in rows]
     obj.PathSources = [str(getattr(row, "path_source", "") or "") for row in rows]
     obj.DiagnosticRefs = [_join_refs(row.diagnostic_refs) for row in rows]
+    obj.SolidBoundaryTraceRows = [_join_rows(getattr(row, "boundary_trace_rows", []) or []) for row in rows]
+    obj.SolidBoundaryAdjacencyRows = [_join_rows(getattr(row, "boundary_adjacency_rows", []) or []) for row in rows]
     obj.SegmentCount = len(segments)
     obj.SegmentIds = [str(row.segment_id) for row in segments]
     obj.SegmentStationRanges = [f"{float(row.station_start):.12g}|{float(row.station_end):.12g}" for row in segments]
@@ -247,6 +251,8 @@ def to_watertight_solid_output(obj) -> WatertightSolidOutput | None:
             edge_count=_int_list_value(getattr(obj, "EdgeCounts", []), index),
             profile_count=_int_list_value(getattr(obj, "ProfileCounts", []), index),
             diagnostic_refs=_split_refs(_list_value(getattr(obj, "DiagnosticRefs", []), index, "")),
+            boundary_trace_rows=_split_rows(_list_value(getattr(obj, "SolidBoundaryTraceRows", []), index, "")),
+            boundary_adjacency_rows=_split_rows(_list_value(getattr(obj, "SolidBoundaryAdjacencyRows", []), index, "")),
             region_ref=_list_value(getattr(obj, "RegionRefs", []), index, ""),
             assembly_ref=_list_value(getattr(obj, "AssemblyRefs", []), index, ""),
             subassembly_ref=_list_value(getattr(obj, "SubassemblyRefs", []), index, ""),
@@ -342,6 +348,14 @@ def _join_refs(values) -> str:
 
 def _split_refs(value: str) -> list[str]:
     return [part for part in str(value or "").split("|") if part]
+
+
+def _join_rows(values) -> str:
+    return ";;".join(str(value).replace(";;", "; ;") for value in list(values or []) if str(value))
+
+
+def _split_rows(value: str) -> list[str]:
+    return [part for part in str(value or "").split(";;") if part]
 
 
 def _list_value(values, index: int, default: str = "") -> str:

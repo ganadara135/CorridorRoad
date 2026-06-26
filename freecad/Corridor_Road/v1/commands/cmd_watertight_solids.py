@@ -41,6 +41,7 @@ from ..models.output.simulation_qa_output import SimulationQaDiagnosticRow
 from ..models.output.surface_output import intersection_surface_replacement_blocker_kind
 from ..models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow, WatertightSolidSegmentRow
 from ..models.result.intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
+from ..models.source.solid_target_model import SolidTargetDiagnosticRow
 from ..services.builders import (
     AppliedSectionSolidProfileService,
     SolidEdgeNetworkBuildRequest,
@@ -193,6 +194,11 @@ class IntersectionWatertightHandoffSummary:
     downstream_selected_role: str = ""
     legacy_patch_review_visibility: str = ""
     legacy_patch_compatibility_audit_summary: str = ""
+    shared_breakline_audit_status: str = ""
+    shared_breakline_geometry_mismatch_count: int = 0
+    shared_breakline_mesh_mismatch_count: int = 0
+    shared_breakline_missing_consumer_count: int = 0
+    shared_breakline_reversed_edge_count: int = 0
 
     @property
     def accepted_zone_target_count(self) -> int:
@@ -209,6 +215,8 @@ class IntersectionWatertightHandoffSummary:
             return "missing"
         if self.target_count <= 0:
             return "missing"
+        if self.shared_breakline_audit_blocked:
+            return "blocked"
         if self.patch_boundary_status and self.patch_boundary_status.lower() not in {"yes", "true", "1", "closed"}:
             return "blocked"
         if self.patch_target_count > 0 and self.accepted_zone_target_count <= 0:
@@ -231,6 +239,8 @@ class IntersectionWatertightHandoffSummary:
             return "missing"
         if self.target_count <= 0:
             return "missing"
+        if self.shared_breakline_audit_blocked:
+            return "blocked"
         if not self.surface_boundary_strategy:
             return "check"
         if self.patch_boundary_status and self.patch_boundary_status.lower() not in {"yes", "true", "1", "closed"}:
@@ -240,6 +250,18 @@ class IntersectionWatertightHandoffSummary:
         if self.exclusion_boundary_strategy and not self.exclusion_practical_aligned:
             return "check"
         return "ready"
+
+    @property
+    def shared_breakline_audit_blocked(self) -> bool:
+        status = str(self.shared_breakline_audit_status or "").strip().lower()
+        if status in {"error", "blocked", "warning"}:
+            return True
+        return (
+            int(self.shared_breakline_geometry_mismatch_count or 0) > 0
+            or int(self.shared_breakline_mesh_mismatch_count or 0) > 0
+            or int(self.shared_breakline_missing_consumer_count or 0) > 0
+            or int(self.shared_breakline_reversed_edge_count or 0) > 0
+        )
 
 
 def watertight_solid_prerequisite_status(document=None) -> WatertightSolidPrerequisiteStatus:
@@ -359,6 +381,7 @@ def discover_watertight_solid_targets(document=None):
             drainage_model=drainage_model,
         )
     )
+    target_model = _annotate_shared_breakline_solid_readiness_targets(target_model, doc)
     return _annotate_intersection_watertight_handoff_targets(target_model, doc)
 
 
@@ -989,6 +1012,7 @@ class V1WatertightSolidsTaskPanel:
                     edge_network=edge_network,
                     part_result=part_result,
                     generated_object_ref=object_name,
+                    boundary_trace_rows=_document_shared_breakline_solid_boundary_trace_rows(self.document),
                 )
             )
             obj = create_or_update_v1_watertight_solid_output_object(
@@ -3754,6 +3778,137 @@ def _shape_count(shape, attr_name: str) -> int:
         return 0
 
 
+def _document_shared_breakline_solid_boundary_trace_rows(document) -> list[str]:
+    if document is None:
+        return []
+    rows: list[str] = []
+    for obj in list(getattr(document, "Objects", []) or []):
+        for row in list(getattr(obj, "SharedBreaklineSolidBoundaryTraceRows", []) or []):
+            text = str(row or "").strip()
+            if text:
+                rows.append(text)
+    return _unique_refs(rows)
+
+
+def _annotate_shared_breakline_solid_readiness_targets(target_model, document):
+    rows = list(getattr(target_model, "target_rows", []) or [])
+    if not rows or document is None:
+        return target_model
+    summary = _document_shared_breakline_solid_readiness_summary(document)
+    if not summary:
+        return target_model
+    trace_rows = _document_shared_breakline_solid_boundary_trace_rows(document)
+    trace_count = len(trace_rows)
+    status = str(summary.get("status", "") or "")
+    open_end_count = int(summary.get("open_end_count", 0) or 0)
+    duplicate_edge_count = int(summary.get("duplicate_edge_count", 0) or 0)
+    reversed_edge_count = int(summary.get("reversed_edge_count", 0) or 0)
+    non_manifold_node_count = int(summary.get("non_manifold_node_count", 0) or 0)
+    blocks_target = (
+        status in {"warning", "error", "blocked"}
+        or open_end_count > 0
+        or duplicate_edge_count > 0
+        or non_manifold_node_count > 0
+    )
+    diagnostics = list(getattr(target_model, "target_diagnostic_rows", []) or [])
+    annotated_rows = []
+    changed = False
+    diagnostic_id = "solid-target-diagnostic:shared-breakline-solid-readiness"
+    for row in rows:
+        if not _is_intersection_watertight_target(row):
+            annotated_rows.append(row)
+            continue
+        diagnostic_refs = list(getattr(row, "diagnostic_refs", []) or [])
+        source_refs = list(getattr(row, "source_refs", []) or [])
+        notes = str(getattr(row, "notes", "") or "")
+        source_refs = _unique_refs([*source_refs, "shared-breakline-solid-readiness"] + (["shared-breakline-boundary-trace"] if trace_count else []))
+        notes = _join_notes(
+            notes,
+            (
+                "SharedBreaklineSolidReadiness: "
+                f"status={status or 'not_available'}; "
+                f"boundary_trace_rows={trace_count}; "
+                f"open_ends={open_end_count}; "
+                f"duplicate_edges={duplicate_edge_count}; "
+                f"reversed_edges={reversed_edge_count}; "
+                f"non_manifold_nodes={non_manifold_node_count}."
+            ),
+        )
+        readiness_status = str(getattr(row, "readiness_status", "") or "")
+        if blocks_target:
+            diagnostic_refs = _unique_refs([*diagnostic_refs, diagnostic_id])
+            readiness_status = "blocked"
+        annotated_rows.append(
+            replace(
+                row,
+                readiness_status=readiness_status,
+                source_refs=source_refs,
+                diagnostic_refs=diagnostic_refs,
+                notes=notes,
+            )
+        )
+        changed = True
+    if blocks_target and not any(str(getattr(row, "diagnostic_id", "") or "") == diagnostic_id for row in diagnostics):
+        diagnostics.append(
+            SolidTargetDiagnosticRow(
+                diagnostic_id=diagnostic_id,
+                severity="error",
+                kind="shared_breakline_solid_readiness_blocked",
+                source_ref="shared-breakline-solid-readiness",
+                message="Shared breakline solid-readiness audit must be fixed before Intersection watertight solid handoff.",
+                notes=(
+                    f"status={status or 'not_available'}; boundary_trace_rows={trace_count}; "
+                    f"open_ends={open_end_count}; duplicate_edges={duplicate_edge_count}; "
+                    f"reversed_edges={reversed_edge_count}; non_manifold_nodes={non_manifold_node_count}"
+                ),
+            )
+        )
+        changed = True
+    if not changed:
+        return target_model
+    try:
+        return replace(target_model, target_rows=annotated_rows, target_diagnostic_rows=diagnostics)
+    except Exception:
+        try:
+            target_model.target_rows = annotated_rows
+            target_model.target_diagnostic_rows = diagnostics
+        except Exception:
+            pass
+        return target_model
+
+
+def _document_shared_breakline_solid_readiness_summary(document) -> dict[str, object]:
+    if document is None:
+        return {}
+    statuses: list[str] = []
+    open_end_count = 0
+    duplicate_edge_count = 0
+    reversed_edge_count = 0
+    non_manifold_node_count = 0
+    for obj in list(getattr(document, "Objects", []) or []):
+        status = str(getattr(obj, "SharedBreaklineSolidReadinessStatus", "") or "").strip().lower()
+        if status:
+            statuses.append(status)
+        open_end_count += int(getattr(obj, "SharedBreaklineSolidOpenEndCount", 0) or 0)
+        duplicate_edge_count += int(getattr(obj, "SharedBreaklineSolidDuplicateEdgeCount", 0) or 0)
+        reversed_edge_count += int(getattr(obj, "SharedBreaklineSolidReversedEdgeCount", 0) or 0)
+        non_manifold_node_count += int(getattr(obj, "SharedBreaklineSolidNonManifoldNodeCount", 0) or 0)
+    if not statuses and open_end_count <= 0 and duplicate_edge_count <= 0 and reversed_edge_count <= 0 and non_manifold_node_count <= 0:
+        return {}
+    status = "ready"
+    if any(value in {"error", "blocked"} for value in statuses):
+        status = "blocked"
+    elif any(value == "warning" for value in statuses) or open_end_count > 0 or duplicate_edge_count > 0 or non_manifold_node_count > 0:
+        status = "warning"
+    return {
+        "status": status,
+        "open_end_count": open_end_count,
+        "duplicate_edge_count": duplicate_edge_count,
+        "reversed_edge_count": reversed_edge_count,
+        "non_manifold_node_count": non_manifold_node_count,
+    }
+
+
 def _shape_edge_closure_diagnostics(shape) -> dict[str, int | str]:
     edge_keys: dict[tuple[tuple[float, float, float], tuple[float, float, float]], int] = {}
     try:
@@ -3865,6 +4020,13 @@ def _intersection_watertight_handoff_lines(document, target_model=None) -> list[
             f"zone_targets: pavement={summary.pavement_target_count}; subgrade={summary.subgrade_target_count}; "
             f"slope={summary.slope_target_count}; curb_return={summary.curb_return_target_count}"
         ),
+        (
+            f"shared_breakline_audit={summary.shared_breakline_audit_status or '-'}; "
+            f"geometry_mismatch={summary.shared_breakline_geometry_mismatch_count}; "
+            f"mesh_mismatch={summary.shared_breakline_mesh_mismatch_count}; "
+            f"missing_consumer={summary.shared_breakline_missing_consumer_count}; "
+            f"reversed={summary.shared_breakline_reversed_edge_count}"
+        ),
     ]
 
 
@@ -3908,6 +4070,11 @@ def intersection_watertight_handoff_summary(document=None, *, target_model=None)
         downstream_selected_role=str(getattr(preview, "IntersectionSurfaceDownstreamHandoffSelectedRole", "") or ""),
         legacy_patch_review_visibility=str(getattr(preview, "IntersectionLegacyPatchReviewVisibility", "") or ""),
         legacy_patch_compatibility_audit_summary=str(getattr(preview, "IntersectionLegacyPatchCompatibilityAuditSummary", "") or ""),
+        shared_breakline_audit_status=str(getattr(preview, "SharedBreaklineAuditStatus", "") or ""),
+        shared_breakline_geometry_mismatch_count=int(getattr(preview, "SharedBreaklineGeometryMismatchCount", 0) or 0),
+        shared_breakline_mesh_mismatch_count=int(getattr(preview, "SharedBreaklineMeshMismatchCount", 0) or 0),
+        shared_breakline_missing_consumer_count=int(getattr(preview, "SharedBreaklineMissingConsumerCount", 0) or 0),
+        shared_breakline_reversed_edge_count=int(getattr(preview, "SharedBreaklineReversedEdgeCount", 0) or 0),
     )
 
 
@@ -3923,7 +4090,7 @@ def _annotate_intersection_watertight_handoff_targets(target_model, document):
     source_refs = _intersection_handoff_source_refs(summary)
     notes = _intersection_handoff_target_notes(summary)
     for row in rows:
-        if not _is_intersection_patch_target(row):
+        if not _is_intersection_watertight_target(row):
             annotated_rows.append(row)
             continue
         annotated_rows.append(
@@ -3976,7 +4143,12 @@ def _intersection_handoff_target_notes(summary: IntersectionWatertightHandoffSum
         f"handoff_preference={summary.replacement_handoff_preference or 'not_available'}; "
         f"downstream_selected_role={summary.downstream_selected_role or 'not_available'}; "
         f"legacy_patch_review={summary.legacy_patch_review_visibility or 'not_available'}; "
-        f"legacy_patch_audit={summary.legacy_patch_compatibility_audit_summary or 'not_available'}."
+        f"legacy_patch_audit={summary.legacy_patch_compatibility_audit_summary or 'not_available'}; "
+        f"shared_breakline_audit={summary.shared_breakline_audit_status or 'not_available'}; "
+        f"shared_breakline_geometry_mismatch={summary.shared_breakline_geometry_mismatch_count}; "
+        f"shared_breakline_mesh_mismatch={summary.shared_breakline_mesh_mismatch_count}; "
+        f"shared_breakline_missing_consumer={summary.shared_breakline_missing_consumer_count}; "
+        f"shared_breakline_reversed_edge={summary.shared_breakline_reversed_edge_count}."
     )
 
 
@@ -5382,6 +5554,11 @@ def _intersection_watertight_handoff_dict(summary: IntersectionWatertightHandoff
         "downstream_selected_role": summary.downstream_selected_role,
         "legacy_patch_review_visibility": summary.legacy_patch_review_visibility,
         "legacy_patch_compatibility_audit_summary": summary.legacy_patch_compatibility_audit_summary,
+        "shared_breakline_audit_status": summary.shared_breakline_audit_status,
+        "shared_breakline_geometry_mismatch_count": summary.shared_breakline_geometry_mismatch_count,
+        "shared_breakline_mesh_mismatch_count": summary.shared_breakline_mesh_mismatch_count,
+        "shared_breakline_missing_consumer_count": summary.shared_breakline_missing_consumer_count,
+        "shared_breakline_reversed_edge_count": summary.shared_breakline_reversed_edge_count,
     }
 
 

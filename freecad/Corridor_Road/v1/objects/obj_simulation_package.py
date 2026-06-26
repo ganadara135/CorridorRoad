@@ -111,6 +111,11 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "IntersectionHandoffLegacyPatchReviewVisibility", "Intersection Handoff", "intersection legacy patch review visibility")
     _add_property(obj, "App::PropertyString", "IntersectionHandoffLegacyPatchCompatibilityAuditSummary", "Intersection Handoff", "intersection legacy patch compatibility audit summary")
     _add_property(obj, "App::PropertyString", "IntersectionHandoffReplacementBlockerKind", "Intersection Handoff", "intersection replacement blocker diagnostic kind")
+    _add_property(obj, "App::PropertyString", "IntersectionHandoffSharedBreaklineAuditStatus", "Intersection Handoff", "intersection shared breakline audit status")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffSharedBreaklineGeometryMismatchCount", "Intersection Handoff", "intersection shared breakline geometry mismatch count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffSharedBreaklineMeshMismatchCount", "Intersection Handoff", "intersection shared breakline mesh mismatch count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffSharedBreaklineMissingConsumerCount", "Intersection Handoff", "intersection shared breakline missing consumer count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionHandoffSharedBreaklineReversedEdgeCount", "Intersection Handoff", "intersection shared breakline reversed edge count")
     _add_property(obj, "App::PropertyInteger", "OutputCount", "Simulation Package", "packaged solid output count")
     _add_property(obj, "App::PropertyFloat", "TotalVolume", "Simulation Package", "packaged total solid volume")
     _add_property(obj, "App::PropertyStringList", "TargetFamilies", "Simulation Package", "target families")
@@ -259,6 +264,11 @@ def update_v1_simulation_package_output_object(
     obj.IntersectionHandoffLegacyPatchReviewVisibility = str(getattr(simulation_package_output, "intersection_handoff_legacy_patch_review_visibility", "") or "")
     obj.IntersectionHandoffLegacyPatchCompatibilityAuditSummary = str(getattr(simulation_package_output, "intersection_handoff_legacy_patch_compatibility_audit_summary", "") or "")
     obj.IntersectionHandoffReplacementBlockerKind = str(getattr(simulation_package_output, "intersection_handoff_replacement_blocker_kind", "") or "")
+    obj.IntersectionHandoffSharedBreaklineAuditStatus = str(getattr(simulation_package_output, "intersection_handoff_shared_breakline_audit_status", "") or "")
+    obj.IntersectionHandoffSharedBreaklineGeometryMismatchCount = int(getattr(simulation_package_output, "intersection_handoff_shared_breakline_geometry_mismatch_count", 0) or 0)
+    obj.IntersectionHandoffSharedBreaklineMeshMismatchCount = int(getattr(simulation_package_output, "intersection_handoff_shared_breakline_mesh_mismatch_count", 0) or 0)
+    obj.IntersectionHandoffSharedBreaklineMissingConsumerCount = int(getattr(simulation_package_output, "intersection_handoff_shared_breakline_missing_consumer_count", 0) or 0)
+    obj.IntersectionHandoffSharedBreaklineReversedEdgeCount = int(getattr(simulation_package_output, "intersection_handoff_shared_breakline_reversed_edge_count", 0) or 0)
     obj.OutputCount = int(getattr(simulation_package_output, "output_count", 0) or 0)
     obj.TotalVolume = float(getattr(simulation_package_output, "total_volume", 0.0) or 0.0)
     obj.TargetFamilies = [str(value) for value in list(getattr(simulation_package_output, "target_families", []) or []) if str(value)]
@@ -364,6 +374,11 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
         intersection_handoff_legacy_patch_review_visibility=str(getattr(obj, "IntersectionHandoffLegacyPatchReviewVisibility", "") or ""),
         intersection_handoff_legacy_patch_compatibility_audit_summary=str(getattr(obj, "IntersectionHandoffLegacyPatchCompatibilityAuditSummary", "") or ""),
         intersection_handoff_replacement_blocker_kind=str(getattr(obj, "IntersectionHandoffReplacementBlockerKind", "") or ""),
+        intersection_handoff_shared_breakline_audit_status=str(getattr(obj, "IntersectionHandoffSharedBreaklineAuditStatus", "") or ""),
+        intersection_handoff_shared_breakline_geometry_mismatch_count=int(getattr(obj, "IntersectionHandoffSharedBreaklineGeometryMismatchCount", 0) or 0),
+        intersection_handoff_shared_breakline_mesh_mismatch_count=int(getattr(obj, "IntersectionHandoffSharedBreaklineMeshMismatchCount", 0) or 0),
+        intersection_handoff_shared_breakline_missing_consumer_count=int(getattr(obj, "IntersectionHandoffSharedBreaklineMissingConsumerCount", 0) or 0),
+        intersection_handoff_shared_breakline_reversed_edge_count=int(getattr(obj, "IntersectionHandoffSharedBreaklineReversedEdgeCount", 0) or 0),
         output_count=int(getattr(obj, "OutputCount", 0) or 0),
         total_volume=float(getattr(obj, "TotalVolume", 0.0) or 0.0),
         target_families=[str(value) for value in list(getattr(obj, "TargetFamilies", []) or []) if str(value)],

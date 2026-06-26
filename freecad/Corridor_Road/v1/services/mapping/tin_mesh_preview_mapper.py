@@ -57,6 +57,20 @@ TIN_MESH_PREVIEW_STYLES = {
         "transparency": 18,
         "line_width": 1.8,
     },
+    "intersection_transitional_patch": {
+        "shape_color": (0.18, 0.20, 0.24),
+        "line_color": (0.00, 0.85, 1.00),
+        "point_color": (0.00, 0.85, 1.00),
+        "transparency": 48,
+        "line_width": 2.2,
+    },
+    "intersection_accepted_candidate": {
+        "shape_color": (0.18, 0.62, 0.30),
+        "line_color": (0.04, 0.95, 0.35),
+        "point_color": (0.04, 0.95, 0.35),
+        "transparency": 12,
+        "line_width": 2.0,
+    },
 }
 
 

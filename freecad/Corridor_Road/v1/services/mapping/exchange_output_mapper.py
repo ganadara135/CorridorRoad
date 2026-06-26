@@ -336,8 +336,9 @@ class ExchangeOutputMapper:
             handoff_status = str(getattr(output, "intersection_handoff_status", "") or "")
             final_quality = str(getattr(output, "intersection_handoff_final_quality_status", "") or "")
             replacement_readiness = str(getattr(output, "intersection_handoff_replacement_readiness_status", "") or "")
+            shared_breakline_audit_status = str(getattr(output, "intersection_handoff_shared_breakline_audit_status", "") or "")
             source_refs = [str(ref) for ref in list(getattr(output, "source_refs", []) or []) if str(ref)]
-            if blocker_kind or handoff_status or final_quality or replacement_readiness:
+            if blocker_kind or handoff_status or final_quality or replacement_readiness or shared_breakline_audit_status:
                 payloads.append(
                     {
                         "context_kind": "simulation_package_intersection_handoff",
@@ -351,6 +352,11 @@ class ExchangeOutputMapper:
                         "replacement_gate_status": str(getattr(output, "intersection_handoff_replacement_gate_status", "") or ""),
                         "downstream_selected_role": str(getattr(output, "intersection_handoff_downstream_selected_role", "") or ""),
                         "legacy_patch_review_visibility": str(getattr(output, "intersection_handoff_legacy_patch_review_visibility", "") or ""),
+                        "shared_breakline_audit_status": shared_breakline_audit_status,
+                        "shared_breakline_geometry_mismatch_count": int(getattr(output, "intersection_handoff_shared_breakline_geometry_mismatch_count", 0) or 0),
+                        "shared_breakline_mesh_mismatch_count": int(getattr(output, "intersection_handoff_shared_breakline_mesh_mismatch_count", 0) or 0),
+                        "shared_breakline_missing_consumer_count": int(getattr(output, "intersection_handoff_shared_breakline_missing_consumer_count", 0) or 0),
+                        "shared_breakline_reversed_edge_count": int(getattr(output, "intersection_handoff_shared_breakline_reversed_edge_count", 0) or 0),
                         "source_refs": source_refs,
                     }
                 )

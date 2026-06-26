@@ -59,6 +59,7 @@ from .profile_curve_preview import (
     ProfileCurvePreviewResult,
 )
 from .solid_edge_network import SolidEdgeNetwork, SolidFaceRow, SolidTopologyEdgeRow
+from .shared_breakline import SharedBreaklinePointRow, SharedBreaklineResult, SharedBreaklineRow
 from .surface_model import SurfaceModel, SurfaceSpanRow
 from .tin_surface import TINSurface
 
@@ -123,6 +124,9 @@ __all__ = [
     "RegionContextSummary",
     "SolidEdgeNetwork",
     "SolidFaceRow",
+    "SharedBreaklinePointRow",
+    "SharedBreaklineResult",
+    "SharedBreaklineRow",
     "SurfaceModel",
     "SurfaceSpanRow",
     "SolidTopologyEdgeRow",

@@ -75,6 +75,11 @@ class SimulationPackageOutput(OutputModelBase):
     intersection_handoff_legacy_patch_review_visibility: str = ""
     intersection_handoff_legacy_patch_compatibility_audit_summary: str = ""
     intersection_handoff_replacement_blocker_kind: str = ""
+    intersection_handoff_shared_breakline_audit_status: str = ""
+    intersection_handoff_shared_breakline_geometry_mismatch_count: int = 0
+    intersection_handoff_shared_breakline_mesh_mismatch_count: int = 0
+    intersection_handoff_shared_breakline_missing_consumer_count: int = 0
+    intersection_handoff_shared_breakline_reversed_edge_count: int = 0
     output_count: int = 0
     total_volume: float = 0.0
     target_families: list[str] = field(default_factory=list)

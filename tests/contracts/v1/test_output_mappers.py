@@ -736,6 +736,9 @@ def test_exchange_output_mapper_packages_simulation_intersection_handoff_context
         intersection_handoff_downstream_selected_role="transitional_patch_fallback",
         intersection_handoff_legacy_patch_review_visibility="metadata_only",
         intersection_handoff_replacement_blocker_kind="intersection_replacement_gate_review_required",
+        intersection_handoff_shared_breakline_audit_status="error",
+        intersection_handoff_shared_breakline_geometry_mismatch_count=1,
+        intersection_handoff_shared_breakline_mesh_mismatch_count=2,
     )
 
     exchange_output = ExchangeOutputMapper().map_output_package(
@@ -771,6 +774,11 @@ def test_exchange_output_mapper_packages_simulation_intersection_handoff_context
     assert context["downstream_selected_role"] == "transitional_patch_fallback"
     assert context["legacy_patch_review_visibility"] == "metadata_only"
     assert context["replacement_blocker_kind"] == "intersection_replacement_gate_review_required"
+    assert context["shared_breakline_audit_status"] == "error"
+    assert context["shared_breakline_geometry_mismatch_count"] == 1
+    assert context["shared_breakline_mesh_mismatch_count"] == 2
+    assert context["shared_breakline_missing_consumer_count"] == 0
+    assert context["shared_breakline_reversed_edge_count"] == 0
 
 
 def test_exchange_package_json_export_preserves_simulation_intersection_metadata() -> None:
@@ -788,6 +796,9 @@ def test_exchange_package_json_export_preserves_simulation_intersection_metadata
         intersection_handoff_downstream_selected_role="transitional_patch_fallback",
         intersection_handoff_legacy_patch_review_visibility="metadata_only",
         intersection_handoff_replacement_blocker_kind="intersection_replacement_gate_review_required",
+        intersection_handoff_shared_breakline_audit_status="error",
+        intersection_handoff_shared_breakline_geometry_mismatch_count=1,
+        intersection_handoff_shared_breakline_mesh_mismatch_count=2,
     )
     exchange_output = ExchangeOutputMapper().map_output_package(
         ExchangePackageRequest(

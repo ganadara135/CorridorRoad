@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -129,6 +130,10 @@ from freecad.Corridor_Road.v1.models.result.intersection_slope_face_loop import 
 from freecad.Corridor_Road.v1.models.result.intersection_slope_face_boundary import (
     IntersectionSlopeFaceBoundaryResult,
     IntersectionSlopeFaceBoundaryRow,
+)
+from freecad.Corridor_Road.v1.models.result.intersection_drainage_hint import (
+    IntersectionDrainageHintResult,
+    IntersectionDrainageHintRow,
 )
 from dataclasses import replace
 
@@ -1603,6 +1608,199 @@ def test_corridor_guided_review_reports_intersection_surface_quality_diagnostics
         App.closeDocument(doc.Name)
 
 
+def test_corridor_build_review_reports_intersection_tie_in_continuity_audit() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_applied_sections(),
+        )
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        build_corridor_command._set_preview_property(preview, "IntersectionId", "intersection:t-01")
+        build_corridor_command._set_preview_integer_property(preview, "PatchPavementTieInEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchStemTieInEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchCurbReturnEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchOverlapCutEdgeCount", 1)
+        build_corridor_command._set_preview_property(preview, "SharedBreaklineAuditStatus", "warning")
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineGeometryMismatchCount", 1)
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMeshMismatchCount", 0)
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMissingConsumerCount", 0)
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineReversedEdgeCount", 0)
+        build_corridor_command._attach_intersection_manual_qa_capture_metadata(preview)
+
+        rows = corridor_build_review_rows(doc)
+        tie_in_row = [row for row in rows if row["role"] == "intersection_tie_in_continuity"][0]
+
+        assert tie_in_row["status"] == "error"
+        assert tie_in_row["result"] == "Intersection Tie-In Continuity"
+        assert tie_in_row["triangle_or_point_count"] == 7
+        assert tie_in_row["output_path"] == "review_gate"
+        assert "tie-in edges=4" in tie_in_row["notes"]
+        assert "curb_return_edges=2" in tie_in_row["notes"]
+        assert "overlap_cut_edges=1" in tie_in_row["notes"]
+        assert "shared_breakline_audit=warning" in tie_in_row["notes"]
+        assert "geometry_mismatch=1" in tie_in_row["notes"]
+        assert "station_span=4.000-10.000" in tie_in_row["notes"]
+        assert "qa_capture=pending" in tie_in_row["notes"]
+        assert "before=manual-qa-intersection-t-01-tie-in-before.png" in tie_in_row["notes"]
+        assert "after=manual-qa-intersection-t-01-tie-in-after.png" in tie_in_row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_manual_qa_capture_metadata_is_reproducible() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        build_corridor_command._set_preview_property(preview, "IntersectionId", "intersection:t-01")
+        build_corridor_command._set_preview_property(preview, "IntersectionSurfaceReplacementGateStatus", "blocked")
+        build_corridor_command._set_preview_property(preview, "SharedBreaklineAuditStatus", "ready")
+        build_corridor_command._set_preview_integer_property(preview, "PatchPavementTieInEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchStemTieInEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchCurbReturnEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchOverlapCutEdgeCount", 1)
+
+        build_corridor_command._attach_intersection_manual_qa_capture_metadata(preview)
+
+        assert preview.IntersectionManualQACaptureStatus == "pending"
+        assert preview.IntersectionManualQACaptureScope == "intersection_tie_in"
+        assert preview.IntersectionManualQABeforeScreenshotName == "manual-qa-intersection-t-01-tie-in-before.png"
+        assert preview.IntersectionManualQAAfterScreenshotName == "manual-qa-intersection-t-01-tie-in-after.png"
+        assert "visibility_groups=intersection,breaklines,diagnostics" in preview.IntersectionManualQAVisibilityContext
+        checklist = list(preview.IntersectionManualQAChecklist)
+        assert "capture_before=manual-qa-intersection-t-01-tie-in-before.png" in checklist
+        assert "capture_after=manual-qa-intersection-t-01-tie-in-after.png" in checklist
+        assert "confirm_tie_in_edges=4" in checklist
+        assert "confirm_shared_breakline_audit=ready" in checklist
+        assert "confirm_replacement_gate=blocked" in checklist
+        assert "qa_capture=pending" in preview.IntersectionManualQASummary
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_build_review_reports_intersection_grading_ownership() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_applied_sections(),
+        )
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        build_corridor_command._set_preview_property(preview, "IntersectionId", "intersection:t-01")
+        build_corridor_command._set_preview_property(preview, "IntersectionGradingPolicyRef", "grading:intersection:t-01:default")
+        build_corridor_command._set_preview_property(preview, "IntersectionGradingMode", "flatten_intersection")
+        build_corridor_command._set_preview_property(preview, "IntersectionTargetCrossfallPercent", "0.000")
+        build_corridor_command._set_preview_integer_property(preview, "IntersectionSuperelevationSourceCount", 1)
+        build_corridor_command._set_preview_integer_property(preview, "IntersectionSuperelevationTransitionCount", 2)
+        build_corridor_command._set_preview_float_property(preview, "IntersectionSuperelevationLeftMin", -3.0)
+        build_corridor_command._set_preview_float_property(preview, "IntersectionSuperelevationLeftMax", -2.0)
+        build_corridor_command._set_preview_float_property(preview, "IntersectionSuperelevationRightMin", 3.0)
+        build_corridor_command._set_preview_float_property(preview, "IntersectionSuperelevationRightMax", 4.0)
+        build_corridor_command._set_preview_property(preview, "IntersectionSuperelevationContext", "sources=1; transitions=2; L -3.000%..-2.000%; R 3.000%..4.000%")
+        build_corridor_command._set_preview_property(preview, "ConsumedIntersectionGradingContextResultId", "intersection-grading-context:intersection:t-01")
+
+        rows = corridor_build_review_rows(doc)
+        grading_row = [row for row in rows if row["role"] == "intersection_grading_ownership"][0]
+
+        assert grading_row["status"] == "warning"
+        assert grading_row["result"] == "Intersection Grading Ownership"
+        assert grading_row["triangle_or_point_count"] == 2
+        assert grading_row["output_path"] == "review_gate"
+        assert "owner=intersection_policy" in grading_row["notes"]
+        assert "grading_policy=intersection:t-01:default" in grading_row["notes"]
+        assert "mode=flatten_intersection" in grading_row["notes"]
+        assert "target_crossfall=0.000%" in grading_row["notes"]
+        assert "superelevation_sources=1" in grading_row["notes"]
+        assert "transitions=2" in grading_row["notes"]
+        assert "left_crossfall=-3.000%..-2.000%" in grading_row["notes"]
+        assert "right_crossfall=3.000%..4.000%" in grading_row["notes"]
+        assert "max_crossfall_delta=1.000%" in grading_row["notes"]
+        assert "grading_context=intersection-grading-context:intersection:t-01" in grading_row["notes"]
+        assert "station_span=4.000-10.000" in grading_row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_build_review_reports_intersection_drainage_handoff_gate_hint_only() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        build_corridor_command._set_preview_property(preview, "IntersectionId", "intersection:t-01")
+        build_corridor_command._set_preview_property(preview, "ConsumedIntersectionDrainageHintResultId", "intersection-drainage-hints:intersection:t-01")
+        build_corridor_command._set_preview_integer_property(preview, "IntersectionTINLowPointCandidateCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "IntersectionBoundaryToLowFlowHintCount", 1)
+        build_corridor_command._set_preview_property(preview, "IntersectionBoundaryToLowFlowHintSummary", "boundary_to_low=1")
+
+        rows = corridor_build_review_rows(doc)
+        drainage_row = [row for row in rows if row["role"] == "intersection_drainage_handoff_gate"][0]
+
+        assert drainage_row["status"] == "warning"
+        assert drainage_row["result"] == "Intersection Drainage Handoff Gate"
+        assert drainage_row["output_path"] == "review_gate"
+        assert drainage_row["triangle_or_point_count"] == 2
+        assert "handoff=hint_only" in drainage_row["notes"]
+        assert "hint_ref=intersection-drainage-hints:intersection:t-01" in drainage_row["notes"]
+        assert "accepted_policies=0" in drainage_row["notes"]
+        assert "recommended_action=Convert low-point hints into accepted DrainageModel elements and flow routes." in drainage_row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_build_review_reports_intersection_drainage_handoff_gate_accepted_model() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:intersection",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:inlet-main",
+                        element_kind="inlet",
+                        intersection_ref="intersection:t-01",
+                        station_start=96.0,
+                        station_end=144.0,
+                    )
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:main",
+                        from_element_ref="drainage:inlet-main",
+                        outlet_ref="drainage:outfall-main",
+                    )
+                ],
+            ),
+        )
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        build_corridor_command._set_preview_property(preview, "IntersectionId", "intersection:t-01")
+        build_corridor_command._set_preview_property(preview, "ConsumedIntersectionDrainageHintResultId", "intersection-drainage-hints:intersection:t-01")
+        build_corridor_command._set_preview_integer_property(preview, "IntersectionTINLowPointCandidateCount", 1)
+
+        rows = corridor_build_review_rows(doc)
+        drainage_row = [row for row in rows if row["role"] == "intersection_drainage_handoff_gate"][0]
+
+        assert drainage_row["status"] == "ready"
+        assert drainage_row["triangle_or_point_count"] == 2
+        assert "handoff=accepted_drainage" in drainage_row["notes"]
+        assert "policies=1" in drainage_row["notes"]
+        assert "accepted_policies=1" in drainage_row["notes"]
+        assert "elements=1/1" in drainage_row["notes"]
+        assert "routes=1/1" in drainage_row["notes"]
+        assert "recommended_action=No action needed." in drainage_row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_create_corridor_intersection_surface_preview_builds_patch_object() -> None:
     doc, project = _new_project_doc()
     try:
@@ -1723,6 +1921,12 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert preview.IntersectionSurfaceDownstreamHandoffSelectedRole == "transitional_patch_fallback"
         assert preview.IntersectionSurfaceDownstreamHandoffSelectionReason == "replacement_gate_blocked"
         assert preview.IntersectionSurfaceReplacementBlockerKind == "intersection_replacement_gate_blocked"
+        assert preview.IntersectionSurfaceReplacementVisualStyle == "intersection_transitional_patch"
+        assert preview.IntersectionSurfaceReplacementVisualRole == "transitional_review_patch"
+        assert preview.IntersectionSurfaceReplacementVisualGate == "blocked"
+        assert preview.IntersectionManualQACaptureStatus == "pending"
+        assert preview.IntersectionManualQABeforeScreenshotName == "manual-qa-intersection-t-01-tie-in-before.png"
+        assert "show_groups=Intersection,Breaklines,Diagnostics" in list(preview.IntersectionManualQAChecklist)
         assert "replacement_blocker=intersection_replacement_gate_blocked" in preview.IntersectionSurfaceDownstreamHandoffSummary
         assert "gate=blocked" in preview.IntersectionSurfaceReplacementSummary
         assert "recommendation=build_accepted_zone_surface_before_replacing_patch" in preview.IntersectionSurfaceReplacementSummary
@@ -1861,7 +2065,6 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "surface_patch_row_diagnostics=1" in intersection_step["notes"]
         assert "structured strips=2" not in intersection_step["notes"]
         assert "curb-return arcs=2" not in intersection_step["notes"]
-        assert preferred_corridor_build_review_row_index(rows, preferred_role="intersection") is None
         guided_focus = focus_corridor_build_guided_review_step(doc, "intersections")
         assert guided_focus.Name == "V1CorridorIntersectionSurfacePreview"
         focused = show_corridor_build_review_object(doc, rows.index(intersection_row))
@@ -1869,6 +2072,23 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         shown = set_corridor_build_preview_visibility(doc, "intersection_zone_surface", True)
         assert shown is None
         assert doc.getObject("V1CorridorIntersectionCurbReturnSlopePreview") is None
+        assert preview.SharedBreaklineResultId == "shared-breakline:intersection:intersection:t-01"
+        assert preview.SharedBreaklineAuditStatus == "ready"
+        assert int(preview.SharedBreaklineCount) == int(preview.SharedBreaklineConsumedCount)
+        assert int(preview.SharedBreaklineMeshMismatchCount) == 0
+        assert int(preview.SharedBreaklineGeometryMismatchCount) == 0
+        assert int(preview.SharedBreaklineReversedEdgeCount) == 0
+        assert int(preview.SharedBreaklineMeshMatchCount) >= 1
+        assert int(preview.SharedBreaklineCount) >= 19
+        assert int(preview.SharedBreaklineConsumedCount) == int(preview.SharedBreaklineCount)
+        assert any("curb-return-outer" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-inner" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-to-pavement" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-to-shoulder" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("curb-return-to-slope-face" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert any("patch-to-shoulder" in ref for ref in list(preview.SharedBreaklineRefs))
+        assert "shared_breakline=ready consumed=" in intersection_row["notes"]
+        assert "audit=ready geometry=" in intersection_row["notes"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -2735,6 +2955,255 @@ def test_intersection_practical_exclusion_polygon_uses_curb_return_blend_boundar
     assert float(exclusion["area"]) > 0.0
 
 
+def test_intersection_patch_structured_strip_triangulates_curb_returns_without_fan_fallback() -> None:
+    tie_in_result = build_corridor_command.IntersectionTieInEdgeResult(
+        schema_version=1,
+        project_id="proj-1",
+        tie_in_edge_result_id="tie-in:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_count=4,
+        edge_rows=[
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:primary:left",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:primary",
+                side="left",
+                start_xyz=(0.0, 5.0, 10.0),
+                end_xyz=(40.0, 5.0, 10.0),
+            ),
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:primary:right",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:primary",
+                side="right",
+                start_xyz=(0.0, -5.0, 10.0),
+                end_xyz=(40.0, -5.0, 10.0),
+            ),
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:side:left",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                side="left",
+                start_xyz=(16.0, -24.0, 10.0),
+                end_xyz=(16.0, 0.0, 10.0),
+            ),
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:side:right",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                side="right",
+                start_xyz=(24.0, -24.0, 10.0),
+                end_xyz=(24.0, 0.0, 10.0),
+            ),
+        ],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        label="boundary",
+        intersection_id="intersection:t-01",
+        status="ready",
+        segment_count=6,
+        segment_rows=[
+            IntersectionBoundarySegmentRow("edge:primary:left", "intersection:t-01", "tie_in", alignment_ref="alignment:primary", side="left", start_xyz=(0.0, 5.0, 10.0), end_xyz=(40.0, 5.0, 10.0)),
+            IntersectionBoundarySegmentRow("edge:primary:right", "intersection:t-01", "tie_in", alignment_ref="alignment:primary", side="right", start_xyz=(0.0, -5.0, 10.0), end_xyz=(40.0, -5.0, 10.0)),
+            IntersectionBoundarySegmentRow("edge:side:left", "intersection:t-01", "tie_in", alignment_ref="alignment:side", side="left", start_xyz=(16.0, -24.0, 10.0), end_xyz=(16.0, 0.0, 10.0)),
+            IntersectionBoundarySegmentRow("edge:side:right", "intersection:t-01", "tie_in", alignment_ref="alignment:side", side="right", start_xyz=(24.0, -24.0, 10.0), end_xyz=(24.0, 0.0, 10.0)),
+            IntersectionBoundarySegmentRow(
+                "arc:right",
+                "intersection:t-01",
+                "arc",
+                segment_role="curb_return",
+                center_xyz=(20.0, 0.0, 10.0),
+                chord_points_xyz=((32.0, 0.0, 10.0), (30.0, -6.0, 10.0), (24.0, -10.0, 10.0), (20.0, -12.0, 10.0)),
+            ),
+            IntersectionBoundarySegmentRow(
+                "arc:left",
+                "intersection:t-01",
+                "arc",
+                segment_role="curb_return",
+                center_xyz=(20.0, 0.0, 10.0),
+                chord_points_xyz=((8.0, 0.0, 10.0), (10.0, -6.0, 10.0), (16.0, -10.0, 10.0), (20.0, -12.0, 10.0)),
+            ),
+        ],
+    )
+    intersection_model = IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:test",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:primary",
+                secondary_alignment_refs=["alignment:side"],
+            )
+        ],
+    )
+
+    result = build_corridor_command._intersection_patch_structured_strip_triangulation(
+        tie_in_result,
+        source_vertices=[],
+        center=TINVertex("center", 20.0, -4.0, 10.0),
+        intersection_model=intersection_model,
+        boundary_segment_result=boundary_result,
+        intersection_id="intersection:t-01",
+    )
+
+    quality_refs = {str(getattr(row, "quality_ref", "") or "") for row in result["triangles"]}
+    assert result["boundary_strategy"] == "structured_strip_curb_return_blend"
+    assert result["curb_return_arc_count"] == 2
+    assert result["curb_return_arc_sample_count"] == 4
+    assert result["curb_return_arc_segment_count"] == 6
+    assert result["edge_blend_face_count"] == 6
+    assert "curb_return_blend" in quality_refs
+    assert "curb_return_core" in quality_refs
+    assert "ordered_fan_fallback" not in quality_refs
+    assert all("surface_part=" in str(getattr(row, "notes", "") or "") for row in result["triangles"])
+
+
+def _curb_return_variant_tie_in_result(*, side_angle_deg: float = 90.0, primary_span: float = 40.0, side_span: float = 24.0):
+    center_x = 20.0
+    center_y = 0.0
+    z = 10.0
+    primary_half = float(primary_span) * 0.5
+    side_angle = math.radians(float(side_angle_deg))
+    side_dir = (math.cos(side_angle), math.sin(side_angle))
+    side_normal = (-side_dir[1], side_dir[0])
+
+    def side_point(distance: float, offset: float) -> tuple[float, float, float]:
+        return (
+            center_x + side_dir[0] * distance + side_normal[0] * offset,
+            center_y + side_dir[1] * distance + side_normal[1] * offset,
+            z,
+        )
+
+    return build_corridor_command.IntersectionTieInEdgeResult(
+        schema_version=1,
+        project_id="proj-1",
+        tie_in_edge_result_id="tie-in:curb-return-variant",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_count=4,
+        edge_rows=[
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:primary:left",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:primary",
+                side="left",
+                start_xyz=(center_x - primary_half, 5.0, z),
+                end_xyz=(center_x + primary_half, 5.0, z),
+            ),
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:primary:right",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:primary",
+                side="right",
+                start_xyz=(center_x - primary_half, -5.0, z),
+                end_xyz=(center_x + primary_half, -5.0, z),
+            ),
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:side:left",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                side="left",
+                start_xyz=side_point(-side_span, 4.0),
+                end_xyz=side_point(0.0, 4.0),
+            ),
+            build_corridor_command.IntersectionTieInEdgeRow(
+                tie_in_edge_id="edge:side:right",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                side="right",
+                start_xyz=side_point(-side_span, -4.0),
+                end_xyz=side_point(0.0, -4.0),
+            ),
+        ],
+    )
+
+
+def _curb_return_variant_model(*, radius: float = 12.0) -> IntersectionModel:
+    return IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:test",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:primary",
+                secondary_alignment_refs=["alignment:side"],
+                intersection_point_x=20.0,
+                intersection_point_y=0.0,
+            )
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:intersection:t-01:default",
+                intersection_id="intersection:t-01",
+                radius=radius,
+            )
+        ],
+    )
+
+
+def _assert_curb_return_variant_uses_structured_strip(tie_in_result, intersection_model: IntersectionModel, *, min_arc_samples: int):
+    boundary_result = corridor_intersection_boundary_segment_result(tie_in_result, intersection_model=intersection_model)
+
+    assert boundary_result.status in {"ready", "warning"}
+    assert boundary_result.tie_in_segment_count == 4
+    assert boundary_result.arc_segment_count == 2
+    assert not any(str(row).startswith("intersection_curb_return_radius_invalid") for row in boundary_result.diagnostic_rows)
+
+    result = build_corridor_command._intersection_patch_structured_strip_triangulation(
+        tie_in_result,
+        source_vertices=[],
+        center=TINVertex("center", 20.0, -4.0, 10.0),
+        intersection_model=intersection_model,
+        boundary_segment_result=boundary_result,
+        intersection_id="intersection:t-01",
+    )
+    quality_refs = {str(getattr(row, "quality_ref", "") or "") for row in result["triangles"]}
+    assert result["boundary_strategy"] == "structured_strip_curb_return_blend"
+    assert result["curb_return_arc_count"] == 2
+    assert result["curb_return_arc_sample_count"] >= min_arc_samples
+    assert result["curb_return_arc_segment_count"] >= (min_arc_samples - 1) * 2
+    assert result["edge_blend_face_count"] == result["curb_return_arc_segment_count"]
+    assert "curb_return_blend" in quality_refs
+    assert "curb_return_core" in quality_refs
+    assert "ordered_fan_fallback" not in quality_refs
+    return result
+
+
+def test_intersection_patch_structured_strip_handles_skewed_t_curb_returns() -> None:
+    tie_in_result = _curb_return_variant_tie_in_result(side_angle_deg=62.0)
+    intersection_model = _curb_return_variant_model(radius=12.0)
+
+    result = _assert_curb_return_variant_uses_structured_strip(
+        tie_in_result,
+        intersection_model,
+        min_arc_samples=11,
+    )
+
+    assert result["structured_strip_count"] == 2
+    assert result["edge_blend_face_count"] >= 20
+
+
+def test_intersection_patch_structured_strip_handles_wide_radius_curb_returns() -> None:
+    tie_in_result = _curb_return_variant_tie_in_result(primary_span=64.0, side_span=40.0)
+    intersection_model = _curb_return_variant_model(radius=28.0)
+
+    result = _assert_curb_return_variant_uses_structured_strip(
+        tie_in_result,
+        intersection_model,
+        min_arc_samples=23,
+    )
+
+    assert result["structured_strip_count"] == 2
+    assert result["edge_blend_face_count"] >= 44
+
+
 def test_corridor_intersection_patch_boundary_result_orders_boundary_segment_points() -> None:
     applied = AppliedSectionSet(
         schema_version=1,
@@ -3572,6 +4041,2020 @@ def test_intersection_side_slope_restore_uses_preclip_reference_without_filling_
     assert build_corridor_command._tin_quality_float(restored, "intersection_side_slope_reference_restore_triangle_count") == 2
     assert build_corridor_command._tin_quality_float(restored, "intersection_side_slope_reference_restore_skipped_intersection_count") == 1
     assert build_corridor_command._tin_quality_text(restored, "intersection_side_slope_reference_restore_output_path") == "preclip_side_slope_tin"
+
+
+def test_intersection_shared_breakline_contract_is_consumed_by_patch_and_slope_surfaces() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+    )
+    patch_boundary = IntersectionPatchBoundaryResult(
+        schema_version=1,
+        project_id="proj-1",
+        patch_boundary_result_id="intersection-patch-boundary:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        boundary_point_count=3,
+        point_rows=[
+            IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+            IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            IntersectionPatchBoundaryPointRow("patch:p3", "intersection:t-01", 2, 0.0, 5.0, 10.0),
+        ],
+    )
+    slope_boundary = IntersectionSlopeFaceBoundaryResult(
+        schema_version=1,
+        project_id="proj-1",
+        boundary_result_id="intersection-slope-face-boundary:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        boundary_count=1,
+        ready_count=1,
+        boundary_rows=[
+            IntersectionSlopeFaceBoundaryRow(
+                boundary_id="slope-boundary:left",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:main",
+                side="left",
+                inner_points_xyz=((0.0, 5.0, 10.0), (10.0, 5.0, 10.0)),
+                outer_points_xyz=((0.0, 8.0, 9.0), (10.0, 8.0, 9.0)),
+                status="ready",
+            )
+        ],
+    )
+
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        applied,
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        intersection_model=_sample_intersection_model(),
+        patch_boundary_result=patch_boundary,
+        boundary_segment_result=SimpleNamespace(),
+        slope_face_boundary_result=slope_boundary,
+    )
+    intersection_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        vertex_rows=[
+            TINVertex("i0", 0.0, 0.0, 10.0),
+            TINVertex("i1", 0.0, 5.0, 10.0),
+            TINVertex("i2", 10.0, 5.0, 10.0),
+            TINVertex("i3", 5.0, 2.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("intersection-slope-edge", "i1", "i3", "i2"),
+            TINTriangle("intersection-design-edge", "i0", "i3", "i1"),
+        ],
+    )
+    slope_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        vertex_rows=[
+            TINVertex("s1", 0.0, 5.0, 10.0),
+            TINVertex("s2", 10.0, 5.0, 10.0),
+            TINVertex("s3", 5.0, 8.0, 9.0),
+        ],
+        triangle_rows=[TINTriangle("slope-edge", "s2", "s3", "s1")],
+    )
+    design_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:design",
+        vertex_rows=[
+            TINVertex("d0", 0.0, 0.0, 10.0),
+            TINVertex("d1", 10.0, 0.0, 10.0),
+            TINVertex("d2", 0.0, 5.0, 10.0),
+            TINVertex("d3", 10.0, 5.0, 10.0),
+            TINVertex("d4", 5.0, 2.5, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("design-patch-edge", "d0", "d1", "d4"),
+            TINTriangle("design-shoulder-edge", "d2", "d4", "d3"),
+        ],
+    )
+    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        intersection_surface,
+        shared,
+        consumer_ref="intersection_surface",
+    )
+    slope_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        slope_surface,
+        shared,
+        consumer_ref="slope_face_surface",
+    )
+    design_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        design_surface,
+        shared,
+        consumer_ref="design_surface",
+    )
+    audit = build_corridor_command.shared_breakline_audit(
+        shared,
+        {
+            "intersection_surface": intersection_surface,
+            "design_surface": design_surface,
+            "slope_face_surface": slope_surface,
+        },
+    )
+
+    assert shared.domain_kind == "intersection"
+    assert shared.breakline_count == 4
+    assert {row.breakline_role for row in shared.breakline_rows} == {
+        "patch_to_design",
+        "patch_to_shoulder",
+        "patch_to_slope_face",
+        "shoulder_to_slope_face",
+    }
+    assert all("profile:primary" in row.source_contract_refs for row in shared.breakline_rows)
+    assert all("profile:side" in row.source_contract_refs for row in shared.breakline_rows)
+    assert all("grading:intersection:t-01:default" in row.source_contract_refs for row in shared.breakline_rows)
+    patch_to_slope = [row.breakline_id for row in shared.breakline_rows if row.breakline_role == "patch_to_slope_face"][0]
+    patch_to_shoulder = [row.breakline_id for row in shared.breakline_rows if row.breakline_role == "patch_to_shoulder"][0]
+    shoulder_to_slope = [row.breakline_id for row in shared.breakline_rows if row.breakline_role == "shoulder_to_slope_face"][0]
+    assert patch_to_slope in intersection_surface.boundary_refs
+    assert patch_to_slope in slope_surface.boundary_refs
+    assert patch_to_shoulder in intersection_surface.boundary_refs
+    assert patch_to_shoulder in design_surface.boundary_refs
+    assert shoulder_to_slope in design_surface.boundary_refs
+    assert shoulder_to_slope in slope_surface.boundary_refs
+    assert build_corridor_command._tin_quality_text(slope_surface, "shared_breakline_result_id") == "shared-breakline:intersection:intersection:t-01"
+    assert build_corridor_command._tin_quality_float(slope_surface, "shared_breakline_consumed_count") == 2
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 8
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 8
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_intersection_shared_breakline_result_splits_patch_to_design_contact_roles() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+    )
+    patch_boundary = IntersectionPatchBoundaryResult(
+        schema_version=1,
+        project_id="proj-1",
+        patch_boundary_result_id="intersection-patch-boundary:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        point_rows=[],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        boundary_segment_result_id="intersection-boundary-segments:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        segment_rows=[
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="boundary:primary:left",
+                intersection_id="intersection:t-01",
+                segment_kind="tie_in",
+                segment_role="pavement_edge",
+                alignment_ref="alignment:primary",
+                side="left",
+                start_xyz=(0.0, 0.0, 10.0),
+                end_xyz=(10.0, 0.0, 10.0),
+                status="ready",
+            ),
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="boundary:primary:right",
+                intersection_id="intersection:t-01",
+                segment_kind="tie_in",
+                segment_role="pavement_edge",
+                alignment_ref="alignment:primary",
+                side="right",
+                start_xyz=(0.0, 5.0, 10.0),
+                end_xyz=(10.0, 5.0, 10.0),
+                status="ready",
+            ),
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="boundary:side:left",
+                intersection_id="intersection:t-01",
+                segment_kind="tie_in",
+                segment_role="pavement_edge",
+                alignment_ref="alignment:side",
+                side="left",
+                start_xyz=(4.0, -4.0, 10.0),
+                end_xyz=(4.0, 4.0, 10.0),
+                status="ready",
+            ),
+        ],
+    )
+    intersection_model = IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:test",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:primary",
+                secondary_alignment_refs=["alignment:side"],
+            )
+        ],
+    )
+
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        applied,
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        intersection_model=intersection_model,
+        patch_boundary_result=patch_boundary,
+        boundary_segment_result=boundary_result,
+        slope_face_boundary_result=IntersectionSlopeFaceBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            boundary_result_id="intersection-slope-face-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            boundary_rows=[],
+        ),
+    )
+    pavement_rows = [row for row in shared.breakline_rows if row.breakline_role == "patch_to_design_pavement_tie_in"]
+    stem_rows = [row for row in shared.breakline_rows if row.breakline_role == "patch_to_design_stem_tie_in"]
+
+    assert len(pavement_rows) == 2
+    assert len(stem_rows) == 1
+    assert not [row for row in shared.breakline_rows if row.breakline_role == "patch_to_design"]
+    assert {row.alignment_ref for row in pavement_rows} == {"alignment:primary"}
+    assert {row.alignment_ref for row in stem_rows} == {"alignment:side"}
+    assert all(row.consumer_refs == ("intersection_surface", "design_surface") for row in pavement_rows + stem_rows)
+    assert all(row.material_role == "pavement" for row in pavement_rows + stem_rows)
+    assert all("intersection_patch_to_design" == row.handoff_target for row in pavement_rows + stem_rows)
+
+
+def test_intersection_drainage_handoff_breaklines_preserve_hint_source_and_consumers() -> None:
+    drainage_hint = IntersectionDrainageHintResult(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_hint_result_id="intersection-drainage-hints:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        hint_row_count=2,
+        hint_rows=[
+            IntersectionDrainageHintRow(
+                hint_id="hint:gutter",
+                intersection_id="intersection:t-01",
+                hint_kind="inlet_recommendation",
+                recommended_element_kind="curb_inlet",
+                drainage_mode="outside_gutter",
+                status="ready",
+                handoff_target="intersection_gutter",
+            ),
+            IntersectionDrainageHintRow(
+                hint_id="hint:low",
+                intersection_id="intersection:t-01",
+                hint_kind="low_point",
+                recommended_element_kind="low_point",
+                drainage_mode="outside_gutter",
+                status="ready",
+                handoff_target="intersection_low_point",
+            ),
+        ],
+    )
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+        drainage_hint_result=drainage_hint,
+    )
+    gutter_rows = [row for row in shared.breakline_rows if row.breakline_role == "intersection_gutter_handoff"]
+    low_point_rows = [row for row in shared.breakline_rows if row.breakline_role == "low_point_flow_split"]
+
+    assert len(gutter_rows) == 1
+    assert len(low_point_rows) == 1
+    assert gutter_rows[0].consumer_refs == ("intersection_surface", "drainage_surface")
+    assert low_point_rows[0].consumer_refs == ("intersection_surface", "drainage_surface")
+    assert gutter_rows[0].material_role == "drainage_surface"
+    assert low_point_rows[0].material_role == "drainage_surface"
+    assert gutter_rows[0].source_contract_refs[:2] == ("intersection-drainage-hints:test", "hint:gutter")
+    assert low_point_rows[0].source_contract_refs[:2] == ("intersection-drainage-hints:test", "hint:low")
+    assert gutter_rows[0].handoff_target == "intersection_gutter"
+    assert low_point_rows[0].handoff_target == "intersection_low_point"
+    assert all(len(row.point_refs) == 2 for row in gutter_rows + low_point_rows)
+
+
+def test_intersection_shared_breakline_result_includes_curb_return_outer_rows() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        boundary_segment_result_id="intersection-boundary-segments:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        segment_rows=[
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="curb:return:left",
+                intersection_id="intersection:t-01",
+                segment_kind="arc",
+                segment_role="curb_return",
+                alignment_ref="alignment:main",
+                side="left",
+                chord_points_xyz=((0.0, 0.0, 10.0), (2.0, 2.0, 10.0), (4.0, 0.0, 10.0)),
+                status="ready",
+            )
+        ],
+    )
+
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        applied,
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, -1.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 4.0, -1.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=boundary_result,
+        slope_face_boundary_result=IntersectionSlopeFaceBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            boundary_result_id="intersection-slope-face-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            boundary_rows=[],
+        ),
+    )
+    curb_rows = [row for row in shared.breakline_rows if row.breakline_role == "curb_return_outer"]
+    inner_rows = [row for row in shared.breakline_rows if row.breakline_role == "curb_return_inner"]
+    pavement_rows = [row for row in shared.breakline_rows if row.breakline_role == "curb_return_to_pavement"]
+    shoulder_rows = [row for row in shared.breakline_rows if row.breakline_role == "curb_return_to_shoulder"]
+    slope_face_rows = [row for row in shared.breakline_rows if row.breakline_role == "curb_return_to_slope_face"]
+
+    assert len(curb_rows) == 1
+    assert curb_rows[0].consumer_refs == ("intersection_surface",)
+    assert curb_rows[0].material_role == "curb_return"
+    assert len(curb_rows[0].point_refs) == 3
+    assert [point.sequence for point in shared.point_rows if point.breakline_ref == curb_rows[0].breakline_id] == [0, 1, 2]
+    assert len(inner_rows) == 1
+    assert inner_rows[0].consumer_refs == ("intersection_surface",)
+    assert inner_rows[0].material_role == "curb_return"
+    assert len(inner_rows[0].point_refs) == 3
+    assert [point.sequence for point in shared.point_rows if point.breakline_ref == inner_rows[0].breakline_id] == [0, 1, 2]
+    assert len(pavement_rows) == 2
+    assert {row.material_role for row in pavement_rows} == {"pavement"}
+    assert all(row.consumer_refs == ("intersection_surface", "design_surface") for row in pavement_rows)
+    assert all(len(row.point_refs) == 2 for row in pavement_rows)
+    assert len(shoulder_rows) == 2
+    assert {row.material_role for row in shoulder_rows} == {"shoulder"}
+    assert all(row.consumer_refs == ("intersection_surface", "design_surface") for row in shoulder_rows)
+    assert all(len(row.point_refs) == 2 for row in shoulder_rows)
+    assert len(slope_face_rows) == 2
+    assert {row.material_role for row in slope_face_rows} == {"side_slope"}
+    assert all(row.consumer_refs == ("intersection_surface", "slope_face_surface") for row in slope_face_rows)
+    assert all(len(row.point_refs) == 2 for row in slope_face_rows)
+
+
+def test_shared_breakline_audit_reports_geometry_mismatch() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+        slope_face_boundary_result=IntersectionSlopeFaceBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            boundary_result_id="intersection-slope-face-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            boundary_rows=[
+                IntersectionSlopeFaceBoundaryRow(
+                    boundary_id="slope-boundary:left",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:main",
+                    side="left",
+                    inner_points_xyz=((0.0, 5.0, 10.0), (10.0, 5.0, 10.0)),
+                    status="ready",
+                )
+            ],
+        ),
+    )
+    slope_ref = [
+        row.breakline_id
+        for row in shared.breakline_rows
+        if row.breakline_role == "patch_to_slope_face"
+    ][0]
+    slope_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        vertex_rows=[
+            TINVertex("s1", 0.0, 5.2, 10.0),
+            TINVertex("s2", 10.0, 5.2, 10.0),
+            TINVertex("s3", 5.0, 8.0, 9.0),
+        ],
+        triangle_rows=[TINTriangle("slope-edge", "s1", "s2", "s3")],
+        boundary_refs=[slope_ref],
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"slope_face_surface": slope_surface})
+
+    assert audit["status"] == "warning"
+    assert audit["geometry_mismatch_count"] == 1
+    assert audit["mesh_mismatch_count"] == 1
+    assert "geometry_mismatch:slope_face_surface" in audit["notes"]
+    assert "mesh_drift:slope_face_surface" in audit["notes"]
+
+
+def test_shared_breakline_audit_accepts_subdivided_boundary_chain() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+    )
+    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:intersection",
+            vertex_rows=[
+                TINVertex("b0", 0.0, 0.0, 10.0),
+                TINVertex("b1", 4.0, 0.0, 10.0),
+                TINVertex("b2", 7.0, 0.0, 10.0),
+                TINVertex("b3", 10.0, 0.0, 10.0),
+                TINVertex("i0", 2.0, 3.0, 10.0),
+                TINVertex("i1", 6.0, 3.0, 10.0),
+                TINVertex("i2", 9.0, 3.0, 10.0),
+            ],
+            triangle_rows=[
+                TINTriangle("t0", "b0", "b1", "i0"),
+                TINTriangle("t1", "b1", "b2", "i1"),
+                TINTriangle("t2", "b2", "b3", "i2"),
+            ],
+        ),
+        shared,
+        consumer_ref="intersection_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": intersection_surface})
+
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 1
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_shared_breakline_audit_accepts_polyline_boundary_chain() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 5.0, 2.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p3", "intersection:t-01", 2, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+    )
+    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:intersection",
+            vertex_rows=[
+                TINVertex("b0", 0.0, 0.0, 10.0),
+                TINVertex("b1", 2.5, 1.0, 10.0),
+                TINVertex("b2", 5.0, 2.0, 10.0),
+                TINVertex("b3", 7.5, 1.0, 10.0),
+                TINVertex("b4", 10.0, 0.0, 10.0),
+                TINVertex("i0", 2.0, 4.0, 10.0),
+                TINVertex("i1", 6.0, 4.0, 10.0),
+                TINVertex("i2", 9.0, 3.0, 10.0),
+            ],
+            triangle_rows=[
+                TINTriangle("t0", "b0", "b1", "i0"),
+                TINTriangle("t1", "b1", "b2", "i0"),
+                TINTriangle("t2", "b2", "b3", "i1"),
+                TINTriangle("t3", "b3", "b4", "i2"),
+            ],
+        ),
+        shared,
+        consumer_ref="intersection_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": intersection_surface})
+
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 1
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_shared_breakline_audit_accepts_boundary_coverage_without_exact_endpoint_vertices() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+    )
+    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:intersection",
+            vertex_rows=[
+                TINVertex("b0", -0.02, 0.01, 10.0),
+                TINVertex("b1", 3.0, 0.01, 10.0),
+                TINVertex("b2", 6.5, 0.01, 10.0),
+                TINVertex("b3", 10.02, 0.01, 10.0),
+                TINVertex("i0", 2.0, 3.0, 10.0),
+                TINVertex("i1", 6.0, 3.0, 10.0),
+                TINVertex("i2", 9.0, 3.0, 10.0),
+            ],
+            triangle_rows=[
+                TINTriangle("t0", "b0", "b1", "i0"),
+                TINTriangle("t1", "b1", "b2", "i1"),
+                TINTriangle("t2", "b2", "b3", "i2"),
+            ],
+        ),
+        shared,
+        consumer_ref="intersection_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": intersection_surface})
+
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 1
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_shared_breakline_audit_accepts_internal_tin_edge() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+    )
+    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:intersection",
+            vertex_rows=[
+                TINVertex("b0", 0.0, 0.0, 10.0),
+                TINVertex("b1", 10.0, 0.0, 10.0),
+                TINVertex("top", 5.0, 4.0, 10.0),
+                TINVertex("bottom", 5.0, -4.0, 10.0),
+            ],
+            triangle_rows=[
+                TINTriangle("top-triangle", "b0", "b1", "top"),
+                TINTriangle("bottom-triangle", "b1", "b0", "bottom"),
+            ],
+        ),
+        shared,
+        consumer_ref="intersection_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": intersection_surface})
+
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 1
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_shared_breakline_audit_prefers_surface_constraint_contract() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+    )
+    surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:intersection",
+            vertex_rows=[
+                TINVertex("s1", 0.0, 0.4, 10.0),
+                TINVertex("s2", 10.0, 0.4, 10.0),
+                TINVertex("s3", 5.0, 4.0, 10.0),
+            ],
+            triangle_rows=[TINTriangle("offset-edge", "s1", "s2", "s3")],
+        ),
+        shared,
+        consumer_ref="intersection_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": surface})
+
+    assert audit["status"] == "warning"
+    assert audit["geometry_match_count"] == 1
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 0
+    assert audit["mesh_mismatch_count"] == 1
+    assert "mesh_drift:intersection_surface" in audit["notes"]
+    assert "shared-breakline:intersection:intersection:t-01:patch-to-design" in build_corridor_command._tin_quality_text(
+        surface,
+        "shared_breakline_constraint_segment_rows",
+    )
+
+
+def test_shared_breakline_audit_ignores_mesh_edge_direction_when_contract_matches() -> None:
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        AppliedSectionSet(schema_version=1, project_id="proj-1", applied_section_set_id="sections:main"),
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[
+                IntersectionPatchBoundaryPointRow("patch:p1", "intersection:t-01", 0, 0.0, 0.0, 10.0),
+                IntersectionPatchBoundaryPointRow("patch:p2", "intersection:t-01", 1, 10.0, 0.0, 10.0),
+            ],
+        ),
+        boundary_segment_result=SimpleNamespace(),
+    )
+    surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:intersection",
+            vertex_rows=[
+                TINVertex("a", 0.0, 0.0, 10.0),
+                TINVertex("b", 10.0, 0.0, 10.0),
+                TINVertex("c", 5.0, 4.0, 10.0),
+            ],
+            triangle_rows=[TINTriangle("reverse-edge", "b", "a", "c")],
+        ),
+        shared,
+        consumer_ref="intersection_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": surface})
+
+    assert audit["status"] == "ready"
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+    assert audit["reversed_edge_count"] == 0
+    assert "reversed_mesh_edge" not in audit["notes"]
+
+
+def test_intersection_surface_tin_adds_shared_breakline_constraint_edges() -> None:
+    breakline_id = "shared-breakline:intersection:intersection:t-01:patch-to-design"
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:intersection:intersection:t-01",
+        domain_kind="intersection",
+        domain_ref="intersection:t-01",
+        status="ready",
+        breakline_count=1,
+        ready_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref="intersection:t-01",
+                breakline_role="patch_to_design",
+                consumer_refs=("intersection_surface", "design_surface"),
+                point_refs=("p0", "p1"),
+                source_status="ready",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p0", breakline_id, 0, 0.0, 0.0, 10.0),
+            build_corridor_command.SharedBreaklinePointRow("p1", breakline_id, 1, 10.0, 0.0, 10.0),
+        ],
+    )
+    vertices = [
+        TINVertex("a", 0.0, 0.0, 10.0),
+        TINVertex("b", 10.0, 0.0, 10.0),
+        TINVertex("c", 4.0, 3.0, 10.0),
+        TINVertex("d", 6.0, -3.0, 10.0),
+    ]
+    triangles = [
+        TINTriangle("left", "a", "c", "d"),
+        TINTriangle("right", "b", "d", "c"),
+    ]
+
+    updated_vertices, updated_triangles, stats = build_corridor_command._intersection_surface_tin_with_shared_breakline_constraint_edges(
+        vertices=vertices,
+        triangles=triangles,
+        shared_result=shared,
+        surface_id="surface:intersection",
+    )
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        vertex_rows=updated_vertices,
+        triangle_rows=updated_triangles,
+    )
+    geometry = build_corridor_command._surface_boundary_edge_matches_shared_breakline(surface, shared.point_rows)
+
+    assert stats["mode"] == "support_triangle_edge_preservation"
+    assert stats["segment_count"] == 1
+    assert stats["edge_count"] == 1
+    assert stats["vertex_count"] == 1
+    assert len(updated_triangles) == 3
+    assert geometry["matched"] is True
+
+
+def test_intersection_surface_tin_inserts_missing_shared_breakline_endpoint_vertices_with_source_refs() -> None:
+    breakline_id = "shared-breakline:intersection:intersection:t-01:patch-to-slope-face"
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:intersection:intersection:t-01",
+        domain_kind="intersection",
+        domain_ref="intersection:t-01",
+        status="ready",
+        breakline_count=1,
+        ready_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref="intersection:t-01",
+                breakline_role="patch_to_slope_face",
+                consumer_refs=("intersection_surface", "slope_face_surface"),
+                point_refs=("p0", "p1"),
+                source_status="ready",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow(
+                "p0",
+                breakline_id,
+                0,
+                0.0,
+                0.0,
+                10.0,
+                source_point_ref="intersection-boundary:patch-to-slope:start",
+            ),
+            build_corridor_command.SharedBreaklinePointRow(
+                "p1",
+                breakline_id,
+                1,
+                10.0,
+                0.0,
+                10.0,
+                source_point_ref="intersection-boundary:patch-to-slope:end",
+            ),
+        ],
+    )
+
+    updated_vertices, updated_triangles, stats = build_corridor_command._intersection_surface_tin_with_shared_breakline_constraint_edges(
+        vertices=[
+            TINVertex("near-a", 0.0, 2.0, 10.0),
+            TINVertex("near-b", 10.0, 2.0, 10.0),
+            TINVertex("near-c", 5.0, 5.0, 10.0),
+        ],
+        triangles=[TINTriangle("base", "near-a", "near-b", "near-c")],
+        shared_result=shared,
+        surface_id="surface:intersection",
+    )
+    inserted = [
+        vertex
+        for vertex in updated_vertices
+        if str(getattr(vertex, "vertex_id", "") or "").startswith("surface:intersection:shared-breakline-point:")
+    ]
+
+    assert stats["segment_count"] == 1
+    assert stats["edge_count"] == 1
+    assert stats["vertex_count"] == 3
+    assert len(inserted) == 2
+    assert {vertex.source_point_ref for vertex in inserted} == {
+        "intersection-boundary:patch-to-slope:start",
+        "intersection-boundary:patch-to-slope:end",
+    }
+    assert all(f"shared_breakline_ref={breakline_id}" in vertex.notes for vertex in inserted)
+    assert any(triangle.quality_ref == "shared_breakline_constraint_edge" for triangle in updated_triangles)
+
+
+def test_shared_breakline_constraint_edges_snap_generated_vertices_without_changing_source_points() -> None:
+    breakline_id = "shared-breakline:intersection:intersection:t-01:patch-to-design"
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:intersection:intersection:t-01",
+        domain_kind="intersection",
+        domain_ref="intersection:t-01",
+        status="ready",
+        breakline_count=1,
+        ready_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="intersection",
+                domain_ref="intersection:t-01",
+                breakline_role="patch_to_design_pavement_tie_in",
+                consumer_refs=("intersection_surface", "design_surface"),
+                point_refs=("p0", "p1"),
+                source_status="ready",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p0", breakline_id, 0, 0.0, 0.0, 10.0, source_point_ref="source:start"),
+            build_corridor_command.SharedBreaklinePointRow("p1", breakline_id, 1, 10.0, 0.0, 10.0, source_point_ref="source:end"),
+        ],
+    )
+    original_source_points = [(point.x, point.y, point.z, point.source_point_ref) for point in shared.point_rows]
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        surface_kind="intersection_surface",
+        vertex_rows=[
+            TINVertex("near-start", 0.012, -0.006, 10.0),
+            TINVertex("near-end", 9.991, 0.004, 10.0),
+            TINVertex("support-a", 4.0, 3.0, 10.0),
+            TINVertex("support-b", 6.0, -3.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("left", "near-start", "support-a", "support-b"),
+            TINTriangle("right", "near-end", "support-b", "support-a"),
+        ],
+    )
+
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+        surface,
+        shared,
+        consumer_ref="intersection_surface",
+    )
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        constrained,
+        shared,
+        consumer_ref="intersection_surface",
+    )
+    vertex_by_id = constrained.vertex_map()
+    audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": constrained})
+
+    assert (vertex_by_id["near-start"].x, vertex_by_id["near-start"].y, vertex_by_id["near-start"].z) == (0.0, 0.0, 10.0)
+    assert (vertex_by_id["near-end"].x, vertex_by_id["near-end"].y, vertex_by_id["near-end"].z) == (10.0, 0.0, 10.0)
+    assert "snapped_to_accepted_breakline" in vertex_by_id["near-start"].notes
+    assert "snapped_to_accepted_breakline" in vertex_by_id["near-end"].notes
+    assert [(point.x, point.y, point.z, point.source_point_ref) for point in shared.point_rows] == original_source_points
+    assert build_corridor_command._tin_quality_float(constrained, "shared_breakline_constraint_snap_count") == 2
+    assert build_corridor_command._tin_quality_float(constrained, "shared_breakline_constraint_vertex_count") == 1
+    assert "snapped_result_vertex:near-start" in build_corridor_command._tin_quality_text(constrained, "shared_breakline_constraint_snap_diagnostics")
+    assert audit["status"] == "ready"
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_shared_breakline_constraint_edges_apply_to_design_surface_mesh() -> None:
+    breakline_id = "shared-breakline:corridor:corridor:main:lane_to_shoulder:1"
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:corridor:corridor:main",
+        domain_kind="corridor",
+        domain_ref="corridor:main",
+        status="ready",
+        breakline_count=1,
+        ready_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="corridor",
+                domain_ref="corridor:main",
+                breakline_role="lane_to_shoulder",
+                consumer_refs=("design_surface",),
+                point_refs=("p0", "p1"),
+                source_status="ready",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p0", breakline_id, 0, 0.0, 3.5, 10.0),
+            build_corridor_command.SharedBreaklinePointRow("p1", breakline_id, 1, 20.0, 3.5, 10.0),
+        ],
+    )
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:design",
+        surface_kind="design_surface",
+        vertex_rows=[
+            TINVertex("a", 0.0, 3.5, 10.0),
+            TINVertex("b", 20.0, 3.5, 10.0),
+            TINVertex("c", 8.0, 0.0, 10.0),
+            TINVertex("d", 12.0, 7.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("left", "a", "c", "d"),
+            TINTriangle("right", "b", "d", "c"),
+        ],
+    )
+
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+        surface,
+        shared,
+        consumer_ref="design_surface",
+    )
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        constrained,
+        shared,
+        consumer_ref="design_surface",
+    )
+    audit = build_corridor_command.shared_breakline_audit(shared, {"design_surface": constrained})
+
+    assert audit["status"] == "ready"
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+    assert build_corridor_command._tin_quality_float(constrained, "shared_breakline_constraint_edge_count") == 1
+
+
+def test_corridor_general_shared_breakline_result_uses_applied_section_link_roles() -> None:
+    def section(section_id: str, station: float, x: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            profile_id="profile:main",
+            region_id="region:ordinary",
+            station=station,
+            frame=AppliedSectionFrame(station=station, x=x, y=0.0, z=10.0),
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow("lane:left", "lane", side="left"),
+                AppliedSectionSubassemblyRow("slope:left", "side_slope", side="left"),
+                AppliedSectionSubassemblyRow("drainage:left", "drainage", side="left"),
+            ],
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("lane:left:center", "lane:left", "centerline", x, 0.0, 10.0, side="left"),
+                AppliedSectionSubassemblyPoint("lane:left:edge", "lane:left", "lane_edge", x, 3.5, 9.93, lateral_offset=3.5, side="left"),
+                AppliedSectionSubassemblyPoint("slope:left:hinge", "slope:left", "hinge", x, 4.5, 9.90, lateral_offset=4.5, side="left"),
+                AppliedSectionSubassemblyPoint("slope:left:daylight", "slope:left", "daylight", x, 8.0, 8.75, lateral_offset=8.0, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:gutter-in", "drainage:left", "gutter_in", x, 3.7, 9.88, lateral_offset=3.7, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:gutter-out", "drainage:left", "gutter_out", x, 4.0, 9.84, lateral_offset=4.0, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:ditch-in", "drainage:left", "ditch_in", x, 8.2, 8.70, lateral_offset=8.2, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:ditch-out", "drainage:left", "ditch_out", x, 9.0, 8.62, lateral_offset=9.0, side="left"),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink(
+                    "lane:left:fg",
+                    "lane:left",
+                    "lane:left:center",
+                    "lane:left:edge",
+                    "lane_fg",
+                    surface_role="design_surface",
+                ),
+                AppliedSectionSubassemblyLink(
+                    "slope:left:face",
+                    "slope:left",
+                    "slope:left:hinge",
+                    "slope:left:daylight",
+                    "slope_face",
+                    surface_role="slope_face_surface",
+                ),
+                AppliedSectionSubassemblyLink(
+                    "drainage:left:gutter",
+                    "drainage:left",
+                    "drainage:left:gutter-in",
+                    "drainage:left:gutter-out",
+                    "gutter_link",
+                    surface_role="drainage_surface",
+                ),
+                AppliedSectionSubassemblyLink(
+                    "drainage:left:ditch",
+                    "drainage:left",
+                    "drainage:left:ditch-in",
+                    "drainage:left:ditch-out",
+                    "ditch_link",
+                    surface_role="drainage_surface",
+                ),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:ordinary",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[
+            AppliedSectionStationRow("station:0", 0.0, "section:0"),
+            AppliedSectionStationRow("station:20", 20.0, "section:20"),
+        ],
+        sections=[
+            section("section:0", 0.0, 0.0),
+            section("section:20", 20.0, 20.0),
+        ],
+    )
+
+    shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
+
+    assert shared.status == "ready"
+    assert shared.domain_kind == "corridor"
+    assert shared.breakline_count == 8
+    assert {row.breakline_role for row in shared.breakline_rows} >= {
+        "lane_to_lane",
+        "lane_to_shoulder",
+        "shoulder_to_side_slope",
+        "side_slope_to_daylight",
+        "corridor_gutter_handoff",
+        "corridor_ditch_handoff",
+    }
+    design_refs = build_corridor_command._shared_breakline_refs_for_consumer(shared, "design_surface")
+    slope_refs = build_corridor_command._shared_breakline_refs_for_consumer(shared, "slope_face_surface")
+    drainage_refs = build_corridor_command._shared_breakline_refs_for_consumer(shared, "drainage_surface")
+    assert len(design_refs) == 2
+    assert len(slope_refs) == 2
+    assert len(drainage_refs) == 4
+    assert all("profile:main" in row.source_contract_refs for row in shared.breakline_rows)
+    drainage_rows = [row for row in shared.breakline_rows if "handoff" in row.breakline_role]
+    assert {row.material_role for row in drainage_rows} == {"drainage_surface"}
+
+
+def test_corridor_drainage_handoff_breaklines_audit_against_drainage_surface_constraints() -> None:
+    def section(section_id: str, station: float, x: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id="region:ordinary",
+            station=station,
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("drainage:left:gutter-in", "drainage:left", "gutter_in", x, 3.7, 9.88, lateral_offset=3.7, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:gutter-out", "drainage:left", "gutter_out", x, 4.0, 9.84, lateral_offset=4.0, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:ditch-in", "drainage:left", "ditch_in", x, 8.2, 8.70, lateral_offset=8.2, side="left"),
+                AppliedSectionSubassemblyPoint("drainage:left:ditch-out", "drainage:left", "ditch_out", x, 9.0, 8.62, lateral_offset=9.0, side="left"),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink(
+                    "drainage:left:gutter",
+                    "drainage:left",
+                    "drainage:left:gutter-in",
+                    "drainage:left:gutter-out",
+                    "gutter_link",
+                    surface_role="drainage_surface",
+                ),
+                AppliedSectionSubassemblyLink(
+                    "drainage:left:ditch",
+                    "drainage:left",
+                    "drainage:left:ditch-in",
+                    "drainage:left:ditch-out",
+                    "ditch_link",
+                    surface_role="drainage_surface",
+                ),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:ordinary-drainage",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            section("section:0", 0.0, 0.0),
+            section("section:20", 20.0, 20.0),
+        ],
+    )
+    shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
+    drainage_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+            TINSurface(schema_version=1, project_id="proj-1", surface_id="surface:drainage"),
+            shared,
+            consumer_ref="drainage_surface",
+        ),
+        shared,
+        consumer_ref="drainage_surface",
+    )
+    audit = build_corridor_command.shared_breakline_audit(shared, {"drainage_surface": drainage_surface})
+    drainage_rows = [row for row in shared.breakline_rows if row.material_role == "drainage_surface"]
+
+    assert {row.breakline_role for row in drainage_rows} == {"corridor_gutter_handoff", "corridor_ditch_handoff"}
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "drainage_surface")) == 4
+    assert build_corridor_command._tin_quality_text(drainage_surface, "shared_breakline_consumed_count") == "4"
+    assert build_corridor_command._tin_quality_text(drainage_surface, "shared_breakline_constraint_edge_count") == "4"
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 4
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 4
+    assert audit["mesh_mismatch_count"] == 0
+
+
+def test_corridor_general_shared_breakline_metadata_drives_design_and_slope_audit() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:ordinary",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                region_id="region:ordinary",
+                station=0.0,
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint("lane:center", "lane", "centerline", 0.0, 0.0, 10.0),
+                    AppliedSectionSubassemblyPoint("lane:edge", "lane", "lane_edge", 0.0, 3.5, 9.9),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink("lane:fg", "lane", "lane:center", "lane:edge", "lane_fg", surface_role="design_surface")
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:10",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                region_id="region:ordinary",
+                station=10.0,
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint("lane:center", "lane", "centerline", 10.0, 0.0, 10.0),
+                    AppliedSectionSubassemblyPoint("lane:edge", "lane", "lane_edge", 10.0, 3.5, 9.9),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink("lane:fg", "lane", "lane:center", "lane:edge", "lane_fg", surface_role="design_surface")
+                ],
+            ),
+        ],
+    )
+    shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
+    surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:design",
+            vertex_rows=[
+                TINVertex("center0", 0.0, 0.0, 10.0),
+                TINVertex("center1", 10.0, 0.0, 10.0),
+                TINVertex("edge0", 0.0, 3.5, 9.9),
+                TINVertex("edge1", 10.0, 3.5, 9.9),
+                TINVertex("mid", 5.0, 1.75, 9.95),
+            ],
+            triangle_rows=[
+                TINTriangle("t1", "center0", "center1", "mid"),
+                TINTriangle("t2", "edge0", "mid", "edge1"),
+            ],
+        ),
+        shared,
+        consumer_ref="design_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(shared, {"design_surface": surface})
+
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 2
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 2
+    assert audit["mesh_mismatch_count"] == 0
+    assert build_corridor_command._tin_quality_text(surface, "shared_breakline_consumed_count") == "2"
+    assert "shared-breakline:corridor:corridor:main" in build_corridor_command._tin_quality_text(
+        surface,
+        "shared_breakline_constraint_segment_rows",
+    )
+
+
+def test_corridor_general_shared_breakline_audit_reports_zero_mismatch_for_straight_and_curved_roads() -> None:
+    def section(section_id: str, station: float, x: float, y_shift: float = 0.0) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id="region:ordinary",
+            station=station,
+            frame=AppliedSectionFrame(station=station, x=x, y=y_shift, z=10.0),
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow("lane:left", "lane", side="left"),
+                AppliedSectionSubassemblyRow("slope:left", "side_slope", side="left"),
+            ],
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("lane:left:center", "lane:left", "centerline", x, y_shift + 0.0, 10.0, lateral_offset=0.0, side="left"),
+                AppliedSectionSubassemblyPoint("lane:left:edge", "lane:left", "lane_edge", x, y_shift + 3.5, 9.93, lateral_offset=3.5, side="left"),
+                AppliedSectionSubassemblyPoint("slope:left:hinge", "slope:left", "hinge", x, y_shift + 4.5, 9.90, lateral_offset=4.5, side="left"),
+                AppliedSectionSubassemblyPoint("slope:left:daylight", "slope:left", "daylight", x, y_shift + 8.0, 8.75, lateral_offset=8.0, side="left"),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink(
+                    "lane:left:fg",
+                    "lane:left",
+                    "lane:left:center",
+                    "lane:left:edge",
+                    "lane_fg",
+                    surface_role="design_surface",
+                ),
+                AppliedSectionSubassemblyLink(
+                    "slope:left:face",
+                    "slope:left",
+                    "slope:left:hinge",
+                    "slope:left:daylight",
+                    "slope_face",
+                    surface_role="slope_face_surface",
+                ),
+            ],
+        )
+
+    def audit_case(case_id: str, y_values: list[float]) -> tuple[dict[str, object], object, object]:
+        sections = [
+            section(f"section:{index}", station=float(index * 10), x=float(index * 10), y_shift=float(y_shift))
+            for index, y_shift in enumerate(y_values)
+        ]
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id=f"sections:{case_id}",
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            sections=sections,
+        )
+        shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
+        design_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+            build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+                TINSurface(schema_version=1, project_id="proj-1", surface_id=f"surface:{case_id}:design"),
+                shared,
+                consumer_ref="design_surface",
+            ),
+            shared,
+            consumer_ref="design_surface",
+        )
+        slope_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+            build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+                TINSurface(schema_version=1, project_id="proj-1", surface_id=f"surface:{case_id}:slope"),
+                shared,
+                consumer_ref="slope_face_surface",
+            ),
+            shared,
+            consumer_ref="slope_face_surface",
+        )
+        audit = build_corridor_command.shared_breakline_audit(
+            shared,
+            {
+                "design_surface": design_surface,
+                "slope_face_surface": slope_surface,
+            },
+        )
+        return audit, design_surface, slope_surface
+
+    for case_id, y_values in {
+        "straight": [0.0, 0.0, 0.0],
+        "curved": [0.0, 2.0, 5.0],
+    }.items():
+        audit, design_surface, slope_surface = audit_case(case_id, y_values)
+        assert audit["status"] == "ready"
+        assert audit["missing_consumer_count"] == 0
+        assert audit["geometry_mismatch_count"] == 0
+        assert audit["mesh_mismatch_count"] == 0
+        assert audit["geometry_match_count"] == 4
+        assert audit["mesh_match_count"] == 4
+        assert build_corridor_command._tin_quality_text(design_surface, "shared_breakline_consumed_count") == "2"
+        assert build_corridor_command._tin_quality_text(slope_surface, "shared_breakline_consumed_count") == "2"
+        assert build_corridor_command._tin_quality_text(design_surface, "shared_breakline_constraint_edge_count") == "4"
+        assert build_corridor_command._tin_quality_text(slope_surface, "shared_breakline_constraint_edge_count") == "4"
+
+
+def test_corridor_region_transition_shared_breaklines_use_region_start_and_end_sections() -> None:
+    def section(section_id: str, region_id: str, station: float, x: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id=region_id,
+            station=station,
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("lane:center", "lane", "centerline", x, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint("lane:edge", "lane", "lane_edge", x, 3.5, 9.9, lateral_offset=3.5),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink("lane:fg", "lane", "lane:center", "lane:edge", "lane_fg", surface_role="design_surface")
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:regions",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            section("section:a:0", "region:a", 0.0, 0.0),
+            section("section:a:10", "region:a", 10.0, 10.0),
+            section("section:b:20", "region:b", 20.0, 20.0),
+            section("section:b:30", "region:b", 30.0, 30.0),
+        ],
+    )
+
+    shared = build_corridor_command.corridor_region_transition_shared_breakline_result(applied)
+
+    assert shared.status == "ready"
+    assert shared.domain_kind == "region_transition"
+    assert shared.breakline_count == 4
+    assert {row.breakline_role for row in shared.breakline_rows} == {"region_start_boundary", "region_end_boundary"}
+    assert {row.domain_ref for row in shared.breakline_rows} == {"region:a", "region:b"}
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "design_surface")) == 4
+
+
+def test_corridor_region_transition_shared_breakline_audit_consumes_design_and_slope_constraints() -> None:
+    def section(section_id: str, region_id: str, station: float, x: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id=region_id,
+            station=station,
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("lane:center", "lane", "centerline", x, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint("lane:edge", "lane", "lane_edge", x, 3.5, 9.9, lateral_offset=3.5),
+                AppliedSectionSubassemblyPoint("slope:hinge", "slope", "hinge", x, 5.0, 9.8, lateral_offset=5.0),
+                AppliedSectionSubassemblyPoint("slope:daylight", "slope", "daylight", x, 8.0, 9.0, lateral_offset=8.0),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink("lane:fg", "lane", "lane:center", "lane:edge", "lane_fg", surface_role="design_surface"),
+                AppliedSectionSubassemblyLink("slope:fg", "slope", "slope:hinge", "slope:daylight", "slope_fg", surface_role="slope_face_surface"),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:region-audit",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            section("section:a:0", "region:a", 0.0, 0.0),
+            section("section:a:10", "region:a", 10.0, 10.0),
+            section("section:b:20", "region:b", 20.0, 20.0),
+            section("section:b:30", "region:b", 30.0, 30.0),
+        ],
+    )
+    shared = build_corridor_command.corridor_region_transition_shared_breakline_result(applied)
+    design_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+            TINSurface(schema_version=1, project_id="proj-1", surface_id="surface:region:design"),
+            shared,
+            consumer_ref="design_surface",
+        ),
+        shared,
+        consumer_ref="design_surface",
+    )
+    slope_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+            TINSurface(schema_version=1, project_id="proj-1", surface_id="surface:region:slope"),
+            shared,
+            consumer_ref="slope_face_surface",
+        ),
+        shared,
+        consumer_ref="slope_face_surface",
+    )
+
+    audit = build_corridor_command.shared_breakline_audit(
+        shared,
+        {
+            "design_surface": design_surface,
+            "slope_face_surface": slope_surface,
+        },
+    )
+
+    assert shared.breakline_count == 8
+    assert build_corridor_command._tin_quality_text(design_surface, "shared_breakline_consumed_count") == "4"
+    assert build_corridor_command._tin_quality_text(slope_surface, "shared_breakline_consumed_count") == "4"
+    assert audit["status"] == "ready"
+    assert audit["geometry_match_count"] == 8
+    assert audit["geometry_mismatch_count"] == 0
+    assert audit["mesh_match_count"] == 8
+    assert audit["mesh_mismatch_count"] == 0
+    assert audit["missing_consumer_count"] == 0
+
+
+def test_corridor_region_transition_shared_breaklines_trace_assembly_change_boundary() -> None:
+    def section(
+        section_id: str,
+        region_id: str,
+        assembly_id: str,
+        station: float,
+        x: float,
+    ) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id=region_id,
+            assembly_id=assembly_id,
+            station=station,
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("lane:center", "lane", "centerline", x, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint("lane:edge", "lane", "lane_edge", x, 3.5, 9.9, lateral_offset=3.5),
+                AppliedSectionSubassemblyPoint("slope:hinge", "slope", "hinge", x, 5.0, 9.8, lateral_offset=5.0),
+                AppliedSectionSubassemblyPoint("slope:daylight", "slope", "daylight", x, 8.0, 9.0, lateral_offset=8.0),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink("lane:fg", "lane", "lane:center", "lane:edge", "lane_fg", surface_role="design_surface"),
+                AppliedSectionSubassemblyLink("slope:fg", "slope", "slope:hinge", "slope:daylight", "slope_fg", surface_role="slope_face_surface"),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:assembly-change",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            section("section:rural:0", "region:rural", "assembly:rural", 0.0, 0.0),
+            section("section:rural:20", "region:rural", "assembly:rural", 20.0, 20.0),
+            section("section:urban:20", "region:urban", "assembly:urban", 20.0, 20.0),
+            section("section:urban:40", "region:urban", "assembly:urban", 40.0, 40.0),
+        ],
+    )
+
+    shared = build_corridor_command.corridor_region_transition_shared_breakline_result(applied)
+    assembly_rows = [row for row in shared.breakline_rows if row.breakline_role == "assembly_change_boundary"]
+
+    assert shared.status == "ready"
+    assert len(assembly_rows) == 2
+    assert {row.material_role for row in assembly_rows} == {"design_surface", "slope_face_surface"}
+    assert {row.domain_ref for row in assembly_rows} == {"region:rural->region:urban"}
+    assert all(row.handoff_target == "region_assembly_change" for row in assembly_rows)
+    assert all(row.station_start == 20.0 and row.station_end == 20.0 for row in assembly_rows)
+    assert all("assembly:rural" in row.source_contract_refs for row in assembly_rows)
+    assert all("assembly:urban" in row.source_contract_refs for row in assembly_rows)
+    assert all("assembly_change_boundary" in row.notes for row in assembly_rows)
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "design_surface")) == 5
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "slope_face_surface")) == 5
+
+
+def test_intersection_shared_breakline_result_includes_control_area_boundary_rows() -> None:
+    def section(section_id: str, station: float, x: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id="region:main-intersection",
+            station=station,
+            active_intersection_id="intersection:t-01",
+            active_intersection_control_area_id="control-area:t-01:main",
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint("lane:center", "lane", "centerline", x, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint("lane:edge", "lane", "lane_edge", x, 3.5, 9.9, lateral_offset=3.5),
+                AppliedSectionSubassemblyPoint("slope:hinge", "slope", "hinge", x, 5.0, 9.8, lateral_offset=5.0),
+                AppliedSectionSubassemblyPoint("slope:daylight", "slope", "daylight", x, 8.0, 9.0, lateral_offset=8.0),
+            ],
+            subassembly_link_rows=[
+                AppliedSectionSubassemblyLink("lane:fg", "lane", "lane:center", "lane:edge", "lane_fg", surface_role="design_surface"),
+                AppliedSectionSubassemblyLink("slope:fg", "slope", "slope:hinge", "slope:daylight", "slope_fg", surface_role="slope_face_surface"),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:intersection-control",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            section("section:entry", 10.0, 10.0),
+            section("section:exit", 30.0, 30.0),
+        ],
+    )
+    intersection_model = IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersection-model:t-01",
+        control_area_rows=[
+            IntersectionControlArea(
+                control_area_id="control-area:t-01:main",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:main",
+                station_ranges=[(10.0, 30.0)],
+                control_region_refs=["region:main-intersection"],
+            )
+        ],
+    )
+
+    shared = build_corridor_command.corridor_intersection_shared_breakline_result(
+        applied,
+        prerequisite=SimpleNamespace(status="ready", intersection_id="intersection:t-01"),
+        intersection_model=intersection_model,
+        patch_boundary_result=IntersectionPatchBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            patch_boundary_result_id="intersection-patch-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            point_rows=[],
+        ),
+        boundary_segment_result=SimpleNamespace(boundary_segment_result_id="intersection-boundary-segments:test", segment_rows=[]),
+        slope_face_boundary_result=IntersectionSlopeFaceBoundaryResult(
+            schema_version=1,
+            project_id="proj-1",
+            boundary_result_id="intersection-slope-face-boundary:test",
+            intersection_id="intersection:t-01",
+            status="ready",
+            boundary_rows=[],
+        ),
+    )
+
+    control_rows = [row for row in shared.breakline_rows if row.domain_kind == "intersection_control_area"]
+
+    assert {row.breakline_role for row in control_rows} == {"control_area_entry", "control_area_exit"}
+    assert len(control_rows) == 4
+    assert {row.domain_ref for row in control_rows} == {"control-area:t-01:main"}
+    assert {row.alignment_ref for row in control_rows} == {"alignment:main"}
+    assert {row.station_start for row in control_rows} == {10.0, 30.0}
+    assert {row.material_role for row in control_rows} == {"design_surface", "slope_face_surface"}
+    assert all("intersection_surface" in row.consumer_refs for row in control_rows)
+    assert all("region_to_intersection_control" in row.notes for row in control_rows)
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "intersection_surface")) == 4
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "design_surface")) == 2
+    assert len(build_corridor_command._shared_breakline_refs_for_consumer(shared, "slope_face_surface")) == 2
+
+
+def test_shared_breakline_audit_metadata_is_visible_in_review_note() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        obj = doc.addObject("Part::Feature", "SharedBreaklineAuditPreview")
+        shared = SimpleNamespace(
+            breakline_result_id="shared-breakline:test",
+            status="ready",
+            breakline_count=2,
+            ready_count=2,
+            warning_count=0,
+            error_count=0,
+            diagnostic_rows=[],
+            breakline_rows=[
+                SimpleNamespace(breakline_id="shared-breakline:test:a", breakline_role="patch_to_design", source_status="ready"),
+                SimpleNamespace(breakline_id="shared-breakline:test:b", breakline_role="patch_to_slope_face", source_status="ready"),
+            ],
+            point_rows=[
+                SimpleNamespace(breakline_ref="shared-breakline:test:a", sequence=0, x=0.0, y=0.0, z=10.0),
+                SimpleNamespace(breakline_ref="shared-breakline:test:a", sequence=1, x=10.0, y=0.0, z=10.0),
+                SimpleNamespace(breakline_ref="shared-breakline:test:b", sequence=0, x=0.0, y=5.0, z=10.0),
+                SimpleNamespace(breakline_ref="shared-breakline:test:b", sequence=1, x=10.0, y=5.0, z=10.0),
+            ],
+        )
+        audit = {
+            "status": "warning",
+            "missing_consumer_count": 1,
+            "mismatch_count": 0,
+            "geometry_match_count": 1,
+            "geometry_mismatch_count": 1,
+            "mesh_match_count": 1,
+            "mesh_mismatch_count": 1,
+            "reversed_edge_count": 0,
+            "solid_readiness_status": "warning",
+            "solid_open_end_count": 2,
+            "solid_duplicate_edge_count": 1,
+            "solid_reversed_edge_count": 1,
+            "solid_non_manifold_node_count": 0,
+            "solid_readiness_notes": "open_end_count=2; duplicate_edge=edge:a",
+            "notes": "geometry_mismatch:slope_face_surface:shared-breakline:test:b",
+        }
+
+        build_corridor_command._attach_shared_breakline_preview_metadata(obj, shared, audit=audit)
+        note = build_corridor_command._shared_breakline_review_note(obj)
+
+        assert obj.SharedBreaklineAuditStatus == "warning"
+        assert int(obj.SharedBreaklineGeometryMatchCount) == 1
+        assert int(obj.SharedBreaklineGeometryMismatchCount) == 1
+        assert int(obj.SharedBreaklineMeshMatchCount) == 1
+        assert int(obj.SharedBreaklineMeshMismatchCount) == 1
+        assert int(obj.SharedBreaklineMissingConsumerCount) == 1
+        assert obj.SharedBreaklineSolidReadinessStatus == "warning"
+        assert int(obj.SharedBreaklineSolidOpenEndCount) == 2
+        assert int(obj.SharedBreaklineSolidDuplicateEdgeCount) == 1
+        assert int(obj.SharedBreaklineSolidReversedEdgeCount) == 1
+        assert obj.SharedBreaklineSolidReadinessNotes == "open_end_count=2; duplicate_edge=edge:a"
+        assert obj.SharedBreaklineAuditSummary == "audit=warning geometry=1/2 mesh=1/2 missing=1 mismatch=0 reversed=0"
+        assert list(obj.SharedBreaklineAuditNotes) == ["geometry_mismatch:slope_face_surface:shared-breakline:test:b"]
+        assert len(list(obj.SharedBreaklineSegmentRows)) == 2
+        assert len(list(obj.SharedBreaklineSolidBoundaryTraceRows)) == 2
+        assert "shared-breakline:test:a|patch_to_design|ready|0|0|0|10|10|0|10|patch_to_design" in list(obj.SharedBreaklineSegmentRows)
+        assert list(obj.SharedBreaklineSolidBoundaryTraceRows)[0].startswith("shared-breakline:test:a|patch_to_design")
+        assert "shared_breakline=ready consumed=2/2 warnings=0 errors=0" in note
+        assert "audit=warning geometry=1/2 mesh=1/2 missing=1 mismatch=0 reversed=0" in note
+        assert "solid_readiness=warning open=2 duplicate=1 reversed=1 non_manifold=0" in note
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_shared_breakline_adjacency_graph_reports_solid_loop_readiness() -> None:
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:closed",
+        domain_kind="corridor",
+        domain_ref="corridor:main",
+        status="ready",
+        breakline_count=4,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow("edge:a", "corridor", "corridor:main", "solid_boundary", point_refs=("p1", "p2")),
+            build_corridor_command.SharedBreaklineRow("edge:b", "corridor", "corridor:main", "solid_boundary", point_refs=("p2", "p3")),
+            build_corridor_command.SharedBreaklineRow("edge:c", "corridor", "corridor:main", "solid_boundary", point_refs=("p3", "p4")),
+            build_corridor_command.SharedBreaklineRow("edge:d", "corridor", "corridor:main", "solid_boundary", point_refs=("p4", "p1")),
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p1", "edge:a", 0, 0.0, 0.0, 0.0),
+            build_corridor_command.SharedBreaklinePointRow("p2", "edge:a", 1, 10.0, 0.0, 0.0),
+            build_corridor_command.SharedBreaklinePointRow("p3", "edge:b", 1, 10.0, 10.0, 0.0),
+            build_corridor_command.SharedBreaklinePointRow("p4", "edge:c", 1, 0.0, 10.0, 0.0),
+        ],
+    )
+
+    graph = build_corridor_command.shared_breakline_adjacency_graph(shared)
+
+    assert graph["status"] == "ready"
+    assert graph["node_count"] == 4
+    assert graph["edge_count"] == 4
+    assert graph["open_end_count"] == 0
+    assert graph["duplicate_edge_count"] == 0
+    assert graph["reversed_edge_count"] == 0
+    assert graph["non_manifold_node_count"] == 0
+    assert graph["notes"] == "shared_breakline_adjacency=closed"
+
+
+def test_shared_breakline_adjacency_graph_reports_open_duplicate_reversed_and_non_manifold_edges() -> None:
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:issues",
+        domain_kind="corridor",
+        domain_ref="corridor:main",
+        status="warning",
+        breakline_count=4,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow("edge:a", "corridor", "corridor:main", "solid_boundary", point_refs=("p1", "p2")),
+            build_corridor_command.SharedBreaklineRow("edge:a-reversed", "corridor", "corridor:main", "solid_boundary", point_refs=("p2", "p1")),
+            build_corridor_command.SharedBreaklineRow("edge:branch-1", "corridor", "corridor:main", "solid_boundary", point_refs=("p1", "p3")),
+            build_corridor_command.SharedBreaklineRow("edge:branch-2", "corridor", "corridor:main", "solid_boundary", point_refs=("p1", "p4")),
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p1", "edge:a", 0, 0.0, 0.0, 0.0),
+            build_corridor_command.SharedBreaklinePointRow("p2", "edge:a", 1, 10.0, 0.0, 0.0),
+            build_corridor_command.SharedBreaklinePointRow("p3", "edge:branch-1", 1, 0.0, 10.0, 0.0),
+            build_corridor_command.SharedBreaklinePointRow("p4", "edge:branch-2", 1, -10.0, 0.0, 0.0),
+        ],
+    )
+
+    graph = build_corridor_command.shared_breakline_adjacency_graph(shared)
+
+    assert graph["status"] == "warning"
+    assert graph["edge_count"] == 4
+    assert graph["open_end_count"] == 2
+    assert graph["duplicate_edge_count"] == 1
+    assert graph["reversed_edge_count"] == 1
+    assert graph["non_manifold_node_count"] == 1
+    assert "duplicate_edge:edge:a-reversed:edge:a" in graph["notes"]
+    assert "reversed_edge:edge:a-reversed:edge:a" in graph["notes"]
+    assert "open_end_count=2" in graph["notes"]
+    assert "non_manifold_node_count=1" in graph["notes"]
+
+
+def test_shared_breakline_solid_boundary_trace_rows_preserve_source_lineage() -> None:
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:trace",
+        domain_kind="intersection",
+        domain_ref="intersection:t-01",
+        status="ready",
+        breakline_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                "shared-breakline:trace:control-entry",
+                "intersection_control_area",
+                "control-area:t-01:main",
+                "control_area_entry",
+                source_contract_refs=("section:entry", "control-area:t-01:main", "region:main-intersection"),
+                consumer_refs=("intersection_surface", "design_surface"),
+                point_refs=("p1", "p2"),
+                station_start=10.0,
+                station_end=10.0,
+                alignment_ref="alignment:main",
+                material_role="design_surface",
+                source_status="ready",
+                handoff_target="intersection_control_area",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p1", "shared-breakline:trace:control-entry", 0, 10.0, 0.0, 10.0),
+            build_corridor_command.SharedBreaklinePointRow("p2", "shared-breakline:trace:control-entry", 1, 10.0, 5.0, 10.0),
+        ],
+    )
+
+    rows = build_corridor_command.shared_breakline_solid_boundary_trace_rows(shared)
+
+    assert rows == [
+        "shared-breakline:trace:control-entry|control_area_entry|intersection_control_area|control-area:t-01:main|alignment:main|10.000000|10.000000|design_surface|ready|section:entry,control-area:t-01:main,region:main-intersection|intersection_surface,design_surface|intersection_control_area"
+    ]
+    assert build_corridor_command.shared_breakline_solid_boundary_trace_rows(shared, ["missing"]) == []
+    assert build_corridor_command.shared_breakline_solid_boundary_trace_rows(shared, ["shared-breakline:trace:control-entry"]) == rows
+
+
+def test_shared_breakline_highlight_uses_preview_segment_rows() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        source = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
+        source.Label = "Corridor Slope Face Surface"
+        build_corridor_command._set_preview_property(source, "SharedBreaklineResultId", "shared-breakline:test")
+        build_corridor_command._set_preview_property(source, "SharedBreaklineAuditStatus", "warning")
+        build_corridor_command._set_preview_string_list_property(
+            source,
+            "SharedBreaklineSegmentRows",
+            [
+                "shared-breakline:test:a|patch_to_slope_face|ready|0|0|0|10|10|0|10|side_slope",
+                "shared-breakline:test:b|curb_return_to_shoulder|ready|0|0|5|10|10|5|10|shoulder",
+                "shared-breakline:test:c|lane_to_shoulder|ready|0|20|0|10|30|0|10|shoulder",
+                "shared-breakline:test:d|side_slope_to_daylight|ready|0|20|5|10|30|5|10|side_slope",
+                "shared-breakline:test:e|corridor_gutter_handoff|ready|0|20|10|10|30|10|10|drainage_surface",
+            ],
+        )
+
+        highlight = build_corridor_command.show_shared_breakline_highlight(doc, source)
+        shoulder = build_corridor_command.show_shared_breakline_highlight(doc, source, material_filter="shoulder")
+
+        assert highlight.Name == "ReviewSharedBreaklineHighlight"
+        assert highlight.CRRecordKind == "v1_shared_breakline_highlight"
+        assert highlight.V1ObjectType == "ReviewDiagnostic"
+        assert int(shoulder.SharedBreaklineSegmentCount) == 2
+        assert shoulder.SharedBreaklineMaterialFilter == "shoulder"
+        assert shoulder.SharedBreaklineHighlightColor == "0.650,1.000,0.350"
+        assert list(shoulder.SharedBreaklineRefs) == ["shared-breakline:test:b", "shared-breakline:test:c"]
+        slope_role = build_corridor_command.show_shared_breakline_highlight(doc, source, role_filter="patch_to_slope_face")
+        assert int(slope_role.SharedBreaklineSegmentCount) == 1
+        assert slope_role.SharedBreaklineRoleFilter == "patch_to_slope_face"
+        assert slope_role.SharedBreaklineHighlightColor == "0.050,0.950,0.250"
+        assert list(slope_role.SharedBreaklineRefs) == ["shared-breakline:test:a"]
+        lane_shoulder = build_corridor_command.show_shared_breakline_highlight(doc, source, role_filter="lane_to_shoulder")
+        assert int(lane_shoulder.SharedBreaklineSegmentCount) == 1
+        assert lane_shoulder.SharedBreaklineRoleFilter == "lane_to_shoulder"
+        assert lane_shoulder.SharedBreaklineHighlightColor == "0.650,1.000,0.350"
+        assert list(lane_shoulder.SharedBreaklineRefs) == ["shared-breakline:test:c"]
+        daylight = build_corridor_command.show_shared_breakline_highlight(doc, source, role_filter="side_slope_to_daylight")
+        assert int(daylight.SharedBreaklineSegmentCount) == 1
+        assert daylight.SharedBreaklineHighlightColor == "0.050,0.950,0.250"
+        gutter = build_corridor_command.show_shared_breakline_highlight(doc, source, role_filter="corridor_gutter_handoff")
+        assert int(gutter.SharedBreaklineSegmentCount) == 1
+        assert gutter.SharedBreaklineHighlightColor == "0.100,0.550,1.000"
+        assert build_corridor_command._shared_breakline_summary_keys("pavement=4, shoulder=4") == ["pavement", "shoulder"]
+        assert build_corridor_command._shared_breakline_highlight_color(material_filter="pavement") == (1.00, 0.88, 0.05)
+        assert build_corridor_command._shared_breakline_highlight_color(role_filter="lane_to_lane") == (1.00, 0.88, 0.05)
+        assert build_corridor_command._shared_breakline_highlight_color(role_filter="lane_to_shoulder") == (0.65, 1.00, 0.35)
+        assert build_corridor_command._shared_breakline_highlight_color(role_filter="side_slope_to_daylight") == (0.05, 0.95, 0.25)
+        assert build_corridor_command._shared_breakline_highlight_color(role_filter="curb_return_to_shoulder") == (1.00, 0.52, 0.05)
+        assert build_corridor_command._shared_breakline_highlight_color(role_filter="corridor_gutter_handoff") == (0.10, 0.55, 1.00)
+        assert build_corridor_command._shared_breakline_highlight_color(material_filter="drainage_surface") == (0.10, 0.55, 1.00)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_shared_breakline_audit_panel_rows_and_summary_are_user_readable() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        intersection = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        intersection.Label = "Intersection Surface"
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineResultId", "shared-breakline:test")
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineStatus", "ready")
+        build_corridor_command._set_preview_integer_property(intersection, "SharedBreaklineCount", 2)
+        build_corridor_command._set_preview_integer_property(intersection, "SharedBreaklineConsumedCount", 2)
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineAuditStatus", "ready")
+        build_corridor_command._set_preview_integer_property(intersection, "SharedBreaklineGeometryMatchCount", 2)
+        build_corridor_command._set_preview_integer_property(intersection, "SharedBreaklineGeometryMismatchCount", 0)
+        build_corridor_command._set_preview_integer_property(intersection, "SharedBreaklineMeshMatchCount", 2)
+        build_corridor_command._set_preview_integer_property(intersection, "SharedBreaklineMeshMismatchCount", 0)
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineMaterialSummary", "curb_return=2, shoulder=1")
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineRoleSummary", "curb_return_outer=2, patch_to_shoulder=1")
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineSolidReadinessStatus", "ready")
+        build_corridor_command._set_preview_property(intersection, "SharedBreaklineAuditSummary", "audit=ready geometry=2/2 mesh=2/2 missing=0 mismatch=0 reversed=0")
+        slope = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
+        slope.Label = "Corridor Slope Face Surface"
+        build_corridor_command._set_preview_property(slope, "SharedBreaklineResultId", "shared-breakline:test")
+        build_corridor_command._set_preview_property(slope, "SharedBreaklineStatus", "ready")
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineCount", 2)
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineConsumedCount", 1)
+        build_corridor_command._set_preview_property(slope, "SharedBreaklineAuditStatus", "warning")
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineGeometryMatchCount", 0)
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineGeometryMismatchCount", 1)
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineMeshMatchCount", 0)
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineMeshMismatchCount", 1)
+        build_corridor_command._set_preview_property(slope, "SharedBreaklineMaterialSummary", "side_slope=1")
+        build_corridor_command._set_preview_property(slope, "SharedBreaklineRoleSummary", "patch_to_slope_face=1")
+        build_corridor_command._set_preview_property(slope, "SharedBreaklineSolidReadinessStatus", "warning")
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineSolidOpenEndCount", 2)
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineSolidDuplicateEdgeCount", 1)
+        build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineSolidNonManifoldNodeCount", 1)
+        build_corridor_command._set_preview_string_list_property(slope, "SharedBreaklineAuditNotes", ["geometry_mismatch:slope_face_surface:shared-breakline:test"])
+
+        rows = build_corridor_command.corridor_shared_breakline_audit_rows(doc)
+        display_rows = build_corridor_command.shared_breakline_audit_display_rows(rows)
+        summary = build_corridor_command.corridor_shared_breakline_audit_summary(doc)
+
+        assert [row["surface"] for row in rows] == ["Intersection Surface", "Slope Face Surface"]
+        assert [row["row_kind"] for row in display_rows[:2]] == ["surface", "role"]
+        assert display_rows[1]["surface"] == "  Role: curb_return_outer"
+        assert display_rows[1]["breakline_role_filter"] == "curb_return_outer"
+        assert display_rows[1]["role_summary"] == "curb_return_outer=2"
+        assert any(row.get("breakline_role_filter") == "patch_to_shoulder" for row in display_rows)
+        assert any(row.get("breakline_role_filter") == "patch_to_slope_face" for row in display_rows)
+        assert rows[0]["status"] == "ready"
+        assert rows[0]["recommended_action"] == "No action needed"
+        assert rows[0]["material_summary"] == "curb_return=2, shoulder=1"
+        assert rows[0]["role_summary"] == "curb_return_outer=2, patch_to_shoulder=1"
+        assert rows[0]["solid_readiness_status"] == "ready"
+        assert rows[1]["status"] == "warning"
+        assert rows[1]["geometry_mismatch_count"] == 1
+        assert rows[1]["mesh_mismatch_count"] == 1
+        assert rows[1]["material_summary"] == "side_slope=1"
+        assert rows[1]["role_summary"] == "patch_to_slope_face=1"
+        assert rows[1]["solid_readiness_status"] == "warning"
+        assert rows[1]["solid_open_end_count"] == 2
+        assert rows[1]["solid_duplicate_edge_count"] == 1
+        assert rows[1]["solid_non_manifold_node_count"] == 1
+        assert rows[1]["recommended_action"] == "Rebuild constrained surface mesh"
+        assert "geometry_mismatch:slope_face_surface" in rows[1]["notes"]
+        assert summary["status"] == "warning"
+        assert summary["title"] == "Shared breakline issues found: 1 surface(s)"
+        assert "geometry_mismatch=1" in summary["notes"]
+        assert "mesh_mismatch=1" in summary["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None:
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:slope_face_surface:shared-breakline:intersection:intersection:t:patch-to-slope-face:1",
+    ) == "Rebuild Intersection and Slope Face constraints"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:slope_face_surface:shared-breakline:intersection:intersection:t:curb-return-to-slope-face:1:start",
+    ) == "Rebuild Intersection and Slope Face constraints"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:design_surface:shared-breakline:intersection:intersection:t:curb-return-to-shoulder:1:start",
+    ) == "Rebuild Intersection and Design constraints"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:design_surface:shared-breakline:intersection:intersection:t:patch-to-shoulder:1",
+    ) == "Rebuild Intersection and Design constraints"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:slope_face_surface:shared-breakline:intersection:intersection:t:shoulder-to-slope-face:1",
+    ) == "Rebuild Applied Sections, then constrained surfaces"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:drainage_surface:shared-breakline:corridor:corridor:main:corridor-gutter-handoff:1",
+    ) == "Review Drainage source, then rebuild Applied Sections"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:drainage_surface:shared-breakline:intersection:intersection:t:intersection-gutter-handoff:1",
+    ) == "Review Intersection Drainage source, then rebuild Intersection"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:design_surface:shared-breakline:region-transition:corridor:main:region_start_boundary:3:design_surface",
+    ) == "Review Region spans, then Build Parametric"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:design_surface:shared-breakline:region-transition:corridor:main:assembly_change_boundary:5:design_surface",
+    ) == "Review Region spans, then Build Parametric"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:design_surface:shared-breakline:intersection:intersection:t:control_area_entry:1:control-main:design_surface",
+    ) == "Review Intersection control areas and Region spans, then Build Parametric"
+    assert build_corridor_command._shared_breakline_recommended_action(
+        geometry_mismatch_count=1,
+        mesh_mismatch_count=1,
+        missing_consumer_count=0,
+        mismatch_count=0,
+        reversed_edge_count=0,
+        notes="mesh_drift:design_surface:shared-breakline:corridor:corridor:main:lane_to_shoulder:6",
+    ) == "Rebuild Applied Sections, then constrained surfaces"
 
 
 def test_intersection_exclusion_suppresses_daylight_triangles_near_junction_gap() -> None:
@@ -6498,14 +8981,59 @@ def test_corridor_preview_styles_are_role_specific() -> None:
     subgrade = tin_mesh_preview_style("subgrade")
     daylight = tin_mesh_preview_style("daylight")
     drainage = tin_mesh_preview_style("drainage")
+    transitional = tin_mesh_preview_style("intersection_transitional_patch")
+    accepted = tin_mesh_preview_style("intersection_accepted_candidate")
     base = tin_mesh_preview_style("unknown")
 
     assert design["shape_color"] == (1.00, 0.56, 0.12)
     assert subgrade["transparency"] > design["transparency"]
     assert daylight["shape_color"] != design["shape_color"]
     assert drainage["line_width"] > daylight["line_width"]
+    assert transitional["transparency"] > accepted["transparency"]
+    assert transitional["shape_color"] != accepted["shape_color"]
     assert base == tin_mesh_preview_style("base")
     assert corridor_centerline_preview_style()["line_width"] == 5.0
+
+
+def test_intersection_surface_replacement_visual_style_marks_transitional_and_accepted() -> None:
+    class FakeView:
+        def __init__(self):
+            self.ShapeColor = None
+            self.LineColor = None
+            self.PointColor = None
+            self.LineWidth = 0.0
+            self.Transparency = 0
+            self.DisplayMode = ""
+
+    class FakeObject:
+        def __init__(self):
+            self.ViewObject = FakeView()
+
+        def addProperty(self, _property_type, name, _group, _description):
+            setattr(self, name, "")
+
+    transitional = FakeObject()
+    accepted = FakeObject()
+
+    transitional_style = build_corridor_command._apply_intersection_surface_replacement_visual_style(
+        transitional,
+        readiness="blocked",
+        handoff_role="transitional_patch",
+        gate_status="blocked",
+    )
+    accepted_style = build_corridor_command._apply_intersection_surface_replacement_visual_style(
+        accepted,
+        readiness="ready_to_replace",
+        handoff_role="accepted_surface_zone",
+        gate_status="ready_to_replace",
+    )
+
+    assert transitional_style == "intersection_transitional_patch"
+    assert accepted_style == "intersection_accepted_candidate"
+    assert transitional.IntersectionSurfaceReplacementVisualRole == "transitional_review_patch"
+    assert accepted.IntersectionSurfaceReplacementVisualRole == "accepted_candidate"
+    assert transitional.ViewObject.Transparency > accepted.ViewObject.Transparency
+    assert transitional.ViewObject.ShapeColor != accepted.ViewObject.ShapeColor
 
 
 def test_corridor_preview_visibility_helpers_target_roles_and_markers() -> None:
@@ -6555,6 +9083,67 @@ def test_corridor_preview_visibility_helpers_target_roles_and_markers() -> None:
         for obj in doc.Objects
         if obj.Name != "V1CorridorRegionSurface_region_rural"
     )
+
+
+def test_corridor_build_visibility_group_toggles_common_review_layers() -> None:
+    class FakeView:
+        def __init__(self):
+            self.Visibility = False
+
+    class FakeObject:
+        def __init__(self, name):
+            self.Name = name
+            self.ViewObject = FakeView()
+
+    class FakeDocument:
+        def __init__(self):
+            self.Objects = [
+                FakeObject("V1CorridorDesignSurfacePreview"),
+                FakeObject("V1CorridorSubgradeSurfacePreview"),
+                FakeObject("V1CorridorDrainageSurfacePreview"),
+                FakeObject("V1CorridorIntersectionSurfacePreview"),
+                FakeObject("V1CorridorIntersectionSlopeFaceSurfacePreview"),
+                FakeObject("V1CorridorDaylightSurfacePreview"),
+                FakeObject("ReviewSharedBreaklineHighlight"),
+                FakeObject("ReviewIssueSlopeFaceIssue001L"),
+                FakeObject("ReviewIssueDrainageFlowRoutes"),
+            ]
+
+        def getObject(self, name):
+            for obj in self.Objects:
+                if obj.Name == name:
+                    return obj
+            return None
+
+    doc = FakeDocument()
+
+    assert [row["group_id"] for row in build_corridor_command.corridor_build_visibility_groups()] == [
+        "design",
+        "intersection",
+        "slope_face",
+        "breaklines",
+        "diagnostics",
+    ]
+    assert build_corridor_command.set_corridor_build_visibility_group(doc, "design", True) == 3
+    assert doc.getObject("V1CorridorDesignSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorSubgradeSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorDrainageSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorIntersectionSurfacePreview").ViewObject.Visibility is False
+    assert build_corridor_command.corridor_build_visibility_group_visible(doc, "design") is True
+
+    assert build_corridor_command.set_corridor_build_visibility_group(doc, "slope_face", True) == 2
+    assert doc.getObject("V1CorridorDaylightSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview").ViewObject.Visibility is True
+    assert build_corridor_command.set_corridor_build_visibility_group(doc, "breaklines", True) == 1
+    assert doc.getObject("ReviewSharedBreaklineHighlight").ViewObject.Visibility is True
+    assert build_corridor_command.set_corridor_build_visibility_group(doc, "diagnostics", True) >= 2
+    assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is True
+    assert doc.getObject("ReviewIssueDrainageFlowRoutes").ViewObject.Visibility is True
+
+    build_corridor_command.set_corridor_build_visibility_group(doc, "diagnostics", False)
+
+    assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is False
+    assert doc.getObject("ReviewIssueDrainageFlowRoutes").ViewObject.Visibility is False
 
 
 def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
