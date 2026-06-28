@@ -88,7 +88,7 @@ Important v1 references:
 
 ## Main Commands
 
-- `Project Setup`
+- `New/Project Setup`
 - `TIN`
 - `Alignment`
 - `Stations`
@@ -96,23 +96,26 @@ Important v1 references:
 - `Review Plan/Profile`
 - `3D Centerline`
 - `Superelevation`
-- `Assembly`
-- `Region`
+- `SubAssembly Designer`
+- `Assembly / Subassembly`
+- `Regions`
+- `Intersection`
 - `Structures`
 - `Drainage`
 - `Drainage Review`
 - `Applied Sections`
-- `Build Corridor`
-- `Cross Section Viewer`
-- `Earthwork Viewer`
-- `Structure Output`
+- `Build Parametric`
+- `Review Cross Sections`
+- `Review Earthwork`
 - `Outputs & Exchange`
+- `Import LandXML`
+- `Structure Output`
 - `AI Assist`
 - `Watertight Solids`
 
 Current toolbar order is organized around the v1 workflow:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Intersections/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline/Superelevation -> SubAssembly Designer/Assembly/Regions/Intersection/Structures -> Drainage -> Applied Sections -> Build Parametric -> Review -> Outputs/Import/Structure Output -> AI Assist -> Watertight Solids`
 
 ## Current V1 Areas
 

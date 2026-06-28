@@ -19,6 +19,7 @@ from ..models.source import TINEditOperation
 from ..services.editing import TINEditService
 from ..services.evaluation import TinSamplingService
 from ..services.mapping import TINMeshPreviewMapper
+from ..ui.common.styles import apply_clickable_tab_style
 from .cmd_review_tin import (
     _focus_tin_preview_object,
     _selected_surface_object,
@@ -201,6 +202,7 @@ class V1TINEditorTaskPanel:
         layout.addWidget(self._progress)
 
         self._tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._tabs, "TINEditorTabs")
         self._tabs.addTab(self._build_source_tab(), "Source")
         self._tabs.addTab(self._build_boundary_tab(), "Boundary")
         self._tabs.addTab(self._build_void_tab(), "Voids")

@@ -147,6 +147,49 @@ Use these checks while the `Intersection` panel is still in read-only review mod
 | Grading preview | `handoff_target:intersection-preview-stage:grading:<zone>` | Grading context rows point to the review stage for the affected surface zone. | Grading warnings cannot be traced to a zone or review stage. |
 | Slope Loops preview | `source_lineage_status:<status>` | Slope loop rows show accepted or warning lineage before any triangle output is trusted. | Warning/error loops can be mistaken for accepted triangulation input. |
 
+## Skewed Practical Exclusion Footprint QA
+
+Use this checklist for `Skewed Intersection - Basic` and any manually authored skewed T-intersection.
+
+Purpose:
+
+- verify curb-return surface generation separately from adjacent-surface clipping
+- confirm Design/Slope clipping uses a practical exclusion footprint when it is ready
+- confirm missing or degraded footprints are visible before the user trusts adjacent surface clipping
+
+Steps:
+
+1. Create or load a skewed T-intersection source model.
+2. Run `Build Sections`.
+3. Run `Build Parametric`.
+4. Open Build Parametric `Guided Review`.
+5. Find the `Intersections` step notes.
+6. Confirm curb-return triangulation reports `structured_strip_curb_return_blend` or equivalent ready surface context.
+7. Confirm Design/Slope exclusion notes include boundary strategy and practical footprint status.
+8. If the footprint is ready, confirm notes do not ask for corrective action.
+9. If the footprint is recovered or degraded, confirm the notes include a diagnostic such as `intersection_exclusion_footprint_outer_loop_recovered:exterior_hull`.
+10. If the footprint is missing, confirm adjacent clipping uses conservative skip and no valid adjacent triangles disappear.
+11. Toggle the Design, Slope Face, Breaklines, and Diagnostics visibility groups.
+12. Visually confirm the recovered footprint covers the skewed pavement/curb-return footprint and does not swallow unrelated corridor surface.
+13. Check Shared Breakline Audit.
+14. Confirm no geometry mismatch or missing-consumer warning is introduced by the skewed footprint recovery.
+
+Pass criteria:
+
+- curb-return surface remains generated from source/result contracts
+- practical footprint status is visible as `ready`, `degraded`, or `missing`
+- `missing` or `degraded` status includes a recommended action
+- ready/recovered footprint clips only triangles inside the skewed intersection footprint
+- missing footprint preserves adjacent surface triangles and reports conservative skip
+- no Report View traceback appears
+
+Fail conditions:
+
+- ordinary Design or Slope Face triangles disappear when practical footprint status is `missing`
+- Review notes mention clipping but do not expose footprint status
+- recommended action is missing for `missing` or `degraded` footprint status
+- the user must inspect raw tree objects to understand the skewed footprint state
+
 ## Intersection Existing Alignment QA
 
 Use this test when the participating Alignments already exist.

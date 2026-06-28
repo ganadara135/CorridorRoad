@@ -1649,6 +1649,43 @@ def test_corridor_build_review_reports_intersection_tie_in_continuity_audit() ->
         App.closeDocument(doc.Name)
 
 
+def test_intersection_tie_in_continuity_warning_boundary_diagnostic_is_not_error() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_applied_sections(),
+        )
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        build_corridor_command._set_preview_property(preview, "IntersectionId", "intersection:t-01")
+        build_corridor_command._set_preview_integer_property(preview, "PatchPavementTieInEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchStemTieInEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchCurbReturnEdgeCount", 2)
+        build_corridor_command._set_preview_integer_property(preview, "PatchOverlapCutEdgeCount", 1)
+        build_corridor_command._set_preview_integer_property(preview, "IntersectionPatchBoundaryDiagnosticCount", 1)
+        build_corridor_command._set_preview_string_list_property(
+            preview,
+            "IntersectionPatchBoundaryDiagnostics",
+            ["warning:intersection_curb_return_radius_large: radius 12.000 exceeds 75% of tie-in span 12.000."],
+        )
+        build_corridor_command._set_preview_property(preview, "SharedBreaklineAuditStatus", "ready")
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineGeometryMismatchCount", 0)
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMeshMismatchCount", 0)
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMissingConsumerCount", 0)
+        build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineReversedEdgeCount", 0)
+
+        rows = corridor_build_review_rows(doc)
+        tie_in_row = [row for row in rows if row["role"] == "intersection_tie_in_continuity"][0]
+
+        assert tie_in_row["status"] == "warning"
+        assert "boundary_diagnostics=1" in tie_in_row["notes"]
+        assert "geometry_mismatch=0" in tie_in_row["notes"]
+        assert "missing_consumer=0" in tie_in_row["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_intersection_manual_qa_capture_metadata_is_reproducible() -> None:
     doc, _project = _new_project_doc()
     try:
@@ -2015,7 +2052,7 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert intersection_row["status"] == "warning"
         assert intersection_row["result"] == "Intersection Surface"
         assert intersection_row["output_path"] == "legacy_output"
-        assert replacement_readiness_row["status"] == "error"
+        assert replacement_readiness_row["status"] == "warning"
         assert replacement_readiness_row["result"] == "Intersection Replacement Readiness"
         assert replacement_readiness_row["object_name"] == "V1CorridorIntersectionSurfacePreview"
         assert replacement_readiness_row["output_path"] == "review_gate"
@@ -2024,6 +2061,7 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "gate=blocked" in replacement_readiness_row["notes"]
         assert "recommendation=build_accepted_zone_surface_before_replacing_patch" in replacement_readiness_row["notes"]
         assert "acceptance_evidence=1" in replacement_readiness_row["notes"]
+        assert "blocked_reason=accepted_zone_surface_not_ready" in replacement_readiness_row["notes"]
         assert "tie-in edges=4" in intersection_row["notes"]
         assert "grading policy=intersection:t-01:default" in intersection_row["notes"]
         assert "grading=flatten_intersection" in intersection_row["notes"]
@@ -3204,6 +3242,240 @@ def test_intersection_patch_structured_strip_handles_wide_radius_curb_returns() 
     assert result["edge_blend_face_count"] >= 44
 
 
+def test_intersection_practical_exclusion_recovers_skewed_outer_loop() -> None:
+    tie_in_result = _curb_return_variant_tie_in_result(side_angle_deg=62.0)
+    intersection_model = _curb_return_variant_model(radius=12.0)
+    boundary_result = corridor_intersection_boundary_segment_result(
+        tie_in_result,
+        intersection_model=intersection_model,
+    )
+    triangulation = build_corridor_command._intersection_patch_structured_strip_triangulation(
+        tie_in_result,
+        source_vertices=[],
+        center=TINVertex("center", 20.0, -4.0, 10.0),
+        intersection_model=intersection_model,
+        boundary_segment_result=boundary_result,
+        intersection_id="intersection:t-01",
+    )
+
+    footprint = build_corridor_command._intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
+        boundary_result,
+        intersection_model=intersection_model,
+    )
+
+    assert boundary_result.status == "ready"
+    assert triangulation["boundary_strategy"] == "structured_strip_curb_return_blend"
+    assert triangulation["curb_return_arc_count"] == 2
+    assert "ordered_fan_fallback" not in {
+        str(getattr(row, "quality_ref", "") or "")
+        for row in triangulation["triangles"]
+    }
+    assert footprint["status"] == "ready"
+    assert footprint["boundary_strategy"] == "structured_strip_curb_return_blend"
+    assert footprint["practical_boundary_aligned"] is True
+    assert len(footprint["points"]) >= 3
+    assert float(footprint["area"]) > 0.0
+    assert "intersection_exclusion_footprint_union_invalid:no_closed_outer_loop" in footprint["diagnostics"]
+    assert "intersection_exclusion_footprint_outer_loop_recovered:exterior_hull" in footprint["diagnostics"]
+    assert footprint["edge_blend_face_count"] == 20
+    assert footprint["curb_return_arc_count"] == 2
+    assert build_corridor_command._intersection_practical_exclusion_polygon_from_boundary_segments(
+        boundary_result,
+        intersection_model=intersection_model,
+    ) is not None
+
+
+def test_intersection_exterior_hull_boundary_preserves_curb_return_expansion() -> None:
+    tie_in_result = _curb_return_variant_tie_in_result(side_angle_deg=62.0, primary_span=24.0, side_span=14.0)
+    intersection_model = _curb_return_variant_model(radius=12.0)
+    boundary_result = corridor_intersection_boundary_segment_result(
+        tie_in_result,
+        intersection_model=intersection_model,
+    )
+    primary_rows = [
+        row for row in boundary_result.segment_rows
+        if row.segment_kind == "tie_in" and row.alignment_ref == "alignment:primary"
+    ]
+    side_rows = [
+        row for row in boundary_result.segment_rows
+        if row.segment_kind == "tie_in" and row.alignment_ref == "alignment:side"
+    ]
+    primary_polygon = build_corridor_command._intersection_tie_in_strip_polygon(primary_rows)
+    side_polygon = build_corridor_command._intersection_tie_in_strip_polygon(side_rows)
+    curb_parts = [
+        polygon
+        for polygon, _role in build_corridor_command._intersection_curb_return_surface_parts(boundary_result)
+    ]
+
+    hull = build_corridor_command._xy_polygon_exterior_hull_boundary(
+        [primary_polygon, side_polygon, *curb_parts]
+    )
+    strip_only_hull = build_corridor_command._xy_polygon_exterior_hull_boundary(
+        [primary_polygon, side_polygon]
+    )
+
+    assert primary_polygon is not None
+    assert side_polygon is not None
+    assert len(curb_parts) > 0
+    assert len(hull) >= 3
+    assert build_corridor_command._xy_area_from_xyz_points(hull) > 0.0
+    assert build_corridor_command._xy_xyz_polygon_self_crossing(hull) is False
+    assert abs(build_corridor_command._xy_area_from_xyz_points(hull)) > abs(
+        build_corridor_command._xy_area_from_xyz_points(strip_only_hull)
+    )
+
+
+def test_intersection_tie_in_strip_polygon_normalizes_winding_and_duplicates() -> None:
+    rows = [
+        IntersectionBoundarySegmentRow(
+            "edge:right",
+            "intersection:t-01",
+            "tie_in",
+            alignment_ref="alignment:skew",
+            side="right",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionBoundarySegmentRow(
+            "edge:left",
+            "intersection:t-01",
+            "tie_in",
+            alignment_ref="alignment:skew",
+            side="left",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+    ]
+
+    polygon = build_corridor_command._intersection_tie_in_strip_polygon(rows)
+
+    assert polygon is not None
+    assert len(polygon) == 4
+    assert build_corridor_command._xy_area_from_xyz_points(polygon) > 0.0
+    assert build_corridor_command._xy_xyz_polygon_self_crossing(polygon) is False
+
+    duplicate = build_corridor_command._normalize_intersection_tie_in_strip_polygon(
+        [
+            (0.0, 0.0, 0.0),
+            (10.0, 0.0, 0.0),
+            (10.0 + 1.0e-7, 0.0, 0.0),
+            (10.0, 5.0, 0.0),
+            (0.0, 5.0, 0.0),
+            (0.0 + 1.0e-7, 0.0, 0.0),
+        ]
+    )
+
+    assert duplicate is not None
+    assert len(duplicate) == 4
+    assert build_corridor_command._xy_area_from_xyz_points(duplicate) > 0.0
+    assert build_corridor_command._xy_xyz_polygon_self_crossing(duplicate) is False
+
+
+def test_intersection_tie_in_strip_polygon_rejects_degenerate_near_duplicate_edges() -> None:
+    rows = [
+        IntersectionBoundarySegmentRow(
+            "edge:right",
+            "intersection:t-01",
+            "tie_in",
+            alignment_ref="alignment:bad",
+            side="right",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(1.0e-7, 0.0, 0.0),
+        ),
+        IntersectionBoundarySegmentRow(
+            "edge:left",
+            "intersection:t-01",
+            "tie_in",
+            alignment_ref="alignment:bad",
+            side="left",
+            start_xyz=(0.0, 1.0e-7, 0.0),
+            end_xyz=(1.0e-7, 1.0e-7, 0.0),
+        ),
+    ]
+
+    assert build_corridor_command._intersection_tie_in_strip_polygon(rows) is None
+    assert build_corridor_command._normalize_intersection_tie_in_strip_polygon(
+        [(0.0, 0.0, 0.0), (1.0e-7, 0.0, 0.0), (0.0, 1.0e-7, 0.0)]
+    ) is None
+
+
+def test_corridor_guided_review_reports_skewed_exclusion_footprint_missing() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        design = doc.addObject("Part::Feature", "V1CorridorDesignSurfacePreview")
+        build_corridor_command._set_preview_property(design, "SurfaceRole", "design")
+        build_corridor_command._set_preview_property(design, "IntersectionExclusionClipStatus", "ready")
+        build_corridor_command._set_preview_integer_property(design, "IntersectionExclusionClippedTriangleCount", 0)
+        build_corridor_command._set_preview_integer_property(design, "IntersectionExclusionKeptTriangleCount", 12)
+        build_corridor_command._set_preview_property(design, "IntersectionExclusionBoundaryStrategy", "ordered_patch_boundary")
+        build_corridor_command._set_preview_integer_property(design, "IntersectionExclusionPracticalBoundaryAligned", 0)
+        build_corridor_command._set_preview_property(design, "IntersectionExclusionPracticalFootprintStatus", "missing")
+        build_corridor_command._set_preview_string_list_property(
+            design,
+            "IntersectionExclusionPracticalFootprintDiagnostics",
+            [
+                "intersection_exclusion_footprint_union_invalid:no_closed_outer_loop",
+                "intersection_exclusion_footprint_curb_return_surface_ready:arcs=2; segments=20",
+            ],
+        )
+
+        notes = build_corridor_command._intersection_exclusion_review_notes(doc)
+
+        assert "Design exclusion ready: clipped=0, kept=12" in notes
+        assert "boundary=ordered_patch_boundary" in notes
+        assert "footprint=missing" in notes
+        assert "intersection_exclusion_footprint_union_invalid:no_closed_outer_loop" in notes
+        assert "recommended_action=Review skew angle and tie-in extents, then rebuild Build Parametric" in notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_guided_review_distinguishes_degraded_skewed_exclusion_footprint() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        daylight = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
+        build_corridor_command._set_preview_property(daylight, "SurfaceRole", "daylight")
+        build_corridor_command._set_preview_property(daylight, "IntersectionExclusionClipStatus", "ready")
+        build_corridor_command._set_preview_integer_property(daylight, "IntersectionExclusionClippedTriangleCount", 1)
+        build_corridor_command._set_preview_integer_property(daylight, "IntersectionExclusionKeptTriangleCount", 8)
+        build_corridor_command._set_preview_property(daylight, "IntersectionExclusionBoundaryStrategy", "structured_strip_curb_return_blend")
+        build_corridor_command._set_preview_integer_property(daylight, "IntersectionExclusionPracticalBoundaryAligned", 0)
+        build_corridor_command._set_preview_property(daylight, "IntersectionExclusionPracticalFootprintStatus", "degraded")
+        build_corridor_command._set_preview_string_list_property(
+            daylight,
+            "IntersectionExclusionPracticalFootprintDiagnostics",
+            ["intersection_exclusion_footprint_outer_loop_recovered:exterior_hull"],
+        )
+
+        notes = build_corridor_command._intersection_exclusion_review_notes(doc)
+
+        assert "Slope exclusion ready: clipped=1, kept=8" in notes
+        assert "footprint=degraded" in notes
+        assert "intersection_exclusion_footprint_outer_loop_recovered:exterior_hull" in notes
+        assert "recommended_action=Review recovered footprint outline before accepting adjacent surface clipping" in notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_exclusion_practical_footprint_recommended_actions() -> None:
+    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+        "ready",
+        "",
+    ) == ""
+    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+        "missing",
+        "intersection_exclusion_footprint_primary_strip_invalid:alignment:side",
+    ) == "Review Intersection tie-in source geometry, then rebuild Applied Sections and Build Parametric"
+    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+        "missing",
+        "intersection_exclusion_footprint_union_invalid:no_closed_outer_loop",
+    ) == "Review skew angle and tie-in extents, then rebuild Build Parametric"
+    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+        "degraded",
+        "intersection_exclusion_footprint_outer_loop_recovered:exterior_hull",
+    ) == "Review recovered footprint outline before accepting adjacent surface clipping"
+
+
 def test_corridor_intersection_patch_boundary_result_orders_boundary_segment_points() -> None:
     applied = AppliedSectionSet(
         schema_version=1,
@@ -3617,6 +3889,115 @@ def test_intersection_exclusion_clips_tin_triangles_crossing_polygon_edges() -> 
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_boundary_crossing_triangle_count") == 1
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_exact_cut_candidate_count") == 1
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_exact_cut_generated_triangle_count") == 4
+
+
+def test_intersection_exclusion_clips_tin_with_recovered_skewed_footprint() -> None:
+    tie_in_result = _curb_return_variant_tie_in_result(side_angle_deg=62.0)
+    intersection_model = _curb_return_variant_model(radius=12.0)
+    boundary_result = corridor_intersection_boundary_segment_result(
+        tie_in_result,
+        intersection_model=intersection_model,
+    )
+    footprint = build_corridor_command._intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
+        boundary_result,
+        intersection_model=intersection_model,
+    )
+    points = list(footprint["points"])
+    center_x = sum(point[0] for point in points) / len(points)
+    center_y = sum(point[1] for point in points) / len(points)
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:skewed-design",
+        surface_kind="design_surface",
+        vertex_rows=[
+            TINVertex("inside1", center_x - 0.2, center_y - 0.2, 0.0),
+            TINVertex("inside2", center_x + 0.2, center_y - 0.2, 0.0),
+            TINVertex("inside3", center_x, center_y + 0.2, 0.0),
+            TINVertex("outside1", 120.0, 120.0, 0.0),
+            TINVertex("outside2", 121.0, 120.0, 0.0),
+            TINVertex("outside3", 120.0, 121.0, 0.0),
+        ],
+        triangle_rows=[
+            TINTriangle("inside-skewed-footprint", "inside1", "inside2", "inside3"),
+            TINTriangle("outside-skewed-footprint", "outside1", "outside2", "outside3"),
+        ],
+    )
+    original_provider = build_corridor_command._intersection_exclusion_polygon_from_sources
+    build_corridor_command._intersection_exclusion_polygon_from_sources = lambda *args, **kwargs: footprint
+    try:
+        clipped = build_corridor_command._clip_tin_surface_by_intersection_exclusion(
+            surface,
+            None,
+            surface_role="design",
+        )
+    finally:
+        build_corridor_command._intersection_exclusion_polygon_from_sources = original_provider
+
+    assert footprint["status"] == "ready"
+    assert [row.triangle_id for row in clipped.triangle_rows] == ["outside-skewed-footprint"]
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_boundary_source") == "practical_intersection_surface_boundary"
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_boundary_strategy") == "structured_strip_curb_return_blend"
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_practical_footprint_status") == "ready"
+    assert "outer_loop_recovered:exterior_hull" in build_corridor_command._tin_quality_text(
+        clipped,
+        "intersection_exclusion_practical_footprint_diagnostics",
+    )
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_practical_boundary_aligned") == 1
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_clipped_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_kept_triangle_count") == 1
+
+
+def test_intersection_exclusion_missing_practical_footprint_skips_clipping_conservatively() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:missing-footprint",
+        surface_kind="design_surface",
+        vertex_rows=[
+            TINVertex("inside1", 1.0, 1.0, 0.0),
+            TINVertex("inside2", 2.0, 1.0, 0.0),
+            TINVertex("inside3", 1.0, 2.0, 0.0),
+        ],
+        triangle_rows=[
+            TINTriangle("would-have-clipped", "inside1", "inside2", "inside3"),
+        ],
+    )
+    missing = {
+        "intersection_id": "intersection:t-01",
+        "status": "ready",
+        "points": [(0.0, 0.0), (5.0, 0.0), (0.0, 5.0)],
+        "holes": [],
+        "islands": [],
+        "area": 12.5,
+        "boundary_source": "ordered_patch_boundary",
+        "boundary_strategy": "tie_in_strip_union",
+        "practical_boundary_aligned": False,
+        "practical_footprint_status": "missing",
+        "practical_footprint_diagnostics": [
+            "intersection_exclusion_footprint_union_invalid:no_closed_outer_loop",
+        ],
+    }
+    original_provider = build_corridor_command._intersection_exclusion_polygon_from_sources
+    build_corridor_command._intersection_exclusion_polygon_from_sources = lambda *args, **kwargs: missing
+    try:
+        clipped = build_corridor_command._clip_tin_surface_by_intersection_exclusion(
+            surface,
+            None,
+            surface_role="design",
+        )
+    finally:
+        build_corridor_command._intersection_exclusion_polygon_from_sources = original_provider
+
+    assert [row.triangle_id for row in clipped.triangle_rows] == ["would-have-clipped"]
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_clip_method") == "conservative_skip_missing_practical_footprint"
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_practical_footprint_status") == "missing"
+    assert "union_invalid" in build_corridor_command._tin_quality_text(
+        clipped,
+        "intersection_exclusion_practical_footprint_diagnostics",
+    )
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_clipped_triangle_count") == 0
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_kept_triangle_count") == 1
 
 
 def test_intersection_exclusion_hard_suppresses_daylight_triangles_without_fragments() -> None:
@@ -5041,7 +5422,136 @@ def test_shared_breakline_constraint_edges_apply_to_design_surface_mesh() -> Non
     assert build_corridor_command._tin_quality_float(constrained, "shared_breakline_constraint_edge_count") == 1
 
 
-def test_corridor_general_shared_breakline_result_uses_applied_section_link_roles() -> None:
+def test_shared_breakline_constraint_edges_reuse_existing_coordinate_edge() -> None:
+    breakline_id = "shared-breakline:corridor:corridor:main:side_slope_to_daylight:1"
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:corridor:corridor:main",
+        domain_kind="corridor",
+        domain_ref="corridor:main",
+        status="ready",
+        breakline_count=1,
+        ready_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="corridor",
+                domain_ref="corridor:main",
+                breakline_role="side_slope_to_daylight",
+                consumer_refs=("slope_face_surface",),
+                point_refs=("p0", "p1"),
+                material_role="slope_face_surface",
+                source_status="ready",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p0", breakline_id, 0, 0.0, 8.0, 8.5),
+            build_corridor_command.SharedBreaklinePointRow("p1", breakline_id, 1, 20.0, 8.0, 8.5),
+        ],
+    )
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:slope",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("edge-a", 0.0, 8.0, 8.5),
+            TINVertex("edge-b", 20.0, 8.0, 8.5),
+            TINVertex("inside", 10.0, 5.0, 9.5),
+            TINVertex("duplicate-a", 0.0, 8.0, 8.5),
+            TINVertex("duplicate-b", 20.0, 8.0, 8.5),
+        ],
+        triangle_rows=[
+            TINTriangle("existing-coordinate-edge", "edge-a", "edge-b", "inside"),
+        ],
+    )
+
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+        surface,
+        shared,
+        consumer_ref="slope_face_surface",
+    )
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        constrained,
+        shared,
+        consumer_ref="slope_face_surface",
+    )
+    audit = build_corridor_command.shared_breakline_audit(shared, {"slope_face_surface": constrained})
+
+    assert audit["status"] == "ready"
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+    assert build_corridor_command._tin_quality_float(constrained, "shared_breakline_constraint_edge_count") == 0
+    assert len(constrained.triangle_rows) == 1
+
+
+def test_shared_breakline_constraint_edges_reuse_existing_edge_chain() -> None:
+    breakline_id = "shared-breakline:corridor:corridor:main:side_slope_to_daylight:chain"
+    shared = build_corridor_command.SharedBreaklineResult(
+        schema_version=1,
+        project_id="proj-1",
+        breakline_result_id="shared-breakline:corridor:corridor:main",
+        domain_kind="corridor",
+        domain_ref="corridor:main",
+        status="ready",
+        breakline_count=1,
+        ready_count=1,
+        breakline_rows=[
+            build_corridor_command.SharedBreaklineRow(
+                breakline_id=breakline_id,
+                domain_kind="corridor",
+                domain_ref="corridor:main",
+                breakline_role="side_slope_to_daylight",
+                consumer_refs=("slope_face_surface",),
+                point_refs=("p0", "p1"),
+                material_role="slope_face_surface",
+                source_status="ready",
+            )
+        ],
+        point_rows=[
+            build_corridor_command.SharedBreaklinePointRow("p0", breakline_id, 0, 0.0, 8.0, 8.5),
+            build_corridor_command.SharedBreaklinePointRow("p1", breakline_id, 1, 20.0, 8.0, 8.5),
+        ],
+    )
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:slope-chain",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("edge-a", 0.0, 8.0, 8.5),
+            TINVertex("edge-mid", 10.0, 8.0, 8.5),
+            TINVertex("edge-b", 20.0, 8.0, 8.5),
+            TINVertex("inside-left", 5.0, 5.0, 9.5),
+            TINVertex("inside-right", 15.0, 5.0, 9.5),
+        ],
+        triangle_rows=[
+            TINTriangle("existing-chain-left", "edge-a", "edge-mid", "inside-left"),
+            TINTriangle("existing-chain-right", "edge-mid", "edge-b", "inside-right"),
+        ],
+    )
+
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+        surface,
+        shared,
+        consumer_ref="slope_face_surface",
+    )
+    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+        constrained,
+        shared,
+        consumer_ref="slope_face_surface",
+    )
+    audit = build_corridor_command.shared_breakline_audit(shared, {"slope_face_surface": constrained})
+
+    assert audit["status"] == "ready"
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+    assert build_corridor_command._tin_quality_float(constrained, "shared_breakline_constraint_edge_count") == 0
+    assert len(constrained.triangle_rows) == 2
+
+
+def test_corridor_general_shared_breakline_result_uses_applied_section_side_slope_boundaries() -> None:
     def section(section_id: str, station: float, x: float) -> AppliedSection:
         return AppliedSection(
             schema_version=1,
@@ -5053,6 +5563,10 @@ def test_corridor_general_shared_breakline_result_uses_applied_section_link_role
             region_id="region:ordinary",
             station=station,
             frame=AppliedSectionFrame(station=station, x=x, y=0.0, z=10.0),
+            point_rows=[
+                AppliedSectionPoint("slope:left:hinge", x, 4.5, 9.90, "side_slope_surface", 4.5, side="left"),
+                AppliedSectionPoint("slope:left:daylight", x, 8.0, 8.75, "daylight_marker", 8.0, side="left"),
+            ],
             subassembly_rows=[
                 AppliedSectionSubassemblyRow("lane:left", "lane", side="left"),
                 AppliedSectionSubassemblyRow("slope:left", "side_slope", side="left"),
@@ -5061,8 +5575,8 @@ def test_corridor_general_shared_breakline_result_uses_applied_section_link_role
             subassembly_point_rows=[
                 AppliedSectionSubassemblyPoint("lane:left:center", "lane:left", "centerline", x, 0.0, 10.0, side="left"),
                 AppliedSectionSubassemblyPoint("lane:left:edge", "lane:left", "lane_edge", x, 3.5, 9.93, lateral_offset=3.5, side="left"),
-                AppliedSectionSubassemblyPoint("slope:left:hinge", "slope:left", "hinge", x, 4.5, 9.90, lateral_offset=4.5, side="left"),
-                AppliedSectionSubassemblyPoint("slope:left:daylight", "slope:left", "daylight", x, 8.0, 8.75, lateral_offset=8.0, side="left"),
+                AppliedSectionSubassemblyPoint("slope:left:hinge", "slope:left", "hinge", x, 40.5, 9.90, lateral_offset=40.5, side="left"),
+                AppliedSectionSubassemblyPoint("slope:left:daylight", "slope:left", "daylight", x, 80.0, 8.75, lateral_offset=80.0, side="left"),
                 AppliedSectionSubassemblyPoint("drainage:left:gutter-in", "drainage:left", "gutter_in", x, 3.7, 9.88, lateral_offset=3.7, side="left"),
                 AppliedSectionSubassemblyPoint("drainage:left:gutter-out", "drainage:left", "gutter_out", x, 4.0, 9.84, lateral_offset=4.0, side="left"),
                 AppliedSectionSubassemblyPoint("drainage:left:ditch-in", "drainage:left", "ditch_in", x, 8.2, 8.70, lateral_offset=8.2, side="left"),
@@ -5139,9 +5653,51 @@ def test_corridor_general_shared_breakline_result_uses_applied_section_link_role
     assert len(design_refs) == 2
     assert len(slope_refs) == 2
     assert len(drainage_refs) == 4
+    slope_points = [point for point in shared.point_rows if point.breakline_ref in slope_refs]
+    assert sorted({round(point.y, 3) for point in slope_points}) == [4.5, 8.0]
+    assert all("Applied Section side slope boundary point" in point.notes for point in slope_points)
     assert all("profile:main" in row.source_contract_refs for row in shared.breakline_rows)
     drainage_rows = [row for row in shared.breakline_rows if "handoff" in row.breakline_role]
     assert {row.material_role for row in drainage_rows} == {"drainage_surface"}
+
+
+def test_corridor_general_shared_breakline_splits_slope_face_when_boundary_slot_changes() -> None:
+    def section(section_id: str, station: float, x: float, outer_role: str, outer_offset: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            region_id="region:ordinary",
+            station=station,
+            frame=AppliedSectionFrame(station=station, x=x, y=0.0, z=10.0),
+            point_rows=[
+                AppliedSectionPoint(f"{section_id}:left:hinge", x, 4.5, 9.90, "side_slope_surface", 4.5, side="left"),
+                AppliedSectionPoint(f"{section_id}:left:outer", x, outer_offset, 8.75, outer_role, outer_offset, side="left"),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:slope-slot-change",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            section("section:0", 0.0, 0.0, "daylight_marker", 8.0),
+            section("section:10", 10.0, 10.0, "side_slope_surface", 16.0),
+            section("section:20", 20.0, 20.0, "daylight_marker", 8.0),
+        ],
+    )
+
+    shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
+    slope_rows = [row for row in shared.breakline_rows if row.material_role == "slope_face_surface"]
+
+    assert [row.breakline_role for row in slope_rows] == ["shoulder_to_side_slope"]
+    assert len(slope_rows[0].point_refs) == 3
+    assert all("side_slope_internal_breakline" != row.breakline_role for row in slope_rows)
+    assert all("side_slope_to_daylight" != row.breakline_role for row in slope_rows)
 
 
 def test_corridor_drainage_handoff_breaklines_audit_against_drainage_surface_constraints() -> None:
@@ -5304,6 +5860,10 @@ def test_corridor_general_shared_breakline_audit_reports_zero_mismatch_for_strai
             region_id="region:ordinary",
             station=station,
             frame=AppliedSectionFrame(station=station, x=x, y=y_shift, z=10.0),
+            point_rows=[
+                AppliedSectionPoint("slope:left:hinge", x, y_shift + 4.5, 9.90, "side_slope_surface", 4.5, side="left"),
+                AppliedSectionPoint("slope:left:daylight", x, y_shift + 8.0, 8.75, "daylight_marker", 8.0, side="left"),
+            ],
             subassembly_rows=[
                 AppliedSectionSubassemblyRow("lane:left", "lane", side="left"),
                 AppliedSectionSubassemblyRow("slope:left", "side_slope", side="left"),

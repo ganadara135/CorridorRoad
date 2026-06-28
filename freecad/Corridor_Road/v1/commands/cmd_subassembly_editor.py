@@ -414,7 +414,27 @@ class V1AssemblySubassemblyEditorTaskPanel:
         layout.addLayout(ids_row)
 
         guess_ref_row = QtWidgets.QHBoxLayout()
-        self.guess_subassembly_refs_button = QtWidgets.QPushButton("Guess Missing Subassembly Refs")
+        self.guess_subassembly_refs_button = QtWidgets.QPushButton("Guess Subassembly Refs")
+        self.guess_subassembly_refs_button.setObjectName("GuessSubassemblyRefsButton")
+        self.guess_subassembly_refs_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.guess_subassembly_refs_button.setMinimumHeight(32)
+        self.guess_subassembly_refs_button.setStyleSheet(
+            "QPushButton#GuessSubassemblyRefsButton {"
+            "background: #1f4f83;"
+            "color: #ffffff;"
+            "border: 1px solid #6fb6ff;"
+            "border-radius: 4px;"
+            "padding: 6px 12px;"
+            "font-weight: 600;"
+            "}"
+            "QPushButton#GuessSubassemblyRefsButton:hover {"
+            "background: #2b6faa;"
+            "border-color: #93c5fd;"
+            "}"
+            "QPushButton#GuessSubassemblyRefsButton:pressed {"
+            "background: #163d66;"
+            "}"
+        )
         self.guess_subassembly_refs_button.setToolTip(
             "Fill empty Subassembly Ref cells by guessing from each Subassembly ID. Existing refs are not overwritten."
         )

@@ -38,6 +38,7 @@ from ..objects.obj_simulation_qa import create_or_update_v1_simulation_qa_output
 from ..objects.obj_simulation_package import create_or_update_v1_simulation_package_output_object, find_v1_simulation_package_output
 from ..exchange import export_simulation_package_to_json
 from ..models.output.simulation_qa_output import SimulationQaDiagnosticRow
+from ..ui.common.styles import apply_clickable_tab_style
 from ..models.output.surface_output import intersection_surface_replacement_blocker_kind
 from ..models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow, WatertightSolidSegmentRow
 from ..models.result.intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
@@ -452,6 +453,7 @@ class V1WatertightSolidsTaskPanel:
         layout.addWidget(qa_label)
 
         self._qa_tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._qa_tabs, "WatertightSolidsQATabs")
         self._qa_family_table = QtWidgets.QTableWidget(0, 4)
         self._qa_family_table.setHorizontalHeaderLabels(["Family", "Status", "Outputs", "Volume"])
         self._qa_family_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)

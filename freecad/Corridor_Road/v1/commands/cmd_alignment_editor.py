@@ -35,6 +35,7 @@ from ..objects.obj_alignment import (
 )
 from ..models.source.alignment_model import AlignmentElement, AlignmentModel
 from ..services.evaluation import AlignmentCurvePreviewRequest, AlignmentCurvePreviewService
+from ..ui.common.styles import apply_clickable_tab_style
 from .selection_context import selected_alignment_profile_target
 
 
@@ -94,6 +95,35 @@ def alignment_preset_placement_names() -> list[str]:
     """Return supported preset placement modes for the v1 Alignment editor."""
 
     return list(ALIGNMENT_PRESET_PLACEMENTS)
+
+
+def _alignment_table_height(table, *, visible_rows: int = 6) -> int:
+    """Return a compact fixed table height for alignment editor tables."""
+
+    try:
+        visible = max(1, int(visible_rows))
+        row_count = max(int(table.rowCount()), 0)
+        header_height = int(table.horizontalHeader().height()) if table.horizontalHeader() is not None else 28
+        row_height = 0
+        if row_count > 0:
+            for row_index in range(min(row_count, visible)):
+                row_height = max(row_height, int(table.rowHeight(row_index)))
+        if row_height <= 0:
+            row_height = int(table.verticalHeader().defaultSectionSize()) if table.verticalHeader() is not None else 28
+        row_height = max(row_height, 24)
+        scrollbar_height = 18 if table.horizontalScrollBarPolicy() != QtCore.Qt.ScrollBarAlwaysOff else 0
+        frame = int(table.frameWidth()) * 2 if hasattr(table, "frameWidth") else 4
+        return int(header_height + (visible * row_height) + scrollbar_height + frame + 6)
+    except Exception:
+        return 220
+
+
+def _fit_alignment_table_height(table, *, visible_rows: int = 6) -> None:
+    try:
+        table.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        table.setFixedHeight(_alignment_table_height(table, visible_rows=visible_rows))
+    except Exception:
+        pass
 
 
 def alignment_preset_center(rows) -> tuple[float, float]:
@@ -794,9 +824,14 @@ class V1AlignmentEditorTaskPanel:
         layout.addWidget(hint)
 
         self._tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._tabs, "AlignmentEditorTabs")
+        try:
+            self._tabs.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum)
+        except Exception:
+            pass
         self._tabs.addTab(self._build_pi_tab(), "PI Geometry")
         self._tabs.addTab(self._build_compiled_tab(), "Compiled v1 Geometry")
-        layout.addWidget(self._tabs, 1)
+        layout.addWidget(self._tabs)
 
         button_row = QtWidgets.QHBoxLayout()
         review_button = QtWidgets.QPushButton("Review Alignment")
@@ -882,11 +917,11 @@ class V1AlignmentEditorTaskPanel:
 
         self._ip_table = QtWidgets.QTableWidget(0, 4)
         self._ip_table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
-        self._ip_table.setMinimumHeight(220)
         try:
             self._ip_table.horizontalHeader().setStretchLastSection(True)
             self._ip_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             self._ip_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            _fit_alignment_table_height(self._ip_table, visible_rows=6)
         except Exception:
             pass
         layout.addWidget(self._ip_table)
@@ -1060,9 +1095,11 @@ class V1AlignmentEditorTaskPanel:
         self._ip_table.setRowCount(0)
         if self.alignment is None:
             self._set_default_starter_rows()
+            _fit_alignment_table_height(self._ip_table, visible_rows=6)
             return
         for row in alignment_ip_rows(self.alignment):
             self._append_ip_row(row)
+        _fit_alignment_table_height(self._ip_table, visible_rows=6)
 
     def _set_default_starter_rows(self) -> None:
         preset_name = "Sample Local Alignment"
@@ -1084,6 +1121,7 @@ class V1AlignmentEditorTaskPanel:
         ]
         for col, value in enumerate(values):
             self._ip_table.setItem(row_index, col, QtWidgets.QTableWidgetItem(value))
+        _fit_alignment_table_height(self._ip_table, visible_rows=6)
 
     def _load_element_rows(self) -> None:
         self._element_table.setRowCount(0)
@@ -1145,6 +1183,7 @@ class V1AlignmentEditorTaskPanel:
             row_index = self._ip_table.rowCount() - 1
         if row_index >= 0:
             self._ip_table.removeRow(row_index)
+            _fit_alignment_table_height(self._ip_table, visible_rows=6)
             self._set_status("Removed selected PI row. Apply when ready.", ok=True)
             self._refresh_curve_preview()
 
@@ -1158,6 +1197,7 @@ class V1AlignmentEditorTaskPanel:
         self._ip_table.setRowCount(0)
         for row in rows:
             self._append_ip_row(row)
+        _fit_alignment_table_height(self._ip_table, visible_rows=6)
         self._set_status("PI rows sorted by X/Y. Apply when ready.", ok=True)
         self._refresh_curve_preview()
 
@@ -1314,6 +1354,7 @@ class V1AlignmentEditorTaskPanel:
                     "transition_length": float(transition_length),
                 }
             )
+        _fit_alignment_table_height(self._ip_table, visible_rows=6)
 
     def _update_preset_note(self) -> None:
         if not hasattr(self, "_preset_note"):

@@ -26,6 +26,7 @@ from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.alignment_evaluation_service import AlignmentEvaluationService
 from ..services.mapping.drainage_review_mapper import DrainageReviewMapper
 from ..services.mapping.drainage_pipeline_geometry_mapper import build_drainage_pipeline_geometry_rows
+from ..ui.common.styles import apply_clickable_tab_style
 
 
 class CmdV1DrainageReview:
@@ -591,6 +592,7 @@ class V1DrainageReviewTaskPanel:
         layout.addWidget(self._summary_table)
 
         self._tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._tabs, "DrainageReviewTabs")
         self._element_table = _table(["Kind", "Label", "Start STA", "End STA", "Source", "Notes"])
         self._flow_route_table = _table(["Flow Route", "From", "To", "Outlet", "Risk", "Chain", "Notes"])
         self._flow_route_table.itemDoubleClicked.connect(lambda item: self._show_flow_route_issue(item.row()))

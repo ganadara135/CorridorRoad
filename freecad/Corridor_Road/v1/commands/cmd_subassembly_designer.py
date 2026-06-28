@@ -34,6 +34,7 @@ from ..models.source.subassembly_definition_presets import (
     subassembly_definition_library_from_preset,
     subassembly_definition_preset_names,
 )
+from ..ui.common.styles import apply_clickable_tab_style
 from ..models.source.assembly_model import (
     AssemblySubassemblyModel,
     SubassemblySectionTemplate,
@@ -886,6 +887,7 @@ class V1SubAssemblyDesignerTaskPanel:
         detail_table_layout.setContentsMargins(0, 0, 0, 0)
 
         self.detail_tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self.detail_tabs, "SubassemblyDesignerDetailTabs")
         self.parameter_table = _new_table(PARAMETER_COLUMNS)
         self.point_table = _new_table(POINT_COLUMNS)
         self.link_table = _new_table(LINK_COLUMNS)

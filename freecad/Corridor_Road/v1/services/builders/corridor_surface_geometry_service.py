@@ -3151,23 +3151,11 @@ def _section_points_for_surface_role(section, *, point_role: str) -> list[object
 
 def _section_points_for_slope_face_role(section) -> list[object]:
     roles = {"side_slope_surface", "bench_surface", "daylight_marker"}
-    linked_subassembly_rows = _subassembly_points_for_surface_role(section, surface_role="slope_face_surface")
-    if linked_subassembly_rows:
-        return linked_subassembly_rows
-    legacy_rows = [
+    return [
         point
         for point in list(getattr(section, "point_rows", []) or [])
         if str(getattr(point, "point_role", "") or "") in roles
     ]
-    linked_point_ids = _subassembly_link_point_ids_for_surface_role(section, surface_role="slope_face_surface")
-    if not linked_point_ids:
-        return legacy_rows
-    linked_rows = [
-        point
-        for point in legacy_rows
-        if str(getattr(point, "point_id", "") or "").strip() in linked_point_ids
-    ]
-    return linked_rows if linked_rows else legacy_rows
 
 
 def _subassembly_points_for_surface_role(section, *, surface_role: str) -> list[_SectionPointLite]:

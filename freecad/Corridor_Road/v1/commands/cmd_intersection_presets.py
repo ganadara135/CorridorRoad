@@ -285,17 +285,21 @@ class V1IntersectionPresetsTaskPanel:
         self._hide_edge_button = QtWidgets.QPushButton("Hide Edge Network")
         self._hide_edge_button.clicked.connect(self._hide_edge_network)
         buttons.addWidget(self._hide_edge_button)
-        self._hide_sources_button = QtWidgets.QPushButton("Hide Preset Sources")
-        self._hide_sources_button.clicked.connect(self._hide_preset_sources)
-        buttons.addWidget(self._hide_sources_button)
-        self._show_sources_button = QtWidgets.QPushButton("Show Preset Sources")
-        self._show_sources_button.clicked.connect(self._show_preset_sources)
-        buttons.addWidget(self._show_sources_button)
         buttons.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
         buttons.addWidget(close_button)
         layout.addLayout(buttons)
+
+        source_visibility_buttons = QtWidgets.QHBoxLayout()
+        self._hide_sources_button = QtWidgets.QPushButton("Hide Preset Sources")
+        self._hide_sources_button.clicked.connect(self._hide_preset_sources)
+        source_visibility_buttons.addWidget(self._hide_sources_button)
+        self._show_sources_button = QtWidgets.QPushButton("Show Preset Sources")
+        self._show_sources_button.clicked.connect(self._show_preset_sources)
+        source_visibility_buttons.addWidget(self._show_sources_button)
+        source_visibility_buttons.addStretch(1)
+        layout.addLayout(source_visibility_buttons)
         return root
 
     def _selected_label(self) -> str:
