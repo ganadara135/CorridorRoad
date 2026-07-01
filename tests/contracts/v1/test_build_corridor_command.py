@@ -66,7 +66,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     toggle_corridor_surface_transition_enabled,
     update_corridor_surface_transition_station_range,
 )
-from freecad.Corridor_Road.v1.models.result.tin_surface import TINSurface, TINTriangle, TINVertex
+from freecad.Corridor_Road.v1.models.result.tin_surface import TINQualityRow, TINSurface, TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.models.result.intersection_boundary_segment import IntersectionBoundarySegmentResult, IntersectionBoundarySegmentRow
 from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import tin_mesh_preview_style
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
@@ -135,6 +135,7 @@ from freecad.Corridor_Road.v1.models.result.intersection_drainage_hint import (
     IntersectionDrainageHintResult,
     IntersectionDrainageHintRow,
 )
+from freecad.Corridor_Road.v1.models.result.centerline3d import Centerline3DPointRow, Centerline3DResult
 from dataclasses import replace
 
 _QAPP = None
@@ -1308,7 +1309,9 @@ def test_corridor_intersection_contract_review_rows_label_missing_source_path() 
     doc, _project = _new_project_doc()
     try:
         rows = corridor_intersection_contract_review_rows(doc)
+        internal_rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
         summary = corridor_intersection_contract_review_summary(doc)
+        internal_summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
 
         assert len(rows) == 1
         assert rows[0]["status"] == "missing"
@@ -1331,38 +1334,39 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
         )
 
         rows = corridor_intersection_contract_review_rows(doc)
+        internal_rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
         summary = corridor_intersection_contract_review_summary(doc)
+        internal_summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
 
-        assert summary["status"] == "warning"
-        assert summary["row_count"] == 25
-        assert summary["source_warning_count"] == 0
+        assert summary["status"] == "ready"
+        assert summary["row_count"] == len([row for row in rows if row.get("row_id")])
         assert "topology=1" in summary["notes"]
-        assert "edge_network=6" in summary["notes"]
-        assert "surface_zone=7" in summary["notes"]
-        assert "slope_face_loop=2" in summary["notes"]
+        assert "edge_network=" not in summary["notes"]
+        assert "surface_zone=" not in summary["notes"]
+        assert "slope_face_loop=" not in summary["notes"]
+        assert "slope_face_cell=" not in summary["notes"]
+        assert "shared_boundary_graph=" not in summary["notes"]
+        assert "drainage_hint=" not in summary["notes"]
         assert "corridor_clip=4" in summary["notes"]
-        assert "drainage_hint=5" in summary["notes"]
-        assert "output paths=contract_consumed=25" in summary["notes"]
-        assert "source status=accepted=25" in summary["notes"]
-        assert "source warnings=0" in summary["notes"]
-        assert all(row["output_path"] == "contract_consumed" for row in rows)
+        assert "drainage_hint=5" in internal_summary["notes"]
+        assert all(
+            row["output_path"] in {"contract_consumed", "intersection_boundary_loop_result"}
+            for row in rows
+        )
+        assert not any(
+            row["contract_family"] in {"edge_network", "surface_zone", "drainage_hint", "slope_face_loop", "slope_face_cell", "shared_boundary_graph"}
+            for row in rows
+        )
         assert rows[0]["contract_family"] == "topology"
         assert rows[0]["status"] == "ready"
         assert rows[0]["source_status"] == "accepted"
         assert "lane connections=0" in rows[0]["notes"]
 
         edge_rows = [row for row in rows if row["contract_family"] == "edge_network"]
-        assert len(edge_rows) == 6
-        assert {row["role"] for row in edge_rows} == {"pavement_edge", "daylight_hinge", "curb_return_edge"}
-        assert all(row["source_status"] == "accepted" for row in edge_rows)
+        assert edge_rows == []
 
         zone_rows = [row for row in rows if row["contract_family"] == "surface_zone"]
-        assert len(zone_rows) == 7
-        assert zone_rows[0]["status"] == "ready"
-        assert all(row["source_status"] == "accepted" for row in zone_rows)
-        assert "central_pavement" in {row["role"] for row in zone_rows}
-        assert "exterior_slope_face" in {row["role"] for row in zone_rows}
-
+        assert zone_rows == []
         clip_rows = [row for row in rows if row["contract_family"] == "corridor_clip"]
         assert len(clip_rows) == 4
         assert {row["role"] for row in clip_rows} == {"design", "slope_face"}
@@ -1370,7 +1374,7 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
         assert "control-area:t-01:primary" in clip_rows[0]["source_refs"]
         assert "intent=intersection_owned" in clip_rows[0]["notes"]
         assert "lineage=result_only" in clip_rows[0]["notes"]
-        drainage_hint_rows = [row for row in rows if row["contract_family"] == "drainage_hint"]
+        drainage_hint_rows = [row for row in internal_rows if row["contract_family"] == "drainage_hint"]
         assert len(drainage_hint_rows) == 5
         assert {row["role"] for row in drainage_hint_rows} == {"low_point_candidate", "inlet_recommendation"}
         assert all(row["source_status"] == "accepted" for row in drainage_hint_rows)
@@ -1421,8 +1425,8 @@ def test_corridor_intersection_contract_review_rows_expose_source_status_warning
             ),
         )
 
-        rows = corridor_intersection_contract_review_rows(doc)
-        summary = corridor_intersection_contract_review_summary(doc)
+        rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
+        summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
         warning_rows = [row for row in rows if row.get("source_status") == "warning"]
 
         assert summary["status"] == "warning"
@@ -1433,7 +1437,6 @@ def test_corridor_intersection_contract_review_rows_expose_source_status_warning
         assert warning_rows
         assert all(row["output_path"] == "contract_consumed" for row in warning_rows)
         assert any("source_leg_profile_ref_missing" in str(row.get("source_diagnostics", "")) for row in warning_rows)
-        assert any("source_edge_policy_ref_unresolved" in str(row.get("source_diagnostics", "")) for row in warning_rows)
     finally:
         App.closeDocument(doc.Name)
 
@@ -1453,8 +1456,8 @@ def test_corridor_intersection_contract_review_rows_carry_slope_loop_source_line
             intersection_model=model,
         )
 
-        rows = corridor_intersection_contract_review_rows(doc)
-        summary = corridor_intersection_contract_review_summary(doc)
+        rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
+        summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
         slope_loop_warning_rows = [
             row
             for row in rows
@@ -1467,12 +1470,14 @@ def test_corridor_intersection_contract_review_rows_carry_slope_loop_source_line
         assert any("source_lineage=source_warning" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
         assert any("surface_zone_status=warning" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
         assert any("edge_network_status=warning" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
+        assert any("blocking=" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
+        assert any("closed_xy=" in str(row.get("notes", "")) for row in slope_loop_warning_rows)
         assert any("surface_zone_source_edge_diagnostic" in str(row.get("source_diagnostics", "")) for row in slope_loop_warning_rows)
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_focus_corridor_intersection_contract_review_row_creates_contract_highlight() -> None:
+def test_intersection_slope_face_cell_rows_are_visible_in_results_and_contracts() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_intersection_model_object(
@@ -1480,18 +1485,160 @@ def test_focus_corridor_intersection_contract_review_row_creates_contract_highli
             project=project,
             intersection_model=_sample_intersection_model(),
         )
-        preview = doc.addObject("Part::Feature", "V1IntersectionEdgeNetworkPreview")
-        preview.Shape = Part.makeLine(App.Vector(0, 0, 0), App.Vector(10, 0, 0))
-        rows = corridor_intersection_contract_review_rows(doc)
-        edge_index = next(index for index, row in enumerate(rows) if row["contract_family"] == "edge_network")
+        obj = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        obj.Label = "Intersection Slope Face Surface"
+        obj.Shape = Part.makeCompound(
+            [
+                Part.makePolygon(
+                    [
+                        App.Vector(0, 0, 0),
+                        App.Vector(1, 0, 0),
+                        App.Vector(1, 1, 0),
+                        App.Vector(0, 0, 0),
+                    ]
+                )
+            ]
+        )
+        build_corridor_command._set_preview_integer_property(obj, "VertexCount", 3)
+        build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 1)
+        build_corridor_command._set_preview_property(obj, "IntersectionSlopeFaceCellResultId", "intersection-slope-face-cells:test")
+        build_corridor_command._set_preview_property(obj, "IntersectionSlopeFaceCellStatus", "warning")
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellCount", 2)
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellReadyCount", 1)
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellOpenCount", 1)
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellMissingEdgeCount", 1)
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellTriangleCount", 4)
+        build_corridor_command._set_preview_string_list_property(
+            obj,
+            "IntersectionSlopeFaceCellAuditRows",
+            [
+                "cell:upper|upper_left_transition_cell|ready|0|0|5|patch-to-intersection-slope-face:1,intersection-slope-face-to-design-surface:1|",
+                "cell:tie|main_to_side_left_tie_cell|warning|1|1|3|main-side-slope-face-tie:1|intersection_slope_face_cell_edge_missing:curb_return",
+            ],
+        )
 
-        focused = focus_corridor_intersection_contract_review_row(doc, edge_index)
+        result_rows = corridor_build_review_rows(doc)
+        intersection_slope_row = [row for row in result_rows if row["role"] == "intersection_slope"][0]
+        contract_rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
+        summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
+        cell_rows = [row for row in contract_rows if row["contract_family"] == "slope_face_cell"]
+
+        assert "intersection_slope_face_cell cell_status=warning cells=2 ready=1 open=1 missing_edges=1 cell_triangles=4" in str(intersection_slope_row["notes"])
+        assert len(cell_rows) == 2
+        assert cell_rows[0]["status"] == "ready"
+        assert cell_rows[0]["source_status"] == "accepted"
+        assert cell_rows[0]["output_path"] == "intersection_slope_face_cell_result"
+        assert cell_rows[1]["status"] == "warning"
+        assert cell_rows[1]["source_status"] == "warning"
+        assert cell_rows[1]["focus_object"] == "V1CorridorIntersectionSlopeFaceSurfacePreview"
+        assert "missing_edges=1" in str(cell_rows[1]["notes"])
+        assert "intersection_slope_face_cell_edge_missing:curb_return" in str(cell_rows[1]["source_diagnostics"])
+        assert "slope_face_cell=2" in str(summary["notes"])
+        assert "output paths=contract_consumed=25, intersection_slope_face_cell_result=2" in str(summary["notes"])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_focus_corridor_intersection_contract_review_row_creates_contract_highlight() -> None:
+    doc, project = _new_project_doc()
+    original_centerline_result_builder = build_corridor_command._build_corridor_centerline3d_result
+    try:
+        primary = create_sample_v1_alignment(doc, project=project, label="Primary Alignment")
+        primary.AlignmentId = "alignment:primary"
+        primary.ElementIds = ["alignment:primary:tangent:1"]
+        primary.ElementKinds = ["tangent"]
+        primary.StationStarts = [0.0]
+        primary.StationEnds = [20.0]
+        primary.ElementLengths = [20.0]
+        primary.XValueRows = ["1000.0,1020.0"]
+        primary.YValueRows = ["2000.0,2000.0"]
+        side = create_sample_v1_alignment(doc, project=project, label="Side Alignment")
+        side.AlignmentId = "alignment:side"
+        side.ElementIds = ["alignment:side:tangent:1"]
+        side.ElementKinds = ["tangent"]
+        side.StationStarts = [0.0]
+        side.StationEnds = [20.0]
+        side.ElementLengths = [20.0]
+        side.XValueRows = ["1010.0,1010.0"]
+        side.YValueRows = ["1990.0,2010.0"]
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        build_corridor_command._build_corridor_centerline3d_result = lambda _document: Centerline3DResult(
+            centerline3d_result_id="centerline3d:test",
+            alignment_id="",
+            status="ready",
+            point_rows=(
+                Centerline3DPointRow(0.0, 3000.0, 4000.0, 50.0, source_alignment_ref="alignment:primary"),
+                Centerline3DPointRow(20.0, 3020.0, 4000.0, 70.0, source_alignment_ref="alignment:primary"),
+                Centerline3DPointRow(0.0, 3010.0, 3990.0, 60.0, source_alignment_ref="alignment:side"),
+                Centerline3DPointRow(20.0, 3010.0, 4010.0, 80.0, source_alignment_ref="alignment:side"),
+            ),
+        )
+        rows = corridor_intersection_contract_review_rows(doc)
+        boundary_index = next(index for index, row in enumerate(rows) if row["contract_family"] == "boundary_loop")
+
+        focused = focus_corridor_intersection_contract_review_row(doc, boundary_index)
 
         assert focused.Name == "ReviewIntersectionContractHighlight"
         assert focused.CRRecordKind == "v1_intersection_contract_review_highlight"
-        assert focused.ContractFamily == "edge_network"
-        assert focused.ContractRowId == rows[edge_index]["row_id"]
+        assert focused.ContractFamily == "boundary_loop"
+        assert focused.ContractRowId == rows[boundary_index]["row_id"]
         assert focused.HighlightedShapeCount >= 1
+        assert focused.Shape.BoundBox.XMin > 2900.0
+        assert focused.Shape.BoundBox.YMin > 3900.0
+        assert focused.Shape.BoundBox.ZMin > 49.0
+    finally:
+        build_corridor_command._build_corridor_centerline3d_result = original_centerline_result_builder
+        App.closeDocument(doc.Name)
+
+
+def test_focus_intersection_slope_face_cell_row_highlights_cell_breaklines() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        obj = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        obj.Label = "Intersection Slope Face Surface"
+        build_corridor_command._set_preview_property(obj, "IntersectionSlopeFaceCellResultId", "intersection-slope-face-cells:test")
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellCount", 1)
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellReadyCount", 1)
+        build_corridor_command._set_preview_integer_property(obj, "IntersectionSlopeFaceCellTriangleCount", 2)
+        build_corridor_command._set_preview_string_list_property(
+            obj,
+            "IntersectionSlopeFaceCellAuditRows",
+            [
+                "cell:upper|upper_left_transition_cell|ready|0|0|5|patch-to-intersection-slope-face:1,intersection-slope-face-to-design-surface:1|",
+            ],
+        )
+        build_corridor_command._set_preview_string_list_property(
+            obj,
+            "SharedBreaklineSegmentRows",
+            [
+                "shared:test:patch-to-intersection-slope-face:1|patch-to-intersection-slope-face|ready|1|0|0|0|1|0|0|intersection_slope_face",
+                "shared:test:intersection-slope-face-to-design-surface:1|intersection-slope-face-to-design-surface|ready|1|1|0|0|1|1|0|intersection_slope_face",
+                "shared:test:unrelated:1|unrelated-role|ready|1|5|5|0|6|5|0|other",
+            ],
+        )
+        rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
+        cell_index = next(index for index, row in enumerate(rows) if row["contract_family"] == "slope_face_cell")
+
+        focused = focus_corridor_intersection_contract_review_row(doc, cell_index, include_internal=True)
+
+        assert focused.Name == "ReviewIntersectionContractHighlight"
+        assert focused.ContractFamily == "slope_face_cell"
+        assert focused.ContractRowId == "cell:upper"
+        assert focused.HighlightedShapeCount == 2
+        assert set(focused.HighlightedRefs) == {
+            "shared:test:patch-to-intersection-slope-face:1",
+            "shared:test:intersection-slope-face-to-design-surface:1",
+        }
+        assert focused.Shape.BoundBox.XMax < 2.0
     finally:
         App.closeDocument(doc.Name)
 
@@ -2149,10 +2296,13 @@ def test_intersection_slope_face_surface_preview_records_consumed_loop_contract(
                     intersection_id="intersection:test",
                     loop_family="primary_outside",
                     loop_points_xyz=((0.0, 0.0, 10.0), (5.0, 0.0, 10.0), (5.0, 4.0, 9.0), (0.0, 4.0, 9.0)),
+                    boundary_edge_refs=("curb-return-to-slope-face:test",),
                     source_edge_network_refs=("edge:test:1",),
                     source_surface_zone_refs=("zone:test:1",),
                     closed_xy=True,
                     point_count=4,
+                    surface_generation_role="surface_candidate",
+                    surface_generation_status="ready",
                     status="ready",
                 ),
                 IntersectionSlopeFaceLoopRow(
@@ -2182,7 +2332,14 @@ def test_intersection_slope_face_surface_preview_records_consumed_loop_contract(
         assert slope_preview is not None
         assert slope_preview.ConsumedIntersectionSlopeFaceLoopResultId == "intersection-slope-face-loops:test"
         assert list(slope_preview.ConsumedIntersectionContractRefs) == ["intersection-slope-face-loops:test"]
-        assert slope_preview.ConsumedIntersectionContractSummary == "slope_face_loop=warning rows=2"
+        assert int(slope_preview.SurfaceGenerationReadyLoopCount) == 1
+        assert int(slope_preview.TriangleCount) == 4
+        assert list(slope_preview.SourceLoopRefs) == ["loop:test:outer"]
+        assert slope_preview.ConsumedIntersectionContractSummary == (
+            "slope_face_loop=warning rows=2 (ready=1/2 warning=1 error=0 "
+            "blocking=surface_generation_not_ready,source_edge_network,source_warning,"
+            "surface_zone_warning action=Review source warnings on Surface Zones and Slope Face Loops, then rebuild)"
+        )
         assert int(slope_preview.ConsumedIntersectionContractCount) == 1
         diagnostics = list(slope_preview.ConsumedIntersectionContractDiagnostics)
         assert "slope_face_loop:loop:test:warning:source_status=warning" in diagnostics
@@ -2193,7 +2350,8 @@ def test_intersection_slope_face_surface_preview_records_consumed_loop_contract(
         review_rows = corridor_build_review_rows(doc)
         slope_row = [row for row in review_rows if row["role"] == "intersection_slope"][0]
         assert slope_row["output_path"] == "contract_consumed"
-        assert "consumed_contracts=slope_face_loop=warning rows=2" in str(slope_row["notes"])
+        assert "consumed_contracts=slope_face_loop=warning rows=2 (ready=1/2 warning=1 error=0" in str(slope_row["notes"])
+        assert "surface_generation_not_ready" in str(slope_row["notes"])
         assert f"consumed_contract_diagnostics={len(diagnostics)}" in str(slope_row["notes"])
         assert (
             build_corridor_command._corridor_build_review_output_path(
@@ -2208,6 +2366,527 @@ def test_intersection_slope_face_surface_preview_records_consumed_loop_contract(
         )
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_loop_summary_explains_zero_ready_loops() -> None:
+    loop_result = IntersectionSlopeFaceLoopResult(
+        schema_version=1,
+        project_id="proj-1",
+        loop_result_id="intersection-slope-face-loops:test",
+        intersection_id="intersection:test",
+        status="warning",
+        loop_count=1,
+        ready_count=0,
+        warning_count=1,
+        error_count=0,
+        diagnostic_rows=[
+            "warning:slope_face_loop_open_xy:intersection-zone:test:slope-face-01",
+            "warning:slope_face_loop_tie_edge_refs_missing:intersection-zone:test:slope-face-01",
+        ],
+        loop_rows=[
+            IntersectionSlopeFaceLoopRow(
+                loop_id="loop:test:open",
+                intersection_id="intersection:test",
+                loop_family="primary_outside",
+                source_edge_network_refs=("edge:test:1",),
+                boundary_edge_refs=("curb-return-to-slope-face:test",),
+                source_surface_zone_refs=("zone:test:1",),
+                source_edge_network_status="accepted",
+                source_surface_zone_status="warning",
+                source_status="warning",
+                source_lineage_status="source_warning",
+                point_count=3,
+                status="warning",
+                diagnostics=(
+                    "warning:slope_face_loop_point_count_too_low",
+                    "warning:slope_face_loop_open_xy",
+                ),
+            )
+        ],
+    )
+
+    summary = build_corridor_command._intersection_slope_face_loop_readiness_summary(loop_result)
+
+    assert "ready=0/1" in summary
+    assert "warning=1" in summary
+    assert "blocking=slope_face_loop_open_xy,slope_face_loop_tie_edge_refs_missing" in summary
+    assert "action=Review Intersections tab edge-network and curb-return tie refs, then rebuild" in summary
+
+
+def test_intersection_slope_face_loop_recommended_action_maps_blocking_reason() -> None:
+    open_loop = IntersectionSlopeFaceLoopResult(
+        schema_version=1,
+        project_id="proj-1",
+        loop_result_id="intersection-slope-face-loops:test",
+        intersection_id="intersection:test",
+        status="warning",
+        loop_count=1,
+        warning_count=1,
+        loop_rows=[
+            IntersectionSlopeFaceLoopRow(
+                loop_id="loop:test:open",
+                intersection_id="intersection:test",
+                loop_family="primary_outside",
+                closed_xy=False,
+                point_count=3,
+                status="warning",
+                diagnostics=("warning:slope_face_loop_open_xy",),
+            )
+        ],
+    )
+    source_warning = IntersectionSlopeFaceLoopResult(
+        schema_version=1,
+        project_id="proj-1",
+        loop_result_id="intersection-slope-face-loops:test",
+        intersection_id="intersection:test",
+        status="warning",
+        loop_count=1,
+        warning_count=1,
+        loop_rows=[
+            IntersectionSlopeFaceLoopRow(
+                loop_id="loop:test:source",
+                intersection_id="intersection:test",
+                loop_family="primary_outside",
+                source_lineage_status="source_warning",
+                source_surface_zone_status="warning",
+                status="warning",
+            )
+        ],
+    )
+
+    assert build_corridor_command._intersection_slope_face_loop_recommended_action(open_loop) == (
+        "Review Slope Face loop boundary refs and dangling endpoints, then rebuild"
+    )
+    assert build_corridor_command._intersection_slope_face_loop_recommended_action(source_warning) == (
+        "Review source warnings on Surface Zones and Slope Face Loops, then rebuild"
+    )
+
+
+def test_intersection_slope_face_loop_highlight_style_distinguishes_debug_states() -> None:
+    ready = IntersectionSlopeFaceLoopRow(
+        loop_id="loop:test:ready",
+        intersection_id="intersection:test",
+        loop_family="primary_outside",
+        loop_points_xyz=((0.0, 0.0, 10.0), (5.0, 0.0, 10.0), (5.0, 4.0, 9.0), (0.0, 4.0, 9.0)),
+        closed_xy=True,
+        point_count=4,
+        surface_generation_role="surface_candidate",
+        surface_generation_status="ready",
+        status="ready",
+    )
+    open_loop = IntersectionSlopeFaceLoopRow(
+        loop_id="loop:test:open",
+        intersection_id="intersection:test",
+        loop_family="primary_outside",
+        closed_xy=False,
+        point_count=3,
+        diagnostics=("warning:slope_face_loop_open_xy",),
+        status="warning",
+    )
+    dangling = IntersectionSlopeFaceLoopRow(
+        loop_id="loop:test:dangling",
+        intersection_id="intersection:test",
+        loop_family="primary_outside",
+        closed_xy=False,
+        point_count=3,
+        diagnostics=("warning:slope_face_loop_dangling_endpoint:edge:test:xyz=0,0,0",),
+        status="warning",
+    )
+
+    ready_style = build_corridor_command._intersection_slope_face_loop_highlight_style(ready)
+    open_style = build_corridor_command._intersection_slope_face_loop_highlight_style(open_loop)
+    dangling_style = build_corridor_command._intersection_slope_face_loop_highlight_style(dangling)
+
+    assert ready_style["debug_status"] == "ready_closed_loop"
+    assert ready_style["line_color"] == (0.15, 1.0, 0.35)
+    assert open_style["debug_status"] == "open_loop"
+    assert open_style["line_color"] == (1.0, 0.62, 0.05)
+    assert dangling_style["debug_status"] == "dangling_endpoint"
+    assert dangling_style["line_color"] == (1.0, 0.18, 0.10)
+
+
+def test_intersection_slope_face_surface_preview_is_missing_when_ready_loops_are_zero() -> None:
+    doc, project = _new_project_doc()
+    try:
+        stale_preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        stale_preview.Label = "Intersection Slope Face Surface - stale"
+        loop_result = IntersectionSlopeFaceLoopResult(
+            schema_version=1,
+            project_id="proj-1",
+            loop_result_id="intersection-slope-face-loops:test",
+            intersection_id="intersection:test",
+            status="warning",
+            loop_count=1,
+            ready_count=0,
+            warning_count=1,
+            error_count=0,
+            diagnostic_rows=[
+                "warning:slope_face_loop_open_xy:intersection-zone:test:slope-face-01",
+                "warning:slope_face_loop_tie_edge_refs_missing:intersection-zone:test:slope-face-01",
+            ],
+            loop_rows=[
+                IntersectionSlopeFaceLoopRow(
+                    loop_id="loop:test:open",
+                    intersection_id="intersection:test",
+                    loop_family="primary_outside",
+                    source_edge_network_refs=("edge:test:1",),
+                    source_surface_zone_refs=("zone:test:1",),
+                    source_surface_zone_status="warning",
+                    source_status="warning",
+                    source_lineage_status="source_warning",
+                    point_count=3,
+                    closed_xy=False,
+                    status="warning",
+                    diagnostics=(
+                        "warning:slope_face_loop_point_count_too_low",
+                        "warning:slope_face_loop_open_xy",
+                    ),
+                )
+            ],
+        )
+
+        slope_preview = build_corridor_command._create_corridor_intersection_slope_face_surface_preview(
+            doc,
+            loop_result,
+            project=project,
+        )
+
+        assert slope_preview is None
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview") is None
+        assert build_corridor_command._intersection_slope_face_loop_readiness_summary(loop_result).startswith(
+            "(ready=0/1 warning=1 error=0"
+        )
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_surface_preview_skips_diagnostic_only_ready_loop() -> None:
+    doc, project = _new_project_doc()
+    try:
+        stale_preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        stale_preview.Label = "Intersection Slope Face Surface - stale"
+        loop_result = IntersectionSlopeFaceLoopResult(
+            schema_version=1,
+            project_id="proj-1",
+            loop_result_id="intersection-slope-face-loops:test",
+            intersection_id="intersection:test",
+            status="warning",
+            loop_count=1,
+            ready_count=1,
+            warning_count=0,
+            error_count=0,
+            loop_rows=[
+                IntersectionSlopeFaceLoopRow(
+                    loop_id="loop:test:diagnostic-only",
+                    intersection_id="intersection:test",
+                    loop_family="primary_outside",
+                    loop_points_xyz=((0.0, 0.0, 10.0), (5.0, 0.0, 10.0), (5.0, 4.0, 9.0), (0.0, 4.0, 9.0)),
+                    source_edge_network_refs=("edge:test:1",),
+                    source_surface_zone_refs=("zone:test:1",),
+                    closed_xy=True,
+                    point_count=4,
+                    surface_generation_role="diagnostic_only",
+                    surface_generation_status="blocked",
+                    status="ready",
+                )
+            ],
+        )
+
+        slope_preview = build_corridor_command._create_corridor_intersection_slope_face_surface_preview(
+            doc,
+            loop_result,
+            project=project,
+        )
+
+        assert slope_preview is None
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview") is None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_surface_preview_skips_invalid_surface_candidate_ring() -> None:
+    doc, project = _new_project_doc()
+    try:
+        stale_preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        stale_preview.Label = "Intersection Slope Face Surface - stale"
+        loop_result = IntersectionSlopeFaceLoopResult(
+            schema_version=1,
+            project_id="proj-1",
+            loop_result_id="intersection-slope-face-loops:test",
+            intersection_id="intersection:test",
+            status="ready",
+            loop_count=1,
+            ready_count=1,
+            warning_count=0,
+            error_count=0,
+            loop_rows=[
+                IntersectionSlopeFaceLoopRow(
+                    loop_id="loop:test:open-surface-candidate",
+                    intersection_id="intersection:test",
+                    loop_family="primary_outside",
+                    loop_points_xyz=((0.0, 0.0, 10.0), (5.0, 0.0, 10.0), (5.0, 4.0, 9.0)),
+                    source_edge_network_refs=("edge:test:1",),
+                    source_surface_zone_refs=("zone:test:1",),
+                    closed_xy=False,
+                    point_count=3,
+                    surface_generation_role="surface_candidate",
+                    surface_generation_status="ready",
+                    status="ready",
+                )
+            ],
+        )
+
+        slope_preview = build_corridor_command._create_corridor_intersection_slope_face_surface_preview(
+            doc,
+            loop_result,
+            project=project,
+        )
+
+        assert slope_preview is None
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview") is None
+        assert "surface_generation_open_xy" in build_corridor_command._intersection_slope_face_loop_readiness_summary(loop_result)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_surface_preview_accepts_applied_section_completed_loop() -> None:
+    doc, project = _new_project_doc()
+    try:
+        loop_result = IntersectionSlopeFaceLoopResult(
+            schema_version=1,
+            project_id="proj-1",
+            loop_result_id="intersection-slope-face-loops:test",
+            intersection_id="intersection:test",
+            status="ready",
+            loop_count=1,
+            ready_count=1,
+            warning_count=0,
+            error_count=0,
+            loop_rows=[
+                IntersectionSlopeFaceLoopRow(
+                    loop_id="loop:test:applied-section-top",
+                    intersection_id="intersection:test",
+                    loop_family="primary_outside_loop",
+                    loop_points_xyz=(
+                        (0.0, 0.0, 10.0),
+                        (8.0, 0.0, 10.0),
+                        (8.0, 4.0, 9.5),
+                        (0.0, 4.0, 9.5),
+                        (0.0, 0.0, 10.0),
+                    ),
+                    boundary_edge_refs=(
+                        "applied-section-boundary:intersection-zone-test:main-left:01",
+                        "applied-section-boundary:intersection-zone-test:main-left:02",
+                    ),
+                    source_applied_section_refs=("applied-section:001", "applied-section:002"),
+                    source_edge_network_refs=("edge:test:daylight", "edge:test:pavement"),
+                    source_surface_zone_refs=("zone:test:slope-face-top",),
+                    closed_xy=True,
+                    point_count=5,
+                    surface_generation_role="surface_candidate",
+                    surface_generation_status="ready",
+                    status="ready",
+                    notes=(
+                        "Slope Face loop candidate from surface-zone contract; "
+                        "applied_section_side_slope_refs=applied-section:001,applied-section:002 "
+                        "applied_section_boundary_completion=used surface_generation=surface_candidate:ready"
+                    ),
+                )
+            ],
+        )
+
+        slope_preview = build_corridor_command._create_corridor_intersection_slope_face_surface_preview(
+            doc,
+            loop_result,
+            project=project,
+        )
+
+        assert slope_preview is not None
+        assert slope_preview.Label.startswith("Intersection Slope Face Surface")
+        assert int(getattr(slope_preview, "TriangleCount", 0) or 0) == 4
+        assert "loop:test:applied-section-top" in list(getattr(slope_preview, "SourceLoopRefs", []) or [])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_slope_face_surface_records_skinny_fan_loop_quality_rows() -> None:
+    loop_result = IntersectionSlopeFaceLoopResult(
+        schema_version=1,
+        project_id="proj-1",
+        loop_result_id="intersection-slope-face-loops:test",
+        intersection_id="intersection:test",
+        status="ready",
+        loop_count=1,
+        ready_count=1,
+        warning_count=0,
+        error_count=0,
+        loop_rows=[
+            IntersectionSlopeFaceLoopRow(
+                loop_id="loop:test:skinny",
+                intersection_id="intersection:test",
+                loop_family="primary_outside",
+                loop_points_xyz=(
+                    (0.0, 0.0, 10.0),
+                    (100.0, 0.0, 10.0),
+                    (100.0, 0.01, 9.9),
+                    (0.0, 0.01, 9.9),
+                    (0.0, 0.0, 10.0),
+                ),
+                source_edge_network_refs=("edge:test:1",),
+                boundary_edge_refs=("curb-return-to-slope-face:test",),
+                source_surface_zone_refs=("zone:test:1",),
+                closed_xy=True,
+                point_count=5,
+                surface_generation_role="surface_candidate",
+                surface_generation_status="ready",
+                status="ready",
+            )
+        ],
+    )
+
+    surface = build_corridor_command._build_intersection_slope_face_surface_from_ready_loops(
+        loop_result,
+        project_id="proj-1",
+    )
+
+    assert len(surface.triangle_rows) == 4
+    assert build_corridor_command._tin_quality_float(surface, "ready_loop_count") == 1
+    assert build_corridor_command._tin_quality_float(surface, "generated_loop_count") == 1
+    assert build_corridor_command._tin_quality_float(surface, "rejected_skinny_loop_count") == 1
+    assert build_corridor_command._tin_quality_float(surface, "rejected_degenerate_loop_count") == 0
+    assert build_corridor_command._tin_quality_text(surface, "rejected_loop_refs") == ""
+    assert build_corridor_command._tin_quality_float(surface, "fan_min_quality") < 0.08
+
+
+def test_intersection_slope_face_surface_rejects_degenerate_fan_loop_with_quality_rows() -> None:
+    loop_result = IntersectionSlopeFaceLoopResult(
+        schema_version=1,
+        project_id="proj-1",
+        loop_result_id="intersection-slope-face-loops:test",
+        intersection_id="intersection:test",
+        status="ready",
+        loop_count=1,
+        ready_count=1,
+        loop_rows=[
+            IntersectionSlopeFaceLoopRow(
+                loop_id="loop:test:degenerate",
+                intersection_id="intersection:test",
+                loop_family="primary_outside",
+                loop_points_xyz=(
+                    (0.0, 0.0, 10.0),
+                    (5.0, 0.0, 10.0),
+                    (10.0, 0.0, 10.0),
+                    (0.0, 0.0, 10.0),
+                ),
+                closed_xy=True,
+                boundary_edge_refs=("curb-return-to-slope-face:test",),
+                point_count=4,
+                surface_generation_role="surface_candidate",
+                surface_generation_status="ready",
+                status="ready",
+            )
+        ],
+    )
+
+    surface = build_corridor_command._build_intersection_slope_face_surface_from_ready_loops(
+        loop_result,
+        project_id="proj-1",
+    )
+
+    assert len(surface.triangle_rows) == 0
+    assert build_corridor_command._tin_quality_float(surface, "generated_loop_count") == 0
+    assert build_corridor_command._tin_quality_float(surface, "rejected_degenerate_loop_count") == 1
+    assert build_corridor_command._tin_quality_float(surface, "rejected_skinny_loop_count") == 0
+    assert build_corridor_command._tin_quality_text(surface, "rejected_loop_refs") == "loop:test:degenerate"
+
+
+def test_intersection_slope_loop_suppression_skips_quality_rejected_reference_surface() -> None:
+    daylight = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="slope_face_surface",
+        vertex_rows=[
+            TINVertex("d0", 0.0, 0.0, 10.0),
+            TINVertex("d1", 10.0, 0.0, 10.0),
+            TINVertex("d2", 0.0, 10.0, 9.0),
+        ],
+        triangle_rows=[
+            TINTriangle("daylight:tri:1", "d0", "d1", "d2", quality_ref="side_slope_surface"),
+        ],
+    )
+    rejected_reference = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection-slope-face",
+        surface_kind="intersection_slope_face_surface",
+        boundary_refs=["loop:test:quality-rejected"],
+        quality_rows=[
+            TINQualityRow("q:ready", "ready_loop_count", 1, "count"),
+            TINQualityRow("q:generated", "generated_loop_count", 0, "count"),
+            TINQualityRow("q:skinny", "rejected_skinny_loop_count", 1, "count"),
+        ],
+    )
+
+    suppressed = build_corridor_command._suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+        daylight,
+        rejected_reference,
+    )
+
+    assert [triangle.triangle_id for triangle in suppressed.triangle_rows] == ["daylight:tri:1"]
+    assert build_corridor_command._tin_quality_text(suppressed, "intersection_slope_loop_suppress_status") == "skipped"
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_suppressed_triangle_count") == 0
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_reference_triangle_count") == 0
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_kept_triangle_count") == 1
+    assert list(getattr(suppressed, "void_refs", []) or []) == []
+
+
+def test_intersection_slope_loop_suppression_uses_generated_ready_loop_footprint_only() -> None:
+    daylight = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="slope_face_surface",
+        vertex_rows=[
+            TINVertex("inside-a", 1.0, 1.0, 10.0),
+            TINVertex("inside-b", 2.0, 1.0, 10.0),
+            TINVertex("inside-c", 1.0, 2.0, 10.0),
+            TINVertex("outside-a", 20.0, 20.0, 10.0),
+            TINVertex("outside-b", 21.0, 20.0, 10.0),
+            TINVertex("outside-c", 20.0, 21.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("daylight:inside", "inside-a", "inside-b", "inside-c", quality_ref="side_slope_surface"),
+            TINTriangle("daylight:outside", "outside-a", "outside-b", "outside-c", quality_ref="side_slope_surface"),
+        ],
+    )
+    reference = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection-slope-face",
+        surface_kind="intersection_slope_face_surface",
+        boundary_refs=["loop:test:generated"],
+        vertex_rows=[
+            TINVertex("r0", 0.0, 0.0, 10.0),
+            TINVertex("r1", 5.0, 0.0, 10.0),
+            TINVertex("r2", 0.0, 5.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("ref:tri:1", "r0", "r1", "r2", quality_ref="intersection_slope_face_loop"),
+        ],
+    )
+
+    suppressed = build_corridor_command._suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+        daylight,
+        reference,
+    )
+
+    assert [triangle.triangle_id for triangle in suppressed.triangle_rows] == ["daylight:outside"]
+    assert build_corridor_command._tin_quality_text(suppressed, "intersection_slope_loop_suppress_status") == "ready"
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_ready_loop_count") == 1
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_suppressed_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_kept_triangle_count") == 1
+    assert list(getattr(suppressed, "void_refs", []) or []) == ["surface:intersection-slope-face"]
 
 
 def test_intersection_consumed_contract_metadata_preserves_row_source_diagnostics() -> None:
@@ -2816,6 +3495,120 @@ def test_corridor_intersection_tie_in_edge_result_spans_across_exact_target_sect
     assert result.status == "ready"
     assert all(row.station_start == 100.0 for row in result.edge_rows)
     assert all(row.station_end == 140.0 for row in result.edge_rows)
+
+
+def test_intersection_slope_face_boundary_result_preserves_all_tie_in_sides() -> None:
+    def primary_section(station: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=f"section:primary-{station:.0f}",
+            corridor_id="corridor:main",
+            alignment_id="alignment:primary",
+            region_id="region:primary-intersection",
+            station=station,
+            frame=AppliedSectionFrame(station=station, x=station, y=0.0, z=10.0, tangent_direction_deg=0.0),
+            active_intersection_id="intersection:t-01",
+            point_rows=[
+                AppliedSectionPoint("fg:left", station, 5.0, 10.0, "fg_surface", 5.0),
+                AppliedSectionPoint("fg:right", station, -5.0, 10.0, "fg_surface", -5.0),
+                AppliedSectionPoint("daylight:left", station, 8.0, 9.0, "daylight_marker", 8.0),
+                AppliedSectionPoint("daylight:right", station, -8.0, 9.0, "daylight_marker", -8.0),
+            ],
+        )
+
+    def side_section(station: float) -> AppliedSection:
+        y = station - 120.0
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=f"section:side-{station:.0f}",
+            corridor_id="corridor:main",
+            alignment_id="alignment:side",
+            region_id="region:side-intersection",
+            station=station,
+            frame=AppliedSectionFrame(station=station, x=120.0, y=y, z=12.0, tangent_direction_deg=90.0),
+            active_intersection_id="intersection:t-01",
+            point_rows=[
+                AppliedSectionPoint("fg:left", 116.0, y, 12.0, "fg_surface", 4.0),
+                AppliedSectionPoint("fg:right", 124.0, y, 12.0, "fg_surface", -4.0),
+                AppliedSectionPoint("daylight:left", 112.0, y, 11.0, "daylight_marker", 8.0),
+                AppliedSectionPoint("daylight:right", 128.0, y, 11.0, "daylight_marker", -8.0),
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:intersection-boundary-sides",
+        corridor_id="corridor:main",
+        alignment_id="alignment:primary",
+        sections=[
+            primary_section(96.0),
+            primary_section(144.0),
+            side_section(96.0),
+            side_section(144.0),
+        ],
+    )
+    prerequisite = IntersectionPatchPrerequisiteResult(
+        status="ready",
+        intersection_id="intersection:t-01",
+        alignment_refs=("alignment:primary", "alignment:side"),
+        control_region_refs=("region:primary-intersection", "region:side-intersection"),
+    )
+    intersection_model = IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:test",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:primary",
+                secondary_alignment_refs=["alignment:side"],
+                primary_station=120.0,
+                secondary_station_refs={"alignment:side": 120.0},
+            )
+        ],
+    )
+
+    tie_in_result = corridor_intersection_tie_in_edge_result(
+        applied,
+        prerequisite=prerequisite,
+        intersection_model=intersection_model,
+    )
+    boundary_segment_result = corridor_intersection_boundary_segment_result(
+        tie_in_result,
+        intersection_model=intersection_model,
+    )
+    target_segments = build_corridor_command._intersection_slope_face_boundary_target_segments(
+        boundary_segment_result,
+        intersection_model=intersection_model,
+        intersection_id="intersection:t-01",
+    )
+    slope_boundary = build_corridor_command.corridor_intersection_slope_face_boundary_result(
+        applied,
+        prerequisite=prerequisite,
+        intersection_model=intersection_model,
+    )
+
+    assert {(row.alignment_ref, row.side) for row in target_segments} == {
+        ("alignment:primary", "left"),
+        ("alignment:primary", "right"),
+        ("alignment:side", "left"),
+        ("alignment:side", "right"),
+    }
+    assert slope_boundary.status == "ready"
+    assert slope_boundary.boundary_count == 4
+    assert slope_boundary.ready_count == 4
+    assert {(row.alignment_ref, row.side) for row in slope_boundary.boundary_rows} == {
+        ("alignment:primary", "left"),
+        ("alignment:primary", "right"),
+        ("alignment:side", "left"),
+        ("alignment:side", "right"),
+    }
+    assert all(len(row.inner_points_xyz) >= 2 for row in slope_boundary.boundary_rows)
+    assert all(len(row.outer_points_xyz) >= 2 for row in slope_boundary.boundary_rows)
 
 
 def test_corridor_intersection_boundary_segment_result_promotes_tie_in_and_curb_return_arcs() -> None:
@@ -6490,18 +7283,43 @@ def test_shared_breakline_audit_panel_rows_and_summary_are_user_readable() -> No
         build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineSolidDuplicateEdgeCount", 1)
         build_corridor_command._set_preview_integer_property(slope, "SharedBreaklineSolidNonManifoldNodeCount", 1)
         build_corridor_command._set_preview_string_list_property(slope, "SharedBreaklineAuditNotes", ["geometry_mismatch:slope_face_surface:shared-breakline:test"])
+        intersection_slope = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        intersection_slope.Label = "Intersection Slope Face Surface"
+        build_corridor_command._set_preview_property(intersection_slope, "SharedBreaklineResultId", "shared-breakline:test")
+        build_corridor_command._set_preview_property(intersection_slope, "SharedBreaklineStatus", "ready")
+        build_corridor_command._set_preview_integer_property(intersection_slope, "SharedBreaklineCount", 3)
+        build_corridor_command._set_preview_integer_property(intersection_slope, "SharedBreaklineConsumedCount", 3)
+        build_corridor_command._set_preview_property(intersection_slope, "SharedBreaklineAuditStatus", "ready")
+        build_corridor_command._set_preview_integer_property(intersection_slope, "SharedBreaklineGeometryMatchCount", 3)
+        build_corridor_command._set_preview_integer_property(intersection_slope, "SharedBreaklineMeshMatchCount", 3)
+        build_corridor_command._set_preview_property(intersection_slope, "SharedBreaklineRoleSummary", "patch_to_intersection_slope_face=1, main_side_slope_face_tie=2")
+        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellCount", 3)
+        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellReadyCount", 2)
+        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellOpenCount", 1)
+        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellMissingEdgeCount", 1)
+        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellTriangleCount", 8)
+        build_corridor_command._set_preview_string_list_property(
+            intersection_slope,
+            "IntersectionSlopeFaceCellAuditRows",
+            [
+                "cell:upper|upper_left_transition_cell|ready|0|0|5|patch-to-intersection-slope-face:1,intersection-slope-face-to-design-surface:1|",
+                "cell:tie|main_to_side_left_tie_cell|warning|1|1|3|main-side-slope-face-tie:1|intersection_slope_face_cell_edge_missing:curb_return",
+            ],
+        )
 
         rows = build_corridor_command.corridor_shared_breakline_audit_rows(doc)
         display_rows = build_corridor_command.shared_breakline_audit_display_rows(rows)
+        internal_display_rows = build_corridor_command.shared_breakline_audit_display_rows(rows, include_internal=True)
         summary = build_corridor_command.corridor_shared_breakline_audit_summary(doc)
 
-        assert [row["surface"] for row in rows] == ["Intersection Surface", "Slope Face Surface"]
-        assert [row["row_kind"] for row in display_rows[:2]] == ["surface", "role"]
-        assert display_rows[1]["surface"] == "  Role: curb_return_outer"
-        assert display_rows[1]["breakline_role_filter"] == "curb_return_outer"
-        assert display_rows[1]["role_summary"] == "curb_return_outer=2"
-        assert any(row.get("breakline_role_filter") == "patch_to_shoulder" for row in display_rows)
-        assert any(row.get("breakline_role_filter") == "patch_to_slope_face" for row in display_rows)
+        assert [row["surface"] for row in rows] == ["Intersection Surface", "Slope Face Surface", "Intersection Slope Face Surface"]
+        assert [row["row_kind"] for row in display_rows] == ["surface", "surface", "surface"]
+        assert [row["row_kind"] for row in internal_display_rows[:2]] == ["surface", "role"]
+        assert internal_display_rows[1]["surface"] == "  Role: curb_return_outer"
+        assert internal_display_rows[1]["breakline_role_filter"] == "curb_return_outer"
+        assert internal_display_rows[1]["role_summary"] == "curb_return_outer=2"
+        assert any(row.get("breakline_role_filter") == "patch_to_shoulder" for row in internal_display_rows)
+        assert any(row.get("breakline_role_filter") == "patch_to_slope_face" for row in internal_display_rows)
         assert rows[0]["status"] == "ready"
         assert rows[0]["recommended_action"] == "No action needed"
         assert rows[0]["material_summary"] == "curb_return=2, shoulder=1"
@@ -6518,10 +7336,25 @@ def test_shared_breakline_audit_panel_rows_and_summary_are_user_readable() -> No
         assert rows[1]["solid_non_manifold_node_count"] == 1
         assert rows[1]["recommended_action"] == "Rebuild constrained surface mesh"
         assert "geometry_mismatch:slope_face_surface" in rows[1]["notes"]
+        assert rows[2]["status"] == "warning"
+        assert rows[2]["cell_count"] == 3
+        assert rows[2]["cell_open_count"] == 1
+        assert rows[2]["cell_missing_edge_count"] == 1
+        assert rows[2]["recommended_action"] == "Review Intersection Slope Face cells, then rebuild"
+        assert "cell_audit=count=3" in rows[2]["notes"]
+        assert any(row.get("row_kind") == "cell" and row.get("surface") == "  Cell Audit: Intersection Slope Face" for row in internal_display_rows)
+        cell_detail_rows = [row for row in internal_display_rows if row.get("row_kind") == "cell_detail"]
+        assert len(cell_detail_rows) == 2
+        assert cell_detail_rows[1]["status"] == "warning"
+        assert cell_detail_rows[1]["surface"] == "    Cell: main_to_side_left_tie_cell"
+        assert "main-side-slope-face-tie:1" in cell_detail_rows[1]["role_summary"]
+        assert "intersection_slope_face_cell_edge_missing:curb_return" in cell_detail_rows[1]["notes"]
         assert summary["status"] == "warning"
-        assert summary["title"] == "Shared breakline issues found: 1 surface(s)"
+        assert summary["title"] == "Shared breakline issues found: 2 surface(s)"
         assert "geometry_mismatch=1" in summary["notes"]
         assert "mesh_mismatch=1" in summary["notes"]
+        assert "cell_open=1" in summary["notes"]
+        assert "cell_missing_edge=1" in summary["notes"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -9645,6 +10478,52 @@ def test_corridor_preview_visibility_helpers_target_roles_and_markers() -> None:
     )
 
 
+def test_intersection_slope_visibility_note_explains_absent_preview() -> None:
+    class FakeView:
+        def __init__(self):
+            self.Visibility = False
+
+    class FakeObject:
+        def __init__(self, name):
+            self.Name = name
+            self.Label = name
+            self.ViewObject = FakeView()
+
+    class FakeDocument:
+        def __init__(self):
+            intersection = FakeObject("V1CorridorIntersectionSurfacePreview")
+            intersection.IntersectionSlopeFaceSurfaceStatus = "missing"
+            intersection.IntersectionSlopeFaceSurfaceRecommendedAction = "Review Side Slope loop contracts."
+            intersection.IntersectionSlopeFaceLoopReadinessSummary = "ready_loops=0; blocked_loops=2"
+            self.Objects = [intersection]
+
+        def getObject(self, name):
+            for obj in self.Objects:
+                if obj.Name == name:
+                    return obj
+            return None
+
+    doc = FakeDocument()
+
+    assert build_corridor_command.set_corridor_build_preview_visibility(doc, "intersection_slope", True) is None
+    note = build_corridor_command.corridor_build_preview_visibility_note(doc, "intersection_slope")
+    assert "unavailable" in note
+    assert "ready_loops=0" in note
+    assert "Recommended Action: Review Side Slope loop contracts." in note
+
+    rows = build_corridor_command.corridor_build_review_rows(doc)
+    slope_row = [row for row in rows if row["role"] == "intersection_slope"][0]
+    assert slope_row["status"] == "missing"
+    assert "Review Side Slope loop contracts" in slope_row["notes"]
+
+    slope_preview = FakeObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
+    doc.Objects.append(slope_preview)
+    toggled = build_corridor_command.set_corridor_build_preview_visibility(doc, "intersection_slope", True)
+    assert toggled is slope_preview
+    assert slope_preview.ViewObject.Visibility is True
+    assert "Show or hide" in build_corridor_command.corridor_build_preview_visibility_note(doc, "intersection_slope")
+
+
 def test_corridor_build_visibility_group_toggles_common_review_layers() -> None:
     class FakeView:
         def __init__(self):
@@ -10216,6 +11095,19 @@ def test_subassembly_kind_review_does_not_stitch_across_alignment_scopes() -> No
         assert int(obj.SectionCount) == 4
         assert int(obj.ContinuityScopeCount) == 2
         assert int(obj.SurfacePatchCount) == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_side_slope_guided_focus_falls_back_to_slope_face_surface_when_highlight_missing() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        slope_preview = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
+        slope_preview.Label = "Slope Face Surface - corridor:main"
+
+        focused = build_corridor_command.focus_corridor_subassembly_kind_review(doc, "side_slope")
+
+        assert focused is slope_preview
     finally:
         App.closeDocument(doc.Name)
 

@@ -103,23 +103,23 @@ Lane, Shoulder, and Side Slope geometry should therefore come from Applied Secti
 
 `Use Existing Alignments` links user-created Primary and Secondary Alignment sources into the same preset-driven intersection workflow.
 
-`Preview Edge Network` is available in both modes.
+Standalone edge-network geometry is no longer exposed from the panel.
 
-In `Create From Preset` mode, click `Create Sources` first, then use `Preview Edge Network` to review the edge network created from the generated preset Alignments and control Regions.
+In `Create From Preset` mode, click `Create Sources`, then review edge-network result contracts in Build Parametric `Intersections`.
 
-`Preview Edge Network` uses the current preset option values.
+Current preset option values are stored on source rows and carried into result diagnostics.
 
-- `Radius / Diameter` changes the curb-return preview arcs.
-- `Control Length` changes the visible control-area and leg-edge station span used by the preview.
-- `Design Vehicle`, `Grading Policy`, and `Drainage Mode` are stored on the preview object as source-policy context so the user can confirm which preset settings were used.
+- `Radius / Diameter` changes the curb-return source policy.
+- `Control Length` changes the control-area and leg-edge station span used by evaluation.
+- `Design Vehicle`, `Grading Policy`, and `Drainage Mode` are stored as source-policy context for Build Parametric diagnostics.
 
 `Grading Policy = blend_primary_side` builds the Intersection Surface as a sloped grading plane from the primary and side-road Applied Section elevations.
 
 This lets the patch tilt toward the side-road height instead of forcing the whole intersection patch to one flat elevation.
 
-Use `Hide Edge Network` to hide that preview object from the 3D View without deleting the source data.
+Standalone edge-network geometry is not exposed as a panel command. Review edge-network rows through Build Parametric `Intersections` contract diagnostics.
 
-In existing-alignment mode, the panel can run Auto Detect, preview the edge network, and apply the resulting `IntersectionModel`.
+In existing-alignment mode, the panel can run Auto Detect and apply the resulting `IntersectionModel`.
 
 It can also create preset-owned Superelevation and Drainage handoff sources.
 

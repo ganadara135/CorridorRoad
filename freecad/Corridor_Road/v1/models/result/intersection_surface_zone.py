@@ -28,6 +28,8 @@ class IntersectionSurfaceZoneRow:
     vertical_policy_ref: str = ""
     surface_priority: int = 0
     triangulation_method: str = "not_assigned"
+    surface_generation_role: str = "review_only"
+    surface_generation_status: str = "not_ready"
     source_status: str = "accepted"
     source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"

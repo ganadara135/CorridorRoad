@@ -29,6 +29,8 @@ $tests = @(
     "tests/regression/smoke_practical_roadside_library.py",
     "tests/regression/smoke_practical_report_contract.py",
     "tests/regression/smoke_practical_sample_driven_workflow.py",
+    "tests/regression/smoke_intersection_t_slope_face_surface.py",
+    "tests/regression/smoke_intersection_non_t_slope_face_readiness.py",
     "tests/regression/smoke_structure_station_merge.py",
     "tests/regression/smoke_notch_profile_contract.py",
     "tests/regression/smoke_notch_neighbor_modes.py",

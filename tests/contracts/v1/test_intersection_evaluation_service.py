@@ -16,10 +16,17 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
 )
 from freecad.Corridor_Road.v1.models.result.intersection_corridor_clipping import IntersectionCorridorClipRow
 from freecad.Corridor_Road.v1.models.result.intersection_drainage_hint import IntersectionDrainageHintRow
-from freecad.Corridor_Road.v1.models.result.intersection_edge_network import IntersectionEdgeNetworkRow
+from freecad.Corridor_Road.v1.models.result.intersection_edge_network import IntersectionEdgeNetworkResult, IntersectionEdgeNetworkRow
 from freecad.Corridor_Road.v1.models.result.intersection_grading_context import IntersectionGradingContextRow
 from freecad.Corridor_Road.v1.models.result.intersection_slope_face_loop import IntersectionSlopeFaceLoopRow
-from freecad.Corridor_Road.v1.models.result.intersection_surface_zone import IntersectionSurfaceZoneRow
+from freecad.Corridor_Road.v1.models.result.intersection_surface_zone import IntersectionSurfaceZoneResult, IntersectionSurfaceZoneRow
+from freecad.Corridor_Road.v1.models.result.applied_section import (
+    AppliedSection,
+    AppliedSectionPoint,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
+)
+from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet
 from freecad.Corridor_Road.v1.models.result.intersection_topology import (
     IntersectionTopologyAnchorRow,
     IntersectionTopologyControlAreaRow,
@@ -29,6 +36,7 @@ from freecad.Corridor_Road.v1.models.result.intersection_topology import (
 from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import (
     IntersectionEvaluationService,
 )
+from freecad.Corridor_Road.v1.services.evaluation import intersection_evaluation_service
 
 
 def test_intersection_core_result_rows_expose_source_status_contract() -> None:
@@ -51,6 +59,718 @@ def test_intersection_core_result_rows_expose_source_status_contract() -> None:
         field_names = {field.name for field in fields(row_type)}
         assert "source_status" in field_names, row_type.__name__
         assert "source_diagnostic_rows" in field_names, row_type.__name__
+
+
+def test_slope_face_loop_endpoint_graph_tracks_nodes_segments_and_dangling_refs() -> None:
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:bottom",
+            intersection_id="intersection:test",
+            edge_role="daylight_hinge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:right",
+            intersection_id="intersection:test",
+            edge_role="tie_edge",
+            start_xyz=(10.0, 0.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:top",
+            intersection_id="intersection:test",
+            edge_role="pavement_edge",
+            start_xyz=(10.0, 5.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:left",
+            intersection_id="intersection:test",
+            edge_role="tie_edge",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tail",
+            intersection_id="intersection:test",
+            edge_role="diagnostic_tail",
+            start_xyz=(20.0, 0.0, 0.0),
+            end_xyz=(25.0, 0.0, 0.0),
+        ),
+    ]
+    edge_by_id = {row.edge_id: row for row in edge_rows}
+
+    graph = intersection_evaluation_service._slope_face_loop_endpoint_graph(
+        (
+            "edge:bottom",
+            "edge:right",
+            "edge:top",
+            "edge:left",
+            "edge:tail",
+            "edge:missing",
+        ),
+        edge_by_id,
+    )
+
+    assert len(graph["segments"]) == 5
+    assert len(graph["nodes"]) == 6
+    assert graph["unresolved_edge_refs"] == ("edge:missing",)
+    assert graph["degenerate_edge_refs"] == ()
+    assert len(graph["dangling_node_keys"]) == 2
+    assert len(graph["dangling_endpoint_rows"]) == 2
+    assert {row["edge_refs"] for row in graph["dangling_endpoint_rows"]} == {("edge:tail",)}
+    assert graph["branch_node_keys"] == ()
+
+
+def test_slope_face_loop_ordered_rings_from_graph_handles_unordered_edges() -> None:
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:top",
+            intersection_id="intersection:test",
+            edge_role="pavement_edge",
+            start_xyz=(10.0, 5.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:bottom",
+            intersection_id="intersection:test",
+            edge_role="daylight_hinge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:left",
+            intersection_id="intersection:test",
+            edge_role="tie_edge",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:right",
+            intersection_id="intersection:test",
+            edge_role="tie_edge",
+            start_xyz=(10.0, 0.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+    ]
+    edge_by_id = {row.edge_id: row for row in edge_rows}
+    graph = intersection_evaluation_service._slope_face_loop_endpoint_graph(
+        ("edge:top", "edge:bottom", "edge:left", "edge:right"),
+        edge_by_id,
+    )
+
+    rings = intersection_evaluation_service._slope_face_loop_ordered_rings_from_graph(graph)
+
+    assert len(rings) == 1
+    assert set(rings[0]["edge_refs"]) == {"edge:top", "edge:bottom", "edge:left", "edge:right"}
+    assert len(rings[0]["points_xyz"]) == 5
+    assert rings[0]["points_xyz"][0] == rings[0]["points_xyz"][-1]
+
+
+def test_evaluate_slope_face_loops_orders_unordered_boundary_edges_into_ready_closed_loop() -> None:
+    model = _sample_intersection_model()
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:top",
+            intersection_id="intersection:t-01",
+            edge_role="pavement_edge",
+            start_xyz=(10.0, 5.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:right",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(10.0, 5.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:bottom",
+            intersection_id="intersection:t-01",
+            edge_role="daylight_hinge",
+            start_xyz=(10.0, 0.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:left",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+    ]
+    edge_network = IntersectionEdgeNetworkResult(
+        schema_version=1,
+        project_id="project:demo",
+        edge_network_result_id="intersection-edge-network:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_rows=edge_rows,
+    )
+    surface_zones = IntersectionSurfaceZoneResult(
+        schema_version=1,
+        project_id="project:demo",
+        surface_zone_result_id="intersection-surface-zones:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        zone_rows=[
+            IntersectionSurfaceZoneRow(
+                zone_id="intersection-zone:test:slope-face-01",
+                intersection_id="intersection:t-01",
+                zone_role="exterior_slope_face",
+                zone_family="slope",
+                surface_role="slope_face",
+                source_edge_refs=("edge:bottom", "edge:right", "edge:top", "edge:left"),
+                boundary_edge_refs=("edge:top", "edge:left", "edge:bottom", "edge:right"),
+                inner_edge_refs=("edge:top",),
+                outer_edge_refs=("edge:bottom",),
+                tie_edge_refs=("edge:left", "edge:right"),
+                surface_generation_role="surface_candidate",
+                surface_generation_status="ready",
+                status="ready",
+            )
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_slope_face_loops(model, surface_zones, edge_network)
+
+    assert result.status == "ready"
+    assert result.ready_count == 1
+    loop = result.loop_rows[0]
+    assert loop.status == "ready"
+    assert loop.closed_xy is True
+    assert loop.self_crossing is False
+    assert loop.surface_generation_role == "surface_candidate"
+    assert loop.surface_generation_status == "ready"
+    assert loop.loop_points_xyz[0] == loop.loop_points_xyz[-1]
+    assert len(loop.loop_points_xyz) == 5
+    assert not loop.diagnostics
+
+
+def test_slope_face_loop_ordered_rings_use_deterministic_tie_breaking() -> None:
+    first_rows = [
+        IntersectionEdgeNetworkRow("edge:top", "intersection:test", "pavement_edge", start_xyz=(10.0, 5.0, 0.0), end_xyz=(0.0, 5.0, 0.0)),
+        IntersectionEdgeNetworkRow("edge:bottom", "intersection:test", "daylight_hinge", start_xyz=(0.0, 0.0, 0.0), end_xyz=(10.0, 0.0, 0.0)),
+        IntersectionEdgeNetworkRow("edge:left", "intersection:test", "tie_edge", start_xyz=(0.0, 5.0, 0.0), end_xyz=(0.0, 0.0, 0.0)),
+        IntersectionEdgeNetworkRow("edge:right", "intersection:test", "tie_edge", start_xyz=(10.0, 0.0, 0.0), end_xyz=(10.0, 5.0, 0.0)),
+    ]
+    second_rows = [
+        IntersectionEdgeNetworkRow("edge:right", "intersection:test", "tie_edge", start_xyz=(10.0, 5.0, 0.0), end_xyz=(10.0, 0.0, 0.0)),
+        IntersectionEdgeNetworkRow("edge:left", "intersection:test", "tie_edge", start_xyz=(0.0, 0.0, 0.0), end_xyz=(0.0, 5.0, 0.0)),
+        IntersectionEdgeNetworkRow("edge:bottom", "intersection:test", "daylight_hinge", start_xyz=(10.0, 0.0, 0.0), end_xyz=(0.0, 0.0, 0.0)),
+        IntersectionEdgeNetworkRow("edge:top", "intersection:test", "pavement_edge", start_xyz=(0.0, 5.0, 0.0), end_xyz=(10.0, 5.0, 0.0)),
+    ]
+
+    first_graph = intersection_evaluation_service._slope_face_loop_endpoint_graph(
+        tuple(row.edge_id for row in first_rows),
+        {row.edge_id: row for row in first_rows},
+    )
+    second_graph = intersection_evaluation_service._slope_face_loop_endpoint_graph(
+        tuple(reversed([row.edge_id for row in second_rows])),
+        {row.edge_id: row for row in second_rows},
+    )
+
+    first_ring = intersection_evaluation_service._slope_face_loop_ordered_rings_from_graph(first_graph)[0]
+    second_ring = intersection_evaluation_service._slope_face_loop_ordered_rings_from_graph(second_graph)[0]
+
+    assert first_ring["point_keys"] == second_ring["point_keys"]
+    assert first_ring["points_xyz"] == second_ring["points_xyz"]
+
+
+def test_evaluate_slope_face_loops_reports_dangling_endpoint_diagnostics() -> None:
+    model = _sample_intersection_model()
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:inner",
+            intersection_id="intersection:t-01",
+            edge_role="pavement_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:outer",
+            intersection_id="intersection:t-01",
+            edge_role="daylight_hinge",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-left",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+    ]
+    edge_network = IntersectionEdgeNetworkResult(
+        schema_version=1,
+        project_id="project:demo",
+        edge_network_result_id="intersection-edge-network:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_rows=edge_rows,
+    )
+    surface_zones = IntersectionSurfaceZoneResult(
+        schema_version=1,
+        project_id="project:demo",
+        surface_zone_result_id="intersection-surface-zones:test",
+        intersection_id="intersection:t-01",
+        status="warning",
+        zone_rows=[
+            IntersectionSurfaceZoneRow(
+                zone_id="intersection-zone:test:slope-face-01",
+                intersection_id="intersection:t-01",
+                zone_role="exterior_slope_face",
+                zone_family="slope",
+                surface_role="slope_face",
+                source_edge_refs=("edge:inner", "edge:outer", "edge:tie-left"),
+                boundary_edge_refs=("edge:inner", "edge:outer", "edge:tie-left"),
+                inner_edge_refs=("edge:inner",),
+                outer_edge_refs=("edge:outer",),
+                tie_edge_refs=("edge:tie-left",),
+                status="warning",
+            )
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_slope_face_loops(model, surface_zones, edge_network)
+
+    assert result.warning_count == 1
+    assert result.ready_count == 0
+    assert result.status == "warning"
+    loop = result.loop_rows[0]
+    assert loop.status == "warning"
+    assert loop.closed_xy is False
+    assert loop.surface_generation_role == "diagnostic_only"
+    assert loop.surface_generation_status == "blocked"
+    assert loop.point_count >= 2
+    assert any("slope_face_loop_dangling_endpoint" in diagnostic for diagnostic in loop.diagnostics)
+    assert any("slope_face_loop_open_xy" in diagnostic for diagnostic in loop.diagnostics)
+    assert any("edge:outer" in diagnostic for diagnostic in loop.diagnostics)
+    assert any("slope_face_loop_dangling_endpoint" in diagnostic for diagnostic in result.diagnostic_rows)
+    assert any("slope_face_loop_open_xy" in diagnostic for diagnostic in result.diagnostic_rows)
+    assert "surface_generation=diagnostic_only:blocked" in loop.notes
+
+
+def test_evaluate_slope_face_loops_blocks_ready_when_tie_edge_refs_are_missing() -> None:
+    model = _sample_intersection_model()
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:inner",
+            intersection_id="intersection:t-01",
+            edge_role="pavement_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:outer",
+            intersection_id="intersection:t-01",
+            edge_role="daylight_hinge",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+    ]
+    edge_network = IntersectionEdgeNetworkResult(
+        schema_version=1,
+        project_id="project:demo",
+        edge_network_result_id="intersection-edge-network:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_rows=edge_rows,
+    )
+    surface_zones = IntersectionSurfaceZoneResult(
+        schema_version=1,
+        project_id="project:demo",
+        surface_zone_result_id="intersection-surface-zones:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        zone_rows=[
+            IntersectionSurfaceZoneRow(
+                zone_id="intersection-zone:test:slope-face-01",
+                intersection_id="intersection:t-01",
+                zone_role="exterior_slope_face",
+                zone_family="slope",
+                surface_role="slope_face",
+                source_edge_refs=("edge:inner", "edge:outer"),
+                boundary_edge_refs=("edge:inner", "edge:outer"),
+                inner_edge_refs=("edge:inner",),
+                outer_edge_refs=("edge:outer",),
+                tie_edge_refs=(),
+                surface_generation_role="surface_candidate",
+                surface_generation_status="ready",
+                status="ready",
+            )
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_slope_face_loops(model, surface_zones, edge_network)
+
+    assert result.status == "warning"
+    assert result.ready_count == 0
+    loop = result.loop_rows[0]
+    assert loop.status == "warning"
+    assert loop.closed_xy is False
+    assert loop.surface_generation_role == "diagnostic_only"
+    assert loop.surface_generation_status == "blocked"
+    assert "warning:slope_face_loop_tie_edge_refs_missing" in loop.diagnostics
+    assert any("slope_face_loop_dangling_endpoint" in diagnostic for diagnostic in loop.diagnostics)
+    assert any("slope_face_loop_open_xy" in diagnostic for diagnostic in loop.diagnostics)
+    assert any("slope_face_loop_tie_edge_refs_missing" in diagnostic for diagnostic in result.diagnostic_rows)
+    assert "surface_generation=diagnostic_only:blocked" in loop.notes
+
+
+def test_evaluate_slope_face_loops_consumes_applied_section_side_slope_refs() -> None:
+    model = _sample_intersection_model()
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:inner",
+            intersection_id="intersection:t-01",
+            edge_role="pavement_edge",
+            alignment_ref="alignment:main",
+            control_area_ref="intersection:t-01:control-main",
+            leg_ref="intersection:t-01:leg-main-before",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:outer",
+            intersection_id="intersection:t-01",
+            edge_role="daylight_hinge",
+            alignment_ref="alignment:main",
+            control_area_ref="intersection:t-01:control-main",
+            leg_ref="intersection:t-01:leg-main-before",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-left",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-right",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(10.0, 0.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+    ]
+    edge_network = IntersectionEdgeNetworkResult(
+        schema_version=1,
+        project_id="project:demo",
+        edge_network_result_id="intersection-edge-network:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_rows=edge_rows,
+    )
+    surface_zones = IntersectionSurfaceZoneResult(
+        schema_version=1,
+        project_id="project:demo",
+        surface_zone_result_id="intersection-surface-zones:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        zone_rows=[
+            IntersectionSurfaceZoneRow(
+                zone_id="intersection-zone:test:slope-face-01",
+                intersection_id="intersection:t-01",
+                zone_role="exterior_slope_face",
+                zone_family="slope",
+                surface_role="slope_face",
+                source_edge_refs=("edge:inner", "edge:outer", "edge:tie-left", "edge:tie-right"),
+                boundary_edge_refs=("edge:inner", "edge:tie-right", "edge:outer", "edge:tie-left"),
+                inner_edge_refs=("edge:inner",),
+                outer_edge_refs=("edge:outer",),
+                tie_edge_refs=("edge:tie-left", "edge:tie-right"),
+                alignment_refs=("alignment:main",),
+                control_area_refs=("intersection:t-01:control-main",),
+                leg_refs=("intersection:t-01:leg-main-before",),
+                surface_generation_role="surface_candidate",
+                surface_generation_status="ready",
+                status="ready",
+            )
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="project:demo",
+        applied_section_set_id="applied-sections:test",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="project:demo",
+                applied_section_id="section:side-slope-context",
+                alignment_id="alignment:main",
+                active_intersection_id="intersection:t-01",
+                active_intersection_control_area_id="intersection:t-01:control-main",
+                active_intersection_leg_id="intersection:t-01:leg-main-before",
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink(
+                        link_id="link:side-slope",
+                        subassembly_ref="subassembly:side-slope",
+                        start_point_ref="p1",
+                        end_point_ref="p2",
+                        link_code="side_slope",
+                        surface_role="side_slope_surface",
+                    )
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="project:demo",
+                applied_section_id="section:ordinary-alignment-side-slope",
+                alignment_id="alignment:main",
+                point_rows=[
+                    AppliedSectionPoint(
+                        point_id="point:daylight",
+                        x=0.0,
+                        y=0.0,
+                        z=0.0,
+                        point_role="daylight_marker",
+                    )
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="project:demo",
+                applied_section_id="section:no-side-slope",
+                alignment_id="alignment:main",
+            ),
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_slope_face_loops(
+        model,
+        surface_zones,
+        edge_network,
+        applied,
+    )
+
+    assert result.ready_count == 1
+    assert result.loop_rows[0].source_applied_section_refs == (
+        "section:side-slope-context",
+        "section:ordinary-alignment-side-slope",
+    )
+    assert result.loop_rows[0].surface_generation_role == "surface_candidate"
+    assert result.loop_rows[0].surface_generation_status == "ready"
+    assert "applied_section_side_slope_refs=section:side-slope-context,section:ordinary-alignment-side-slope" in result.loop_rows[0].notes
+    assert "surface_generation=surface_candidate:ready" in result.loop_rows[0].notes
+
+
+def test_evaluate_slope_face_loops_completes_degenerate_edges_from_applied_section_boundaries() -> None:
+    model = _sample_intersection_model()
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:inner",
+            intersection_id="intersection:t-01",
+            edge_role="pavement_edge",
+            alignment_ref="alignment:main",
+            control_area_ref="intersection:t-01:control-main",
+            leg_ref="intersection:t-01:leg-main-before",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:outer",
+            intersection_id="intersection:t-01",
+            edge_role="daylight_hinge",
+            alignment_ref="alignment:main",
+            control_area_ref="intersection:t-01:control-main",
+            leg_ref="intersection:t-01:leg-main-before",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-left",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-right",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 0.0, 0.0),
+        ),
+    ]
+    edge_network = IntersectionEdgeNetworkResult(
+        schema_version=1,
+        project_id="project:demo",
+        edge_network_result_id="intersection-edge-network:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_rows=edge_rows,
+    )
+    surface_zones = IntersectionSurfaceZoneResult(
+        schema_version=1,
+        project_id="project:demo",
+        surface_zone_result_id="intersection-surface-zones:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        zone_rows=[
+            IntersectionSurfaceZoneRow(
+                zone_id="intersection-zone:test:slope-face-01",
+                intersection_id="intersection:t-01",
+                zone_role="exterior_slope_face",
+                zone_family="slope",
+                surface_role="slope_face",
+                source_edge_refs=("edge:inner", "edge:outer", "edge:tie-left", "edge:tie-right"),
+                boundary_edge_refs=("edge:inner", "edge:tie-right", "edge:outer", "edge:tie-left"),
+                inner_edge_refs=("edge:inner",),
+                outer_edge_refs=("edge:outer",),
+                tie_edge_refs=("edge:tie-left", "edge:tie-right"),
+                alignment_refs=("alignment:main",),
+                control_area_refs=("intersection:t-01:control-main",),
+                leg_refs=("intersection:t-01:leg-main-before",),
+                surface_generation_role="surface_candidate",
+                surface_generation_status="ready",
+                status="ready",
+            )
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="project:demo",
+        applied_section_set_id="applied-sections:test",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="project:demo",
+                applied_section_id="section:main-a",
+                alignment_id="alignment:main",
+                station=100.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_control_area_id="intersection:t-01:control-main",
+                active_intersection_leg_id="intersection:t-01:leg-main-before",
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint("p0", "side-slope", "hinge", 0.0, 0.0, 0.0),
+                    AppliedSectionSubassemblyPoint("p1", "side-slope", "daylight", 0.0, 5.0, 0.0),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink("link:a", "side-slope", "p0", "p1", "side_slope", surface_role="side_slope_surface")
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="project:demo",
+                applied_section_id="section:main-b",
+                alignment_id="alignment:main",
+                station=110.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_control_area_id="intersection:t-01:control-main",
+                active_intersection_leg_id="intersection:t-01:leg-main-before",
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint("p0", "side-slope", "hinge", 10.0, 0.0, 0.0),
+                    AppliedSectionSubassemblyPoint("p1", "side-slope", "daylight", 10.0, 5.0, 0.0),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink("link:b", "side-slope", "p0", "p1", "side_slope", surface_role="side_slope_surface")
+                ],
+            ),
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_slope_face_loops(
+        model,
+        surface_zones,
+        edge_network,
+        applied,
+    )
+
+    assert result.ready_count == 1
+    loop = result.loop_rows[0]
+    assert loop.status == "ready"
+    assert loop.closed_xy is True
+    assert loop.point_count == 5
+    assert loop.source_applied_section_refs == (
+        "section:main-a",
+        "section:main-b",
+    )
+    assert all(ref.startswith("applied-section-boundary:") for ref in loop.boundary_edge_refs)
+    assert "applied_section_boundary_completion=used" in loop.notes
+    assert not any("slope_face_loop_degenerate_edge_refs" in diagnostic for diagnostic in loop.diagnostics)
+
+
+def test_evaluate_slope_face_loops_marks_warning_zones_diagnostic_only_for_surface_generation() -> None:
+    model = _sample_intersection_model()
+    edge_rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:inner",
+            intersection_id="intersection:t-01",
+            edge_role="pavement_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(10.0, 0.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:outer",
+            intersection_id="intersection:t-01",
+            edge_role="daylight_hinge",
+            start_xyz=(0.0, 5.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-left",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(0.0, 0.0, 0.0),
+            end_xyz=(0.0, 5.0, 0.0),
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id="edge:tie-right",
+            intersection_id="intersection:t-01",
+            edge_role="curb_return_edge",
+            start_xyz=(10.0, 0.0, 0.0),
+            end_xyz=(10.0, 5.0, 0.0),
+        ),
+    ]
+    edge_network = IntersectionEdgeNetworkResult(
+        schema_version=1,
+        project_id="project:demo",
+        edge_network_result_id="intersection-edge-network:test",
+        intersection_id="intersection:t-01",
+        status="ready",
+        edge_rows=edge_rows,
+    )
+    surface_zones = IntersectionSurfaceZoneResult(
+        schema_version=1,
+        project_id="project:demo",
+        surface_zone_result_id="intersection-surface-zones:test",
+        intersection_id="intersection:t-01",
+        status="warning",
+        zone_rows=[
+            IntersectionSurfaceZoneRow(
+                zone_id="intersection-zone:test:slope-face-01",
+                intersection_id="intersection:t-01",
+                zone_role="exterior_slope_face",
+                zone_family="slope",
+                surface_role="slope_face",
+                source_edge_refs=("edge:inner", "edge:outer", "edge:tie-left", "edge:tie-right"),
+                boundary_edge_refs=("edge:inner", "edge:tie-right", "edge:outer", "edge:tie-left"),
+                inner_edge_refs=("edge:inner",),
+                outer_edge_refs=("edge:outer",),
+                tie_edge_refs=("edge:tie-left", "edge:tie-right"),
+                source_status="warning",
+                source_diagnostic_rows=("warning:surface_zone_source_review_required",),
+                surface_generation_role="diagnostic_only",
+                surface_generation_status="blocked",
+                status="warning",
+            )
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_slope_face_loops(model, surface_zones, edge_network)
+
+    assert result.ready_count == 0
+    assert result.warning_count == 1
+    row = result.loop_rows[0]
+    assert row.closed_xy is True
+    assert row.surface_generation_role == "diagnostic_only"
+    assert row.surface_generation_status == "blocked"
+    assert "surface_generation=diagnostic_only:blocked" in row.notes
 
 
 def _sample_intersection_model() -> IntersectionModel:
@@ -504,6 +1224,9 @@ def test_intersection_edge_network_evaluation_creates_leg_and_curb_return_edges(
     assert result.edge_rows[0].leg_ref == "intersection:t-01:leg-main-before"
     assert result.edge_rows[0].station_start == 480.0
     assert result.edge_rows[0].station_end == 520.0
+    assert result.edge_rows[0].start_xyz != result.edge_rows[0].end_xyz
+    assert all(row.start_xyz != row.end_xyz for row in result.edge_rows)
+    assert not any("edge_network_endpoint_degenerate" in row for row in result.diagnostic_rows)
     curb_edges = [row for row in result.edge_rows if row.edge_family == "curb_return"]
     assert [row.side for row in curb_edges] == ["left", "right"]
     assert [row.source_corner_ref for row in curb_edges] == [
@@ -512,7 +1235,12 @@ def test_intersection_edge_network_evaluation_creates_leg_and_curb_return_edges(
     ]
     assert curb_edges[0].edge_role == "curb_return_edge"
     assert curb_edges[0].radius == 12.0
+    assert curb_edges[0].arc_center_xyz == (10.0, 20.0, 30.0)
+    assert len(curb_edges[0].arc_points_xyz) >= 3
+    assert curb_edges[0].arc_points_xyz[0] == curb_edges[0].start_xyz
+    assert curb_edges[0].arc_points_xyz[-1] == curb_edges[0].end_xyz
     assert "leg-side" in curb_edges[0].leg_ref
+    assert curb_edges[0].control_area_ref == "intersection:t-01:control-main"
 
 
 def test_intersection_edge_network_evaluation_stops_when_topology_has_errors() -> None:
@@ -565,6 +1293,8 @@ def test_intersection_surface_zone_evaluation_creates_zone_contracts_without_tri
     assert len(slope_zones) == 3
     assert slope_zones[0].surface_role == "slope_face"
     assert slope_zones[0].status == "ready"
+    assert all(row.surface_generation_role == "surface_candidate" for row in slope_zones)
+    assert all(row.surface_generation_status == "ready" for row in slope_zones)
     assert slope_zones[0].outer_edge_refs == ("intersection-edge:intersection-t-01:leg-01:daylight-hinge-both-02",)
     assert slope_zones[0].inner_edge_refs == ("intersection-edge:intersection-t-01:leg-01:pavement-edge-both-01",)
     assert len(slope_zones[0].tie_edge_refs) == 2
@@ -573,6 +1303,40 @@ def test_intersection_surface_zone_evaluation_creates_zone_contracts_without_tri
         *slope_zones[0].inner_edge_refs,
         *slope_zones[0].tie_edge_refs,
     )
+    assert "slope_zone_boundary_audit=inner:1 outer:1 tie:2 boundary:4" in slope_zones[0].notes
+    assert "inner_refs=intersection-edge:intersection-t-01:leg-01:pavement-edge-both-01" in slope_zones[0].notes
+    assert "outer_refs=intersection-edge:intersection-t-01:leg-01:daylight-hinge-both-02" in slope_zones[0].notes
+
+
+def test_intersection_surface_zone_uses_control_area_curb_return_tie_fallback() -> None:
+    model = _sample_intersection_model()
+    policy = model.curb_return_policy_rows[0]
+    model = replace(
+        model,
+        curb_return_policy_rows=[
+            replace(
+                policy,
+                approach_leg_refs=[
+                    "intersection:t-01:leg-main-after",
+                    "intersection:t-01:leg-side",
+                ],
+            )
+        ],
+    )
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(model)
+    edge_network = service.evaluate_edge_network(model, topology)
+    result = service.evaluate_surface_zones(model, edge_network)
+
+    slope_zones = [row for row in result.zone_rows if row.zone_family == "slope"]
+    main_before_zone = slope_zones[0]
+
+    assert main_before_zone.inner_edge_refs == ("intersection-edge:intersection-t-01:leg-01:pavement-edge-both-01",)
+    assert main_before_zone.outer_edge_refs == ("intersection-edge:intersection-t-01:leg-01:daylight-hinge-both-02",)
+    assert len(main_before_zone.tie_edge_refs) == 2
+    assert all("curb-return" in ref for ref in main_before_zone.tie_edge_refs)
+    assert "warning:slope_zone_curb_return_tie_edge_missing" not in main_before_zone.diagnostic_rows
+    assert "slope_zone_boundary_audit=inner:1 outer:1 tie:2 boundary:4" in main_before_zone.notes
 
 
 def test_intersection_surface_zone_evaluation_warns_when_slope_zone_lacks_pavement_or_curb_tie_edges() -> None:
@@ -617,6 +1381,11 @@ def test_intersection_surface_zone_evaluation_warns_when_slope_zone_lacks_paveme
     assert any("warning:surface_zone_central_junction_requires_two_pavement_alignments" in row for row in result.diagnostic_rows)
     assert any("warning:surface_zone_curb_return_edges_missing" in row for row in result.diagnostic_rows)
     assert any("warning:slope_zone_matching_pavement_edge_missing" in row for row in result.diagnostic_rows)
+    slope_zones = [row for row in result.zone_rows if row.zone_family == "slope"]
+    assert all(row.surface_generation_role == "diagnostic_only" for row in slope_zones)
+    assert all(row.surface_generation_status == "blocked" for row in slope_zones)
+    assert all("slope_zone_boundary_audit=inner:0 outer:1 tie:0 boundary:1" in row.notes for row in slope_zones)
+    assert all("missing=inner,tie" in row.notes for row in slope_zones)
 
 
 def test_intersection_corridor_clipping_evaluation_creates_control_area_clip_contracts() -> None:

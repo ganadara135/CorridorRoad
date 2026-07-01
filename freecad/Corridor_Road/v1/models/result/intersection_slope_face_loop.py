@@ -34,6 +34,8 @@ class IntersectionSlopeFaceLoopRow:
     self_crossing: bool = False
     overlaps_intersection_surface: bool = False
     point_count: int = 0
+    surface_generation_role: str = "review_only"
+    surface_generation_status: str = "not_ready"
     status: str = "candidate"
     diagnostics: tuple[str, ...] = ()
     notes: str = ""

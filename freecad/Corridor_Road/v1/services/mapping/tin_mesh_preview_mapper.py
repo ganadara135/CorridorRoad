@@ -225,7 +225,9 @@ class TINMeshPreviewMapper:
             if obj is None:
                 obj = document.addObject("Mesh::Feature", name)
             obj.Mesh = mesh
-            label = f"{label_prefix} - {getattr(surface, 'label', '') or surface.surface_id or name}"
+            surface_label = str(getattr(surface, "label", "") or surface.surface_id or name)
+            prefix = str(label_prefix or "").strip()
+            label = f"{prefix} - {surface_label}" if prefix else surface_label
             try:
                 obj.Label = label
             except Exception:

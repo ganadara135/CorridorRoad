@@ -10,7 +10,6 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
     intersection_ref_for_kind,
     list_intersection_control_region_choices,
     list_v1_alignment_choices,
-    show_intersection_edge_network_preview,
 )
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionAnchorRow,
@@ -546,35 +545,6 @@ def test_intersection_editor_source_builder_creates_phase2_default_policy_rows()
     assert "drainage_policy_hint_only" in model.drainage_policy_rows[0].diagnostic_rows
     assert model.drainage_policy_rows[0].policy_id in intersection.policy_refs
 
-
-def test_intersection_edge_network_preview_object_uses_source_edge_rows() -> None:
-    doc, project = _new_project_doc()
-    try:
-        create_starter_intersection_sources(doc, "t_intersection", project=project)
-        alignments = list_v1_alignment_choices(doc)
-        control_regions = list_intersection_control_region_choices(doc, intersection_ref_for_kind("t_intersection"))
-        model = build_intersection_model_from_sources(
-            intersection_kind="t_intersection",
-            source_mode="Create Starter Sources",
-            primary_alignment_ref=alignments[0][0],
-            secondary_alignment_ref=alignments[1][0],
-            control_region_choices=control_regions,
-        )
-
-        obj = show_intersection_edge_network_preview(doc, intersection_model=model, project=project)
-
-        assert obj.Label == "Intersection Edge Network Preview"
-        assert obj.CRRecordKind == "v1_intersection_edge_network_preview"
-        assert obj.V1ObjectType == "V1IntersectionEdgeNetworkPreview"
-        assert obj.EdgeNetworkStatus == "warning"
-        assert obj.EdgeCount == 6
-        assert obj.LegEdgeCount == 4
-        assert obj.DaylightEdgeCount == 2
-        assert obj.CurbReturnEdgeCount == 2
-        assert len(list(obj.EdgeIds)) == 6
-        assert obj.ShapePartCount > 0
-    finally:
-        App.closeDocument(doc.Name)
 
 
 def test_intersection_edge_network_exposes_curb_return_contact_stations() -> None:

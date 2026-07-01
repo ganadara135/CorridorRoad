@@ -1,7 +1,7 @@
 # Parametric Road V1 Intersection Manual QA
 
 Date: 2026-06-24
-Status: manual QA procedure; preset records, Slope Face loop QA, and source handoff/lineage QA added, execution pending real FreeCAD document
+Status: manual QA procedure; preset records, Slope Face loop QA, dedicated Intersection Slope Face Surface QA, and source handoff/lineage QA added, execution pending real FreeCAD document
 
 ## Purpose
 
@@ -53,6 +53,8 @@ The QA passes only when:
 - no Slope Face is accepted inside the pavement/control-area interior
 - ordinary `Slope Face Surface` and `Intersection Slope Face Surface` can be reviewed separately
 - accepted intersection Slope Face triangles come only from `ready` Slope Face loop rows
+- `Intersection Slope Face Surface` is enabled in Visibility only when `V1CorridorIntersectionSlopeFaceSurfacePreview` exists
+- missing `Intersection Slope Face Surface` rows include a recommended action rather than a generic missing state
 - diagnostics are `ready` or actionable `warning`
 - no Report View traceback appears
 
@@ -78,16 +80,14 @@ Steps:
 4. Review Design Vehicle, Radius / Diameter, Control Length, Grading Policy, and Drainage Mode.
 5. Click `Create Sources`.
 6. Confirm the status message reports created Alignment, Profile, Stationing, Region, IntersectionModel, Superelevation, and Drainage source objects.
-7. Click `Preview Edge Network`.
-8. Confirm the preview follows the generated preset Alignments and control Regions.
-9. Confirm no final corridor mesh is created by the preset panel.
-10. Open `Intersections`.
-11. Confirm the created Intersection source model can be reviewed without traceback.
-12. Confirm the staged source table exposes row-level `handoff_target` diagnostics for Anchor, Lane Connections, and Drainage where result rows exist.
-13. Confirm the read-only preview stages expose `source_lineage_status` diagnostics for Drainage and Slope Loops where those result rows exist.
-14. Run `Build Sections`.
-15. Open Cross Section Viewer.
-16. Confirm Station Navigation includes both primary and secondary Alignment station rows when the intersection has more than one participating Alignment.
+7. Confirm no final corridor mesh is created by the preset panel.
+8. Open `Intersections`.
+9. Confirm the created Intersection source model can be reviewed without traceback.
+10. Confirm the staged source table exposes row-level `handoff_target` diagnostics for Anchor, Lane Connections, and Drainage where result rows exist.
+11. Confirm the read-only preview stages expose `source_lineage_status` diagnostics for Drainage and Slope Loops where those result rows exist.
+12. Run `Build Sections`.
+13. Open Cross Section Viewer.
+14. Confirm Station Navigation includes both primary and secondary Alignment station rows when the intersection has more than one participating Alignment.
 17. Confirm Intersection Context rows are visible at primary and secondary control-area stations.
 18. Confirm the Cross Section Viewer Intersection Context table includes a `source_status` row.
 19. Run `Build Parametric`.
@@ -108,19 +108,72 @@ Pass criteria:
 - Build Parametric does not silently hide missing policy, grading, or drainage handoff context
 - generated output can be deleted and rebuilt from source rows
 
+## T Preset Intersection Slope Face Source-Loop QA
+
+Use this checklist after the T preset can build Applied Sections and Build Parametric output.
+
+This verifies the source-loop completion path from Applied Section side-slope boundaries into the dedicated `Intersection Slope Face Surface`.
+
+Steps:
+
+1. Create `T Intersection - Basic`.
+2. Review and accept preset prerequisites if needed for the test document.
+3. Run `Build Sections`.
+4. Run `Build Parametric`.
+5. Open the Build Parametric `Intersections` tab.
+6. Find the `boundary_loop` row before judging surface fill.
+7. Confirm the `boundary_loop` row is `ready`, role is `outer_intersection_boundary`, and notes include `closed=yes`.
+8. Double-click the `boundary_loop` row.
+9. Confirm the 3D View shows one continuous cyan outer intersection perimeter.
+10. Confirm the cyan perimeter encloses the intended intersection-owned area and does not come from generated mesh cleanup.
+11. Find the `edge_network` rows and confirm any endpoint geometry warnings use `edge_network_endpoint_degenerate`.
+12. Confirm those warnings include policy ref, leg ref, alignment ref, control-area ref, edge family, station span, and endpoint xyz.
+13. Find the `slope_face_loop` rows.
+14. Confirm at least one row is `ready`.
+15. Confirm ready rows include `applied_section_boundary_completion=used`.
+16. Confirm ready rows include `surface_generation=surface_candidate:ready`.
+17. Confirm ready rows preserve `applied_section_side_slope_refs`.
+18. Open the `Results` tab.
+19. Confirm `Intersection Slope Face Surface` is `ready`.
+20. Open the `Visibility` tab.
+21. Hide ordinary `Slope Face Surface`.
+22. Show only `Intersection Slope Face Surface`.
+23. Confirm a dedicated surface exists around the intersection perimeter.
+24. Confirm the dedicated surface does not enter the central pavement/intersection surface interior.
+25. Show ordinary `Slope Face Surface` again.
+26. Confirm ordinary and dedicated Slope Face surfaces remain separate review/output families.
+27. Inspect both curb-return sides.
+28. Record whether perimeter coverage is complete, partial, or missing.
+
+Pass criteria:
+
+- `V1CorridorIntersectionSlopeFaceSurfacePreview` exists.
+- Intersections tab exposes a ready `boundary_loop` row with `outer_intersection_boundary`.
+- double-clicking the boundary row highlights one continuous cyan perimeter.
+- `Intersection Slope Face Surface` is generated without synthetic ready-loop injection.
+- generated Slope Face triangles come from ready `slope_face_loop` rows.
+- Applied Section side-slope boundary refs are visible in row notes.
+- ordinary `Slope Face Surface` does not become the source truth for the dedicated intersection surface.
+
+Known follow-up:
+
+- explicit curb-return contact refs are not yet stored on the completed Applied Section boundary candidate rows.
+- non-T presets need separate regression coverage after T preset visual QA is accepted.
+- when multiple left/right side groups exist in one surface zone, the current first slice selects the strongest strip group; full multi-group loop splitting remains follow-up work.
+
 ## Preset QA Records
 
 Record one row per preset when manual QA is executed in a real FreeCAD document.
 
 | Preset | Intersection kind | Expected source status | Expected preview status | Expected Build Parametric status | Expected Watertight handoff status | Required record notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `T Intersection - Basic` | `t_intersection` | `warning`; preset default/draft Anchor, Control Areas, Corners, Edge Families, Lane Connections, Grading, and Drainage rows require review. | Edge Network preview visible with two curb-return groups. | `Intersections` rows present for topology, edge network, surface zones, corridor clip, grading, drainage hints, and Slope Face loops. Warnings must be source-completeness or planned-handoff warnings. | `Intersection Patch` remains transitional/review-required; planned pavement, subgrade, Slope Face, and curb-return target rows should be discoverable when surface-zone contracts exist. | Record central pavement, curb-return, ordinary Slope Face suppression, and intersection Slope Face loop readiness. |
-| `Cross Intersection - Basic` | `cross_intersection` | `warning`; four corner defaults and lane/edge/grading/drainage defaults remain draft. | Edge Network preview visible with four curb-return groups and primary/secondary through-road identity. | No topology `error` rows. Corridor clipping should cover both participating alignments. | Planned intersection zone targets should be discoverable; final zone bodies remain planned until dedicated builders are accepted. | Record whether curb-return zones overlap or self-cross. |
-| `Skewed Intersection - Basic` | `skewed_intersection` | `warning`; skew corner and skew edge-family rows require source review. | Edge Network preview follows non-orthogonal Alignment geometry without global-axis rectangular repair. | Surface-zone and corridor-clip rows should remain source/result driven; skew warnings must be explicit. | Planned zone targets should remain reviewable; no final handoff should be accepted from mesh repair. | Record skew angle readability, corner policy diagnostics, and any asymmetric curb-return warnings. |
-| `Urban Curb/Gutter - Basic` | `urban_curb_gutter_intersection` | `warning`; curb, gutter, sidewalk, inlet, and low-point rows are draft starter intent. | Edge Network preview includes pavement plus curb/gutter/sidewalk edge-family rows where visible. | Drainage hints should expose gutter edge refs, inlet candidate refs, and low-point refs. | Watertight target discovery may show planned pavement/subgrade/Slope Face/curb-return rows; final inlet/outlet solids remain outside this preset. | Record gutter edge refs, inlet candidate count, and whether Drainage source rows are visible. |
-| `Drainage-Sensitive Sag - Basic` | `drainage_sag_intersection` | `warning`; sag Profile controls, low-point refs, inlet candidates, flow-route refs, and hydraulic sizing remain review-required. | Edge Network preview follows sag main/side Alignments; source-stage table should show warning/draft Grading and Drainage rows. | Grading context should report `sag_low_point_review`; Drainage hints should expose sag low points, inlet candidates, and critical flow-route review. | Planned zone targets remain discoverable; final simulation/export must stay blocked until hydraulic sizing and real inlet/outlet Structures replace hints. | Record Profile middle control as `sag_low_point`, inlet candidate refs, flow-route refs, and critical drainage warnings. |
-| `Y Intersection - Basic` | `y_intersection` | `warning`; branch geometry and diverge/merge lane-connection defaults require review. | Edge Network preview follows primary approach, left branch, and right branch source Alignments. | Surface-zone rows should remain non-self-crossing; branch warnings must stay source diagnostics. | Planned zone targets should remain reviewable; no final handoff should be accepted from branch mesh repair. | Record left/right branch roles and diverge/merge movement rows. |
-| `Roundabout - Single Lane` | `roundabout` | `warning`; first-slice roundabout source contract, outside-gutter drainage hints, and radial grading require review. | Edge Network preview exposes `roundabout` family rows: central island, circulatory outer edge, and entry/exit edges. | Surface zones should include central island, circulatory pavement, and entry/exit pavement. `roundabout_edge_network_first_slice_source_only` is acceptable. | Planned handoff only. Final roundabout triangulation and accepted zone solids are not yet claimed complete. | Record roundabout edge-family rows, radial grading context, outside-gutter drainage hints, and missing explicit Drainage Element warnings. |
+| `T Intersection - Basic` | `t_intersection` | `warning`; preset default/draft Anchor, Control Areas, Corners, Edge Families, Lane Connections, Grading, and Drainage rows require review. | Intersections contract rows expose two curb-return edge groups without creating standalone edge-network geometry. | `Intersections` rows present for topology, edge network, surface zones, corridor clip, grading, drainage hints, and Slope Face loops. Warnings must be source-completeness or planned-handoff warnings. | `Intersection Patch` remains transitional/review-required; planned pavement, subgrade, Slope Face, and curb-return target rows should be discoverable when surface-zone contracts exist. | Record central pavement, curb-return, ordinary Slope Face suppression, and intersection Slope Face loop readiness. |
+| `Cross Intersection - Basic` | `cross_intersection` | `warning`; four corner defaults and lane/edge/grading/drainage defaults remain draft. | Intersections contract rows expose four curb-return groups and primary/secondary through-road identity without preview geometry. | No topology `error` rows. Corridor clipping should cover both participating alignments. | Planned intersection zone targets should be discoverable; final zone bodies remain planned until dedicated builders are accepted. | Record whether curb-return zones overlap or self-cross. |
+| `Skewed Intersection - Basic` | `skewed_intersection` | `warning`; skew corner and skew edge-family rows require source review. | Intersections contract rows preserve non-orthogonal Alignment lineage without global-axis rectangular repair. | Surface-zone and corridor-clip rows should remain source/result driven; skew warnings must be explicit. | Planned zone targets should remain reviewable; no final handoff should be accepted from mesh repair. | Record skew angle readability, corner policy diagnostics, and any asymmetric curb-return warnings. |
+| `Urban Curb/Gutter - Basic` | `urban_curb_gutter_intersection` | `warning`; curb, gutter, sidewalk, inlet, and low-point rows are draft starter intent. | Intersections contract rows include pavement plus curb/gutter/sidewalk edge-family refs where available. | Drainage hints should expose gutter edge refs, inlet candidate refs, and low-point refs. | Watertight target discovery may show planned pavement/subgrade/Slope Face/curb-return rows; final inlet/outlet solids remain outside this preset. | Record gutter edge refs, inlet candidate count, and whether Drainage source rows are visible. |
+| `Drainage-Sensitive Sag - Basic` | `drainage_sag_intersection` | `warning`; sag Profile controls, low-point refs, inlet candidates, flow-route refs, and hydraulic sizing remain review-required. | Intersections contract rows preserve sag main/side Alignment lineage; source-stage table should show warning/draft Grading and Drainage rows. | Grading context should report `sag_low_point_review`; Drainage hints should expose sag low points, inlet candidates, and critical flow-route review. | Planned zone targets remain discoverable; final simulation/export must stay blocked until hydraulic sizing and real inlet/outlet Structures replace hints. | Record Profile middle control as `sag_low_point`, inlet candidate refs, flow-route refs, and critical drainage warnings. |
+| `Y Intersection - Basic` | `y_intersection` | `warning`; branch geometry and diverge/merge lane-connection defaults require review. | Intersections contract rows preserve primary approach, left branch, and right branch source Alignment lineage. | Surface-zone rows should remain non-self-crossing; branch warnings must stay source diagnostics. | Planned zone targets should remain reviewable; no final handoff should be accepted from branch mesh repair. | Record left/right branch roles and diverge/merge movement rows. |
+| `Roundabout - Single Lane` | `roundabout` | `warning`; first-slice roundabout source contract, outside-gutter drainage hints, and radial grading require review. | Intersections contract rows expose `roundabout` family rows: central island, circulatory outer edge, and entry/exit edges. | Surface zones should include central island, circulatory pavement, and entry/exit pavement. `roundabout_edge_network_first_slice_source_only` is acceptable. | Planned handoff only. Final roundabout triangulation and accepted zone solids are not yet claimed complete. | Record roundabout edge-family rows, radial grading context, outside-gutter drainage hints, and missing explicit Drainage Element warnings. |
 
 Manual execution status:
 
@@ -205,12 +258,11 @@ Use this test when the participating Alignments already exist.
 9. Select Secondary Alignment.
 10. Click `Auto Detect`.
 11. Confirm detected XY, Primary STA, and Secondary STA are reported.
-12. Click `Preview Edge Network`.
-13. Confirm the preview follows the selected Alignments.
-14. Click `Apply`.
-15. Confirm the created `IntersectionModel` stores `source_mode = use_existing_alignments`.
-16. Run `Build Sections`.
-17. Run `Build Parametric`.
+12. Click `Apply`.
+13. Confirm the created `IntersectionModel` stores `source_mode = use_existing_alignments`.
+14. Run `Build Sections`.
+15. Run `Build Parametric`.
+16. Confirm Build Parametric `Intersections` rows preserve selected Alignment refs in edge-network and surface-zone diagnostics.
 
 Pass criteria:
 
@@ -234,15 +286,13 @@ Fail conditions:
 4. Click `Create Starter Sources`.
 5. Confirm main and side Alignment source objects exist.
 6. Confirm a multi-alignment 3D Centerline is created or refreshed.
-7. Click `Preview Edge Network`.
-8. Confirm the preview shows separate main and side leg edges.
-9. Confirm two curb-return edge groups are visible.
-10. Click `Apply`.
-11. Build Sections.
-12. Open Cross Section Viewer for a main-road station inside the control area.
-13. Confirm `Intersection Context` shows active intersection, control area, leg, edge-network, surface-zone, corridor-clip, grading, drainage, and drainage-hint rows.
-14. Open Build Parametric.
-15. Build outputs.
+7. Click `Apply`.
+8. Build Sections.
+9. Open Cross Section Viewer for a main-road station inside the control area.
+10. Confirm `Intersection Context` shows active intersection, control area, leg, edge-network, surface-zone, corridor-clip, grading, drainage, and drainage-hint rows.
+11. Open Build Parametric.
+12. Build outputs.
+13. Confirm Build Parametric `Intersections` rows show separate main/side leg edge contracts and two curb-return edge groups.
 16. Open the `Intersections` tab.
 17. Confirm `topology`, `edge_network`, `surface_zone`, `corridor_clip`, and `drainage_hint` rows are present.
 18. Double-click representative edge-network and surface-zone rows.
@@ -252,22 +302,52 @@ Fail conditions:
 22. Show ordinary Slope Face outputs.
 23. Confirm ordinary Slope Face does not fill the control-area pavement interior.
 24. Confirm side-road Slope Face responsibility reaches the curb-return boundary through explicit surface-zone rows.
-25. Show only `Intersection Slope Face Surface`.
-26. Confirm it is generated only from ready Slope Face loop rows.
-27. Show only ordinary `Slope Face Surface`.
-28. Confirm its review notes or object properties report loop suppression status, ready loop count, tested triangle count, suppressed triangle count, and kept triangle count.
-29. Double-click representative `slope_face_loop` rows in the `Intersections` tab.
-30. Confirm the selected loop itself is highlighted as one thick yellow closed or ordered boundary line in 3D and no arbitrary mesh repair marker is created.
-31. Confirm warning or error loop rows remain diagnostics and do not create intersection Slope Face triangles.
-32. Confirm `Intersection Slope Face Surface` preview/output objects are under `04_Parametric Model > Intersections`.
+25. In the `Intersections` tab, find the `slope_face_loop` rows.
+26. Confirm each `slope_face_loop` row shows `generation=<role>:<status>` in Notes.
+27. Confirm at least one accepted output loop has:
+    - `Status = ready`
+    - `closed_xy=yes`
+    - `generation=surface_candidate:ready`
+    - no `slope_face_loop_open_xy`, `slope_face_loop_dangling_endpoint`, or `slope_face_loop_self_crossing` diagnostic
+28. If no loop is ready, confirm the Results row for `Intersection Slope Face Surface` is `missing` and Notes include `Recommended Action`.
+29. Open the `Results` tab.
+30. Confirm `Intersection Slope Face Surface` is `ready` only when `V1CorridorIntersectionSlopeFaceSurfacePreview` exists.
+31. Confirm the row reports nonzero triangle count and consumed loop contract notes when ready.
+32. Open the `Visibility` tab.
+33. Confirm the `Intersection Slope Face Surface` checkbox is enabled only when `V1CorridorIntersectionSlopeFaceSurfacePreview` exists.
+34. If the checkbox is disabled, hover it and confirm the tooltip explains the missing preview status and recommended action.
+35. Show only `Intersection Slope Face Surface`.
+36. Confirm it is generated only from ready Slope Face loop rows.
+37. Confirm the object is located under `04_Parametric Model > Intersections` and not under ordinary Alignment review groups.
+38. Show only ordinary `Slope Face Surface`.
+39. Confirm ordinary Slope Face review notes or object properties report loop suppression status, ready loop count, tested triangle count, suppressed triangle count, and kept triangle count.
+40. Toggle ordinary `Slope Face Surface` off and `Intersection Slope Face Surface` on.
+41. Around both curb returns, confirm the dedicated surface touches the curb-return/side-slope tie-in area without crossing into central pavement.
+42. Confirm no dedicated Slope Face triangles appear inside the `Intersection Surface` pavement footprint.
+43. Confirm no forced rectangular boundary patch or old `Intersection Slope Face Boundary` white/outline patch is visible.
+44. Double-click representative `slope_face_loop` rows in the `Intersections` tab.
+45. Confirm ready closed loops highlight green, open loops highlight orange, dangling endpoints highlight red, self-crossing loops highlight magenta, and source-warning closed loops highlight yellow.
+46. Confirm the selected loop itself is highlighted as one closed or ordered boundary line in 3D and no arbitrary mesh repair marker is created.
+47. Confirm warning or error loop rows remain diagnostics and do not create intersection Slope Face triangles.
 
 `Intersection Slope Face Loops` linework is no longer created by default.
 
 Slope Face Loop contract metadata remains on the main Intersection preview and related review rows.
-33. Confirm `slope_face_loop` row notes include source-lineage context before trusting any loop output.
-34. Open Watertight Solids.
-35. Confirm `Intersection Patch` target remains discoverable.
-36. Confirm planned intersection zone targets appear for pavement, subgrade, Slope Face, and curb-return bodies.
+48. Confirm `slope_face_loop` row notes include source-lineage context before trusting any loop output.
+49. Open Watertight Solids.
+50. Confirm `Intersection Patch` target remains discoverable.
+51. Confirm planned intersection zone targets appear for pavement, subgrade, Slope Face, and curb-return bodies.
+
+Dedicated Slope Face record:
+
+| Item | Expected | Actual |
+| --- | --- | --- |
+| `IntersectionSlopeFaceLoopReadyCount` | at least `1` for accepted output | pending |
+| `V1CorridorIntersectionSlopeFaceSurfacePreview` | exists when ready loops exist | pending |
+| Results status | `ready` when preview exists, `missing` with action when absent | pending |
+| Visibility checkbox | enabled only when preview exists | pending |
+| Curb-return tie-in | touches side-slope area without pavement intrusion | pending |
+| Ordinary Slope Face overlap | no visible overlap inside Intersection Surface footprint | pending |
 
 ## Cross Intersection QA
 
@@ -276,20 +356,19 @@ Slope Face Loop contract metadata remains on the main Intersection preview and r
 3. Use `Create Starter Sources`.
 4. Confirm primary and secondary through-leg source identity is clear.
 5. Confirm four leg/control-area responsibilities are visible in source or review rows.
-6. Preview Edge Network.
-7. Confirm four curb-return edge groups are created.
-8. Build Sections.
-9. Build Parametric.
-10. Confirm the `Intersections` tab has no topology `error` rows.
-11. Confirm central pavement zone responsibility is not duplicated by ordinary corridor surface ownership.
-12. Confirm curb-return zones do not overlap each other in a self-crossing way.
-13. Confirm Slope Face loop rows exist for the participating legs or report actionable warnings.
-14. Confirm ready Slope Face loops can be focused in 3D.
-15. Confirm ordinary `Slope Face Surface` and `Intersection Slope Face Surface` are separate review/output families.
-16. Confirm corridor-clip rows exist for both participating alignments.
-17. Confirm drainage-hint rows identify low-point and inlet review candidates.
-18. Confirm drainage-hint rows expose same-context Drainage source handoff targets.
-19. Open Watertight Solids and confirm planned intersection zone target rows are discoverable.
+6. Build Sections.
+7. Build Parametric.
+8. Confirm the `Intersections` tab has no topology `error` rows.
+9. Confirm four curb-return edge groups are present as result contracts.
+10. Confirm central pavement zone responsibility is not duplicated by ordinary corridor surface ownership.
+11. Confirm curb-return zones do not overlap each other in a self-crossing way.
+12. Confirm Slope Face loop rows exist for the participating legs or report actionable warnings.
+13. Confirm ready Slope Face loops can be focused in 3D.
+14. Confirm ordinary `Slope Face Surface` and `Intersection Slope Face Surface` are separate review/output families.
+15. Confirm corridor-clip rows exist for both participating alignments.
+16. Confirm drainage-hint rows identify low-point and inlet review candidates.
+17. Confirm drainage-hint rows expose same-context Drainage source handoff targets.
+18. Open Watertight Solids and confirm planned intersection zone target rows are discoverable.
 
 ## Skewed Intersection QA
 
@@ -303,14 +382,13 @@ Slope Face Loop contract metadata remains on the main Intersection preview and r
 8. Confirm source refs include `intersection-preset:skewed_intersection:source-completeness` and `intersection-preset:skewed_intersection:skew-review`.
 9. Confirm four corner rows exist and include `preset_skew_corner_geometry_review_required`.
 10. Confirm edge-family rows include `preset_skew_edge_family_review_required`.
-11. Preview Edge Network.
-12. Confirm the preview follows the skewed Alignment geometry and does not snap to an orthogonal/global-axis rectangle.
-13. Build Sections.
-14. Build Parametric.
-15. Confirm topology and edge-network rows carry warning diagnostics rather than silent fallback geometry.
-16. Confirm surface-zone rows are source/result rows and do not claim repaired mesh ownership.
-17. Confirm corridor-clip rows are present for both participating Alignments.
-18. Open Cross Section Viewer.
+11. Build Sections.
+12. Build Parametric.
+13. Confirm topology and edge-network rows carry warning diagnostics rather than silent fallback geometry.
+14. Confirm edge-network rows preserve skewed Alignment lineage and do not snap to an orthogonal/global-axis rectangle.
+15. Confirm surface-zone rows are source/result rows and do not claim repaired mesh ownership.
+16. Confirm corridor-clip rows are present for both participating Alignments.
+17. Open Cross Section Viewer.
 19. Confirm Intersection Context rows identify the correct active leg and control area near the skewed crossing.
 20. Confirm Slope Loop preview/review rows expose source-lineage diagnostics for skew-controlled edge families.
 21. Open Watertight Solids.
@@ -341,17 +419,16 @@ Expected result:
 11. Confirm drainage policy has `capture_mode = curb_gutter_inlets`.
 12. Confirm drainage policy has gutter edge refs, inlet candidate refs, and low-point refs.
 13. Confirm preset Drainage source object includes inlet candidate rows.
-14. Preview Edge Network.
-15. Confirm pavement, curb, gutter, and sidewalk edge-family intent is visible or reported in review rows.
-16. Build Sections.
-17. Build Parametric.
-18. Confirm drainage-hint rows expose inlet candidate and low-point handoff context.
-19. Confirm drainage-hint diagnostics include Drainage source-stage handoff targets and source-lineage status.
-20. Confirm Build Parametric warnings are review-required inlet/low-point handoff warnings, not exceptions.
-21. Open Cross Section Viewer.
-22. Confirm Intersection Context shows drainage source status at urban control-area stations.
-23. Open Watertight Solids.
-24. Confirm final inlet/outlet solids are not claimed complete by this preset.
+14. Build Sections.
+15. Build Parametric.
+16. Confirm pavement, curb, gutter, and sidewalk edge-family intent is visible or reported in `Intersections` contract rows.
+17. Confirm drainage-hint rows expose inlet candidate and low-point handoff context.
+18. Confirm drainage-hint diagnostics include Drainage source-stage handoff targets and source-lineage status.
+19. Confirm Build Parametric warnings are review-required inlet/low-point handoff warnings, not exceptions.
+20. Open Cross Section Viewer.
+21. Confirm Intersection Context shows drainage source status at urban control-area stations.
+22. Open Watertight Solids.
+23. Confirm final inlet/outlet solids are not claimed complete by this preset.
 
 Expected result:
 
@@ -384,17 +461,16 @@ Expected result:
     - `preset_sag_hydraulic_sizing_required`
 16. Confirm preset Drainage source object includes sag low-point and inlet candidate rows.
 17. Confirm the Drainage flow route risk is `critical`.
-18. Preview Edge Network.
-19. Confirm preview geometry follows the sag main and side Alignments.
-20. Build Sections.
-21. Build Parametric.
-22. Confirm grading-context rows report sag low-point review intent.
-23. Confirm drainage-hint rows expose inlet and flow-route handoff context.
-24. Confirm drainage-hint diagnostics include Drainage source-stage handoff targets and `source_lineage_status:hint_only` until real Drainage source is accepted.
-25. Open Cross Section Viewer.
-26. Confirm Intersection Context reports warning source status for Grading and Drainage.
-27. Open Watertight Solids.
-28. Confirm final simulation/export package is not considered accepted until hydraulic sizing and real inlet/outlet Structures replace hints.
+18. Build Sections.
+19. Build Parametric.
+20. Confirm edge-network contract rows preserve sag main and side Alignment lineage.
+21. Confirm grading-context rows report sag low-point review intent.
+22. Confirm drainage-hint rows expose inlet and flow-route handoff context.
+23. Confirm drainage-hint diagnostics include Drainage source-stage handoff targets and `source_lineage_status:hint_only` until real Drainage source is accepted.
+24. Open Cross Section Viewer.
+25. Confirm Intersection Context reports warning source status for Grading and Drainage.
+26. Open Watertight Solids.
+27. Confirm final simulation/export package is not considered accepted until hydraulic sizing and real inlet/outlet Structures replace hints.
 
 Expected result:
 
@@ -452,18 +528,17 @@ Fail conditions:
 2. Select `Y Intersection`.
 3. Use `Create Starter Sources`.
 4. Confirm the skewed/diverging Alignment sources are created.
-5. Confirm generated preview geometry does not fall back to global-axis rectangular assumptions.
-6. Preview Edge Network.
-7. Confirm leg edges follow the participating Alignment directions.
-8. Confirm curb-return policy is applied per leg pair.
-9. Build Sections.
-10. Build Parametric.
-11. Confirm surface-zone rows remain non-self-crossing.
-12. Confirm Slope Face zone rows have explicit daylight, pavement, and curb-return boundary refs.
-13. Confirm Slope Face loop rows do not silently fall back to global-axis rectangular assumptions.
-14. Confirm ready Slope Face loops can generate separate `Intersection Slope Face Surface` output.
-15. Confirm warning/error Slope Face loops remain diagnostics only.
-16. Confirm Slope Loop preview/review rows expose source-lineage status before any loop is accepted for triangulation.
+5. Confirm generated source geometry does not fall back to global-axis rectangular assumptions.
+6. Build Sections.
+7. Build Parametric.
+8. Confirm edge-network contract rows follow the participating Alignment directions.
+9. Confirm curb-return policy is applied per leg pair.
+10. Confirm surface-zone rows remain non-self-crossing.
+11. Confirm Slope Face zone rows have explicit daylight, pavement, and curb-return boundary refs.
+12. Confirm Slope Face loop rows do not silently fall back to global-axis rectangular assumptions.
+13. Confirm ready Slope Face loops can generate separate `Intersection Slope Face Surface` output.
+14. Confirm warning/error Slope Face loops remain diagnostics only.
+15. Confirm Slope Loop preview/review rows expose source-lineage status before any loop is accepted for triangulation.
 17. Confirm Cross Section Viewer reports the correct active leg and control area at a focused station.
 18. Confirm Watertight Solids reports planned intersection zone targets.
 
@@ -611,17 +686,22 @@ If Intersection Slope Face is missing:
 
 1. Check `slope_face_loop` rows in the Build Parametric `Intersections` tab.
 2. Confirm at least one loop status is `ready`.
-3. Double-click the loop row and confirm the loop boundary is closed in 3D.
-4. Check unresolved, duplicate, open-loop, self-crossing, or missing-source diagnostics.
-5. Confirm the preview objects are under `04_Parametric Model > Intersections`.
+3. Confirm at least one ready loop also reports `generation=surface_candidate:ready`.
+4. Double-click the loop row and confirm the loop boundary is closed in 3D.
+5. Check unresolved, duplicate, dangling endpoint, open-loop, self-crossing, low-quality fan, or missing-source diagnostics.
+6. Open the `Results` tab and confirm the `Intersection Slope Face Surface` row notes include `Recommended Action`.
+7. Open the `Visibility` tab and confirm the disabled checkbox tooltip explains why `V1CorridorIntersectionSlopeFaceSurfacePreview` is absent.
+8. Confirm the preview object is absent from `04_Parametric Model > Intersections` only when ready-loop generation is blocked.
 
 If Intersection Slope Face appears broken:
 
 1. Hide ordinary `Slope Face Surface`.
 2. Show only `Intersection Slope Face Surface`.
 3. Confirm warning/error loops did not generate mesh triangles.
-4. Confirm the problem is not caused by a hidden ordinary Slope Face object.
-5. Record the loop id, loop family, source edge refs, and diagnostics.
+4. Confirm the object has nonzero `TriangleCount`, `SurfaceGenerationReadyLoopCount`, and `SourceLoopRefs`.
+5. Confirm the surface touches curb-return/side-slope tie-in boundaries without entering central pavement.
+6. Confirm the problem is not caused by a hidden ordinary Slope Face object.
+7. Record the loop id, loop family, source edge refs, source Applied Section refs, triangle count, and diagnostics.
 
 If Watertight intersection zone targets are missing:
 

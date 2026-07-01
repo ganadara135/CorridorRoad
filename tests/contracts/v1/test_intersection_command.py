@@ -16,8 +16,6 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
     intersection_read_only_preview_rows,
     intersection_source_completeness_rows,
     intersection_source_completeness_summary,
-    set_intersection_edge_network_preview_visible,
-    show_intersection_edge_network_preview,
     show_intersection_review_overlay,
     starter_intersection_source_specs,
     list_v1_alignment_choices,
@@ -1891,36 +1889,12 @@ def test_intersection_preset_options_are_reflected_in_edge_network_preview() -> 
             grading_policy="keep_primary_crown",
             drainage_mode="outside_gutter",
         )
-        preview = show_intersection_edge_network_preview(doc, intersection_model=model, detection_result=detection)
-
         assert {row.design_vehicle_ref for row in model.arm_policy_rows} == {"bus_or_small_truck"}
         assert {round(float(row.radius), 3) for row in model.curb_return_policy_rows} == {18.0}
         assert model.curb_return_policy_rows[0].corner_refs == [row.corner_id for row in model.corner_rows]
         assert model.grading_policy_rows[0].mode == "keep_primary_crown"
         assert model.drainage_policy_rows[0].capture_mode == "outside_gutter"
-        assert preview.CurbReturnRadius == "18.000"
-        assert "bus_or_small_truck" in list(preview.DesignVehicles)
-        assert "keep_primary_crown" in list(preview.GradingPolicies)
-        assert "outside_gutter" in list(preview.DrainageModes)
-        assert list(preview.ControlAreaRanges)
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_intersection_edge_network_preview_can_be_hidden_after_creation() -> None:
-    doc = App.newDocument("CRV1IntersectionPresetPreviewHide")
-    try:
-        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
-        model, _control_region_count, detection = build_preset_source_intersection_model(
-            doc,
-            preset_label="T Intersection - Basic",
-        )
-
-        preview = show_intersection_edge_network_preview(doc, intersection_model=model, detection_result=detection)
-        hidden = set_intersection_edge_network_preview_visible(doc, False)
-
-        assert hidden == preview
-        assert hidden.Name == "V1IntersectionEdgeNetworkPreview"
+        assert model.control_areas
     finally:
         App.closeDocument(doc.Name)
 
@@ -1962,7 +1936,6 @@ def test_intersection_preset_tree_cleanup_routes_existing_root_leftovers() -> No
             ("LegacyIntersectionModel", "Intersections001"),
             ("LegacyIntersectionSuperelevation", "Intersection Preset Superelevation"),
             ("LegacyIntersectionDrainage", "Intersection Preset Drainage"),
-            ("LegacyIntersectionEdgeNetwork", "Intersection Edge Network Preview"),
         ]:
             obj = doc.addObject("App::FeaturePython", name)
             obj.Label = label
@@ -1977,9 +1950,6 @@ def test_intersection_preset_tree_cleanup_routes_existing_root_leftovers() -> No
         leftovers[4].addProperty("App::PropertyString", "DrainageModelId", "CorridorRoad", "")
         leftovers[4].CRRecordKind = "v1_drainage_model"
         leftovers[4].DrainageModelId = "drainage:intersection-preset-t-intersection"
-        leftovers[5].addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
-        leftovers[5].CRRecordKind = "v1_intersection_edge_network_preview"
-
         _route_intersection_preset_objects(doc, project=project)
 
         intersection_names = {

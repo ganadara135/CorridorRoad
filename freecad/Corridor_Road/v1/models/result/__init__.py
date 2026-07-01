@@ -26,6 +26,11 @@ from .centerline3d import Centerline3DPointRow, Centerline3DResult
 from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from .earthwork_balance_model import EarthworkBalanceModel
 from .intersection_boundary_segment import IntersectionBoundarySegmentResult, IntersectionBoundarySegmentRow
+from .intersection_boundary_loop import (
+    IntersectionBoundaryLoopResult,
+    IntersectionBoundaryLoopRow,
+    IntersectionBoundarySegmentRow as IntersectionBoundaryLoopSegmentRow,
+)
 from .intersection_corridor_clipping import IntersectionCorridorClipResult, IntersectionCorridorClipRow
 from .intersection_drainage_hint import IntersectionDrainageHintResult, IntersectionDrainageHintRow
 from .intersection_patch_boundary import IntersectionPatchBoundaryPointRow, IntersectionPatchBoundaryResult
@@ -33,7 +38,14 @@ from .intersection_tie_in_edge import IntersectionTieInEdgeResult, IntersectionT
 from .intersection_edge_network import IntersectionEdgeNetworkResult, IntersectionEdgeNetworkRow
 from .intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
 from .intersection_slope_face_boundary import IntersectionSlopeFaceBoundaryResult, IntersectionSlopeFaceBoundaryRow
+from .intersection_slope_face_cell import IntersectionSlopeFaceCellResult, IntersectionSlopeFaceCellRow
 from .intersection_slope_face_loop import IntersectionSlopeFaceLoopResult, IntersectionSlopeFaceLoopRow
+from .intersection_shared_boundary_graph import (
+    IntersectionSharedBoundaryCellRow,
+    IntersectionSharedBoundaryEdgeRow,
+    IntersectionSharedBoundaryGraphResult,
+    IntersectionSharedBoundaryNodeRow,
+)
 from .intersection_surface_patch import (
     IntersectionSurfacePatchBoundaryRow,
     IntersectionSurfacePatchQualityRow,
@@ -85,6 +97,9 @@ __all__ = [
     "EarthworkBalanceModel",
     "IntersectionBoundarySegmentResult",
     "IntersectionBoundarySegmentRow",
+    "IntersectionBoundaryLoopResult",
+    "IntersectionBoundaryLoopRow",
+    "IntersectionBoundaryLoopSegmentRow",
     "IntersectionCorridorClipResult",
     "IntersectionCorridorClipRow",
     "IntersectionDrainageHintResult",
@@ -99,8 +114,14 @@ __all__ = [
     "IntersectionGradingContextRow",
     "IntersectionSlopeFaceBoundaryResult",
     "IntersectionSlopeFaceBoundaryRow",
+    "IntersectionSlopeFaceCellResult",
+    "IntersectionSlopeFaceCellRow",
     "IntersectionSlopeFaceLoopResult",
     "IntersectionSlopeFaceLoopRow",
+    "IntersectionSharedBoundaryCellRow",
+    "IntersectionSharedBoundaryEdgeRow",
+    "IntersectionSharedBoundaryGraphResult",
+    "IntersectionSharedBoundaryNodeRow",
     "IntersectionSurfacePatchBoundaryRow",
     "IntersectionSurfacePatchQualityRow",
     "IntersectionSurfacePatchResult",

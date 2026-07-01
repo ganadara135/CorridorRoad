@@ -611,127 +611,6 @@ def set_intersection_review_overlay_visible(document, visible: bool):
     return obj
 
 
-def show_intersection_edge_network_preview(
-    document,
-    *,
-    intersection_model: IntersectionModel,
-    detection_result=None,
-    project=None,
-):
-    """Create or update a 3D preview of the source-driven intersection edge network."""
-
-    if document is None:
-        raise RuntimeError("No active document is available.")
-    if App is None or Part is None:
-        raise RuntimeError("FreeCAD Part workbench is required for Intersection edge network preview.")
-    service = IntersectionEvaluationService()
-    topology = service.evaluate_topology(intersection_model)
-    edge_network = service.evaluate_edge_network(intersection_model, topology)
-    if edge_network.status == "error":
-        raise RuntimeError("; ".join(list(edge_network.diagnostic_rows or []) or ["Intersection edge network is not ready."]))
-
-    alignment_refs = _unique_text_values([row.alignment_ref for row in list(edge_network.edge_rows or [])])
-    alignment_by_ref = {ref: alignment_model_by_ref(document, ref) for ref in alignment_refs}
-    shapes: list[object] = []
-    edge_ids: list[str] = []
-    for row in list(edge_network.edge_rows or []):
-        edge_ids.append(str(getattr(row, "edge_id", "") or ""))
-        if str(getattr(row, "edge_family", "") or "") != "leg_edge":
-            continue
-        alignment = alignment_by_ref.get(str(getattr(row, "alignment_ref", "") or ""))
-        points = _alignment_station_span_points(
-            alignment,
-            float(getattr(row, "station_start", 0.0) or 0.0),
-            float(getattr(row, "station_end", 0.0) or 0.0),
-        )
-        if len(points) < 2:
-            continue
-        for offset in _edge_preview_offsets(row):
-            offset_points = _offset_preview_polyline(points, offset)
-            for first, second in zip(offset_points[:-1], offset_points[1:]):
-                try:
-                    shapes.append(Part.makeLine(first, second))
-                except Exception:
-                    pass
-
-    point = _intersection_review_point(detection_result)
-    if point is None:
-        point = _intersection_model_point(intersection_model)
-    curb_return_metadata = {
-        "policy_ref": "",
-        "radius": 0.0,
-        "arc_count": 0,
-        "diagnostics": [],
-    }
-    if point is not None:
-        primary_ref, secondary_ref = _intersection_model_primary_secondary_refs(intersection_model)
-        curb_return_shapes, curb_return_metadata = _curb_return_preview_shapes(
-            point=point,
-            intersection_kind=str(getattr(edge_network, "intersection_kind", "") or ""),
-            radius=_intersection_model_curb_return_radius(intersection_model),
-            policy_ref=_intersection_model_curb_return_policy_ref(intersection_model),
-            primary_alignment=alignment_model_by_ref(document, primary_ref),
-            secondary_alignment=alignment_model_by_ref(document, secondary_ref),
-            detection_result=detection_result,
-        )
-        shapes.extend(curb_return_shapes)
-
-    if not shapes:
-        raise RuntimeError("No Intersection edge network preview geometry could be created.")
-
-    obj = document.getObject("V1IntersectionEdgeNetworkPreview")
-    if obj is None:
-        obj = document.addObject("Part::Feature", "V1IntersectionEdgeNetworkPreview")
-    obj.Label = "Intersection Edge Network Preview"
-    obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
-    _set_preview_property(obj, "CRRecordKind", "v1_intersection_edge_network_preview")
-    _set_preview_property(obj, "V1ObjectType", "V1IntersectionEdgeNetworkPreview")
-    _set_preview_property(obj, "IntersectionId", str(edge_network.intersection_id or ""))
-    _set_preview_property(obj, "IntersectionKind", str(edge_network.intersection_kind or ""))
-    _set_preview_property(obj, "TopologyStatus", str(topology.status or ""))
-    _set_preview_property(obj, "EdgeNetworkStatus", str(edge_network.status or ""))
-    _set_preview_integer_property(obj, "EdgeCount", int(edge_network.edge_count or 0))
-    _set_preview_integer_property(obj, "LegEdgeCount", int(edge_network.leg_edge_count or 0))
-    _set_preview_integer_property(obj, "DaylightEdgeCount", int(edge_network.daylight_edge_count or 0))
-    _set_preview_integer_property(obj, "CurbReturnEdgeCount", int(edge_network.curb_return_edge_count or 0))
-    _set_preview_property(obj, "CurbReturnPolicyRef", str(curb_return_metadata.get("policy_ref", "") or ""))
-    _set_preview_property(obj, "CurbReturnRadius", f"{float(curb_return_metadata.get('radius', 0.0) or 0.0):.3f}")
-    _set_preview_integer_property(obj, "CurbReturnArcCount", int(curb_return_metadata.get("arc_count", 0) or 0))
-    _set_preview_integer_property(obj, "ShapePartCount", len(shapes))
-    _set_preview_string_list_property(obj, "EdgeIds", _unique_text_values(edge_ids))
-    _set_preview_string_list_property(obj, "DesignVehicles", _intersection_model_design_vehicles(intersection_model))
-    _set_preview_string_list_property(obj, "GradingPolicies", _intersection_model_grading_modes(intersection_model))
-    _set_preview_string_list_property(obj, "DrainageModes", _intersection_model_drainage_modes(intersection_model))
-    _set_preview_string_list_property(obj, "ControlAreaRanges", _intersection_model_control_area_ranges(intersection_model))
-    _set_preview_string_list_property(obj, "CurbReturnDiagnostics", list(curb_return_metadata.get("diagnostics", []) or []))
-    _set_preview_string_list_property(obj, "Diagnostics", list(edge_network.diagnostic_rows or []))
-    _style_intersection_edge_network_preview(obj, visible=True)
-    try:
-        prj = project or find_project(document)
-        if prj is not None:
-            route_to_v1_tree(prj, obj)
-    except Exception:
-        pass
-    try:
-        document.recompute()
-    except Exception:
-        pass
-    return obj
-
-
-def set_intersection_edge_network_preview_visible(document, visible: bool):
-    """Set the Intersection edge network preview visibility."""
-
-    obj = document.getObject("V1IntersectionEdgeNetworkPreview") if document is not None else None
-    if obj is None:
-        return None
-    try:
-        obj.ViewObject.Visibility = bool(visible)
-    except Exception:
-        pass
-    return obj
-
-
 def starter_intersection_source_specs(intersection_kind: str) -> dict[str, object]:
     """Return starter source geometry specs for one supported intersection kind."""
 
@@ -919,7 +798,6 @@ class V1IntersectionEditorTaskPanel:
         self._last_created_sources: list[str] = []
         self._last_applied_intersection = ""
         self._last_overlay = ""
-        self._last_edge_network_preview = ""
         self._last_source_stage_rows: list[dict[str, object]] = []
         self._last_preview_stage_rows: list[dict[str, object]] = []
         self._update_status()
@@ -1070,9 +948,6 @@ class V1IntersectionEditorTaskPanel:
         preview_button = QtWidgets.QPushButton("Preview Selection")
         preview_button.clicked.connect(self._show_review_overlay)
         action_row.addWidget(preview_button)
-        edge_preview_button = QtWidgets.QPushButton("Preview Edge Network")
-        edge_preview_button.clicked.connect(self._show_edge_network_preview)
-        action_row.addWidget(edge_preview_button)
         action_row.addStretch(1)
         layout.addLayout(action_row)
 
@@ -1229,43 +1104,6 @@ class V1IntersectionEditorTaskPanel:
             self._last_overlay = ""
             self._update_status(prefix=f"Preview failed: {exc}")
 
-    def _show_edge_network_preview(self) -> None:
-        kind = self.selected_intersection_kind()
-        primary_ref = self.selected_primary_alignment_ref()
-        secondary_ref = self.selected_secondary_alignment_ref()
-        control_regions = list_intersection_control_region_choices(self.document, intersection_ref_for_kind(kind))
-        if not control_regions:
-            self._last_edge_network_preview = ""
-            self._update_status(prefix="Edge Network preview blocked: no intersection-tagged control Regions were found.")
-            return
-        try:
-            model = build_intersection_model_from_sources(
-                intersection_kind=kind,
-                source_mode=self.selected_source_mode(),
-                primary_alignment_ref=primary_ref,
-                secondary_alignment_ref=secondary_ref,
-                control_region_choices=control_regions,
-                detection_result=self._last_detection,
-                project_id=_project_id(find_project(self.document)),
-            )
-            obj = show_intersection_edge_network_preview(
-                self.document,
-                intersection_model=model,
-                detection_result=self._last_detection,
-                project=find_project(self.document),
-            )
-            self._last_edge_network_preview = f"{obj.Label} | {obj.Name}"
-            if Gui is not None:
-                try:
-                    Gui.Selection.clearSelection()
-                    Gui.Selection.addSelection(obj)
-                except Exception:
-                    pass
-            self._update_status(prefix="Intersection edge network preview shown.")
-        except Exception as exc:
-            self._last_edge_network_preview = ""
-            self._update_status(prefix=f"Edge Network preview failed: {exc}")
-
     def _hide_review_overlay(self) -> None:
         obj = set_intersection_review_overlay_visible(self.document, False)
         self._update_status(prefix="Intersection review overlay hidden." if obj is not None else "No Intersection review overlay exists.")
@@ -1310,7 +1148,6 @@ class V1IntersectionEditorTaskPanel:
         self._update_preview_stage_table(preview_stage_rows)
         applied_line = str(getattr(self, "_last_applied_intersection", "") or "")
         overlay_line = str(getattr(self, "_last_overlay", "") or "")
-        edge_preview_line = str(getattr(self, "_last_edge_network_preview", "") or "")
         lines = []
         if prefix:
             lines.append(prefix)
@@ -1373,12 +1210,8 @@ class V1IntersectionEditorTaskPanel:
                 "3D Review Overlay:",
                 f"- {overlay_line or 'Not shown.'}",
                 "",
-                "Edge Network Preview:",
-                f"- {edge_preview_line or 'Not shown.'}",
-                "",
                 "Next planned actions:",
                 "- review the 3D overlay for point, legs, and control spans",
-                "- preview the edge network before surface-zone generation",
                 "- rebuild Sections so intersection context can be carried downstream",
                 "- check Build Parametric diagnostics for intersection-controlled Regions",
             ]
@@ -2489,72 +2322,6 @@ def _style_intersection_review_overlay(obj, *, visible: bool) -> None:
             vobj.Transparency = 0
     except Exception:
         pass
-
-
-def _style_intersection_edge_network_preview(obj, *, visible: bool) -> None:
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is not None:
-            vobj.Visibility = bool(visible)
-            vobj.ShapeColor = (0.0, 0.95, 1.0)
-            vobj.LineColor = (0.0, 0.95, 1.0)
-            vobj.PointColor = (0.0, 0.95, 1.0)
-            vobj.LineWidth = 5.0
-            vobj.PointSize = 7.0
-            vobj.Transparency = 0
-    except Exception:
-        pass
-
-
-def _edge_preview_offsets(row) -> tuple[float, ...]:
-    role = str(getattr(row, "edge_role", "") or "")
-    side = str(getattr(row, "side", "") or "").lower()
-    base = {
-        "lane_edge": 1.75,
-        "pavement_edge": 3.5,
-        "shoulder_edge": 5.0,
-        "curb_edge": 4.0,
-        "gutter_edge": 4.2,
-        "sidewalk_edge": 6.0,
-        "daylight_hinge": 6.5,
-    }.get(role, 3.5)
-    if side in {"left", "l"}:
-        return (base,)
-    if side in {"right", "r"}:
-        return (-base,)
-    if role == "daylight_hinge":
-        return (base, -base)
-    return (base, -base)
-
-
-def _offset_preview_polyline(points: list[object], offset: float) -> list[object]:
-    if App is None or len(points) < 2:
-        return list(points or [])
-    output = []
-    for index, point in enumerate(points):
-        if index == 0:
-            tangent = points[1] - point
-        elif index == len(points) - 1:
-            tangent = point - points[index - 1]
-        else:
-            tangent = points[index + 1] - points[index - 1]
-        normal = _horizontal_left_normal(tangent)
-        if normal is None:
-            output.append(point)
-        else:
-            output.append(point + normal.multiply(float(offset)))
-    return output
-
-
-def _horizontal_left_normal(vector):
-    if App is None or vector is None:
-        return None
-    x = float(getattr(vector, "x", 0.0) or 0.0)
-    y = float(getattr(vector, "y", 0.0) or 0.0)
-    length = hypot(x, y)
-    if length <= 1.0e-9:
-        return None
-    return App.Vector(-y / length, x / length, 0.0)
 
 
 def _intersection_model_point(intersection_model):

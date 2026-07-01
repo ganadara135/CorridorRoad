@@ -28,8 +28,6 @@ from .cmd_intersection_editor import (
     intersection_ref_for_kind,
     list_v1_alignment_choices,
     list_intersection_control_region_choices,
-    set_intersection_edge_network_preview_visible,
-    show_intersection_edge_network_preview,
     validate_existing_alignment_selection,
 )
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
@@ -162,7 +160,6 @@ class V1IntersectionPresetsTaskPanel:
         self._last_created_sources: list[str] = []
         self._last_detection = None
         self._last_applied_intersection = ""
-        self._last_edge_network_preview = ""
         self._alignment_choices = list_v1_alignment_choices(self.document) if self.document is not None else []
         self.form = self._build_ui()
         _route_intersection_preset_objects(self.document, project=self.project)
@@ -279,12 +276,6 @@ class V1IntersectionPresetsTaskPanel:
         self._apply_existing_button = QtWidgets.QPushButton("Apply")
         self._apply_existing_button.clicked.connect(self._apply_existing_alignment_intersection)
         buttons.addWidget(self._apply_existing_button)
-        self._preview_edge_button = QtWidgets.QPushButton("Preview Edge Network")
-        self._preview_edge_button.clicked.connect(self._preview_edge_network)
-        buttons.addWidget(self._preview_edge_button)
-        self._hide_edge_button = QtWidgets.QPushButton("Hide Edge Network")
-        self._hide_edge_button.clicked.connect(self._hide_edge_network)
-        buttons.addWidget(self._hide_edge_button)
         buttons.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -341,8 +332,6 @@ class V1IntersectionPresetsTaskPanel:
             self._refresh_alignments_button.setVisible(use_existing)
             self._auto_detect_button.setVisible(use_existing)
             self._apply_existing_button.setVisible(use_existing)
-            self._preview_edge_button.setVisible(True)
-            self._hide_edge_button.setVisible(True)
             self._create_button.setVisible(not use_existing)
         except Exception:
             pass
@@ -465,54 +454,6 @@ class V1IntersectionPresetsTaskPanel:
             self._update_status(f"Apply failed: {exc}")
             _show_message(self.form, "Intersection", f"Intersection was not applied.\n{exc}")
 
-    def _preview_edge_network(self):
-        try:
-            if self._selected_source_mode() == "Use Existing Alignments":
-                model, control_region_count = build_existing_alignment_intersection_model(
-                    self.document,
-                    preset_label=self._selected_label(),
-                    primary_alignment_ref=self._selected_primary_alignment_ref(),
-                    secondary_alignment_ref=self._selected_secondary_alignment_ref(),
-                    detection_result=self._last_detection,
-                    **self._selected_options(),
-                )
-                status_prefix = "Existing Alignment"
-                detection_result = self._last_detection
-            else:
-                model, control_region_count, detection_result = build_preset_source_intersection_model(
-                    self.document,
-                    preset_label=self._selected_label(),
-                    **self._selected_options(),
-                )
-                self._last_detection = detection_result
-                status_prefix = "Preset"
-            obj = show_intersection_edge_network_preview(
-                self.document,
-                intersection_model=model,
-                detection_result=detection_result,
-                project=find_project(self.document),
-            )
-            _route_intersection_preset_objects(self.document, project=find_project(self.document))
-            self._last_edge_network_preview = f"{getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {getattr(obj, 'Name', '')} | regions={control_region_count}"
-            if Gui is not None:
-                try:
-                    Gui.Selection.clearSelection()
-                    Gui.Selection.addSelection(obj)
-                except Exception:
-                    pass
-            self._update_status(f"{status_prefix} edge network preview shown.")
-        except Exception as exc:
-            self._last_edge_network_preview = ""
-            self._update_status(f"Edge Network preview failed: {exc}")
-
-    def _hide_edge_network(self):
-        obj = set_intersection_edge_network_preview_visible(self.document, False)
-        _route_intersection_preset_objects(self.document, project=find_project(self.document))
-        if obj is None:
-            self._update_status("No Edge Network preview exists.")
-            return
-        self._update_status("Edge Network preview hidden.")
-
     def _hide_preset_sources(self):
         count = _set_intersection_preset_sources_visible(self.document, visible=False)
         self._update_status(f"Preset source objects hidden: {count}.")
@@ -567,9 +508,6 @@ class V1IntersectionPresetsTaskPanel:
                 "",
                 "Applied IntersectionModel:",
                 f"- {self._last_applied_intersection or 'Not applied.'}",
-                "",
-                "Edge Network Preview:",
-                f"- {self._last_edge_network_preview or 'Not shown.'}",
                 "",
                 "Next workflow:",
                 "- Build Sections: generate applied section context",
@@ -1779,7 +1717,6 @@ def _is_intersection_preset_tree_object(obj) -> bool:
     if record_kind in {
         "v1_intersection_model",
         "v1_intersection_review_overlay",
-        "v1_intersection_edge_network_preview",
     }:
         return True
     if str(getattr(obj, "SuperelevationKind", "") or "") == "intersection_superelevation_handoff":

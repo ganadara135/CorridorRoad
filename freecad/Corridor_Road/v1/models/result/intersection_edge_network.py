@@ -28,6 +28,8 @@ class IntersectionEdgeNetworkRow:
     contact_station_refs: dict[str, tuple[float, ...]] = field(default_factory=dict)
     start_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     end_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    arc_center_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    arc_points_xyz: tuple[tuple[float, float, float], ...] = ()
     source_status: str = "accepted"
     source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"

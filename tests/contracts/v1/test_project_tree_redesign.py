@@ -15,6 +15,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_ASSEMBLIES,
     V1_TREE_BOOKMARKS,
     V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
+    V1_TREE_CENTERLINE3D,
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DRAINAGE,
     V1_TREE_DXF,
@@ -392,6 +393,27 @@ def test_resolve_v1_target_container_routes_build_parametric_output_record_kinds
 
         assert route_to_v1_tree(project, issue) == tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
         assert issue.Name in _group_names(tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_route_to_v1_tree_places_intersection_contract_highlight_under_3d_centerline() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        highlight = doc.addObject("App::FeaturePython", "ReviewIntersectionContractHighlight")
+        highlight.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad")
+        highlight.addProperty("App::PropertyString", "V1ObjectType", "CorridorRoad")
+        highlight.addProperty("App::PropertyString", "IssueKind", "CorridorRoad")
+        highlight.CRRecordKind = "v1_intersection_contract_review_highlight"
+        highlight.V1ObjectType = "ReviewIssue"
+        highlight.IssueKind = "intersection_contract"
+
+        folder = route_to_v1_tree(project, highlight)
+
+        assert folder == tree[V1_TREE_CENTERLINE3D]
+        assert highlight.Name in _group_names(tree[V1_TREE_CENTERLINE3D])
+        assert highlight.Name not in _group_names(tree[V1_TREE_ALIGNMENTS])
     finally:
         App.closeDocument(doc.Name)
 

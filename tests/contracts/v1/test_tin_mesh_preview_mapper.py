@@ -145,6 +145,27 @@ def test_create_or_update_preview_records_hidden_constraint_triangle_count() -> 
         App.closeDocument(doc.Name)
 
 
+def test_create_or_update_preview_allows_surface_label_without_prefix() -> None:
+    doc = App.newDocument("TINMeshPreviewMapperNoPrefixLabelTest")
+    try:
+        result = TINMeshPreviewMapper().create_or_update_preview_object(
+            doc,
+            _small_surface(),
+            object_name="TINPreview_NoPrefixLabel_Test",
+            label_prefix="",
+            mesh_module=Mesh,
+            app_module=App,
+        )
+
+        obj = doc.getObject(result.object_name)
+        assert result.status == "created"
+        assert result.label == "Mesh Preview Test"
+        assert obj is not None
+        assert obj.Label == "Mesh Preview Test"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_create_preview_object_skips_without_document() -> None:
     result = TINMeshPreviewMapper().create_preview_object(None, _small_surface())
 

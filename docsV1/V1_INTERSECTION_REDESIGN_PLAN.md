@@ -490,7 +490,7 @@ Buttons:
 
 - `Auto Detect`
 - `Create Starter Sources`
-- `Preview Edge Network`
+- `Review Contract Diagnostics`
 - `Preview Zones`
 - `Apply`
 - `Close`
@@ -544,7 +544,7 @@ Double-click behavior:
 | 2 | Done | Source model extension | Added arm, curb-return, edge, grading, and drainage policy rows to the source contract without changing generated geometry. |
 | 3 | Done | Topology evaluator | Produces `IntersectionTopologyResult` with leg spans, control areas, policy refs, source refs, and diagnostics without building geometry. |
 | 4 | Done | Edge network result | Produces leg, curb-return, and daylight edge rows with stable IDs from topology and source policies. |
-| 5 | Done | Preview edge network | Intersections panel can create a 3D `Intersection Edge Network Preview` before surface build. |
+| 5 | Removed | Standalone edge-network geometry | Standalone edge-network geometry was removed; edge-network review now happens through source/result contracts and Build Parametric `Intersections` diagnostics. |
 | 6 | Done | Surface zone contracts | Adds `IntersectionSurfaceZoneResult`, candidate zone rows, and zone diagnostics without triangulation. |
 | 7 | Done | Intersection design zones | Generates main, side, central, and curb-return pavement zone responsibilities from the edge network without triangulation. |
 | 8 | Done | Slope face zones | Generates exterior Slope Face zone boundary contracts from daylight, pavement, and curb-return edge rows without triangulation. |
@@ -580,12 +580,11 @@ The steps below are the short-form checklist.
 1. Create starter T-intersection sources.
 2. Build 3D Centerline.
 3. Build Sections.
-4. Preview Edge Network.
+4. Build Parametric.
 5. Confirm main leg and side leg have separate centerlines.
-6. Confirm curb-return edges connect to pavement edges.
-7. Build Parametric.
-8. Show only `Intersection Surface Zones`.
-9. Confirm no ordinary Slope Face exists inside the control area.
+6. Confirm edge-network contract rows preserve curb-return to pavement edge lineage.
+7. Show only `Intersection Surface Zones`.
+8. Confirm no ordinary Slope Face exists inside the control area.
 10. Show only `Intersection Slope Face Surface`.
 11. Confirm side-road Slope Face connects to curb-return exterior edge.
 12. Confirm diagnostics are `ready` or actionable `warning`.
@@ -663,14 +662,12 @@ Phase 4 completion note:
 - Topology `error:*` diagnostics stop edge generation; topology `warning:*` diagnostics are carried forward.
 - No generated intersection surface behavior was changed in this phase.
 
-Phase 5 completion note:
+Phase 5 removal note:
 
-- The Intersections panel now exposes `Preview Edge Network`.
-- The preview builds a temporary `IntersectionModel` from current panel selections and control Regions, evaluates topology, then evaluates the edge network.
-- The preview creates or updates `V1IntersectionEdgeNetworkPreview` / `Intersection Edge Network Preview` in the 3D view.
-- The preview object stores `EdgeNetworkStatus`, `EdgeCount`, `LegEdgeCount`, `DaylightEdgeCount`, `CurbReturnEdgeCount`, `EdgeIds`, and diagnostics as object properties.
-- Current edge preview geometry is intentionally lightweight: leg edges are displayed from alignment station spans with role-based offsets, and curb-return edges use the current curb-return arc preview.
-- No generated intersection surface behavior was changed in this phase.
+- Standalone edge-network geometry is no longer exposed.
+- The panel must not create a dedicated edge-network preview object.
+- Edge-network status, counts, edge IDs, source refs, and diagnostics are reviewed through result contracts.
+- This prevents preview geometry from being mistaken for accepted surface source truth.
 
 Phase 6 completion note:
 

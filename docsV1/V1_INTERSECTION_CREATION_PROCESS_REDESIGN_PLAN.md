@@ -457,7 +457,7 @@ Tasks:
 - design the panel sequence.
 - add per-step status.
 - add source completeness summary.
-- add `Preview Topology`, `Preview Edge Network`, and `Preview Surface Zones` as result previews, not source edits.
+- add source/result diagnostics for Topology, Edge Network, and Surface Zones without creating editable preview geometry.
 
 Acceptance:
 
@@ -472,7 +472,7 @@ Redesigned wizard outline:
 | 3. Anchor | source/derived | Detect anchor or manually enter point/station refs, then accept/lock it. | `detected_unapproved`, `manual`, `locked`, or `missing`. | Show anchor marker only; not accepted as geometry source until approved. |
 | 4. Legs | source | Review leg roles, priority, approach/departure spans, Region refs. | Per-leg completeness. | `Preview Topology` enabled only when legs are complete. |
 | 5. Control Area | source | Define intersection-owned control area intent and validate linked Regions. | `intersection_owned`, `region_derived`, `preset_default`, or `missing`. | Topology preview can show control area, but Apply warns on derived-only control areas. |
-| 6. Corners and Curb Returns | source | Define corners, from-leg/to-leg pairs, radius/design vehicle rule, tangent/contact policy. | Per-corner completeness. | `Preview Edge Network` blocked until required corners are complete for the selected kind. |
+| 6. Corners and Curb Returns | source | Define corners, from-leg/to-leg pairs, radius/design vehicle rule, tangent/contact policy. | Per-corner completeness. | Edge-network result diagnostics remain warning/blocked until required corners are complete for the selected kind. |
 | 7. Lane Connections | source | Define lane continuation, merge, terminate, or turn relationships. | Missing or complete by leg pair. | Surface-zone preview warns if lane connections are inferred. |
 | 8. Edge Families | source | Accept Assembly/Subassembly-derived edge families for lane, shoulder, gutter, curb, sidewalk, ditch, median, side slope. | `derived_unapproved`, `approved`, or `missing`. | Edge network preview reports defaulted edge families separately. |
 | 9. Vertical / Grading | source/evaluation | Choose controlling profile, crown behavior, crossfall transition, tie-in rule, low-point strategy. | `complete`, `incomplete`, or `uses_normal_superelevation`. | Surface-zone preview warns when vertical policy is incomplete. |
@@ -484,7 +484,7 @@ Apply gating:
 
 - `Apply Source Model` is blocked when identity, participants, anchor, legs, or control area are missing.
 - `Preview Topology` requires identity, participants, anchor, legs, and control area.
-- `Preview Edge Network` requires topology plus corner, curb-return, and edge-family source status.
+- Edge-network result acceptance requires topology plus corner, curb-return, and edge-family source status.
 - `Preview Surface Zones` requires edge network plus vertical/grading policy.
 - Drainage preview may run with hint-only status, but must show that hints are not source design.
 - Build Corridor should not be the first place where missing source intent is discovered.
@@ -661,7 +661,7 @@ Result preview sequence:
 | --- | --- | --- | --- |
 | 1. Validate Sources | identity, participants, anchor, legs, control area | source completeness summary | Blocks all result previews if required source is missing. |
 | 2. Preview Topology | accepted or acknowledged anchor, leg roles, control-area intent | `IntersectionTopologyResult` | Warns when control area is `region_derived` or `preset_default`. |
-| 3. Preview Edge Network | topology ready, corners, curb-return policy, edge-family policy, lane connection status | `IntersectionEdgeNetworkResult` | Warns for default edge families or inferred curb-return contacts. |
+| 3. Review Edge Network Contracts | topology ready, corners, curb-return policy, edge-family policy, lane connection status | `IntersectionEdgeNetworkResult` | Warns for default edge families or inferred curb-return contacts. |
 | 4. Preview Surface Zones | edge network ready, vertical/grading policy at least warning-complete | `IntersectionSurfaceZoneResult` | Blocks trusted surface-zone status when required edge refs are inferred only. |
 | 5. Preview Grading Context | surface zones ready, vertical/grading source policy | `IntersectionGradingContextResult` | Warns when normal superelevation is used through an intersection zone without explicit approval. |
 | 6. Preview Drainage Hints | surface zones ready, drainage intent at least hint mode | `IntersectionDrainageHintResult` | Keeps hints as warnings until drainage source accepts them. |

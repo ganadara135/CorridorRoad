@@ -642,9 +642,9 @@ First-slice implementation note:
 - The panel now has two source modes:
   - `Create From Preset`
   - `Use Existing Alignments`
-- `Preview Edge Network` is available in both source modes.
-- In `Create From Preset`, the preview uses the preset-created Alignment and control Region source rows, so users run `Create Sources` before previewing.
-- `Use Existing Alignments` lets users select Primary and Secondary Alignment refs, run Auto Detect, preview the edge network, and apply an `IntersectionModel` from the same preset panel.
+- Standalone edge-network geometry is no longer exposed from the preset panel.
+- In `Create From Preset`, users run `Create Sources` to create editable source rows before Build Parametric evaluation.
+- `Use Existing Alignments` lets users select Primary and Secondary Alignment refs, run Auto Detect, and apply an `IntersectionModel` from the same preset panel.
 - The older `Intersections` command is no longer exposed in the workbench workflow.
 - Roundabout is not yet promoted beyond the first-slice `Intersection` source workflow.
 - The first code slice creates source objects and a stored `IntersectionModel` contract only.
@@ -675,7 +675,7 @@ Work:
 
 Acceptance:
 
-- Preview Edge Network has stable edge roles and source refs
+- Build Parametric `Intersections` diagnostics have stable edge roles and source refs
 - Build Sections can read contact station refs for supplemental section rows
 
 First-slice implementation note:
