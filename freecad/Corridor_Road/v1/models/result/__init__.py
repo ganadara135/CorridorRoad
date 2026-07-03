@@ -40,6 +40,7 @@ from .intersection_grading_context import IntersectionGradingContextResult, Inte
 from .intersection_slope_face_boundary import IntersectionSlopeFaceBoundaryResult, IntersectionSlopeFaceBoundaryRow
 from .intersection_slope_face_cell import IntersectionSlopeFaceCellResult, IntersectionSlopeFaceCellRow
 from .intersection_slope_face_loop import IntersectionSlopeFaceLoopResult, IntersectionSlopeFaceLoopRow
+from .intersection_tie_slope import IntersectionTieSlopeResult, IntersectionTieSlopeRow
 from .intersection_shared_boundary_graph import (
     IntersectionSharedBoundaryCellRow,
     IntersectionSharedBoundaryEdgeRow,
@@ -118,6 +119,8 @@ __all__ = [
     "IntersectionSlopeFaceCellRow",
     "IntersectionSlopeFaceLoopResult",
     "IntersectionSlopeFaceLoopRow",
+    "IntersectionTieSlopeResult",
+    "IntersectionTieSlopeRow",
     "IntersectionSharedBoundaryCellRow",
     "IntersectionSharedBoundaryEdgeRow",
     "IntersectionSharedBoundaryGraphResult",

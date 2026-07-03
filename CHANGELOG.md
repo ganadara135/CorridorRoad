@@ -9,6 +9,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-07-03
+
 ### Added
 - Added first-slice Intersection source-completeness diagnostics in topology, edge-network, and surface-zone evaluation for missing leg Profile, 3D Centerline, Region, control Region, and source policy context.
 - Added Intersection contract source status and source diagnostics to Build Parametric review rows and panel columns, including source warning counts in the compact summary.

@@ -105,7 +105,7 @@ Lane, Shoulder, and Side Slope geometry should therefore come from Applied Secti
 
 Standalone edge-network geometry is no longer exposed from the panel.
 
-In `Create From Preset` mode, click `Create Sources`, then review edge-network result contracts in Build Parametric `Intersections`.
+In `Create From Preset` mode, click `Create Sources`, then review the source summary and user-facing Intersection contracts in Build Parametric `Intersections`.
 
 Current preset option values are stored on source rows and carried into result diagnostics.
 
@@ -117,7 +117,9 @@ Current preset option values are stored on source rows and carried into result d
 
 This lets the patch tilt toward the side-road height instead of forcing the whole intersection patch to one flat elevation.
 
-Standalone edge-network geometry is not exposed as a panel command. Review edge-network rows through Build Parametric `Intersections` contract diagnostics.
+Standalone edge-network geometry is not exposed as a panel command.
+Low-level edge-network, surface-zone, drainage-hint, slope-face-cell, and shared-boundary-graph rows are hidden from the normal Build Parametric `Intersections` table.
+Use the higher-level topology, boundary loop, Intersection Tie Slope window, upper slope-face panel, Results, and Breakline Audit rows for review.
 
 In existing-alignment mode, the panel can run Auto Detect and apply the resulting `IntersectionModel`.
 
@@ -197,7 +199,8 @@ In Build Parametric, the `Intersections` tab is a contract review table.
 
 Double-click an `Intersections` table row to create a bright `Intersection Contract Highlight` object in the 3D View.
 
-The highlight focuses the selected contract row. Edge rows highlight the selected edge, Surface Zone rows highlight their source/boundary edges, and broader Topology or Corridor Clip rows highlight the available intersection boundary or exclusion loop.
+The highlight focuses the selected contract row when a row still has explicit review geometry.
+Rows that represent accepted generated outputs, such as `intersection_tie_slope_window` or the upper slope-face panel, focus the generated preview surface instead.
 
 During Build Parametric, the `Intersection Surface` owns its footprint.
 
@@ -241,6 +244,31 @@ Build Parametric may also add a narrow Applied Section edge strip only when:
 This keeps the green Side Slope result and the generated `Slope Face Surface` aligned without restoring forced white boundary patches.
 
 Users should review this boundary and the side-slope strip count before trusting future generated `Intersection Slope Face Surface` output.
+
+## Intersection Tie Slope And Upper Slope Face
+
+Build Parametric now separates three slope-face output families near intersections:
+
+- ordinary `Slope Face Surface`
+- dedicated `Intersection Slope Face Surface`
+- dedicated `Intersection Tie Slope Surface`
+
+`Intersection Tie Slope Surface` is generated from accepted Applied Section window rows.
+It uses the transition between ordinary-corridor Applied Sections and active-intersection Applied Sections as its source.
+Temporary `Intersection Tie Slope Highlight` objects are no longer generated.
+
+The Build Parametric `Intersections` tab shows the compact `intersection_tie_slope_window` row for this handoff.
+Double-clicking that row focuses the generated `Intersection Tie Slope Surface` preview.
+
+The upper rectangular slope-face panel is reviewed through `Intersection Slope Face Surface` metadata and Breakline Audit rows.
+Temporary `Intersection Upper Slope Face Panel Highlight` objects are no longer generated.
+
+Review these outputs in this order:
+
+1. Results: confirm `Intersection Slope Face Surface` and `Intersection Tie Slope Surface` are `ready`.
+2. Intersections: confirm `intersection_tie_slope_window` is present and low-level legacy rows are hidden.
+3. Breakline Audit: confirm shared breakline counts are consumed with no geometry or mesh mismatch.
+4. Visibility: toggle ordinary `Slope Face Surface`, `Intersection Slope Face Surface`, and `Intersection Tie Slope Surface` independently.
 
 ## Region Behavior
 

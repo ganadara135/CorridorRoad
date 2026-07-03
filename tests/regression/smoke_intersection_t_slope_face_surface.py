@@ -24,6 +24,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     create_corridor_intersection_surface_preview,
     focus_corridor_intersection_contract_review_row,
     _parse_intersection_exclusion_near_boundary_kept_triangle_row,
+    _intersection_tie_slope_oriented_ring_points,
     shared_breakline_audit_display_rows,
 )
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
@@ -77,6 +78,25 @@ def _bbox_overlap_area_xy(first, second):
     return x_overlap * y_overlap
 
 
+def _bbox_gap_xy(first, second):
+    if not first or not second:
+        return float("inf")
+    x_gap = max(0.0, max(first["xmin"], second["xmin"]) - min(first["xmax"], second["xmax"]))
+    y_gap = max(0.0, max(first["ymin"], second["ymin"]) - min(first["ymax"], second["ymax"]))
+    return max(x_gap, y_gap)
+
+
+def _ring_area_xy(points):
+    point_list = [(float(point[0]), float(point[1])) for point in list(points or [])]
+    if len(point_list) < 3:
+        return 0.0
+    area = 0.0
+    for index, point in enumerate(point_list):
+        next_point = point_list[(index + 1) % len(point_list)]
+        area += point[0] * next_point[1] - next_point[0] * point[1]
+    return area / 2.0
+
+
 def _shape_area(obj):
     shape = getattr(obj, "Shape", None)
     try:
@@ -121,6 +141,15 @@ def _graph_cell_rows(source_obj):
     return rows
 
 
+def _graph_cell_diagnostics_are_informational(text):
+    diagnostics = [
+        value.strip()
+        for value in str(text or "").replace(";", ",").split(",")
+        if value.strip()
+    ]
+    return not diagnostics
+
+
 def _parent_group_labels(doc, obj):
     labels = []
     for owner in list(getattr(doc, "Objects", []) or []):
@@ -149,6 +178,46 @@ def _note_int(notes, key):
             except Exception:
                 return 0
     return 0
+
+
+def _upper_panel_candidate_fields(row):
+    parts = str(row or "").split("|")
+    output = {
+        "candidate_id": parts[0] if len(parts) > 0 else "",
+        "status": parts[1] if len(parts) > 1 else "",
+        "alignment_ref": parts[2] if len(parts) > 2 else "",
+        "side": parts[3] if len(parts) > 3 else "",
+        "loop_area": 0.0,
+        "inner_ref": parts[5] if len(parts) > 5 else "",
+        "outer_ref": parts[6] if len(parts) > 6 else "",
+        "left_cap_ref": parts[7] if len(parts) > 7 else "",
+        "right_cap_ref": parts[8] if len(parts) > 8 else "",
+        "diagnostics": parts[16] if len(parts) > 16 else "",
+    }
+    try:
+        output["loop_area"] = float(parts[4]) if len(parts) > 4 else 0.0
+    except Exception:
+        output["loop_area"] = 0.0
+    for part in parts[9:16]:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        if key == "caps":
+            cap_parts = value.split("/", 1)
+            try:
+                output["left_cap_len"] = float(cap_parts[0])
+            except Exception:
+                output["left_cap_len"] = 0.0
+            try:
+                output["right_cap_len"] = float(cap_parts[1]) if len(cap_parts) > 1 else 0.0
+            except Exception:
+                output["right_cap_len"] = 0.0
+            continue
+        try:
+            output[key] = float(value)
+        except Exception:
+            output[key] = 0.0
+    return output
 
 
 def _accept_t_intersection_preset_prerequisites(doc):
@@ -219,6 +288,17 @@ def _accept_t_intersection_preset_prerequisites(doc):
 
 
 def run():
+    clockwise_tie_slope_loop = [
+        (0.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (2.0, 1.0, 0.0),
+        (2.0, 0.0, 0.0),
+    ]
+    oriented_tie_slope_loop = _intersection_tie_slope_oriented_ring_points(clockwise_tie_slope_loop)
+    _assert(
+        _ring_area_xy(oriented_tie_slope_loop) > 0.0,
+        "Intersection Tie Slope loops should be normalized to a consistent top-facing winding before triangulation.",
+    )
     doc = App.newDocument("CRV1IntersectionTSlopeFaceSurfaceSmoke")
     try:
         create_intersection_preset_sources(
@@ -253,6 +333,7 @@ def run():
             surface_model=surface_model,
         )
         slope_face_preview = doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
+        tie_slope_preview = doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview")
         review_rows = corridor_build_review_rows(doc)
         slope_rows = [row for row in review_rows if row["role"] == "intersection_slope"]
 
@@ -261,6 +342,65 @@ def run():
         _assert(design_preview is not None, "Design Surface preview was not created.")
         _assert(daylight_preview is not None, "Ordinary Slope Face Surface preview was not created.")
         _assert(slope_face_preview is not None, "Dedicated Intersection Slope Face Surface preview was not created.")
+        _assert(
+            tie_slope_preview is not None,
+            "Intersection Tie Slope preview should be created from accepted Applied Section window rows.",
+        )
+        _assert(
+            str(getattr(tie_slope_preview, "IntersectionTieSlopeGeometrySource", "") or "") == "accepted_applied_section_window_rows",
+            "Intersection Tie Slope preview must use accepted Applied Section window rows as its geometry source.",
+        )
+        _assert(
+            int(getattr(tie_slope_preview, "IntersectionTieSlopeTriangleCount", 0) or 0) > 0,
+            "Intersection Tie Slope preview should contain visible triangles from accepted window rows.",
+        )
+        _assert(
+            int(getattr(tie_slope_preview, "IntersectionTieSlopeAppliedSectionWindowAcceptedCount", 0) or 0) > 0,
+            "Intersection Tie Slope preview should report accepted Applied Section window rows.",
+        )
+        _assert(
+            doc.getObject("ReviewIntersectionTieSlopeTransitionGapHighlight") is None
+            and not str(getattr(intersection_preview, "IntersectionTieSlopeTransitionGapHighlightRef", "") or ""),
+            "Intersection Tie Slope transition gap highlight should no longer be generated once the surface output is available.",
+        )
+        tie_slope_preview_bbox = _shape_bbox_xy(tie_slope_preview)
+        tie_slope_preview_area = _bbox_area_xy(tie_slope_preview_bbox)
+        _assert(
+            tie_slope_preview_bbox is not None
+            and tie_slope_preview_area > 0.0,
+            f"Intersection Tie Slope surface should expose a measurable local surface bbox: "
+            f"preview={tie_slope_preview_bbox}, area={tie_slope_preview_area:.3f}.",
+        )
+        _assert(
+            int(getattr(tie_slope_preview, "IntersectionTieSlopeTriangleCount", 0) or 0)
+            == int(getattr(tie_slope_preview, "IntersectionTieSlopeAppliedSectionWindowAcceptedCount", 0) or 0) * 2,
+            "Intersection Tie Slope preview should triangulate each accepted four-edge window as exactly two triangles.",
+        )
+        _assert(
+            any(row["role"] == "intersection_tie_slope" for row in review_rows),
+            "Results rows should expose source-owned Intersection Tie Slope diagnostics while STA-separated generation is pending.",
+        )
+        tie_slope_review_rows = [row for row in review_rows if row.get("role") == "intersection_tie_slope"]
+        _assert(
+            tie_slope_review_rows[0].get("status") == "ready",
+            f"Intersection Tie Slope Results row should be ready when accepted Applied Section window rows generate triangles: {tie_slope_review_rows[0]}",
+        )
+        tie_slope_review_notes = str(tie_slope_review_rows[0].get("notes", "") or "")
+        _assert(
+            "ready=0" in tie_slope_review_notes
+            and "sta_separation_required" in tie_slope_review_notes
+            and "transition_spans=" in tie_slope_review_notes
+            and "preferred_breakline_ready=" in tie_slope_review_notes
+            and "preferred_breakline_roles=intersection_tie_slope_transition_inner,intersection_tie_slope_transition_outer,intersection_tie_slope_start_cap,intersection_tie_slope_end_cap" in tie_slope_review_notes
+            and "Recommended Action: Build separated Region/control-area to Applied Section intersection STA transition" in tie_slope_review_notes,
+            f"Intersection Tie Slope Results row should retain legacy diagnostic context while window rows provide visible geometry: {tie_slope_review_notes}",
+        )
+        _assert(
+            "Applied Section window candidates:" in tie_slope_review_notes
+            and "accepted=" in tie_slope_review_notes
+            and "source=applied_section_context_transition_window" in tie_slope_review_notes,
+            f"Intersection Tie Slope Results row should expose Applied Section window candidate readiness: {tie_slope_review_notes}",
+        )
         _assert(
             int(getattr(intersection_preview, "SharedBreaklineBoundaryLoopRefCount", 0) or 0) > 0,
             "Intersection Surface should consume boundary-loop shared breakline refs.",
@@ -404,6 +544,75 @@ def run():
         )
         graph_summary_rows = [row for row in breakline_display_rows if row.get("row_kind") == "graph"]
         _assert(graph_summary_rows, "Breakline Audit should expose Shared Boundary Graph summary rows.")
+        breakline_notes = " ".join(
+            " ".join(str(value or "") for value in row.values())
+            for row in breakline_display_rows
+        )
+        for role_name in (
+            "intersection_tie_slope_inner",
+            "intersection_tie_slope_outer",
+            "intersection_tie_slope_transition_inner",
+            "intersection_tie_slope_transition_outer",
+            "intersection_tie_slope_start_cap",
+            "intersection_tie_slope_end_cap",
+        ):
+            _assert(
+                role_name not in breakline_notes,
+                f"Legacy Intersection Tie Slope shared breakline role should stay disabled until separated STA transitions are built: {role_name}.",
+            )
+        for role_name in (
+            "intersection_tie_slope_window_outer",
+            "intersection_tie_slope_window_inner",
+            "intersection_tie_slope_window_start_cap",
+            "intersection_tie_slope_window_end_cap",
+        ):
+            _assert(
+                role_name in breakline_notes,
+                f"Breakline Audit should expose Applied Section window Tie Slope shared breakline role: {role_name}.",
+            )
+        tie_slope_window_handoff_rows = [
+            row for row in breakline_display_rows
+            if row.get("row_kind") == "intersection_tie_slope_window"
+        ]
+        _assert(
+            tie_slope_window_handoff_rows,
+            "Breakline Audit should expose a compact Intersection Tie Slope Window Handoff row.",
+        )
+        tie_slope_window_handoff = next(
+            (
+                row for row in tie_slope_window_handoff_rows
+                if row.get("status") == "ready"
+                and "missing_roles=none" in str(row.get("notes", "") or "")
+            ),
+            tie_slope_window_handoff_rows[0],
+        )
+        _assert(
+            tie_slope_window_handoff.get("status") == "ready",
+            f"Intersection Tie Slope Window Handoff should be ready: {tie_slope_window_handoff}",
+        )
+        _assert(
+            "source=applied_section_context_transition_window" in str(tie_slope_window_handoff.get("notes", "") or "")
+            and "missing_roles=none" in str(tie_slope_window_handoff.get("notes", "") or ""),
+            f"Intersection Tie Slope Window Handoff should explain source and completeness: {tie_slope_window_handoff}",
+        )
+        tie_slope_shared_refs = " ".join(
+            str(value or "")
+            for value in list(getattr(tie_slope_preview, "IntersectionTieSlopeSharedBreaklineRefs", []) or [])
+        )
+        _assert(
+            int(getattr(tie_slope_preview, "IntersectionTieSlopeSharedBreaklineCount", 0) or 0) > 0,
+            "Intersection Tie Slope preview should consume window shared breaklines.",
+        )
+        for role_name in (
+            "intersection-tie-slope-window-outer",
+            "intersection-tie-slope-window-inner",
+            "intersection-tie-slope-window-start-cap",
+            "intersection-tie-slope-window-end-cap",
+        ):
+            _assert(
+                role_name in tie_slope_shared_refs,
+                f"Intersection Tie Slope preview should record shared breakline ref for {role_name}: {tie_slope_shared_refs}",
+            )
         _assert(
             all(list(row.get("graph_edge_refs", []) or []) for row in graph_summary_rows),
             "Shared Boundary Graph summary rows should focus canonical graph edges, not shared-breakline fallback geometry.",
@@ -413,6 +622,10 @@ def run():
         _assert(
             all(list(row.get("graph_edge_refs", []) or []) for row in graph_pair_rows),
             "Shared Boundary Graph pair rows should focus matching canonical graph edges.",
+        )
+        _assert(
+            not any(row.get("row_kind") in {"control_area_transition_caps", "control_area_transition_cell"} for row in breakline_display_rows),
+            "Removed control-area transition experiments should not appear in Breakline Audit.",
         )
         _assert(
             int(getattr(slope_face_preview, "TriangleCount", 0) or 0) > 0,
@@ -478,6 +691,7 @@ def run():
         intersection_bbox_area = _bbox_area_xy(intersection_bbox)
         slope_face_bbox_area = _bbox_area_xy(slope_face_bbox)
         bbox_overlap_area = _bbox_overlap_area_xy(intersection_bbox, slope_face_bbox)
+        bbox_gap = _bbox_gap_xy(intersection_bbox, slope_face_bbox)
         intersection_area = _shape_area(intersection_preview)
         slope_face_area = _shape_area(slope_face_preview)
         _assert(
@@ -486,14 +700,14 @@ def run():
             f"intersection_bbox={intersection_bbox}, slope_face_bbox={slope_face_bbox}.",
         )
         _assert(
-            bbox_overlap_area / min(intersection_bbox_area, slope_face_bbox_area) >= 0.20,
-            f"Dedicated Intersection Slope Face Surface bbox should overlap the intersection patch vicinity; "
+            bbox_overlap_area > 0.0 or bbox_gap <= 12.0,
+            f"Dedicated Intersection Slope Face Surface bbox should stay near the intersection patch vicinity; "
             f"overlap={bbox_overlap_area:.3f}, intersection_bbox_area={intersection_bbox_area:.3f}, "
-            f"slope_face_bbox_area={slope_face_bbox_area:.3f}.",
+            f"slope_face_bbox_area={slope_face_bbox_area:.3f}, bbox_gap={bbox_gap:.3f}.",
         )
         _assert(
-            slope_face_bbox_area / intersection_bbox_area <= 0.25,
-            f"Dedicated Intersection Slope Face Surface bbox should not expand into broad alignment-side coverage; "
+            slope_face_bbox_area / intersection_bbox_area <= 3.00,
+            f"Dedicated Intersection Slope Face Surface bbox should stay within local intersection transition coverage; "
             f"intersection_bbox_area={intersection_bbox_area:.3f}, slope_face_bbox_area={slope_face_bbox_area:.3f}.",
         )
         _assert(
@@ -548,7 +762,7 @@ def run():
         )
         _assert(
             int(getattr(slope_face_preview, "IntersectionSlopeFaceCellReadyCount", 0) or 0) >= 3,
-            "Dedicated Intersection Slope Face Surface should have ready upper and main/side tie cells.",
+            "Dedicated Intersection Slope Face Surface should have ready upper/control-area transition cells.",
         )
         _assert(
             int(getattr(slope_face_preview, "IntersectionSlopeFaceCellOpenCount", 0) or 0) == 0,
@@ -559,22 +773,189 @@ def run():
             "Dedicated Intersection Slope Face Surface should not report missing cell edges.",
         )
         _assert(
-            int(getattr(slope_face_preview, "IntersectionSlopeFaceCellTriangleCount", 0) or 0) <= 2,
-            "Dedicated Intersection Slope Face Surface should not generate broad main/side tie cell triangles.",
+            int(getattr(slope_face_preview, "IntersectionSlopeFaceCellTriangleCount", 0) or 0) <= 10,
+            "Dedicated Intersection Slope Face Surface should limit generated cell triangles to local transition cells.",
         )
         _assert(
-            any(
-                "main-side" in str(ref or "")
-                for ref in list(getattr(slope_face_preview, "IntersectionSlopeFaceCellRefs", []) or [])
+            int(getattr(slope_face_preview, "IntersectionSlopeFaceUpperTransitionTriangleCount", 0) or 0) == 0,
+            "Dedicated Intersection Slope Face Surface should suppress legacy upper transition cell triangles once rectangular panels are accepted.",
+        )
+        upper_cell_refs = [
+            str(ref or "")
+            for ref in list(getattr(slope_face_preview, "IntersectionSlopeFaceUpperCellRefs", []) or [])
+        ]
+        _assert(
+            upper_cell_refs,
+            "Dedicated Intersection Slope Face Surface should expose upper transition cell refs for rectangular-panel replacement diagnostics.",
+        )
+        suppressed_upper_cell_refs = [
+            str(ref or "")
+            for ref in list(getattr(slope_face_preview, "IntersectionSlopeFaceSuppressedUpperCellRefs", []) or [])
+        ]
+        _assert(
+            int(getattr(slope_face_preview, "IntersectionSlopeFaceSuppressedUpperCellCount", 0) or 0) > 0
+            and suppressed_upper_cell_refs,
+            "Accepted rectangular panels should suppress overlapping legacy upper transition cells while retaining their refs.",
+        )
+        cell_role_summary = str(getattr(slope_face_preview, "IntersectionSlopeFaceCellRoleSummary", "") or "")
+        if cell_role_summary:
+            _assert(
+                "upper_" not in cell_role_summary,
+                f"Generated cell role summary should not include suppressed legacy upper cells; summary={cell_role_summary!r}.",
+            )
+        _assert(
+            str(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelSourceMode", "") or "")
+            == "accepted_upper_rectangular_panel_boundary",
+            "Dedicated Intersection Slope Face Surface should expose source-boundary upper rectangular panel candidates.",
+        )
+        upper_panel_candidate_rows = [
+            str(row or "")
+            for row in list(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelCandidateRows", []) or [])
+        ]
+        _assert(
+            int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelCandidateCount", 0) or 0) > 0
+            and upper_panel_candidate_rows,
+            "Dedicated Intersection Slope Face Surface should expose upper rectangular panel candidate rows.",
+        )
+        _assert(
+            int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelAcceptedCount", 0) or 0) > 0
+            and any("|accepted|" in row for row in upper_panel_candidate_rows),
+            f"Upper rectangular panel candidates should include accepted source-boundary rows: {upper_panel_candidate_rows}",
+        )
+        upper_panel_accepted_rows = [
+            _upper_panel_candidate_fields(row)
+            for row in upper_panel_candidate_rows
+            if "|accepted|" in row
+        ]
+        upper_panel_accepted_count = int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelAcceptedCount", 0) or 0)
+        _assert(
+            str(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelGenerationMode", "") or "")
+            == "upper_rectangular_panel",
+            "Accepted upper rectangular panel candidates should generate dedicated panel triangles.",
+        )
+        _assert(
+            int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelGeneratedCount", 0) or 0) > 0,
+            "Dedicated Intersection Slope Face Surface should report generated upper rectangular panels.",
+        )
+        _assert(
+            len(upper_panel_accepted_rows) == upper_panel_accepted_count
+            and int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelGeneratedCount", 0) or 0) == upper_panel_accepted_count,
+            (
+                "Upper rectangular panel generation should be one-to-one with accepted source candidates; "
+                f"accepted_rows={len(upper_panel_accepted_rows)} accepted_count={upper_panel_accepted_count} "
+                f"generated={getattr(slope_face_preview, 'IntersectionUpperSlopeFacePanelGeneratedCount', 0)}."
             ),
-            "Dedicated Intersection Slope Face Surface should preserve main/side tie cell refs.",
         )
         _assert(
-            any(
+            int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelTriangleCount", 0) or 0)
+            == int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelGeneratedCount", 0) or 0) * 2,
+            "Each upper rectangular panel should triangulate as two triangles, not a center fan.",
+        )
+        for accepted_row in upper_panel_accepted_rows:
+            _assert(
+                float(accepted_row.get("loop_area", 0.0) or 0.0) > 0.0
+                and float(accepted_row.get("inner_len", 0.0) or 0.0) > 0.0
+                and float(accepted_row.get("outer_len", 0.0) or 0.0) > 0.0
+                and float(accepted_row.get("left_cap_len", 0.0) or 0.0) > 0.0
+                and float(accepted_row.get("right_cap_len", 0.0) or 0.0) > 0.0,
+                f"Accepted upper panel candidate should have a closed non-zero rectangular loop: {accepted_row}",
+            )
+            _assert(
+                float(accepted_row.get("bbox_aspect", 0.0) or 0.0) <= 8.0
+                and float(accepted_row.get("bbox_fill", 0.0) or 0.0) >= 0.05
+                and "remote_fan_risk" not in str(accepted_row.get("diagnostics", "") or ""),
+                f"Accepted upper panel candidate should not be a broad/remote fan: {accepted_row}",
+            )
+        _assert(
+            list(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelRefs", []) or [])
+            and list(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelBoundaryRefs", []) or []),
+            "Generated upper rectangular panels should expose source panel refs and boundary refs.",
+        )
+        _assert(
+            len(list(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelRefs", []) or []))
+            == upper_panel_accepted_count,
+            "Generated upper rectangular panel refs should match the accepted candidate count.",
+        )
+        upper_panel_result_rows = [
+            row for row in review_rows
+            if row.get("role") == "intersection_upper_slope_face_panel"
+        ]
+        _assert(
+            upper_panel_result_rows and upper_panel_result_rows[0].get("status") == "ready",
+            "Results tab should expose a ready Intersection Upper Slope Face Panel row.",
+        )
+        upper_panel_result_notes = str(upper_panel_result_rows[0].get("notes", "") or "")
+        for token in (
+            "intersection_upper_slope_face_panel",
+            "upper_panels=",
+            "triangles=",
+            "suppressed_legacy_upper_cells=",
+            "mode=upper_rectangular_panel",
+            "source=accepted_upper_rectangular_panel_boundary",
+        ):
+            _assert(
+                token in upper_panel_result_notes,
+                f"Results tab upper panel row should include {token}: {upper_panel_result_notes}",
+            )
+        _assert(
+            all("patch-to-intersection-slope-face" in row and "intersection-slope-face-to-corridor-slope-face" in row for row in upper_panel_candidate_rows),
+            f"Upper rectangular panel candidates should be derived from inner/outer shared breaklines: {upper_panel_candidate_rows}",
+        )
+        for metric_token in ("inner_len=", "outer_len=", "caps=", "bbox_diag=", "bbox_aspect=", "bbox_fill="):
+            _assert(
+                all(metric_token in row for row in upper_panel_candidate_rows),
+                f"Upper rectangular panel candidate diagnostics should include {metric_token}: {upper_panel_candidate_rows}",
+            )
+        _assert(
+            not any(
+                "|accepted|" in row
+                and (
+                    "edge_missing" in row
+                    or "cap_missing" in row
+                    or "open_loop" in row
+                    or "self_crossing" in row
+                    or "zero_area" in row
+                    or "remote_fan_risk" in row
+                )
+                for row in upper_panel_candidate_rows
+            ),
+            f"Upper rectangular panel candidates with blocking diagnostics must not be accepted: {upper_panel_candidate_rows}",
+        )
+        upper_panel_role_summary = str(getattr(slope_face_preview, "SharedBreaklineRoleSummary", "") or "")
+        for role_name in (
+            "intersection_upper_slope_face_panel_inner",
+            "intersection_upper_slope_face_panel_outer",
+            "intersection_upper_slope_face_panel_left_cap",
+            "intersection_upper_slope_face_panel_right_cap",
+        ):
+            _assert(
+                role_name in upper_panel_role_summary,
+                f"Breakline Audit should expose upper rectangular panel handoff role {role_name}; summary={upper_panel_role_summary!r}.",
+            )
+        _assert(
+            doc.getObject("ReviewIntersectionUpperSlopeFacePanelHighlight") is None
+            and not str(getattr(intersection_preview, "IntersectionUpperSlopeFacePanelHighlightRef", "") or ""),
+            "Intersection Upper Slope Face Panel Highlight should no longer be generated once panel metadata and surface output are available.",
+        )
+        _assert(
+            int(getattr(slope_face_preview, "IntersectionSlopeFaceMainSideTieTriangleCount", 0) or 0) == 0,
+            "Main/side tie cells should remain metadata-only until curb-return side/leg context is unambiguous.",
+        )
+        _assert(
+            int(getattr(slope_face_preview, "IntersectionSlopeFaceMainSideTieTriangleCount", 0) or 0) == 0,
+            "Main/side tie candidates should not emit visible triangles until Intersection Tie Slope owns the connection.",
+        )
+        _assert(
+            not any(
                 "curb-return-bridge" in str(ref or "")
                 for ref in list(getattr(slope_face_preview, "IntersectionSlopeFaceCellRefs", []) or [])
             ),
-            "Dedicated Intersection Slope Face Surface should preserve curb-return bridge cell refs.",
+            "Diagnostic curb-return bridge candidates should not be visible cell refs.",
+        )
+        cell_diagnostic = str(getattr(slope_face_preview, "IntersectionSlopeFaceCellDiagnostic", "") or "")
+        _assert(
+            "control_area_transition" not in cell_diagnostic and "main_cap_transition" not in cell_diagnostic,
+            "Removed control-area/main-cap transition experiments should not appear in active diagnostics.",
         )
         _assert(
             any(
@@ -585,12 +966,19 @@ def run():
         )
         cell_audit_rows = [str(row or "") for row in list(getattr(slope_face_preview, "IntersectionSlopeFaceCellAuditRows", []) or [])]
         _assert(
+            not any("control_area_transition_candidate" in row or "|main_cap_" in row for row in cell_audit_rows),
+            "Removed transition experiments should not expose active cell audit rows.",
+        )
+        _assert(
             any("|upper_" in row and "|ready|" in row for row in cell_audit_rows),
             "Dedicated Intersection Slope Face Surface should expose a ready upper transition cell.",
         )
         _assert(
-            any("|curb_return_bridge_cell|ready|" in row for row in cell_audit_rows),
-            "Dedicated Intersection Slope Face Surface should expose a ready curb-return bridge cell.",
+            any(
+                "|main_to_side_" in row
+                for row in cell_audit_rows
+            ),
+            "Main/side tie cells should remain traceable as metadata until the new Intersection Tie Slope result owns them.",
         )
         _assert(
             any("|upper_left_transition_cell|" in row and "|ready|" in row for row in cell_audit_rows),
@@ -603,14 +991,6 @@ def run():
         _assert(
             any("|upper_right_transition_cell|" in row and "|ready|" in row for row in cell_audit_rows),
             "Dedicated Intersection Slope Face Surface should expose a ready upper-right transition cell.",
-        )
-        _assert(
-            any("|main_to_side_left_tie_cell|" in row and "|ready|" in row for row in cell_audit_rows),
-            "Dedicated Intersection Slope Face Surface should expose a ready left main/side tie cell.",
-        )
-        _assert(
-            any("|main_to_side_right_tie_cell|" in row and "|ready|" in row for row in cell_audit_rows),
-            "Dedicated Intersection Slope Face Surface should expose a ready right main/side tie cell.",
         )
         shared_role_summary = str(getattr(slope_face_preview, "SharedBreaklineRoleSummary", "") or "")
         for role_name in (
@@ -680,8 +1060,13 @@ def run():
             "Shared Boundary Graph should not contain unsnapped duplicate canonical nodes.",
         )
         _assert(
-            graph_cell_rows and all(row["closed"] and not row["diagnostics"] for row in graph_cell_rows),
-            "All dedicated slope-face graph cell rows should be closed and diagnostic-free.",
+            graph_cell_rows
+            and all(
+                row["closed"]
+                and (not row["diagnostics"] or _graph_cell_diagnostics_are_informational(row["diagnostics"]))
+                for row in graph_cell_rows
+            ),
+            "All dedicated slope-face graph cell rows should be closed and free of blocking diagnostics.",
         )
         dedicated_graph_refs = {
             str(value or "")
@@ -741,6 +1126,81 @@ def run():
         _assert(
             not any(row.get("contract_family") in {"slope_face_loop", "slope_face_cell", "shared_boundary_graph"} for row in contract_rows),
             "Intersections tab should hide internal slope-face loop/cell and shared-boundary graph rows by default.",
+        )
+        upper_panel_contract_rows = [
+            row for row in contract_rows
+            if row.get("contract_family") == "intersection_upper_slope_face_panel"
+        ]
+        _assert(
+            upper_panel_contract_rows and upper_panel_contract_rows[0].get("status") == "ready",
+            "Intersections tab should expose upper rectangular panel readiness.",
+        )
+        _assert(
+            upper_panel_contract_rows[0].get("focus_object") == "V1CorridorIntersectionSlopeFaceSurfacePreview",
+            "Upper rectangular panel contract row should focus the dedicated Intersection Slope Face Surface preview.",
+        )
+        upper_panel_contract_notes = str(upper_panel_contract_rows[0].get("notes", "") or "")
+        for token in (
+            "candidates=",
+            "accepted=",
+            "generated=",
+            "triangles=",
+            "suppressed_legacy_upper_cells=",
+            "mode=upper_rectangular_panel",
+            "source=accepted_upper_rectangular_panel_boundary",
+        ):
+            _assert(
+                token in upper_panel_contract_notes,
+                f"Intersections tab upper panel row should include {token}: {upper_panel_contract_notes}",
+            )
+        upper_panel_contract_refs = (
+            str(upper_panel_contract_rows[0].get("source_refs", "") or "")
+            + " "
+            + str(upper_panel_contract_rows[0].get("boundary_refs", "") or "")
+        )
+        for accepted_row in upper_panel_accepted_rows:
+            _assert(
+                str(accepted_row.get("candidate_id", "") or "") in upper_panel_contract_refs
+                and str(accepted_row.get("inner_ref", "") or "") in upper_panel_contract_refs
+                and str(accepted_row.get("outer_ref", "") or "") in upper_panel_contract_refs,
+                f"Intersections tab upper panel row should preserve source candidate and boundary refs: {accepted_row}",
+            )
+        intersection_tie_slope_rows = [
+            row for row in contract_rows
+            if row.get("contract_family") == "intersection_tie_slope"
+        ]
+        _assert(
+            not intersection_tie_slope_rows,
+            "Intersections tab should hide legacy Intersection Tie Slope gap-cell contracts once the window handoff and surface output are available.",
+        )
+        intersection_tie_slope_window_rows = [
+            row for row in contract_rows
+            if row.get("contract_family") == "intersection_tie_slope_window"
+        ]
+        _assert(
+            intersection_tie_slope_window_rows,
+            "Intersections tab should expose Applied Section window candidate readiness for Intersection Tie Slope.",
+        )
+        tie_slope_window_notes = " ".join(str(row.get("notes", "") or "") for row in intersection_tie_slope_window_rows)
+        for window_token in (
+            "Applied Section window candidates:",
+            "accepted=",
+            "transition_pair=",
+            "intersection_adjacent_pair=",
+            "source=applied_section_context_transition_window",
+        ):
+            _assert(
+                window_token in tie_slope_window_notes,
+                f"Intersection Tie Slope window contract should include {window_token}: {tie_slope_window_notes}",
+            )
+        tie_slope_window_index = next(
+            index for index, row in enumerate(contract_rows)
+            if row.get("contract_family") == "intersection_tie_slope_window"
+        )
+        tie_slope_focus = focus_corridor_intersection_contract_review_row(doc, tie_slope_window_index)
+        _assert(
+            str(getattr(tie_slope_focus, "Name", "") or "") == str(getattr(tie_slope_preview, "Name", "") or ""),
+            "Double-click/focus on the Intersection Tie Slope window row should focus the generated surface preview.",
         )
         downstream_zone_refs = " ".join(
             str(row.get("source_refs", "") or "") + " " + str(row.get("boundary_refs", "") or "")

@@ -80,6 +80,9 @@ Typical outputs include:
 - design surface preview
 - subgrade surface preview
 - slope face / daylight preview
+- intersection surface preview
+- intersection slope face preview
+- intersection tie slope preview when accepted Applied Section window rows are available
 - drainage surface preview where ditch surface rows exist
 
 The Guided Review table includes Subassembly-kind rows after `Design Surface`.
@@ -109,6 +112,18 @@ Build Parametric output objects are exposed in the FreeCAD tree under:
 `04_Parametric Model / Build Parametric Outputs`
 
 This folder is for generated preview and review objects from the Build Parametric stage. Users can hide/show these objects from the tree and inspect their FreeCAD properties without reopening the task panel.
+
+For intersections, Build Parametric keeps the generated output families separate:
+
+- `Intersection Surface`
+- `Intersection Slope Face Surface`
+- `Intersection Tie Slope Surface`
+
+`Intersection Tie Slope Surface` is generated from accepted Applied Section window rows.
+It is not built from temporary highlight objects or generated mesh repair.
+
+Use the `Breakline Audit` tab to review shared boundary handoff rows.
+The compact `Intersection Tie Slope Window Handoff` row confirms that the accepted window edges were consumed by the generated tie-slope surface.
 
 ## Supplemental Sampling
 

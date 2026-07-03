@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result.shared_breakline import (
@@ -284,6 +285,99 @@ def test_intersection_slope_face_cell_result_prefers_curb_bridge_shared_endpoint
     assert bridge_cells[0].inner_breakline_ref == shared_curb_id
 
 
+def test_intersection_slope_face_cell_result_rejects_full_control_area_caps_as_cells():
+    entry_id = "shared:control-area-entry:slope"
+    exit_id = "shared:control-area-exit:slope"
+    shared = SharedBreaklineResult(
+        schema_version=1,
+        project_id="project:test",
+        breakline_result_id="shared:intersection:starter-t_intersection",
+        domain_kind="intersection",
+        domain_ref="starter-t_intersection",
+        status="ready",
+        breakline_count=2,
+        ready_count=2,
+        breakline_rows=[
+            SharedBreaklineRow(
+                entry_id,
+                "intersection_control_area",
+                "control-area:main",
+                "control_area_entry",
+                consumer_refs=("intersection_surface", "slope_face_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="slope_face_surface",
+                point_refs=("entry:p1", "entry:p2"),
+                alignment_ref="alignment:main",
+                material_role="slope_face_surface",
+                source_contract_refs=("section:entry", "control-area:main"),
+                source_status="ready",
+            ),
+            SharedBreaklineRow(
+                exit_id,
+                "intersection_control_area",
+                "control-area:main",
+                "control_area_exit",
+                consumer_refs=("intersection_surface", "slope_face_surface"),
+                from_output_role="intersection_surface",
+                to_output_role="slope_face_surface",
+                point_refs=("exit:p1", "exit:p2"),
+                alignment_ref="alignment:main",
+                material_role="slope_face_surface",
+                source_contract_refs=("section:exit", "control-area:main"),
+                source_status="ready",
+            ),
+        ],
+        point_rows=[
+            _point("entry:p1", entry_id, 0, 0.0, -5.0),
+            _point("entry:p2", entry_id, 1, 0.0, 5.0),
+            _point("exit:p1", exit_id, 0, 10.0, -5.0),
+            _point("exit:p2", exit_id, 1, 10.0, 5.0),
+        ],
+    )
+
+    cells = cmd_build_corridor.corridor_intersection_slope_face_cell_result(
+        shared,
+        intersection_id="starter-t_intersection",
+    )
+
+    assert cells.cell_rows == []
+    assert not any("control_area_transition" in row for row in cells.diagnostic_rows)
+
+
+def test_intersection_slope_face_local_clip_caps_are_emitted_from_boundary_row():
+    calls = []
+
+    def add_breakline(**kwargs):
+        calls.append(kwargs)
+
+    row = SimpleNamespace(
+        boundary_id="boundary:main-left",
+        alignment_ref="alignment:main",
+        side="left",
+        status="ready",
+        diagnostics=(),
+    )
+    slope_boundary_result = SimpleNamespace(boundary_result_id="intersection-slope-face-boundaries:test")
+
+    cmd_build_corridor._append_intersection_slope_face_local_clip_cap_breaklines(
+        add_breakline=add_breakline,
+        row=row,
+        row_index=7,
+        inner_points=((0.0, 0.0, 0.0), (2.0, 0.0, 0.0)),
+        outer_points=((0.0, 1.0, 0.0), (2.0, 1.0, 0.0)),
+        slope_boundary_result=slope_boundary_result,
+    )
+
+    assert [call["role"] for call in calls] == ["control_area_entry", "control_area_exit"]
+    assert calls[0]["base_id"] == "7:local-clip-start"
+    assert calls[1]["base_id"] == "7:local-clip-end"
+    assert calls[0]["points"] == ((0.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    assert calls[1]["points"] == ((2.0, 0.0, 0.0), (2.0, 1.0, 0.0))
+    assert calls[0]["material_role"] == "slope_face_surface"
+    assert "intersection_slope_face_cell_result" in calls[0]["consumer_refs"]
+    assert "local_clip cap" in calls[0]["notes"]
+
+
 def _split_upper_cell_breakline_result() -> SharedBreaklineResult:
     breakline_ids = (
         "shared:patch-to-intersection-slope-face:split",
@@ -383,12 +477,12 @@ def test_intersection_slope_face_surface_can_generate_upper_cells_from_graph():
         triangles=triangles,
     )
 
-    assert stats["generation_mode"] == "shared_boundary_graph_cell_strip"
-    assert stats["cell_count"] == 3
-    assert stats["triangle_count"] == 6
-    assert len(vertices) == 12
-    assert len(triangles) == 6
-    assert {triangle.quality_ref for triangle in triangles} == {"intersection_shared_boundary_graph"}
+    assert stats["generation_mode"] == "no_ready_graph_cell"
+    assert stats["cell_count"] == 0
+    assert stats["triangle_count"] == 0
+    assert vertices == []
+    assert triangles == []
+    assert all("graph_upper_cell_metadata_only" in diagnostic for diagnostic in stats["diagnostics"])
 
 
 def test_intersection_shared_boundary_graph_metadata_filters_edges_by_consumer():

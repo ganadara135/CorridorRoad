@@ -2889,6 +2889,59 @@ def test_intersection_slope_loop_suppression_uses_generated_ready_loop_footprint
     assert list(getattr(suppressed, "void_refs", []) or []) == ["surface:intersection-slope-face"]
 
 
+def test_intersection_slope_loop_suppression_uses_intersection_slope_face_footprint() -> None:
+    daylight = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="slope_face_surface",
+        vertex_rows=[
+            TINVertex("inside-a", 1.0, 1.0, 10.0),
+            TINVertex("inside-b", 2.0, 1.0, 10.0),
+            TINVertex("inside-c", 1.0, 2.0, 10.0),
+            TINVertex("outside-a", 10.0, 10.0, 10.0),
+            TINVertex("outside-b", 11.0, 10.0, 10.0),
+            TINVertex("outside-c", 10.0, 11.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("daylight:inside-transition-cell", "inside-a", "inside-b", "inside-c", quality_ref="side_slope_surface"),
+            TINTriangle("daylight:outside", "outside-a", "outside-b", "outside-c", quality_ref="side_slope_surface"),
+        ],
+    )
+    reference = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection-slope-face",
+        surface_kind="intersection_slope_face_surface",
+        boundary_refs=["intersection-slope-face-cell:test:curb-return"],
+        vertex_rows=[
+            TINVertex("r0", 0.0, 0.0, 10.0),
+            TINVertex("r1", 5.0, 0.0, 10.0),
+            TINVertex("r2", 0.0, 5.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle(
+                "ref:curb-return-cell:1",
+                "r0",
+                "r1",
+                "r2",
+                triangle_kind="intersection_slope_face_curb_return_cell",
+                quality_ref="intersection_slope_face_cell",
+            ),
+        ],
+    )
+
+    suppressed = build_corridor_command._suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+        daylight,
+        reference,
+    )
+
+    assert [triangle.triangle_id for triangle in suppressed.triangle_rows] == ["daylight:outside"]
+    assert build_corridor_command._tin_quality_text(suppressed, "intersection_slope_loop_suppress_status") == "ready"
+    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_suppressed_triangle_count") == 1
+    assert list(getattr(suppressed, "void_refs", []) or []) == ["surface:intersection-slope-face"]
+
+
 def test_intersection_consumed_contract_metadata_preserves_row_source_diagnostics() -> None:
     doc, _project = _new_project_doc()
     try:
@@ -7353,8 +7406,42 @@ def test_shared_breakline_audit_panel_rows_and_summary_are_user_readable() -> No
         assert summary["title"] == "Shared breakline issues found: 2 surface(s)"
         assert "geometry_mismatch=1" in summary["notes"]
         assert "mesh_mismatch=1" in summary["notes"]
+        assert "reversed=0" in summary["notes"]
         assert "cell_open=1" in summary["notes"]
         assert "cell_missing_edge=1" in summary["notes"]
+        assert "status_warning=2" in summary["notes"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_shared_breakline_audit_summary_explains_status_only_warning() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        for object_name, label in (
+            ("V1CorridorDesignSurfacePreview", "Design Surface"),
+            ("V1CorridorDaylightSurfacePreview", "Slope Face Surface"),
+        ):
+            preview = doc.addObject("Part::Feature", object_name)
+            preview.Label = label
+            build_corridor_command._set_preview_property(preview, "SharedBreaklineResultId", "shared-breakline:test")
+            build_corridor_command._set_preview_property(preview, "SharedBreaklineStatus", "ready")
+            build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineCount", 1)
+            build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineConsumedCount", 1)
+            build_corridor_command._set_preview_property(preview, "SharedBreaklineAuditStatus", "warning")
+            build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineGeometryMatchCount", 1)
+            build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineGeometryMismatchCount", 0)
+            build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMeshMatchCount", 1)
+            build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMeshMismatchCount", 0)
+
+        summary = build_corridor_command.corridor_shared_breakline_audit_summary(doc)
+
+        assert summary["status"] == "warning"
+        assert summary["title"] == "Shared breakline issues found: 2 surface(s)"
+        assert "geometry_mismatch=0" in summary["notes"]
+        assert "mesh_mismatch=0" in summary["notes"]
+        assert "missing_consumer=0" in summary["notes"]
+        assert "reversed=0" in summary["notes"]
+        assert "status_warning=2" in summary["notes"]
     finally:
         App.closeDocument(doc.Name)
 
