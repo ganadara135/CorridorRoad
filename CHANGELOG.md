@@ -9,6 +9,70 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-07-03
+
+### Added
+- Added first-slice Intersection source-completeness diagnostics in topology, edge-network, and surface-zone evaluation for missing leg Profile, 3D Centerline, Region, control Region, and source policy context.
+- Added Intersection contract source status and source diagnostics to Build Parametric review rows and panel columns, including source warning counts in the compact summary.
+- Added Applied Sections intersection source status handoff and Cross Section Viewer `source_status` context rows for station-level review.
+- Added Applied Sections intersection source-stage handoff rows so Cross Section Viewer can show Anchor, Control Areas, and Edge Families source ownership for station warnings.
+- Added explicit Applied Section frame source mode/status rows so Cross Section Viewer can distinguish source-geometry Centerline3D frames from fallback station frames.
+- Added Cross Section Viewer Intersection Context handoff owner and target columns for routing station warnings back to Intersection, Applied Sections, or Build Parametric review surfaces.
+- Added Watertight Solids transitional diagnostics for `intersection_patch_body` targets so users must review them before Digital Twin handoff use.
+- Added first-slice `IntersectionAnchorRow` source contracts with FreeCAD object persistence and panel-created draft anchor rows.
+- Added first-slice intersection anchor topology result rows so accepted station/point mappings carry source status, tolerance, station refs, and diagnostics into Build Parametric source review.
+- Added first-slice intersection control-area intent result lineage so topology and corridor clipping rows carry source refs, intent status, Region lineage status, and source diagnostics.
+- Added first-slice intersection lane-connection result lineage so topology rows carry source refs, movement lineage status, leg source status rollups, and edge-family source status.
+- Added first-slice intersection grading-context source lineage so rows carry source grading policy refs, Profile lineage status, Superelevation source status, vertical handoff status, and fallback/default status.
+- Added first-slice intersection drainage accepted-vs-hint result status so hint rows carry source drainage policy refs, accepted handoff status, review status, and source-owned drainage refs.
+- Added first-slice staged Intersection panel source-completeness summary for Participants, Anchor, Legs, Control Areas, Corners, Edge Families, Lane Connections, Grading, Drainage, and Preview.
+- Added actionable Intersection source-completeness summary counts, next-stage guidance, and preview/apply readiness text to the staged panel workflow.
+- Added first-slice same-context Intersection source-stage targets and panel focus helper so source-completeness rows can be selected by stable handoff target.
+- Added first-slice Intersection source approval states in the staged panel so missing, draft, accepted, and locked source stages remain visually distinct from source status.
+- Added first-slice read-only Intersection preview sequence rows for source validation, topology, edge network, surface zones, grading, drainage, and slope loops.
+- Added first-slice Intersection leg source method, approval status, span source, and diagnostic rows with topology and station-context source warnings.
+- Added first-slice Intersection control-area source method, approval status, intent status, source Region refs, and diagnostics so Region-derived ranges are not silently treated as accepted source intent.
+- Added first-slice `IntersectionCornerRow` source contracts, corner-based curb-return policy refs, object persistence, and edge-network corner lineage diagnostics.
+- Added first-slice Intersection edge-family source intent fields for Assembly/Subassembly lineage, approval status, subassembly kind, and edge-network diagnostics.
+- Added first-slice `IntersectionLaneConnectionRow` source contracts, object persistence, starter default lane movement rows, and topology lane-connection diagnostics.
+- Added first-slice Intersection grading source intent fields for controlling profile, crown behavior, tie-in rule, crossfall transition, low-point strategy, and grading-context source diagnostics.
+- Added first-slice Intersection drainage source intent fields for accepted drainage elements, flow routes, inlet candidates, low-point refs, hint-only status, and drainage-hint source diagnostics.
+- Added Build Parametric Intersection output-path labels for `contract_consumed`, `inferred_fallback`, and `legacy_output` review rows.
+- Added Build Parametric Intersection consumed-contract metadata for Surface and Slope Face output previews.
+- Added first-slice `IntersectionSurfacePatchResult` rows for normalized boundary, triangulation, and patch quality review.
+- Added Intersection Slope Face Boundary result metadata to generated strip output and review previews.
+- Added accepted Intersection zone Watertight Solid target handoff metadata from surface-zone and edge-network contracts.
+- Added Simulation Package final-quality blocking for transitional-only Intersection patch solids, with persisted/exported handoff status metadata.
+- Added Intersection trim/fuse handoff status to Simulation QA, including trim pair counts, max gap, fuse status, accepted/fallback status, and diagnostics.
+- Added row-level Watertight Solid source lineage preservation through object roundtrip, Simulation Package rows, package JSON export, and Exchange source-context rows.
+- Added T/Cross Intersection preset source-completeness markers so preset-created default/draft source rows carry explicit review-required diagnostics.
+- Added a source-driven Y Intersection starter preset with primary/left/right branch roles and review-required branch diagnostics.
+- Added a source-driven skewed Intersection starter preset with non-orthogonal Alignment geometry and skew review diagnostics.
+- Added a source-driven urban curb/gutter Intersection starter preset with curb, gutter, sidewalk, and inlet handoff source rows.
+- Added a source-driven drainage-sensitive sag Intersection starter preset with sag Profile controls, low-point refs, inlet candidates, and flow-route review diagnostics.
+- Added Intersection source object reload coverage for anchor, corner, lane-connection, edge-family, grading, and drainage intent rows.
+- Added staged Intersection panel smoke coverage for preset-created warning source rows without applying output geometry.
+- Added Intersection manual QA records for T, Cross, Skewed, Urban Curb/Gutter, Drainage-Sensitive Sag, Y, and Roundabout presets.
+- Added Intersection manual regression QA for Lane, Shoulder, and Side Slope stitching across unrelated alignment scopes.
+- Added Intersection Anchor source validation diagnostics for unknown source methods and approval statuses.
+- Added Intersection Leg source validation diagnostics for unknown source methods, approval statuses, and span sources.
+- Added Intersection Control Area source validation diagnostics for unknown source methods, approval statuses, and intent statuses.
+- Added Intersection Corner source validation diagnostics for unknown source methods, approval statuses, missing control-area or side refs, and curb-return policy mismatches.
+- Added Intersection Edge Family source validation diagnostics for unknown family intents, source methods, approval statuses, missing source policy refs, and Subassembly kind mismatches.
+- Added Intersection Lane Connection source validation diagnostics for unknown movement types, source methods, approval statuses, and missing edge-policy refs.
+- Added Intersection Grading Policy source validation diagnostics for unknown grading modes, source methods, approval statuses, crown behavior, tie-in rules, crossfall transitions, and low-point strategies.
+- Added Intersection Drainage Policy source validation diagnostics for unknown capture modes, intent statuses, source methods, and approval statuses.
+- Added Intersection Slope Face loop result source lineage fields for consumed surface-zone status, source diagnostics, and lineage status.
+- Added Intersection Anchor result station-lineage status and source-stage handoff target fields.
+- Added Intersection Control Area result Region/clipping handoff status and source-stage handoff target fields.
+- Added Intersection Lane Connection result leg/edge handoff status and source-stage handoff target fields.
+- Added Intersection Grading Context result profile/superelevation handoff status and grading review handoff target fields.
+- Added Intersection Drainage Hint result source-lineage status and drainage source-stage handoff target fields.
+- Added Applied Sections Intersection source summary counts and warning metadata on `V1AppliedSectionSet` result objects.
+- Added Build Parametric Intersection Contract source-lineage warning propagation for Slope Face Loop rows.
+- Added clearer transitional reason and accepted-zone replacement guidance for Watertight `intersection_patch_body` targets.
+- Added Intersection final handoff package validation for transitional patch blockers and accepted zone candidates.
+
 ## [1.0.7] - 2026-06-23
 
 ### Changed

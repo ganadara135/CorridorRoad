@@ -38,6 +38,9 @@ class AppliedSectionFrame:
     active_profile_segment_start_id: str = ""
     active_profile_segment_end_id: str = ""
     active_vertical_curve_id: str = ""
+    source_mode: str = ""
+    source_status: str = ""
+    source_diagnostic_rows: list[str] = field(default_factory=list)
     notes: str = ""
 
 
@@ -159,6 +162,9 @@ class AppliedSection(ResultModelBase):
     active_intersection_leg_role: str = ""
     active_intersection_control_region_refs: list[str] = field(default_factory=list)
     active_intersection_grading_policy_ref: str = ""
+    active_intersection_source_status: str = ""
+    active_intersection_source_diagnostic_rows: list[str] = field(default_factory=list)
+    active_intersection_source_stage_rows: list[str] = field(default_factory=list)
     intersection_diagnostic_rows: list[str] = field(default_factory=list)
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     subassembly_rows: list[AppliedSectionSubassemblyRow] = field(default_factory=list)

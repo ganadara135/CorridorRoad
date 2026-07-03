@@ -16,6 +16,7 @@ class IntersectionEdgeNetworkRow:
     edge_role: str
     edge_family: str = "leg_edge"
     source_policy_ref: str = ""
+    source_corner_ref: str = ""
     leg_ref: str = ""
     leg_role: str = ""
     alignment_ref: str = ""
@@ -27,6 +28,10 @@ class IntersectionEdgeNetworkRow:
     contact_station_refs: dict[str, tuple[float, ...]] = field(default_factory=dict)
     start_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     end_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    arc_center_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    arc_points_xyz: tuple[tuple[float, float, float], ...] = ()
+    source_status: str = "accepted"
+    source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"
     notes: str = ""
 

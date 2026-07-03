@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from ...models.result.tin_surface import TINSurface
 
 
+TIN_MESH_PREVIEW_HIDDEN_TRIANGLE_KINDS = {
+    "constraint_support_triangle",
+}
+
+
 TIN_MESH_PREVIEW_STYLES = {
     "base": {
         "shape_color": (0.35, 0.60, 0.95),
@@ -14,6 +19,7 @@ TIN_MESH_PREVIEW_STYLES = {
         "point_color": (0.18, 0.36, 0.72),
         "transparency": 35,
         "line_width": 1.0,
+        "display_mode": "Flat Lines",
     },
     "edited": {
         "shape_color": (0.20, 0.72, 0.38),
@@ -21,6 +27,7 @@ TIN_MESH_PREVIEW_STYLES = {
         "point_color": (0.08, 0.42, 0.18),
         "transparency": 15,
         "line_width": 1.2,
+        "display_mode": "Flat Lines",
     },
     "design": {
         "shape_color": (1.00, 0.56, 0.12),
@@ -28,6 +35,7 @@ TIN_MESH_PREVIEW_STYLES = {
         "point_color": (1.00, 0.32, 0.02),
         "transparency": 18,
         "line_width": 1.6,
+        "display_mode": "Flat Lines",
     },
     "subgrade": {
         "shape_color": (0.46, 0.49, 0.58),
@@ -35,13 +43,15 @@ TIN_MESH_PREVIEW_STYLES = {
         "point_color": (0.20, 0.23, 0.30),
         "transparency": 62,
         "line_width": 1.0,
+        "display_mode": "Flat Lines",
     },
     "daylight": {
         "shape_color": (0.42, 0.72, 0.28),
         "line_color": (0.18, 0.45, 0.12),
         "point_color": (0.18, 0.45, 0.12),
         "transparency": 32,
-        "line_width": 1.4,
+        "line_width": 0.8,
+        "display_mode": "Shaded",
     },
     "drainage": {
         "shape_color": (0.08, 0.74, 0.92),
@@ -49,6 +59,7 @@ TIN_MESH_PREVIEW_STYLES = {
         "point_color": (0.00, 0.35, 0.62),
         "transparency": 12,
         "line_width": 1.8,
+        "display_mode": "Flat Lines",
     },
     "intersection": {
         "shape_color": (0.95, 0.78, 0.18),
@@ -56,6 +67,23 @@ TIN_MESH_PREVIEW_STYLES = {
         "point_color": (0.95, 0.45, 0.02),
         "transparency": 18,
         "line_width": 1.8,
+        "display_mode": "Flat Lines",
+    },
+    "intersection_transitional_patch": {
+        "shape_color": (0.18, 0.20, 0.24),
+        "line_color": (0.00, 0.85, 1.00),
+        "point_color": (0.00, 0.85, 1.00),
+        "transparency": 48,
+        "line_width": 2.2,
+        "display_mode": "Flat Lines",
+    },
+    "intersection_accepted_candidate": {
+        "shape_color": (0.18, 0.62, 0.30),
+        "line_color": (0.04, 0.95, 0.35),
+        "point_color": (0.04, 0.95, 0.35),
+        "transparency": 12,
+        "line_width": 2.0,
+        "display_mode": "Flat Lines",
     },
 }
 
@@ -74,12 +102,19 @@ class TINMeshPreviewResult:
 class TINMeshPreviewMapper:
     """Map a TINSurface into a lightweight FreeCAD mesh preview."""
 
-    def build_facet_rows(self, surface: TINSurface) -> list[tuple[tuple[float, float, float], ...]]:
+    def build_facet_rows(
+        self,
+        surface: TINSurface,
+        *,
+        include_preview_hidden: bool = True,
+    ) -> list[tuple[tuple[float, float, float], ...]]:
         """Return mesh facet coordinate triples from TIN triangle rows."""
 
         vertices = surface.vertex_map()
         facets: list[tuple[tuple[float, float, float], ...]] = []
         for triangle in list(surface.triangle_rows or []):
+            if not include_preview_hidden and _is_preview_hidden_triangle(triangle):
+                continue
             try:
                 p0 = vertices[triangle.v1]
                 p1 = vertices[triangle.v2]
@@ -95,7 +130,14 @@ class TINMeshPreviewMapper:
             )
         return facets
 
-    def build_mesh(self, surface: TINSurface, *, mesh_module=None, app_module=None):
+    def build_mesh(
+        self,
+        surface: TINSurface,
+        *,
+        mesh_module=None,
+        app_module=None,
+        include_preview_hidden: bool = False,
+    ):
         """Build a Mesh.Mesh object from a TINSurface."""
 
         if mesh_module is None:
@@ -104,7 +146,10 @@ class TINMeshPreviewMapper:
             import FreeCAD as app_module  # type: ignore
 
         mesh = mesh_module.Mesh()
-        for p0, p1, p2 in self.build_facet_rows(surface):
+        for p0, p1, p2 in self.build_facet_rows(
+            surface,
+            include_preview_hidden=include_preview_hidden,
+        ):
             mesh.addFacet(
                 app_module.Vector(*p0),
                 app_module.Vector(*p1),
@@ -180,7 +225,9 @@ class TINMeshPreviewMapper:
             if obj is None:
                 obj = document.addObject("Mesh::Feature", name)
             obj.Mesh = mesh
-            label = f"{label_prefix} - {getattr(surface, 'label', '') or surface.surface_id or name}"
+            surface_label = str(getattr(surface, "label", "") or surface.surface_id or name)
+            prefix = str(label_prefix or "").strip()
+            label = f"{prefix} - {surface_label}" if prefix else surface_label
             try:
                 obj.Label = label
             except Exception:
@@ -192,6 +239,8 @@ class TINMeshPreviewMapper:
             _set_coordinate_metadata(obj, surface)
             _set_integer_property(obj, "VertexCount", len(list(getattr(surface, "vertex_rows", []) or [])))
             _set_integer_property(obj, "TriangleCount", len(list(getattr(surface, "triangle_rows", []) or [])))
+            _set_integer_property(obj, "RenderedTriangleCount", facet_count)
+            _set_integer_property(obj, "PreviewHiddenTriangleCount", _preview_hidden_triangle_count(surface))
             _style_preview_object(obj, surface_role=str(surface_role or "base"))
             if bool(recompute):
                 try:
@@ -219,6 +268,22 @@ class TINMeshPreviewMapper:
         if not safe.startswith("TINPreview"):
             safe = f"TINPreview_{safe}"
         return safe[:80]
+
+
+def _is_preview_hidden_triangle(triangle) -> bool:
+    kind = str(getattr(triangle, "triangle_kind", "") or "").strip()
+    if kind in TIN_MESH_PREVIEW_HIDDEN_TRIANGLE_KINDS:
+        return True
+    quality_ref = str(getattr(triangle, "quality_ref", "") or "").strip()
+    return quality_ref == "shared_breakline_constraint_edge"
+
+
+def _preview_hidden_triangle_count(surface: TINSurface) -> int:
+    return len([
+        triangle
+        for triangle in list(getattr(surface, "triangle_rows", []) or [])
+        if _is_preview_hidden_triangle(triangle)
+    ])
 
 
 def _set_string_property(obj, name: str, value: str) -> None:
@@ -297,7 +362,7 @@ def _style_preview_object(obj, *, surface_role: str) -> None:
         vobj.Visibility = True
         if hasattr(vobj, "Selectable"):
             vobj.Selectable = True
-        vobj.DisplayMode = "Flat Lines"
+        vobj.DisplayMode = str(style.get("display_mode", "Flat Lines") or "Flat Lines")
         vobj.ShapeColor = style["shape_color"]
         vobj.LineColor = style["line_color"]
         vobj.PointColor = style["point_color"]

@@ -27,6 +27,8 @@ class WatertightSolidOutputRow:
     edge_count: int = 0
     profile_count: int = 0
     diagnostic_refs: list[str] = field(default_factory=list)
+    boundary_trace_rows: list[str] = field(default_factory=list)
+    boundary_adjacency_rows: list[str] = field(default_factory=list)
     region_ref: str = ""
     assembly_ref: str = ""
     subassembly_ref: str = ""

@@ -82,6 +82,29 @@ class ExchangeOutputMapper:
                 "watertight_solid_segment_count": len(watertight_solid_segment_rows),
                 "watertight_solid_volume": self._watertight_solid_volume(watertight_solid_rows),
                 "source_context_count": len(source_context_rows),
+                "watertight_intersection_source_context_count": self._watertight_intersection_source_context_count(
+                    source_context_rows
+                ),
+                "watertight_intersection_surface_zone_context_count": self._watertight_intersection_surface_zone_context_count(
+                    source_context_rows
+                ),
+                "watertight_intersection_diagnostic_ref_count": self._watertight_intersection_diagnostic_ref_count(
+                    source_context_rows
+                ),
+                "simulation_intersection_handoff_context_count": self._source_context_context_kind_count(
+                    source_context_rows,
+                    context_kind="simulation_package_intersection_handoff",
+                ),
+                "simulation_intersection_replacement_blocker_kind": self._first_source_context_value(
+                    source_context_rows,
+                    context_kind="simulation_package_intersection_handoff",
+                    attribute_name="replacement_blocker_kind",
+                ),
+                "simulation_intersection_replacement_blocker_kinds": self._source_context_values(
+                    source_context_rows,
+                    context_kind="simulation_package_intersection_handoff",
+                    attribute_name="replacement_blocker_kind",
+                ),
                 "side_slope_source_context_count": self._source_context_count(
                     source_context_rows,
                     scope="side_slope",
@@ -133,6 +156,7 @@ class ExchangeOutputMapper:
             "mass_haul_output_id",
             "structure_solid_output_id",
             "watertight_solid_output_id",
+            "simulation_package_output_id",
             "exchange_output_id",
         ):
             value = getattr(output, attribute_name, "")
@@ -265,6 +289,7 @@ class ExchangeOutputMapper:
         payloads: list[dict[str, object]] = []
         for row in list(getattr(output, "solid_rows", []) or []):
             if self._is_watertight_solid_output(output):
+                source_refs = [str(ref) for ref in list(getattr(row, "source_refs", []) or []) if str(ref)]
                 payloads.append(
                     {
                         "context_kind": "watertight_solid",
@@ -282,6 +307,18 @@ class ExchangeOutputMapper:
                         "material_ref": str(getattr(row, "material_ref", "") or ""),
                         "validation_status": str(getattr(row, "validation_status", "") or ""),
                         "is_watertight": bool(getattr(row, "is_watertight", False)),
+                        "station_start": float(getattr(row, "station_start", 0.0) or 0.0),
+                        "station_end": float(getattr(row, "station_end", 0.0) or 0.0),
+                        "diagnostic_refs": [str(ref) for ref in list(getattr(row, "diagnostic_refs", []) or []) if str(ref)],
+                        "notes": str(getattr(row, "notes", "") or ""),
+                        "source_refs": source_refs,
+                        "intersection_ref": _first_ref_with_prefix(source_refs, "intersection:"),
+                        "intersection_leg_ref": _first_ref_with_prefix(source_refs, "intersection-leg:"),
+                        "intersection_control_area_ref": _first_ref_with_prefix(source_refs, "intersection-control-area:"),
+                        "intersection_edge_family_ref": _first_ref_with_prefix(source_refs, "intersection-edge-family:"),
+                        "intersection_surface_zone_ref": _first_ref_with_prefix(source_refs, "intersection-zone:"),
+                        "intersection_edge_network_ref": _first_ref_with_prefix(source_refs, "intersection-edge-network:"),
+                        "intersection_surface_zone_result_ref": _first_ref_with_prefix(source_refs, "intersection-surface-zones:"),
                     }
                 )
             elif self._is_structure_solid_output(output):
@@ -292,6 +329,35 @@ class ExchangeOutputMapper:
                         "assembly_ref": str(getattr(row, "assembly_ref", "") or ""),
                         "structure_ref": str(getattr(row, "structure_ref", "") or getattr(row, "structure_id", "") or ""),
                         "source_row_ref": str(getattr(row, "output_object_id", "") or ""),
+                    }
+                )
+        if self._is_simulation_package_output(output):
+            blocker_kind = str(getattr(output, "intersection_handoff_replacement_blocker_kind", "") or "")
+            handoff_status = str(getattr(output, "intersection_handoff_status", "") or "")
+            final_quality = str(getattr(output, "intersection_handoff_final_quality_status", "") or "")
+            replacement_readiness = str(getattr(output, "intersection_handoff_replacement_readiness_status", "") or "")
+            shared_breakline_audit_status = str(getattr(output, "intersection_handoff_shared_breakline_audit_status", "") or "")
+            source_refs = [str(ref) for ref in list(getattr(output, "source_refs", []) or []) if str(ref)]
+            if blocker_kind or handoff_status or final_quality or replacement_readiness or shared_breakline_audit_status:
+                payloads.append(
+                    {
+                        "context_kind": "simulation_package_intersection_handoff",
+                        "scope": "intersection_handoff",
+                        "source_row_ref": str(getattr(output, "simulation_package_output_id", "") or ""),
+                        "intersection_ref": _first_ref_with_prefix(source_refs, "intersection:"),
+                        "final_quality_status": final_quality,
+                        "digital_twin_handoff": handoff_status,
+                        "replacement_readiness_status": replacement_readiness,
+                        "replacement_blocker_kind": blocker_kind,
+                        "replacement_gate_status": str(getattr(output, "intersection_handoff_replacement_gate_status", "") or ""),
+                        "downstream_selected_role": str(getattr(output, "intersection_handoff_downstream_selected_role", "") or ""),
+                        "legacy_patch_review_visibility": str(getattr(output, "intersection_handoff_legacy_patch_review_visibility", "") or ""),
+                        "shared_breakline_audit_status": shared_breakline_audit_status,
+                        "shared_breakline_geometry_mismatch_count": int(getattr(output, "intersection_handoff_shared_breakline_geometry_mismatch_count", 0) or 0),
+                        "shared_breakline_mesh_mismatch_count": int(getattr(output, "intersection_handoff_shared_breakline_mesh_mismatch_count", 0) or 0),
+                        "shared_breakline_missing_consumer_count": int(getattr(output, "intersection_handoff_shared_breakline_missing_consumer_count", 0) or 0),
+                        "shared_breakline_reversed_edge_count": int(getattr(output, "intersection_handoff_shared_breakline_reversed_edge_count", 0) or 0),
+                        "source_refs": source_refs,
                     }
                 )
         for row in list(getattr(output, "subassembly_rows", []) or []):
@@ -352,7 +418,7 @@ class ExchangeOutputMapper:
         return [
             payload
             for payload in (_source_context_compatibility_payload(payload) for payload in payloads)
-            if any(str(payload.get(key, "") or "") for key in ("region_ref", "assembly_ref", "structure_ref", "subassembly_ref", "compatibility_ref"))
+            if any(str(payload.get(key, "") or "") for key in ("region_ref", "assembly_ref", "structure_ref", "subassembly_ref", "compatibility_ref", "intersection_ref", "replacement_blocker_kind"))
         ]
 
     def _is_structure_solid_output(self, output: OutputModelBase) -> bool:
@@ -360,6 +426,9 @@ class ExchangeOutputMapper:
 
     def _is_watertight_solid_output(self, output: OutputModelBase) -> bool:
         return bool(str(getattr(output, "watertight_solid_output_id", "") or ""))
+
+    def _is_simulation_package_output(self, output: OutputModelBase) -> bool:
+        return bool(str(getattr(output, "simulation_package_output_id", "") or ""))
 
     def _is_side_slope_subassembly_row(self, row: object) -> bool:
         kind = str(getattr(row, "kind", "") or "").strip().lower()
@@ -390,6 +459,76 @@ class ExchangeOutputMapper:
             for row in source_context_rows
             if str(row.get("scope", "") or "").strip().lower() == expected
         )
+
+    def _source_context_context_kind_count(
+        self,
+        source_context_rows: list[dict[str, object]],
+        *,
+        context_kind: str,
+    ) -> int:
+        expected = str(context_kind or "").strip().lower()
+        return sum(
+            1
+            for row in source_context_rows
+            if str(row.get("context_kind", "") or "").strip().lower() == expected
+        )
+
+    def _watertight_intersection_source_context_count(self, source_context_rows: list[dict[str, object]]) -> int:
+        return sum(
+            1
+            for row in source_context_rows
+            if str(row.get("context_kind", "") or "") == "watertight_solid"
+            and str(row.get("intersection_ref", "") or "")
+        )
+
+    def _watertight_intersection_surface_zone_context_count(self, source_context_rows: list[dict[str, object]]) -> int:
+        return sum(
+            1
+            for row in source_context_rows
+            if str(row.get("context_kind", "") or "") == "watertight_solid"
+            and str(row.get("intersection_surface_zone_result_ref", "") or "")
+        )
+
+    def _watertight_intersection_diagnostic_ref_count(self, source_context_rows: list[dict[str, object]]) -> int:
+        return len(
+            self._unique_list(
+                str(ref)
+                for row in source_context_rows
+                if str(row.get("context_kind", "") or "") == "watertight_solid"
+                and str(row.get("intersection_ref", "") or "")
+                for ref in list(row.get("diagnostic_refs", []) or [])
+                if str(ref)
+            )
+        )
+
+    def _source_context_values(
+        self,
+        source_context_rows: list[dict[str, object]],
+        *,
+        context_kind: str,
+        attribute_name: str,
+    ) -> list[str]:
+        expected = str(context_kind or "").strip().lower()
+        return self._unique_list(
+            str(row.get(attribute_name, "") or "")
+            for row in source_context_rows
+            if str(row.get("context_kind", "") or "").strip().lower() == expected
+            and str(row.get(attribute_name, "") or "")
+        )
+
+    def _first_source_context_value(
+        self,
+        source_context_rows: list[dict[str, object]],
+        *,
+        context_kind: str,
+        attribute_name: str,
+    ) -> str:
+        values = self._source_context_values(
+            source_context_rows,
+            context_kind=context_kind,
+            attribute_name=attribute_name,
+        )
+        return values[0] if values else ""
 
     def _bench_source_context_count(self, source_context_rows: list[dict[str, object]]) -> int:
         return sum(
@@ -455,3 +594,12 @@ def _source_context_compatibility_payload(payload: dict[str, object]) -> dict[st
     row = dict(payload or {})
     row["compatibility_ref"] = str(row.get("compatibility_ref", "") or "").strip()
     return row
+
+
+def _first_ref_with_prefix(source_refs: list[str], prefix: str) -> str:
+    expected = str(prefix or "")
+    for ref in list(source_refs or []):
+        text = str(ref or "").strip()
+        if text.startswith(expected):
+            return text
+    return ""

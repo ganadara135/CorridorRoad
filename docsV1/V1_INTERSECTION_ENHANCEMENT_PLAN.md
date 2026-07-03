@@ -943,7 +943,7 @@ Manual QA for Phase 14:
 11. After Phase 14.4, confirm Guided Review notes include curb-return arc count, arc samples, and arc segments.
 12. After Phase 14.5, confirm Guided Review notes include edge blend faces and `PatchTriangulationMode` is `structured_strip_curb_return_blend`.
 13. After Phase 14.6, confirm Design/Slope exclusion notes report `boundary=structured_strip_curb_return_blend` and `aligned=practical`.
-14. After Phase 14.7, select the `Intersection Surface` preview object and confirm `IntersectionReviewSummary` and `IntersectionPatchQualitySummary` are populated.
+14. After Phase 14.7, select the `Intersection Surface` preview object and confirm `IntersectionReviewSummary`, `IntersectionSurfacePatchSummary`, and Surface Patch row status metadata are populated.
 15. Show Design Surface and Slope Face Surface together with Intersection Surface.
 16. Confirm ordinary surfaces do not overlap the practical patch boundary.
 16.1. Show a side-road Region Design Surface by itself and confirm it is clipped at the intersection patch boundary.

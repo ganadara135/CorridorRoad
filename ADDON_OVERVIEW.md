@@ -5,7 +5,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-The current public release is `1.0.1`. This release continues the v1 workflow reset and introduces the user-facing name `Parametric Road` in place of `Corridor Road`, because the project is growing beyond a corridor-surface generator into a broader parametric road-design and simulation-preparation workflow.
+The current public release is `1.0.8`. This release continues the v1 workflow reset and improves source-driven Intersection slope-face, Tie Slope, shared breakline audit, and Build Parametric review behavior.
 
 ## Current V1 Workflow
 
@@ -17,25 +17,29 @@ Typical v1 workflow:
 4. Generate Stations.
 5. Edit Profile.
 6. Review Plan/Profile and generate the shared 3D Centerline.
-7. Edit Assembly and Region definitions.
-8. Prepare Structures and Drainage source rows.
-9. Generate Applied Sections.
-10. Build Corridor preview surfaces.
-11. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
-12. Prepare Watertight Solids, Structure Output, and exchange handoff data where available.
+7. Optionally define Superelevation.
+8. Edit SubAssembly Designer definitions, Assembly rows, and Region definitions.
+9. Define Intersections where multiple Alignments meet.
+10. Prepare Structures and Drainage source rows.
+11. Generate Applied Sections.
+12. Build Parametric preview surfaces.
+13. Review Cross Sections, Drainage, Plan/Profile, Earthwork, Intersections, and Breakline Audit diagnostics.
+14. Prepare Watertight Solids, Structure Output, and exchange handoff data where available.
 
 ## Available Areas
 
 - Project setup and v1 project tree routing
 - TIN editing and review
 - Alignment, station, and profile workflow
-- Assembly editor with ditch, side slope, bench, and preset support
 - shared 3D Centerline review for station/offset/elevation context
+- Superelevation source editing and Applied Sections handoff
+- SubAssembly Designer and Assembly editor workflow with ditch, side slope, bench, and preset support
 - Region editor with continuous station spans and Assembly assignment
+- Intersection starter sources, multi-alignment centerline preview, Intersection Slope Face, and Tie Slope review
 - Structure editor with connection points and native drainage-structure preview details
 - Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
 - Applied Sections generation and review handoff
-- Build Corridor preview surfaces and diagnostics
+- Build Parametric preview surfaces, Intersection Tie Slope output, shared breakline audit, and diagnostics
 - Cross Section Viewer
 - Plan/Profile Connection Review
 - Earthwork Viewer and v1-native earthwork report pipeline
@@ -74,7 +78,7 @@ Key references:
 Online project resources:
 
 - Wiki: https://github.com/ganadara135/CorridorRoad/wiki
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.8
 - Issues: https://github.com/ganadara135/CorridorRoad/issues
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 

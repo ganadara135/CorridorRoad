@@ -22,7 +22,16 @@ class IntersectionCorridorClipRow:
     station_ranges: tuple[tuple[float, float], ...] = ()
     influence_ranges: tuple[tuple[float, float], ...] = ()
     control_region_refs: tuple[str, ...] = ()
+    source_control_area_ref: str = ""
+    control_area_intent_status: str = "intersection_owned"
+    control_area_source_method: str = "manual"
+    control_area_approval_status: str = "accepted"
+    source_region_refs: tuple[str, ...] = ()
+    result_region_refs: tuple[str, ...] = ()
+    region_lineage_status: str = "result_only"
     protected_zone_refs: tuple[str, ...] = ()
+    source_status: str = "accepted"
+    source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"
     diagnostic_rows: tuple[str, ...] = ()
     notes: str = ""

@@ -245,6 +245,16 @@ Major coordinate interpretation must be explicit.
 - `source_context_count`
 - `side_slope_source_context_count`
 - `bench_source_context_count`
+- `watertight_intersection_source_context_count`
+- `watertight_intersection_surface_zone_context_count`
+- `watertight_intersection_diagnostic_ref_count`
+- `simulation_intersection_handoff_context_count`
+- `simulation_intersection_replacement_blocker_kind`
+- `simulation_intersection_replacement_blocker_kinds`
+
+When Watertight Solid outputs include accepted Intersection lineage, `payload_metadata` should expose compact counts for Intersection source-context rows, accepted Surface Zone result contexts, and row-level diagnostic refs. The detailed lineage remains in `format_payload.source_context_rows`.
+
+When a Simulation Package with Intersection handoff metadata is wrapped into an ExchangePackage, `payload_metadata` should expose the compact Simulation Package Intersection handoff count and blocker summary. The detailed trace row remains in `format_payload.source_context_rows`.
 
 ## 14. Format Payload Rule
 
@@ -397,6 +407,7 @@ An exchange package should make it possible to trace:
 Current implementation note:
 
 - `format_payload.source_context_rows` carries normalized source context rows for structure solids, watertight solids, section side-slope Subassemblies, and quantity fragments.
+- Watertight Solid source-context rows should preserve row-level `diagnostic_refs`, notes, material refs, station span, and detailed Intersection lineage refs such as `intersection_ref`, `intersection_leg_ref`, `intersection_control_area_ref`, `intersection_edge_family_ref`, `intersection_surface_zone_ref`, `intersection_edge_network_ref`, and `intersection_surface_zone_result_ref` when available.
 - Side-slope benches use `context_kind = "section_side_slope_subassembly"` for active Subassembly rows.
 - Bench source context rows should include `assembly_ref`, `region_ref`, and `subassembly_ref` when those source refs are available.
 - `compatibility_ref` is the only explicitly named source-context compatibility field; active source ownership uses `subassembly_ref`.

@@ -36,6 +36,32 @@ def _small_surface() -> TINSurface:
     )
 
 
+def _surface_with_preview_hidden_constraint_triangle() -> TINSurface:
+    return TINSurface(
+        schema_version=1,
+        project_id="test-project",
+        surface_id="tin:mesh-preview:constraint",
+        label="Mesh Preview Constraint Test",
+        vertex_rows=[
+            TINVertex("v0", 0.0, 0.0, 10.0),
+            TINVertex("v1", 10.0, 0.0, 10.0),
+            TINVertex("v2", 5.0, 5.0, 10.0),
+            TINVertex("support", 5.0, 0.1, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("primary", "v0", "v1", "v2"),
+            TINTriangle(
+                "constraint",
+                "v0",
+                "v1",
+                "support",
+                triangle_kind="constraint_support_triangle",
+                quality_ref="shared_breakline_constraint_edge",
+            ),
+        ],
+    )
+
+
 def test_build_facet_rows_uses_tin_triangles() -> None:
     facets = TINMeshPreviewMapper().build_facet_rows(_small_surface())
 
@@ -43,6 +69,18 @@ def test_build_facet_rows_uses_tin_triangles() -> None:
     assert facets[0][0] == (0.0, 0.0, 10.0)
     assert facets[0][1] == (10.0, 0.0, 12.0)
     assert facets[0][2] == (10.0, 10.0, 16.0)
+
+
+def test_build_facet_rows_can_hide_preview_only_constraint_triangles() -> None:
+    surface = _surface_with_preview_hidden_constraint_triangle()
+    mapper = TINMeshPreviewMapper()
+
+    contract_facets = mapper.build_facet_rows(surface)
+    preview_facets = mapper.build_facet_rows(surface, include_preview_hidden=False)
+
+    assert len(contract_facets) == 2
+    assert len(preview_facets) == 1
+    assert preview_facets[0] == contract_facets[0]
 
 
 def test_build_mesh_has_matching_facet_count() -> None:
@@ -53,6 +91,16 @@ def test_build_mesh_has_matching_facet_count() -> None:
     )
 
     assert int(getattr(mesh, "CountFacets", 0) or 0) == 2
+
+
+def test_build_mesh_hides_shared_breakline_constraint_support_triangles() -> None:
+    mesh = TINMeshPreviewMapper().build_mesh(
+        _surface_with_preview_hidden_constraint_triangle(),
+        mesh_module=Mesh,
+        app_module=App,
+    )
+
+    assert int(getattr(mesh, "CountFacets", 0) or 0) == 1
 
 
 def test_create_preview_object_adds_mesh_feature_to_document() -> None:
@@ -70,6 +118,50 @@ def test_create_preview_object_adds_mesh_feature_to_document() -> None:
         obj = doc.getObject(result.object_name)
         assert obj is not None
         assert int(getattr(obj.Mesh, "CountFacets", 0) or 0) == 2
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_create_or_update_preview_records_hidden_constraint_triangle_count() -> None:
+    doc = App.newDocument("TINMeshPreviewMapperHiddenConstraintTest")
+    try:
+        result = TINMeshPreviewMapper().create_or_update_preview_object(
+            doc,
+            _surface_with_preview_hidden_constraint_triangle(),
+            object_name="TINPreview_HiddenConstraint_Test",
+            mesh_module=Mesh,
+            app_module=App,
+        )
+
+        obj = doc.getObject(result.object_name)
+        assert result.status == "created"
+        assert result.facet_count == 1
+        assert obj is not None
+        assert obj.TriangleCount == 2
+        assert obj.RenderedTriangleCount == 1
+        assert obj.PreviewHiddenTriangleCount == 1
+        assert int(getattr(obj.Mesh, "CountFacets", 0) or 0) == 1
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_create_or_update_preview_allows_surface_label_without_prefix() -> None:
+    doc = App.newDocument("TINMeshPreviewMapperNoPrefixLabelTest")
+    try:
+        result = TINMeshPreviewMapper().create_or_update_preview_object(
+            doc,
+            _small_surface(),
+            object_name="TINPreview_NoPrefixLabel_Test",
+            label_prefix="",
+            mesh_module=Mesh,
+            app_module=App,
+        )
+
+        obj = doc.getObject(result.object_name)
+        assert result.status == "created"
+        assert result.label == "Mesh Preview Test"
+        assert obj is not None
+        assert obj.Label == "Mesh Preview Test"
     finally:
         App.closeDocument(doc.Name)
 

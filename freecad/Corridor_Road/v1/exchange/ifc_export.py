@@ -21,6 +21,7 @@ def export_exchange_package_to_ifc(path: str | Path, exchange_package_obj) -> di
         kinds = ", ".join(sorted({str(row.get("kind", "") or "") for row in blocking if row.get("kind")}))
         raise RuntimeError(f"Structure IFC export is not ready: {len(blocking)} blocking diagnostic(s). {kinds}")
     text = exchange_package_ifc_text(payload)
+    payload_metadata = payload.get("payload_metadata", {}) or {}
     export_path.parent.mkdir(parents=True, exist_ok=True)
     export_path.write_text(text, encoding="utf-8", newline="\n")
     return {
@@ -30,6 +31,24 @@ def export_exchange_package_to_ifc(path: str | Path, exchange_package_obj) -> di
         "structure_solid_segment_count": len(list(payload.get("structure_solid_segment_rows", []) or [])),
         "export_readiness_status": payload.get("export_readiness_status", ""),
         "export_diagnostic_count": int(payload.get("export_diagnostic_count", 0) or 0),
+        "watertight_intersection_source_context_count": int(
+            payload_metadata.get("watertight_intersection_source_context_count", 0) or 0
+        ),
+        "watertight_intersection_surface_zone_context_count": int(
+            payload_metadata.get("watertight_intersection_surface_zone_context_count", 0) or 0
+        ),
+        "watertight_intersection_diagnostic_ref_count": int(
+            payload_metadata.get("watertight_intersection_diagnostic_ref_count", 0) or 0
+        ),
+        "simulation_intersection_handoff_context_count": int(
+            payload_metadata.get("simulation_intersection_handoff_context_count", 0) or 0
+        ),
+        "simulation_intersection_replacement_blocker_kind": str(
+            payload_metadata.get("simulation_intersection_replacement_blocker_kind", "") or ""
+        ),
+        "simulation_intersection_replacement_blocker_kinds": list(
+            payload_metadata.get("simulation_intersection_replacement_blocker_kinds", []) or []
+        ),
         "ifc_entity_count": text.count("\n#"),
     }
 
@@ -75,6 +94,60 @@ def exchange_package_ifc_text(payload: dict[str, object]) -> str:
         f"#{project}=IFCPROJECT('{_ifc_guid(str(payload.get('exchange_output_id', '') or 'project'))}',$,'{project_name}',$,$,$,$,(#{context}),#{unit_assignment});"
     )
     next_id += 1
+
+    package_property_ids: list[int] = []
+    payload_metadata = payload.get("payload_metadata", {}) or {}
+    for name, value, value_kind in (
+        (
+            "WatertightIntersectionSourceContextCount",
+            int(payload_metadata.get("watertight_intersection_source_context_count", 0) or 0),
+            "IFCINTEGER",
+        ),
+        (
+            "WatertightIntersectionSurfaceZoneContextCount",
+            int(payload_metadata.get("watertight_intersection_surface_zone_context_count", 0) or 0),
+            "IFCINTEGER",
+        ),
+        (
+            "WatertightIntersectionDiagnosticRefCount",
+            int(payload_metadata.get("watertight_intersection_diagnostic_ref_count", 0) or 0),
+            "IFCINTEGER",
+        ),
+        (
+            "SimulationIntersectionHandoffContextCount",
+            int(payload_metadata.get("simulation_intersection_handoff_context_count", 0) or 0),
+            "IFCINTEGER",
+        ),
+        (
+            "SimulationIntersectionReplacementBlockerKind",
+            str(payload_metadata.get("simulation_intersection_replacement_blocker_kind", "") or ""),
+            "IFCTEXT",
+        ),
+        (
+            "SimulationIntersectionReplacementBlockerKinds",
+            ",".join(str(item) for item in list(payload_metadata.get("simulation_intersection_replacement_blocker_kinds", []) or [])),
+            "IFCTEXT",
+        ),
+    ):
+        if value_kind == "IFCTEXT" and not str(value or ""):
+            continue
+        if value_kind == "IFCINTEGER" and int(value or 0) <= 0:
+            continue
+        prop_id = next_id
+        next_id += 1
+        package_property_ids.append(prop_id)
+        lines.append(f"#{prop_id}=IFCPROPERTYSINGLEVALUE('{name}',$,{_ifc_value(value, value_kind)},$);")
+    if package_property_ids:
+        pset = next_id
+        next_id += 1
+        lines.append(
+            f"#{pset}=IFCPROPERTYSET('{_ifc_guid(str(payload.get('exchange_output_id', '') or 'package') + ':exchange-pset')}',$,'CorridorRoadExchangePackage',$,({','.join(f'#{item}' for item in package_property_ids)}));"
+        )
+        rel = next_id
+        next_id += 1
+        lines.append(
+            f"#{rel}=IFCRELDEFINESBYPROPERTIES('{_ifc_guid(str(payload.get('exchange_output_id', '') or 'package') + ':exchange-rel')}',$,$,$,(#{project}),#{pset});"
+        )
 
     element_ids: list[int] = []
     for index, row in enumerate(rows, start=1):

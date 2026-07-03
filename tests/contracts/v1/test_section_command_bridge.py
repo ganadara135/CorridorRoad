@@ -912,6 +912,11 @@ def test_cross_section_viewer_summary_shows_intersection_grading_context() -> No
                     active_intersection_leg_role="primary_through",
                     active_intersection_control_region_refs=["region:primary-intersection"],
                     active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                    active_intersection_source_stage_rows=[
+                        "Anchor|accepted|intersection-source-stage:anchor||intersection:t-01,control-area:t-01:primary,leg:primary",
+                        "Control Areas|accepted|intersection-source-stage:control_areas||intersection:t-01,control-area:t-01:primary,leg:primary",
+                        "Edge Families|warning|intersection-source-stage:edge_families|source_edge_policy_approval_pending|intersection:t-01,control-area:t-01:primary,leg:primary",
+                    ],
                 )
             ],
         )
@@ -1072,6 +1077,12 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
                     applied_section_id="section:96",
                     alignment_id="alignment:primary",
                     station=96.0,
+                    frame=AppliedSectionFrame(
+                        station=96.0,
+                        source_mode="alignment_profile_fallback",
+                        source_status="fallback",
+                        source_diagnostic_rows=["centerline3d_source_geometry_missing"],
+                    ),
                     template_id="template:intersection-road",
                     region_id="region:primary-intersection",
                     active_intersection_id="intersection:t-01",
@@ -1080,6 +1091,11 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
                     active_intersection_leg_role="primary_through",
                     active_intersection_control_region_refs=["region:primary-intersection"],
                     active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                    active_intersection_source_stage_rows=[
+                        "Anchor|accepted|intersection-source-stage:anchor||intersection:t-01,control-area:t-01:primary,leg:primary",
+                        "Control Areas|accepted|intersection-source-stage:control_areas||intersection:t-01,control-area:t-01:primary,leg:primary",
+                        "Edge Families|warning|intersection-source-stage:edge_families|source_edge_policy_approval_pending|intersection:t-01,control-area:t-01:primary,leg:primary",
+                    ],
                 )
             ],
         )
@@ -1099,9 +1115,13 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
         panel.preview = preview
 
         context_rows = build_intersection_context_rows(preview)
+        handoff_rows = build_handoff_target_rows(preview)
         families = {row[0] for row in context_rows}
         summary_text = panel._summary_text()
 
+        assert "source_status" in families
+        assert "frame_source" in families
+        assert "source_stage" in families
         assert "topology" in families
         assert "edge_network" in families
         assert "surface_zone" in families
@@ -1110,11 +1130,53 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
         assert "grading" in families
         assert "drainage" in families
         assert any(row[3] == "primary_through" for row in context_rows)
+        assert any(row[3] == "Edge Families" and row[1] == "warning" for row in context_rows)
+        assert any(row[0] == "frame_source" and row[1] == "fallback" and row[3] == "alignment_profile_fallback" for row in context_rows)
+        assert any(
+            row[0] == "source_stage"
+            and row[3] == "Edge Families"
+            and row[6] == "Intersection"
+            and row[7] == "intersection-source-stage:edge_families"
+            and row[8] == "source_warning"
+            for row in context_rows
+        )
+        assert any(
+            row[0] == "frame_source"
+            and row[6] == "Applied Sections"
+            and row[7] == "applied-sections:frame-source:section:96"
+            and row[8] == "fallback"
+            for row in context_rows
+        )
+        assert any(
+            row[0] == "surface_zone"
+            and row[6] == "Build Parametric"
+            and row[7].startswith("build-parametric:intersection:surface_zone:")
+            and row[8] in {"accepted_source", "source_warning"}
+            for row in context_rows
+        )
         assert any(row[3] == "pavement_edge" for row in context_rows)
         assert any(row[3] == "main_pavement" for row in context_rows)
         assert any(row[3] == "design" for row in context_rows)
         assert any(row[3] == "low_point_candidate" for row in context_rows)
         assert any(row[3] == "inlet_recommendation" for row in context_rows)
+        assert any(
+            row[0] == "Intersection: Edge Families"
+            and row[1] == "ready"
+            and row[2] == "intersection-source-stage:edge_families"
+            and "Lineage=source_warning" in row[3]
+            for row in handoff_rows
+        )
+        assert any(
+            row[0].startswith("Applied Sections:")
+            and row[2] == "applied-sections:frame-source:section:96"
+            and "Lineage=fallback" in row[3]
+            for row in handoff_rows
+        )
+        assert any(
+            row[0].startswith("Build Parametric:")
+            and row[2].startswith("build-parametric:intersection:surface_zone:")
+            for row in handoff_rows
+        )
         assert "Intersection Context Rows:" in summary_text
         assert "Intersection Contracts:" in summary_text
     finally:
@@ -1243,6 +1305,7 @@ def test_cross_section_viewer_navigation_keeps_secondary_alignment_intersection_
         assert getattr(preview["applied_section"], "alignment_id") == "alignment:secondary"
         context_rows = build_intersection_context_rows(preview)
         assert context_rows
+        assert any(row[0] == "source_status" for row in context_rows)
         assert any(row[3] == "secondary_approach" for row in context_rows)
     finally:
         App.closeDocument(doc.Name)
@@ -1632,4 +1695,7 @@ def test_cross_section_review_tables_tolerate_empty_optional_rows() -> None:
     assert corridor_rows[1][0] == "Design Surface"
     assert intersection_rows[0][0] == ""
     assert intersection_rows[1][0] == "surface_zone"
+    assert intersection_rows[1][6] == "Build Parametric"
+    assert intersection_rows[1][7] == "build-parametric:intersection:surface_zone:selected"
+    assert intersection_rows[1][8] == "accepted_source"
     assert status["total_count"] == 2

@@ -17,6 +17,8 @@ class SimulationPackageSolidRow:
     structure_refs: list[str] = field(default_factory=list)
     drainage_refs: list[str] = field(default_factory=list)
     flow_route_refs: list[str] = field(default_factory=list)
+    material_refs: list[str] = field(default_factory=list)
+    source_refs: list[str] = field(default_factory=list)
     volume: float = 0.0
     shape_valid: bool = False
 
@@ -52,6 +54,7 @@ class SimulationPackageOutput(OutputModelBase):
     intersection_trim_blocked_pair_count: int = 0
     intersection_trim_pair_rows: list[dict[str, object]] = field(default_factory=list)
     intersection_trim_fuse_status: str = "not_available"
+    intersection_trim_handoff_status: str = "not_available"
     intersection_trim_fuse_candidate_ref: str = ""
     intersection_trim_fuse_source_count: int = 0
     intersection_trim_fuse_face_count: int = 0
@@ -59,6 +62,24 @@ class SimulationPackageOutput(OutputModelBase):
     intersection_trim_fuse_source_refs: list[str] = field(default_factory=list)
     intersection_trim_handoff_chain_refs: list[str] = field(default_factory=list)
     intersection_trim_handoff_stage_statuses: list[str] = field(default_factory=list)
+    intersection_handoff_readiness_status: str = "not_available"
+    intersection_handoff_final_quality_status: str = "not_available"
+    intersection_handoff_status: str = "not_available"
+    intersection_handoff_target_count: int = 0
+    intersection_handoff_patch_target_count: int = 0
+    intersection_handoff_accepted_zone_target_count: int = 0
+    intersection_handoff_replacement_gate_status: str = ""
+    intersection_handoff_replacement_readiness_status: str = ""
+    intersection_handoff_replacement_handoff_preference: str = ""
+    intersection_handoff_downstream_selected_role: str = ""
+    intersection_handoff_legacy_patch_review_visibility: str = ""
+    intersection_handoff_legacy_patch_compatibility_audit_summary: str = ""
+    intersection_handoff_replacement_blocker_kind: str = ""
+    intersection_handoff_shared_breakline_audit_status: str = ""
+    intersection_handoff_shared_breakline_geometry_mismatch_count: int = 0
+    intersection_handoff_shared_breakline_mesh_mismatch_count: int = 0
+    intersection_handoff_shared_breakline_missing_consumer_count: int = 0
+    intersection_handoff_shared_breakline_reversed_edge_count: int = 0
     output_count: int = 0
     total_volume: float = 0.0
     target_families: list[str] = field(default_factory=list)

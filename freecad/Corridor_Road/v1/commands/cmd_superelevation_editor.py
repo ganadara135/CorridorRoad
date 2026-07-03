@@ -47,6 +47,7 @@ from ..services.evaluation.superelevation_auto_calculation_service import (
     SuperelevationCurveCandidate,
 )
 from ..services.evaluation.superelevation_service import SuperelevationService
+from ..ui.common.styles import apply_clickable_tab_style
 
 
 SUPERELEVATION_COMMAND_ID = "CorridorRoad_V1EditSuperelevation"
@@ -252,6 +253,7 @@ class V1SuperelevationEditorTaskPanel:
         layout.addWidget(note)
 
         self._tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._tabs, "SuperelevationEditorTabs")
         self._control_table = self._build_table(["Control ID", "STA", "Side", "Crossfall %", "Kind"], [150, 90, 80, 100, 130])
         self._transition_table = self._build_table(["Transition ID", "Start STA", "End STA", "Kind", "Policy"], [150, 90, 90, 100, 100])
         self._constraint_table = self._build_table(["Constraint ID", "Kind", "Value", "Unit", "Mode"], [150, 180, 90, 80, 80])

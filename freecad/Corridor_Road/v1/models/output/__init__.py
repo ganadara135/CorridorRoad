@@ -30,7 +30,16 @@ from .section_output import (
 )
 from .simulation_qa_output import SimulationQaDiagnosticRow, SimulationQaFamilyRow, SimulationQaOutput
 from .simulation_package_output import SimulationPackageOutput, SimulationPackageSolidRow
-from .surface_output import SurfaceOutput, SurfaceSpanOutputRow
+from .surface_output import (
+    IntersectionSurfaceReplacementDecision,
+    IntersectionSurfaceZoneOutput,
+    IntersectionSurfaceZoneOutputRow,
+    SurfaceOutput,
+    SurfaceSpanOutputRow,
+    decide_intersection_surface_downstream_handoff,
+    intersection_surface_replacement_handoff_preference,
+    intersection_surface_replacement_readiness,
+)
 from .structure_solid_output import (
     StructureExportDiagnosticRow,
     StructureSolidOutput,
@@ -73,8 +82,14 @@ __all__ = [
     "SimulationQaOutput",
     "SimulationPackageOutput",
     "SimulationPackageSolidRow",
+    "IntersectionSurfaceReplacementDecision",
+    "IntersectionSurfaceZoneOutput",
+    "IntersectionSurfaceZoneOutputRow",
     "SurfaceOutput",
     "SurfaceSpanOutputRow",
+    "decide_intersection_surface_downstream_handoff",
+    "intersection_surface_replacement_handoff_preference",
+    "intersection_surface_replacement_readiness",
     "StructureExportDiagnosticRow",
     "StructureSolidOutput",
     "StructureSolidOutputRow",

@@ -1,3 +1,11 @@
+import json
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+
+from freecad.Corridor_Road.v1.exchange.exchange_package_export import export_exchange_package_to_json
+from freecad.Corridor_Road.v1.exchange.ifc_export import export_exchange_package_to_ifc
+from freecad.Corridor_Road.v1.commands.cmd_structure_output import _package_source_context_summary
 from freecad.Corridor_Road.v1.models.source.alignment_model import (
     AlignmentElement,
     AlignmentModel,
@@ -32,6 +40,7 @@ from freecad.Corridor_Road.v1.models.result.surface_model import (
     SurfaceSpanRow,
 )
 from freecad.Corridor_Road.v1.models.output import (
+    SimulationPackageOutput,
     StructureExportDiagnosticRow,
     StructureSolidOutput,
     StructureSolidOutputRow,
@@ -710,3 +719,241 @@ def test_exchange_output_mapper_packages_side_slope_bench_source_context() -> No
     assert quantity_context["subassembly_ref"] == "side-slope-right:bench:1"
     assert quantity_context["quantity_kind"] == "bench_surface_length"
     assert quantity_context["measurement_kind"] == "section_side_slope_breakline"
+
+
+def test_exchange_output_mapper_packages_simulation_intersection_handoff_context() -> None:
+    package_output = SimulationPackageOutput(
+        schema_version=1,
+        project_id="proj-1",
+        simulation_package_output_id="simulation-package:watertight-solids",
+        package_status="blocked",
+        simulation_ready=False,
+        source_refs=["intersection:t-01", "V1CorridorIntersectionSurfacePreview"],
+        intersection_handoff_final_quality_status="blocked",
+        intersection_handoff_status="review_required",
+        intersection_handoff_replacement_gate_status="review_required",
+        intersection_handoff_replacement_readiness_status="review_only",
+        intersection_handoff_downstream_selected_role="transitional_patch_fallback",
+        intersection_handoff_legacy_patch_review_visibility="metadata_only",
+        intersection_handoff_replacement_blocker_kind="intersection_replacement_gate_review_required",
+        intersection_handoff_shared_breakline_audit_status="error",
+        intersection_handoff_shared_breakline_geometry_mismatch_count=1,
+        intersection_handoff_shared_breakline_mesh_mismatch_count=2,
+    )
+
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id="proj-1",
+            exchange_output_id="pkg-simulation",
+            format="json",
+            package_kind="simulation_package_exchange",
+            outputs=[package_output],
+        )
+    )
+
+    context = exchange_output.format_payload["source_context_rows"][0]
+
+    assert exchange_output.output_refs[0].output_kind == "simulationpackage"
+    assert exchange_output.output_refs[0].output_id == "simulation-package:watertight-solids"
+    assert exchange_output.payload_metadata["source_context_count"] == 1
+    assert exchange_output.payload_metadata["simulation_intersection_handoff_context_count"] == 1
+    assert (
+        exchange_output.payload_metadata["simulation_intersection_replacement_blocker_kind"]
+        == "intersection_replacement_gate_review_required"
+    )
+    assert exchange_output.payload_metadata["simulation_intersection_replacement_blocker_kinds"] == [
+        "intersection_replacement_gate_review_required"
+    ]
+    assert context["context_kind"] == "simulation_package_intersection_handoff"
+    assert context["scope"] == "intersection_handoff"
+    assert context["intersection_ref"] == "intersection:t-01"
+    assert context["final_quality_status"] == "blocked"
+    assert context["digital_twin_handoff"] == "review_required"
+    assert context["replacement_readiness_status"] == "review_only"
+    assert context["replacement_gate_status"] == "review_required"
+    assert context["downstream_selected_role"] == "transitional_patch_fallback"
+    assert context["legacy_patch_review_visibility"] == "metadata_only"
+    assert context["replacement_blocker_kind"] == "intersection_replacement_gate_review_required"
+    assert context["shared_breakline_audit_status"] == "error"
+    assert context["shared_breakline_geometry_mismatch_count"] == 1
+    assert context["shared_breakline_mesh_mismatch_count"] == 2
+    assert context["shared_breakline_missing_consumer_count"] == 0
+    assert context["shared_breakline_reversed_edge_count"] == 0
+
+
+def test_exchange_package_json_export_preserves_simulation_intersection_metadata() -> None:
+    package_output = SimulationPackageOutput(
+        schema_version=1,
+        project_id="proj-1",
+        simulation_package_output_id="simulation-package:watertight-solids",
+        package_status="blocked",
+        simulation_ready=False,
+        source_refs=["intersection:t-01", "V1CorridorIntersectionSurfacePreview"],
+        intersection_handoff_final_quality_status="blocked",
+        intersection_handoff_status="review_required",
+        intersection_handoff_replacement_gate_status="review_required",
+        intersection_handoff_replacement_readiness_status="review_only",
+        intersection_handoff_downstream_selected_role="transitional_patch_fallback",
+        intersection_handoff_legacy_patch_review_visibility="metadata_only",
+        intersection_handoff_replacement_blocker_kind="intersection_replacement_gate_review_required",
+        intersection_handoff_shared_breakline_audit_status="error",
+        intersection_handoff_shared_breakline_geometry_mismatch_count=1,
+        intersection_handoff_shared_breakline_mesh_mismatch_count=2,
+    )
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id="proj-1",
+            exchange_output_id="pkg-simulation",
+            format="json",
+            package_kind="simulation_package_exchange",
+            outputs=[package_output],
+        )
+    )
+    package_obj = SimpleNamespace(
+        SchemaVersion=1,
+        ProjectId="proj-1",
+        ExchangeOutputId=exchange_output.exchange_output_id,
+        ExchangeFormat=exchange_output.format,
+        PackageKind=exchange_output.package_kind,
+        CorridorId="",
+        StructureSolidOutputId="",
+        StructureSolidCount=0,
+        StructureSolidSegmentCount=0,
+        ExportReadinessStatus="blocked",
+        ExportDiagnosticCount=0,
+        PayloadStorageMode="inline",
+        PayloadByteCount=0,
+        QuantityOutputId="",
+        QuantityFragmentCount=0,
+        PackagedOutputIds=[row.output_id for row in exchange_output.output_refs],
+        SourceRefs=exchange_output.source_refs,
+        ResultRefs=exchange_output.result_refs,
+        PayloadMetadataJson=json.dumps(exchange_output.payload_metadata),
+        FormatPayloadJson=json.dumps(exchange_output.format_payload),
+        StructureSolidRowsJson="[]",
+        StructureSolidSegmentRowsJson="[]",
+        ExportDiagnosticRowsJson="[]",
+        QuantityFragmentRowsJson="[]",
+    )
+
+    with tempfile.TemporaryDirectory(prefix="cr_v1_sim_exchange_export_") as temp_dir:
+        export_path = Path(temp_dir) / "simulation_exchange_package.json"
+        info = export_exchange_package_to_json(export_path, package_obj)
+        payload = json.loads(export_path.read_text(encoding="utf-8"))
+
+    assert info["simulation_intersection_handoff_context_count"] == 1
+    assert (
+        info["simulation_intersection_replacement_blocker_kind"]
+        == "intersection_replacement_gate_review_required"
+    )
+    assert info["simulation_intersection_replacement_blocker_kinds"] == [
+        "intersection_replacement_gate_review_required"
+    ]
+    assert payload["payload_metadata"]["simulation_intersection_handoff_context_count"] == 1
+    assert (
+        payload["payload_metadata"]["simulation_intersection_replacement_blocker_kind"]
+        == "intersection_replacement_gate_review_required"
+    )
+    assert (
+        payload["source_context_rows"][0]["replacement_blocker_kind"]
+        == "intersection_replacement_gate_review_required"
+    )
+
+
+def test_exchange_package_ifc_export_reports_simulation_intersection_metadata() -> None:
+    package_output = SimulationPackageOutput(
+        schema_version=1,
+        project_id="proj-1",
+        simulation_package_output_id="simulation-package:watertight-solids",
+        package_status="blocked",
+        simulation_ready=False,
+        source_refs=["intersection:t-01", "V1CorridorIntersectionSurfacePreview"],
+        intersection_handoff_final_quality_status="blocked",
+        intersection_handoff_status="review_required",
+        intersection_handoff_replacement_gate_status="review_required",
+        intersection_handoff_replacement_readiness_status="review_only",
+        intersection_handoff_downstream_selected_role="transitional_patch_fallback",
+        intersection_handoff_legacy_patch_review_visibility="metadata_only",
+        intersection_handoff_replacement_blocker_kind="intersection_replacement_gate_review_required",
+    )
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id="proj-1",
+            exchange_output_id="pkg-simulation",
+            format="ifc",
+            package_kind="simulation_package_exchange",
+            outputs=[package_output],
+        )
+    )
+    package_obj = SimpleNamespace(
+        SchemaVersion=1,
+        ProjectId="proj-1",
+        ExchangeOutputId=exchange_output.exchange_output_id,
+        ExchangeFormat=exchange_output.format,
+        PackageKind=exchange_output.package_kind,
+        CorridorId="",
+        StructureSolidOutputId="",
+        StructureSolidCount=0,
+        StructureSolidSegmentCount=0,
+        ExportReadinessStatus="warning",
+        ExportDiagnosticCount=0,
+        PayloadStorageMode="inline",
+        PayloadByteCount=0,
+        QuantityOutputId="",
+        QuantityFragmentCount=0,
+        PackagedOutputIds=[row.output_id for row in exchange_output.output_refs],
+        SourceRefs=exchange_output.source_refs,
+        ResultRefs=exchange_output.result_refs,
+        PayloadMetadataJson=json.dumps(exchange_output.payload_metadata),
+        FormatPayloadJson=json.dumps(exchange_output.format_payload),
+        StructureSolidRowsJson="[]",
+        StructureSolidSegmentRowsJson="[]",
+        ExportDiagnosticRowsJson="[]",
+        QuantityFragmentRowsJson="[]",
+    )
+
+    with tempfile.TemporaryDirectory(prefix="cr_v1_sim_exchange_ifc_") as temp_dir:
+        ifc_path = Path(temp_dir) / "simulation_exchange_package.ifc"
+        info = export_exchange_package_to_ifc(ifc_path, package_obj)
+        ifc_text = ifc_path.read_text(encoding="utf-8")
+
+    assert info["simulation_intersection_handoff_context_count"] == 1
+    assert (
+        info["simulation_intersection_replacement_blocker_kind"]
+        == "intersection_replacement_gate_review_required"
+    )
+    assert info["simulation_intersection_replacement_blocker_kinds"] == [
+        "intersection_replacement_gate_review_required"
+    ]
+    assert "CorridorRoadExchangePackage" in ifc_text
+    assert "'SimulationIntersectionHandoffContextCount',$,IFCINTEGER(1)" in ifc_text
+    assert (
+        "'SimulationIntersectionReplacementBlockerKind',$,IFCTEXT('intersection_replacement_gate_review_required')"
+        in ifc_text
+    )
+
+
+def test_exchange_package_preview_summary_reports_simulation_intersection_blocker() -> None:
+    package_obj = SimpleNamespace(
+        PayloadMetadataJson=json.dumps(
+            {
+                "source_context_count": 1,
+                "side_slope_source_context_count": 0,
+                "bench_source_context_count": 0,
+                "watertight_intersection_source_context_count": 1,
+                "watertight_intersection_surface_zone_context_count": 1,
+                "watertight_intersection_diagnostic_ref_count": 1,
+                "simulation_intersection_handoff_context_count": 1,
+                "simulation_intersection_replacement_blocker_kind": "intersection_replacement_gate_review_required",
+            }
+        ),
+        FormatPayloadJson="{}",
+    )
+
+    summary = _package_source_context_summary(package_obj)
+
+    assert "simulation-intersection 1" in summary
+    assert "blocker intersection_replacement_gate_review_required" in summary
+    assert "watertight-intersection 1" in summary
+    assert "zone 1" in summary
+    assert "diagnostics 1" in summary

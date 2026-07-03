@@ -291,6 +291,17 @@ def _package_source_context_summary(package_obj) -> str:
     total = int(metadata.get("source_context_count", 0) or 0)
     side_slope = int(metadata.get("side_slope_source_context_count", 0) or 0)
     bench = int(metadata.get("bench_source_context_count", 0) or 0)
+    watertight_intersection = int(metadata.get("watertight_intersection_source_context_count", 0) or 0)
+    watertight_zone = int(metadata.get("watertight_intersection_surface_zone_context_count", 0) or 0)
+    watertight_diagnostics = int(metadata.get("watertight_intersection_diagnostic_ref_count", 0) or 0)
+    intersection_handoff = int(metadata.get("simulation_intersection_handoff_context_count", 0) or 0)
+    intersection_blocker = str(metadata.get("simulation_intersection_replacement_blocker_kind", "") or "")
+    if watertight_intersection or watertight_zone or watertight_diagnostics or intersection_handoff or intersection_blocker:
+        return (
+            f"{total} (side-slope {side_slope}, bench {bench}, "
+            f"watertight-intersection {watertight_intersection}, zone {watertight_zone}, diagnostics {watertight_diagnostics}, "
+            f"simulation-intersection {intersection_handoff}, blocker {intersection_blocker or 'none'})"
+        )
     return f"{total} (side-slope {side_slope}, bench {bench})"
 
 

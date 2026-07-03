@@ -47,6 +47,7 @@ from ..services.evaluation import (
     ProfileTinSamplingService,
 )
 from ..ui.common import run_legacy_command
+from ..ui.common.styles import apply_clickable_tab_style
 from .selection_context import selected_alignment_profile_target
 
 
@@ -1595,6 +1596,7 @@ class V1ProfileEditorTaskPanel:
         layout.addLayout(data_row)
 
         self._tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._tabs, "ProfileEditorTabs")
         try:
             self._tabs.setMinimumWidth(0)
         except Exception:
@@ -1619,11 +1621,11 @@ class V1ProfileEditorTaskPanel:
         button_grid.addWidget(apply_button, 0, 1)
         open_review_button = QtWidgets.QPushButton("Review Plan/Profile")
         open_review_button.clicked.connect(self._open_review)
-        button_grid.addWidget(open_review_button, 1, 0, 1, 2)
+        button_grid.addWidget(open_review_button, 0, 2)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
-        button_grid.addWidget(close_button, 0, 3)
-        button_grid.setColumnStretch(2, 1)
+        button_grid.addWidget(close_button, 0, 4)
+        button_grid.setColumnStretch(3, 1)
         layout.addLayout(button_grid)
 
         return widget

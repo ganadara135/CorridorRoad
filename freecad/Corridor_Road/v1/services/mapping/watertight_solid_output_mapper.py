@@ -29,6 +29,7 @@ class WatertightSolidOutputMappingRequest:
     part_result: WatertightSolidPartMappingResult
     generated_object_ref: str = ""
     watertight_solid_output_id: str = "watertight-solids:main"
+    boundary_trace_rows: list[str] | None = None
 
 
 class WatertightSolidOutputMapper:
@@ -53,6 +54,8 @@ class WatertightSolidOutputMapper:
             )
         )
         diagnostic_refs = [row.diagnostic_id for row in diagnostics]
+        boundary_trace_rows = [str(row) for row in list(request.boundary_trace_rows or []) if str(row)]
+        boundary_adjacency_rows = _boundary_adjacency_rows(output_object_id, boundary_trace_rows)
         source_refs = _unique_refs(
             [
                 target_id,
@@ -82,6 +85,8 @@ class WatertightSolidOutputMapper:
             edge_count=int(getattr(request.part_result, "edge_count", 0) or getattr(request.edge_network, "edge_count", 0) or 0),
             profile_count=int(getattr(request.edge_network, "profile_count", 0) or len(list(getattr(request.profile_set, "profile_rows", []) or []))),
             diagnostic_refs=diagnostic_refs,
+            boundary_trace_rows=boundary_trace_rows,
+            boundary_adjacency_rows=boundary_adjacency_rows,
             region_ref=str(getattr(target, "region_ref", "") or ""),
             assembly_ref=str(getattr(target, "assembly_ref", "") or ""),
             subassembly_ref=str(getattr(target, "subassembly_ref", "") or ""),
@@ -162,6 +167,68 @@ def _segment_rows(
             )
         )
     return rows
+
+
+def _boundary_adjacency_rows(output_object_id: str, boundary_trace_rows: list[str]) -> list[str]:
+    rows: list[str] = []
+    seen: set[str] = set()
+    for index, raw_row in enumerate(boundary_trace_rows, start=1):
+        parsed = _parse_boundary_trace_row(raw_row)
+        breakline_id = parsed.get("breakline_id") or parsed.get("trace_id") or f"boundary-trace-{index}"
+        text = "|".join(
+            [
+                f"adjacency_id={output_object_id}:shared-breakline-adjacency:{index}",
+                f"output_ref={output_object_id}",
+                f"breakline_id={breakline_id}",
+                f"role={parsed.get('role', '')}",
+                f"domain_kind={parsed.get('domain_kind', '')}",
+                f"domain_ref={parsed.get('domain_ref', '')}",
+                f"material_role={parsed.get('material_role', '')}",
+                f"consumer_refs={parsed.get('consumer_refs', '')}",
+                f"handoff_target={parsed.get('handoff_target', '')}",
+                "adjacency_status=candidate",
+                "source=shared_breakline_boundary_trace",
+            ]
+        )
+        if text in seen:
+            continue
+        seen.add(text)
+        rows.append(text)
+    return rows
+
+
+def _parse_boundary_trace_row(row: str) -> dict[str, str]:
+    text = str(row or "").strip()
+    if not text:
+        return {}
+    if "=" in text:
+        parsed: dict[str, str] = {}
+        for part in text.replace("|", ";").split(";"):
+            if "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            normalized_key = key.strip().lower().replace("-", "_")
+            if normalized_key:
+                parsed[normalized_key] = value.strip()
+        if "role" not in parsed and "breakline_role" in parsed:
+            parsed["role"] = parsed["breakline_role"]
+        return parsed
+    parts = text.split("|")
+    keys = [
+        "trace_id",
+        "role",
+        "domain_kind",
+        "domain_ref",
+        "alignment_ref",
+        "station_start",
+        "station_end",
+        "material_role",
+        "status",
+        "source_contract_refs",
+        "consumer_refs",
+        "handoff_target",
+    ]
+    return {key: parts[index].strip() for index, key in enumerate(keys) if index < len(parts)}
 
 
 def _diagnostic_rows(output_object_id: str, rows: list[object]) -> list[WatertightSolidOutputDiagnosticRow]:

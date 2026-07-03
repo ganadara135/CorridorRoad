@@ -31,6 +31,7 @@ from ..services.evaluation.drainage_resolution_service import (
     DrainageValidationService,
     build_drainage_pipeline_segment_candidates,
 )
+from ..ui.common.styles import apply_clickable_tab_style
 from .cmd_drainage_review import (
     build_drainage_review_output,
     show_drainage_pipeline_networks_preview_object,
@@ -688,6 +689,7 @@ class V1DrainageEditorTaskPanel:
         layout.addLayout(source_row)
 
         self._tabs = QtWidgets.QTabWidget()
+        apply_clickable_tab_style(self._tabs, "DrainageEditorTabs")
         self._element_table = self._table(
             [
                 "Element ID",

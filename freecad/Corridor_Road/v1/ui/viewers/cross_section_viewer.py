@@ -178,6 +178,7 @@ def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
                 context_text,
             ]
         )
+    rows.extend(_intersection_context_handoff_rows(preview, station_label=station_label))
     return rows
 
 
@@ -750,20 +751,113 @@ def build_intersection_context_rows(preview: dict[str, object]) -> list[list[str
 
     rows = []
     for item in _mapping_rows(preview.get("intersection_context_rows", [])):
+        family = str(item.get("family", "") or "")
+        row_id = str(item.get("row_id", "") or "")
+        role = str(item.get("role", "") or "")
         source_refs = ", ".join(str(value) for value in list(item.get("source_refs", []) or []) if str(value or "").strip())
         boundary_refs = ", ".join(str(value) for value in list(item.get("boundary_refs", []) or []) if str(value or "").strip())
         rows.append(
             [
-                str(item.get("family", "") or ""),
+                family,
                 str(item.get("status", "") or ""),
-                str(item.get("row_id", "") or ""),
-                str(item.get("role", "") or ""),
+                row_id,
+                role,
                 source_refs or "-",
                 boundary_refs or "-",
+                str(item.get("handoff_owner", "") or "") or _intersection_context_handoff_owner(family),
+                str(item.get("handoff_target", "") or "") or _intersection_context_handoff_target(family, row_id, role),
+                str(item.get("lineage_status", "") or "") or _intersection_context_lineage_status(family, str(item.get("status", "") or "")),
                 str(item.get("notes", "") or ""),
             ]
         )
     return rows
+
+
+def _intersection_context_handoff_rows(preview: dict[str, object], *, station_label: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in _mapping_rows(preview.get("intersection_context_rows", [])):
+        family = str(item.get("family", "") or "").strip()
+        role = str(item.get("role", "") or "").strip()
+        owner = str(item.get("handoff_owner", "") or "").strip() or _intersection_context_handoff_owner(family)
+        target = str(item.get("handoff_target", "") or "").strip() or _intersection_context_handoff_target(
+            family,
+            str(item.get("row_id", "") or ""),
+            role,
+        )
+        if not owner and not target:
+            continue
+        lineage = str(item.get("lineage_status", "") or "").strip() or _intersection_context_lineage_status(
+            family,
+            str(item.get("status", "") or ""),
+        )
+        key = (owner, target, family, role)
+        if key in seen:
+            continue
+        seen.add(key)
+        label = f"{owner}: {role or family or 'Intersection Context'}" if owner else (role or family or "Intersection Context")
+        status = "ready" if target else "missing"
+        context_parts = [
+            station_label,
+            f"Family={family}" if family else "",
+            f"Target={target}" if target else "",
+            f"Lineage={lineage}" if lineage else "",
+        ]
+        rows.append(
+            [
+                label,
+                status,
+                target or "(unresolved)",
+                " | ".join(part for part in context_parts if part),
+            ]
+        )
+    return rows
+
+
+def _intersection_context_handoff_owner(family: str) -> str:
+    value = str(family or "").strip()
+    if value == "frame_source":
+        return "Applied Sections"
+    if value in {"source_status", "source_stage", "control_area", "topology", "grading", "drainage"}:
+        return "Intersection"
+    if value in {"edge_network", "surface_zone", "corridor_clip", "drainage_hint"}:
+        return "Build Parametric"
+    return "Cross Section Viewer" if value else ""
+
+
+def _intersection_context_handoff_target(family: str, row_id: str, role: str) -> str:
+    clean_family = str(family or "").strip()
+    clean_row_id = str(row_id or "").strip()
+    clean_role = str(role or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if clean_family == "source_stage" and clean_row_id:
+        return clean_row_id
+    if clean_family == "source_status":
+        return "intersection-source-stage:participants"
+    if clean_family == "frame_source":
+        return f"applied-sections:frame-source:{clean_row_id or 'selected'}"
+    if clean_family in {"edge_network", "surface_zone", "corridor_clip", "drainage_hint"}:
+        return f"build-parametric:intersection:{clean_family}:{clean_row_id or clean_role or 'selected'}"
+    if clean_family in {"control_area", "topology", "grading", "drainage"}:
+        return f"intersection:{clean_family}:{clean_row_id or clean_role or 'selected'}"
+    if clean_family:
+        return f"cross-section-viewer:{clean_family}:{clean_row_id or clean_role or 'selected'}"
+    return ""
+
+
+def _intersection_context_lineage_status(family: str, status: str) -> str:
+    clean_family = str(family or "").strip()
+    clean_status = str(status or "").strip().lower()
+    if clean_family == "frame_source":
+        if clean_status in {"fallback", "warning", "error", "missing"}:
+            return clean_status
+        return "source_geometry"
+    if clean_status in {"error", "missing", "blocked"}:
+        return "source_blocked"
+    if clean_status in {"warning", "warn", "fallback", "review_required"}:
+        return "source_warning"
+    if clean_status in {"accepted", "ready", "active", "source_geometry", "result"}:
+        return "accepted_source"
+    return "review_required" if clean_status else ""
 
 
 def _source_owner_note(status: str, fallback: str) -> str:
@@ -1577,7 +1671,18 @@ class CrossSectionViewerTaskPanel:
         layout.addWidget(QtWidgets.QLabel("Intersection Context"))
         layout.addWidget(
             self._table_widget(
-                headers=["Family", "Status", "ID", "Role", "Source Refs", "Boundary Refs", "Notes"],
+                headers=[
+                    "Family",
+                    "Status",
+                    "ID",
+                    "Role",
+                    "Source Refs",
+                    "Boundary Refs",
+                    "Handoff Owner",
+                    "Handoff Target",
+                    "Lineage",
+                    "Notes",
+                ],
                 rows=self._intersection_context_rows(),
                 empty_text="No active intersection context rows.",
             )

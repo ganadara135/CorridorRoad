@@ -371,20 +371,20 @@ At this stage, edge rows may still have empty XYZ coordinates.
 
 That is intentional. Phase 4 records edge ownership and topology first; later phases assign exact horizontal and vertical geometry.
 
-### 16.3 Edge Network Preview
+### 16.3 Edge Network Contract Diagnostics
 
-The Intersections panel can create `Intersection Edge Network Preview` before Build Parametric surface generation.
+The Intersections panel no longer creates standalone edge-network geometry.
 
-This preview is a review object, not an editable source.
+Edge-network review happens through source rows and Build Parametric `Intersections` result contracts.
 
-It shows:
+Those diagnostics show:
 
 - leg edge rows from alignment station spans
-- daylight hinge edge rows with larger offsets
+- daylight hinge edge rows and source status
 - curb-return edge rows from curb-return policy
-- edge-network status and diagnostics on the object properties
+- edge-network status, source refs, and diagnostics
 
-The preview helps confirm edge ownership before surface-zone generation starts.
+This keeps edge ownership review source/result driven and prevents preview geometry from being mistaken for surface source truth.
 
 ### 16.4 IntersectionSurfaceZoneResult
 

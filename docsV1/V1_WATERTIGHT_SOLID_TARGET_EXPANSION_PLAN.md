@@ -54,6 +54,57 @@ This plan defines how to expand solid targets from the current `road_body_envelo
 - lined ditch and channel bodies
 - drainage structure bodies
 - StructureModel bodies such as retaining walls, culverts, slabs, and bridge-related objects
+- transitional intersection patch bodies until accepted edge-network zone solid contracts are available
+
+`intersection_patch_body` targets are currently review handoff targets, not final Digital Twin-quality intersection solids. Target discovery marks them with `intersection_patch_body_transitional`, `quality_status=transitional`, `digital_twin_handoff=review_required`, and `replacement_guidance=accepted_zone_solids_required` so the Watertight Solids panel keeps the limitation visible.
+
+Simulation Package handoff now carries Intersection final-quality status. If an Intersection package is transitional-only, with `intersection_patch_body` targets and no accepted intersection zone targets, the package is blocked from final Digital Twin handoff with `intersection_final_handoff_blocked`. Accepted pavement, subgrade, slope, or curb-return zone targets can satisfy the final-quality candidate path when their source contracts are available.
+
+Accepted intersection zone targets use `builder_state=pending_accepted_zone_solid_builder` with `build_backend=planned_edge_network_zone_solid` until the accepted zone solid builder is implemented.
+
+Intersection package handoff also preserves the Build Parametric replacement gate. Transitional patch-body targets and package manifests carry replacement gate status, replacement readiness, handoff preference, selected downstream role, and legacy patch compatibility audit summary so downstream consumers can distinguish review-only patch fallback from accepted-zone replacement candidates.
+
+Simulation Package diagnostics now make that distinction explicit: `intersection_replacement_gate_review_required`, `intersection_replacement_gate_blocked`, and `intersection_replacement_ready_patch_fallback` refine the broader `intersection_final_handoff_blocked` diagnostic.
+
+The persisted `V1SimulationPackageOutput` also stores `IntersectionHandoffReplacementBlockerKind`, and JSON package export writes it as `intersection_handoff.replacement_blocker_kind`.
+
+The package export command return summary also includes Intersection handoff final-quality status, Digital Twin handoff status, replacement readiness, and replacement blocker kind so automation can report the blocker without reopening the JSON payload.
+
+When a Simulation Package is wrapped in a broader ExchangePackage, the Exchange source-context rows also carry the same Intersection handoff values. The `simulation_package_intersection_handoff` context row preserves the Intersection ref, final-quality status, Digital Twin handoff status, replacement readiness, replacement gate, downstream selected role, legacy patch review visibility, and replacement blocker kind.
+
+ExchangePackage payload metadata also exposes `simulation_intersection_handoff_context_count`, `simulation_intersection_replacement_blocker_kind`, and `simulation_intersection_replacement_blocker_kinds` for automation that needs a compact blocker summary without scanning all source-context rows.
+
+The JSON exchange export adapter preserves those metadata fields and returns the same count and blocker values in its export summary.
+
+The IFC export adapter also returns the same summary and writes a project-level `CorridorRoadExchangePackage` property set when Simulation Package Intersection blocker metadata is present. Structure Output preview summaries include the Simulation Package Intersection count and blocker so the limitation stays visible before export.
+
+The replacement blocker kind is now a shared Intersection surface output-contract helper, not a Watertight-only rule. Build Parametric preview objects expose `IntersectionSurfaceReplacementBlockerKind` during downstream handoff selection, and Watertight Simulation QA/Package consumers use the same helper.
+
+| Replacement readiness | Package blocker kind |
+| --- | --- |
+| `review_only` | `intersection_replacement_gate_review_required` |
+| `blocked` | `intersection_replacement_gate_blocked` |
+| `ready_to_replace` while patch fallback is still packaged | `intersection_replacement_ready_patch_fallback` |
+
+The same blocker summary is visible before package build on `V1SimulationQaOutput`. Simulation QA stores Intersection final-quality status, Digital Twin handoff status, replacement readiness, and the readiness-specific blocker kind, and it keeps `simulation_ready=False` while an Intersection replacement blocker is active.
+
+The Watertight Solids panel status text shows the same Intersection final-quality, handoff, replacement readiness, and replacement blocker values in the Simulation QA section.
+
+Simulation QA writes both a broad `intersection_final_handoff_blocked` diagnostic and the readiness-specific replacement diagnostic. The broad diagnostic notes include `blocker_kind`, replacement readiness, and replacement gate values for report filtering.
+
+Simulation QA also reports Intersection trim/fuse handoff status. The persisted `V1SimulationQaOutput` records trim pair readiness, maximum patch-to-road XY gap, fuse candidate status, and accepted/fallback handoff diagnostics so package review can see connection quality before export.
+
+Simulation Package output now carries the same trim accepted/fallback handoff status. `V1SimulationPackageOutput.IntersectionTrimHandoffStatus`, Simulation Package JSON `intersection_trim.handoff_status`, and JSON export return info preserve that status beside trim/fuse counts and fuse candidate metadata.
+
+The Watertight Solids panel shows package-level trim handoff and fuse status after package build and in the JSON export completion text.
+
+Watertight Solid rows preserve row-level source lineage through output, package, and exchange handoff. `source_refs`, material refs, station span, and structured Intersection refs are kept on persisted output rows, Simulation Package rows, JSON package exports, and Exchange source-context rows. These refs describe the accepted source/result contracts consumed by the solid; generated geometry is not promoted back into source intent.
+
+Exchange source-context rows for Watertight Solid output also preserve row-level `diagnostic_refs`, notes, and detailed accepted-zone Intersection lineage such as leg, control-area, and edge-family refs when those refs are present.
+
+ExchangePackage metadata and export summaries expose compact Watertight Intersection lineage counts through `watertight_intersection_source_context_count`, `watertight_intersection_surface_zone_context_count`, and `watertight_intersection_diagnostic_ref_count`. IFC export writes the same counts as project-level package properties.
+
+Shared Exchange preview summaries show the same Watertight Intersection source-context, Surface Zone context, and diagnostic-ref counts beside other source-context summary values.
 
 ## 2. Core Distinction
 

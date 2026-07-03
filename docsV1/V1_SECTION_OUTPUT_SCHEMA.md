@@ -158,6 +158,17 @@ Recommended `baseline_source` values:
 
 The Cross Section Viewer should use this metadata to explain where the station frame came from, not to edit the frame.
 
+Applied Section result objects also preserve frame source audit fields:
+
+- `FrameSourceModes`
+- `FrameSourceStatuses`
+- `FrameSourceDiagnosticRows`
+- `CenterlineSourceModeCounts`
+- `CenterlineSourceStatusCounts`
+- `CenterlineFallbackCount`
+
+These fields let review tools distinguish source-geometry 3D Centerline frames from result, fallback, or interpolated station frames without re-reading generated display geometry.
+
 ## 8. Geometry Rows
 
 ### 8.1 Purpose

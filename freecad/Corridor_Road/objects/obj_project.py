@@ -1340,7 +1340,6 @@ def _is_v1_intersection_build_parametric_output(child):
     record_kind = str(getattr(child, "CRRecordKind", "") or "")
     if record_kind in {
         "v1_intersection_review_overlay",
-        "v1_intersection_edge_network_preview",
         "v1_corridor_intersection_tie_in_edge_preview",
         "v1_corridor_intersection_boundary_segment_preview",
         "v1_corridor_intersection_exclusion_zone_preview",
@@ -1358,7 +1357,6 @@ def _is_v1_intersection_build_parametric_output(child):
     if _is_type(
         child,
         proxy_types=(
-            "V1IntersectionEdgeNetworkPreview",
             "V1CorridorIntersectionSurfacePreview",
             "V1CorridorIntersectionTieInEdgePreview",
             "V1CorridorIntersectionBoundarySegmentPreview",
@@ -1368,7 +1366,6 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         ),
         name_prefixes=(
-            "V1IntersectionEdgeNetworkPreview",
             "V1CorridorIntersectionSurfacePreview",
             "V1CorridorIntersectionTieInEdgePreview",
             "V1CorridorIntersectionBoundarySegmentPreview",
@@ -1381,7 +1378,6 @@ def _is_v1_intersection_build_parametric_output(child):
         return True
     label = _label(child)
     if label in {
-        "Intersection Edge Network Preview",
         "Intersection Tie-in Edges",
         "Intersection Boundary Segments",
         "Intersection Exclusion Zone",
@@ -1389,15 +1385,6 @@ def _is_v1_intersection_build_parametric_output(child):
         "Intersection Slope Face Surface",
         "Intersection Slope Face Boundary",
     }:
-        return True
-    # Starter-source helper objects are created from the Intersections panel and
-    # should stay grouped with the generated intersection workflow artifacts.
-    if label.startswith("Intersection ") and (
-        label.endswith(" FG Profile")
-        or label.endswith(" Stations")
-        or label.endswith(" Regions")
-        or label in {"Intersection Main Road", "Intersection Side Road"}
-    ):
         return True
     return False
 
@@ -1512,6 +1499,8 @@ def resolve_v1_target_container(prj, child):
 
     tree = ensure_project_tree(prj, include_references=False)
     record_kind = str(getattr(child, "CRRecordKind", "") or "")
+    if record_kind == "v1_intersection_contract_review_highlight":
+        return tree.get(V1_TREE_ISSUES, None)
     if _is_v1_intersection_build_parametric_output(child):
         return tree.get(V1_TREE_INTERSECTIONS, None)
     if record_kind == "tin_source_csv":
@@ -1537,7 +1526,10 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
         if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage")):
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
-    if record_kind in {"v1_centerline3d_review", "v1_centerline3d_station_markers"}:
+    if record_kind in {
+        "v1_centerline3d_review",
+        "v1_centerline3d_station_markers",
+    }:
         return tree.get(V1_TREE_CENTERLINE3D, None)
     if record_kind == "v1_intersection_model":
         return tree.get(V1_TREE_INTERSECTIONS, None)
@@ -1583,9 +1575,6 @@ def resolve_v1_target_container(prj, child):
     if record_kind == "v1_quantity_model":
         return tree.get(V1_TREE_QUANTITIES, None)
     if record_kind == "v1_drainage_model":
-        drainage_id = str(getattr(child, "DrainageModelId", "") or "").lower()
-        if drainage_id.startswith("drainage:intersection-preset-"):
-            return tree.get(V1_TREE_INTERSECTIONS, None)
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "v1_drainage_pipeline_candidate_preview":
         return tree.get(V1_TREE_DRAINAGE, None)
@@ -1618,13 +1607,6 @@ def resolve_v1_target_container(prj, child):
     ):
         return tree.get(V1_TREE_STATIONS, None)
     if record_kind in {"v1_superelevation_source", "v1_superelevation_review"}:
-        superelevation_id = str(getattr(child, "SuperelevationId", "") or "").lower()
-        superelevation_kind = str(getattr(child, "SuperelevationKind", "") or "").lower()
-        if (
-            superelevation_id.startswith("superelevation:intersection-preset-")
-            or superelevation_kind == "intersection_superelevation_handoff"
-        ):
-            return tree.get(V1_TREE_INTERSECTIONS, None)
         return tree.get(V1_TREE_SUPERELEVATION, None)
     if record_kind == "v1_intersection_review_overlay":
         return tree.get(V1_TREE_INTERSECTIONS, None)

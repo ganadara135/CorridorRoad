@@ -97,6 +97,9 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "FrameProfileGrades", "Frames", "profile grades")
     _add_property(obj, "App::PropertyStringList", "FrameAlignmentStatuses", "Frames", "alignment statuses")
     _add_property(obj, "App::PropertyStringList", "FrameProfileStatuses", "Frames", "profile statuses")
+    _add_property(obj, "App::PropertyStringList", "FrameSourceModes", "Frames", "frame source modes")
+    _add_property(obj, "App::PropertyStringList", "FrameSourceStatuses", "Frames", "frame source statuses")
+    _add_property(obj, "App::PropertyStringList", "FrameSourceDiagnosticRows", "Frames", "frame source diagnostics by section")
     _add_property(obj, "App::PropertyStringList", "FrameNotes", "Frames", "frame source and diagnostic notes")
     _add_property(obj, "App::PropertyFloatList", "SurfaceLeftWidths", "Surface", "left design surface widths")
     _add_property(obj, "App::PropertyFloatList", "SurfaceRightWidths", "Surface", "right design surface widths")
@@ -116,6 +119,9 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "IntersectionLegRoles", "Intersections", "active intersection leg roles")
     _add_property(obj, "App::PropertyStringList", "IntersectionControlRegionRows", "Intersections", "active intersection control region refs by section")
     _add_property(obj, "App::PropertyStringList", "IntersectionGradingPolicyRefs", "Intersections", "active intersection grading policy refs")
+    _add_property(obj, "App::PropertyStringList", "IntersectionSourceStatuses", "Intersections", "active intersection source status by section")
+    _add_property(obj, "App::PropertyStringList", "IntersectionSourceDiagnosticRows", "Intersections", "active intersection source diagnostics by section")
+    _add_property(obj, "App::PropertyStringList", "IntersectionSourceStageRows", "Intersections", "active intersection source stage rows by section")
     _add_property(obj, "App::PropertyStringList", "IntersectionDiagnosticRows", "Intersections", "intersection context diagnostics by section")
     _add_property(obj, "App::PropertyStringList", "PointRows", "Surface", "applied section point rows")
     _add_property(obj, "App::PropertyStringList", "SubassemblyRows", "Resolved Context", "applied section subassembly rows")
@@ -137,10 +143,16 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "TotalSectionCount", "Diagnostics", "total applied section count")
     _add_property(obj, "App::PropertyStringList", "SectionKindCounts", "Diagnostics", "applied section count by station kind")
     _add_property(obj, "App::PropertyStringList", "CenterlineSourceModeCounts", "Diagnostics", "applied section count by consumed centerline source mode")
+    _add_property(obj, "App::PropertyStringList", "CenterlineSourceStatusCounts", "Diagnostics", "applied section count by consumed centerline source status")
     _add_property(obj, "App::PropertyInteger", "CenterlineFallbackCount", "Diagnostics", "applied section frames using a centerline fallback")
     _add_property(obj, "App::PropertyInteger", "OverlapClipDiagnosticCount", "Diagnostics", "applied section overlap clipping diagnostic count")
     _add_property(obj, "App::PropertyInteger", "DitchShapeInferenceDiagnosticCount", "Diagnostics", "ditch shape compatibility diagnostic count")
     _add_property(obj, "App::PropertyInteger", "DaylightFallbackDiagnosticCount", "Diagnostics", "daylight fallback diagnostic count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionSourceSectionCount", "Diagnostics", "applied sections with active intersection source context")
+    _add_property(obj, "App::PropertyInteger", "IntersectionSourceWarningCount", "Diagnostics", "applied sections with warning intersection source context")
+    _add_property(obj, "App::PropertyInteger", "IntersectionSourceDiagnosticCount", "Diagnostics", "intersection source diagnostic row count")
+    _add_property(obj, "App::PropertyStringList", "IntersectionSourceStatusCounts", "Diagnostics", "intersection source status counts")
+    _add_property(obj, "App::PropertyString", "IntersectionSourceSummary", "Diagnostics", "compact intersection source summary")
     _add_property(obj, "App::PropertyInteger", "AppliedSectionDiagnosticCount", "Diagnostics", "total applied section diagnostic row count")
     _add_property(obj, "App::PropertyStringList", "AppliedSectionDiagnosticKinds", "Diagnostics", "applied section diagnostic kind counts")
     _add_property(obj, "App::PropertyString", "AppliedSectionDiagnosticSummary", "Diagnostics", "compact applied section diagnostic summary")
@@ -239,6 +251,9 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.FrameProfileGrades = [float(getattr(frame, "profile_grade", 0.0) or 0.0) for frame in frames]
     obj.FrameAlignmentStatuses = [str(getattr(frame, "alignment_status", "") or "") for frame in frames]
     obj.FrameProfileStatuses = [str(getattr(frame, "profile_status", "") or "") for frame in frames]
+    obj.FrameSourceModes = [_frame_source_mode(frame) for frame in frames]
+    obj.FrameSourceStatuses = [_frame_source_status(frame) for frame in frames]
+    obj.FrameSourceDiagnosticRows = _section_frame_source_diagnostic_rows(station_rows, section_by_id)
     obj.FrameNotes = [str(getattr(frame, "notes", "") or "") for frame in frames]
     obj.SurfaceLeftWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "surface_left_width", 0.0) or 0.0) for row in station_rows]
     obj.SurfaceRightWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "surface_right_width", 0.0) or 0.0) for row in station_rows]
@@ -258,6 +273,9 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.IntersectionLegRoles = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_role", "") or "") for row in station_rows]
     obj.IntersectionControlRegionRows = _section_list_rows(station_rows, section_by_id, "active_intersection_control_region_refs")
     obj.IntersectionGradingPolicyRefs = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_grading_policy_ref", "") or "") for row in station_rows]
+    obj.IntersectionSourceStatuses = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_source_status", "") or "") for row in station_rows]
+    obj.IntersectionSourceDiagnosticRows = _section_list_rows(station_rows, section_by_id, "active_intersection_source_diagnostic_rows")
+    obj.IntersectionSourceStageRows = _section_list_rows(station_rows, section_by_id, "active_intersection_source_stage_rows")
     obj.IntersectionDiagnosticRows = _section_list_rows(station_rows, section_by_id, "intersection_diagnostic_rows")
     obj.PointRows = _point_rows(station_rows, section_by_id)
     obj.SubassemblyRows = _subassembly_rows(station_rows, section_by_id)
@@ -459,7 +477,10 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     active_zones_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureInfluenceZoneRows", []) or [])
     structure_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "StructureDiagnosticRows", []) or [])
     superelevation_sources_by_section = _parse_section_list_rows(getattr(obj, "SuperelevationSourceRows", []) or [])
+    frame_source_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "FrameSourceDiagnosticRows", []) or [])
     intersection_control_regions_by_section = _parse_section_list_rows(getattr(obj, "IntersectionControlRegionRows", []) or [])
+    intersection_source_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "IntersectionSourceDiagnosticRows", []) or [])
+    intersection_source_stages_by_section = _parse_section_list_rows(getattr(obj, "IntersectionSourceStageRows", []) or [])
     intersection_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "IntersectionDiagnosticRows", []) or [])
     diagnostics_by_section = _parse_diagnostic_rows(getattr(obj, "DiagnosticRows", []) or [])
     subassembly_rows_by_section = _parse_subassembly_rows(getattr(obj, "SubassemblyRows", []) or [])
@@ -510,6 +531,9 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 active_intersection_leg_role=_list_value(getattr(obj, "IntersectionLegRoles", []), index, ""),
                 active_intersection_control_region_refs=intersection_control_regions_by_section.get(section_id, []),
                 active_intersection_grading_policy_ref=_list_value(getattr(obj, "IntersectionGradingPolicyRefs", []), index, ""),
+                active_intersection_source_status=_list_value(getattr(obj, "IntersectionSourceStatuses", []), index, ""),
+                active_intersection_source_diagnostic_rows=intersection_source_diagnostics_by_section.get(section_id, []),
+                active_intersection_source_stage_rows=intersection_source_stages_by_section.get(section_id, []),
                 intersection_diagnostic_rows=intersection_diagnostics_by_section.get(section_id, []),
                 diagnostic_rows=diagnostics_by_section.get(section_id, []),
                 subassembly_rows=section_subassembly_rows,
@@ -530,6 +554,9 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                     profile_grade=_float_value(getattr(obj, "FrameProfileGrades", []), index, 0.0),
                     alignment_status=_list_value(getattr(obj, "FrameAlignmentStatuses", []), index, ""),
                     profile_status=_list_value(getattr(obj, "FrameProfileStatuses", []), index, ""),
+                    source_mode=_list_value(getattr(obj, "FrameSourceModes", []), index, ""),
+                    source_status=_list_value(getattr(obj, "FrameSourceStatuses", []), index, ""),
+                    source_diagnostic_rows=frame_source_diagnostics_by_section.get(section_id, []),
                     notes=_list_value(getattr(obj, "FrameNotes", []), index, ""),
                 ),
             )
@@ -671,16 +698,23 @@ def _set_applied_section_diagnostic_summary(obj, station_rows, sections) -> None
     section_kind_counts = _count_strings(str(getattr(row, "kind", "") or "regular_sample") for row in rows)
     diagnostic_kind_counts: dict[str, int] = {}
     centerline_source_counts: dict[str, int] = {}
+    centerline_source_status_counts: dict[str, int] = {}
     centerline_fallback_count = 0
     overlap_clip_count = 0
     ditch_shape_count = 0
     daylight_fallback_count = 0
     diagnostic_count = 0
+    intersection_source_count = 0
+    intersection_source_warning_count = 0
+    intersection_source_diagnostic_count = 0
+    intersection_source_status_counts: dict[str, int] = {}
 
     for section in section_rows:
         frame = _section_frame(section)
-        source_mode = _centerline_source_mode_from_notes(str(getattr(frame, "notes", "") or ""))
+        source_mode = _frame_source_mode(frame)
+        source_status = _frame_source_status(frame)
         centerline_source_counts[source_mode] = centerline_source_counts.get(source_mode, 0) + 1
+        centerline_source_status_counts[source_status] = centerline_source_status_counts.get(source_status, 0) + 1
         if source_mode not in {"", "centerline3d_source_geometry"}:
             centerline_fallback_count += 1
         for diagnostic in list(getattr(section, "diagnostic_rows", []) or []):
@@ -694,6 +728,22 @@ def _set_applied_section_diagnostic_summary(obj, station_rows, sections) -> None
                 ditch_shape_count += 1
             if "daylight" in kind_lower and "fallback" in kind_lower:
                 daylight_fallback_count += 1
+        if str(getattr(section, "active_intersection_id", "") or ""):
+            intersection_source_count += 1
+            status = str(getattr(section, "active_intersection_source_status", "") or "missing")
+            intersection_source_status_counts[status] = intersection_source_status_counts.get(status, 0) + 1
+            if status not in {"accepted", "ready", "locked"}:
+                intersection_source_warning_count += 1
+            intersection_source_diagnostic_count += len(
+                [item for item in list(getattr(section, "active_intersection_source_diagnostic_rows", []) or []) if str(item)]
+            )
+            intersection_source_diagnostic_count += len(
+                [
+                    item
+                    for item in list(getattr(section, "active_intersection_source_stage_rows", []) or [])
+                    if "|" in str(item) and "|accepted|" not in str(item)
+                ]
+            )
 
     supplemental_count = sum(1 for row in rows if "supplemental" in str(getattr(row, "kind", "") or "").lower())
     source_count = max(len(rows) - supplemental_count, 0)
@@ -702,10 +752,20 @@ def _set_applied_section_diagnostic_summary(obj, station_rows, sections) -> None
     obj.TotalSectionCount = len(rows)
     obj.SectionKindCounts = _format_count_rows(section_kind_counts)
     obj.CenterlineSourceModeCounts = _format_count_rows(centerline_source_counts)
+    obj.CenterlineSourceStatusCounts = _format_count_rows(centerline_source_status_counts)
     obj.CenterlineFallbackCount = centerline_fallback_count
     obj.OverlapClipDiagnosticCount = overlap_clip_count
     obj.DitchShapeInferenceDiagnosticCount = ditch_shape_count
     obj.DaylightFallbackDiagnosticCount = daylight_fallback_count
+    obj.IntersectionSourceSectionCount = intersection_source_count
+    obj.IntersectionSourceWarningCount = intersection_source_warning_count
+    obj.IntersectionSourceDiagnosticCount = intersection_source_diagnostic_count
+    obj.IntersectionSourceStatusCounts = _format_count_rows(intersection_source_status_counts)
+    obj.IntersectionSourceSummary = (
+        f"intersection_sections={intersection_source_count};"
+        f"intersection_warnings={intersection_source_warning_count};"
+        f"intersection_source_diagnostics={intersection_source_diagnostic_count}"
+    )
     obj.AppliedSectionDiagnosticCount = diagnostic_count
     obj.AppliedSectionDiagnosticKinds = _format_count_rows(diagnostic_kind_counts)
     obj.AppliedSectionDiagnosticSummary = (
@@ -714,6 +774,38 @@ def _set_applied_section_diagnostic_summary(obj, station_rows, sections) -> None
         f"ditch_shape={ditch_shape_count};daylight_fallback={daylight_fallback_count};"
         f"diagnostics={diagnostic_count}"
     )
+
+
+def _frame_source_mode(frame: AppliedSectionFrame) -> str:
+    value = str(getattr(frame, "source_mode", "") or "").strip()
+    if value:
+        return value
+    return _centerline_source_mode_from_notes(str(getattr(frame, "notes", "") or ""))
+
+
+def _frame_source_status(frame: AppliedSectionFrame) -> str:
+    value = str(getattr(frame, "source_status", "") or "").strip()
+    if value:
+        return value
+    source_mode = _frame_source_mode(frame)
+    if source_mode == "centerline3d_source_geometry":
+        return "source_geometry"
+    if source_mode in {"centerline3d_result"}:
+        return "result"
+    if source_mode in {"alignment_profile_fallback", "unknown"}:
+        return "fallback"
+    return "accepted" if source_mode else ""
+
+
+def _section_frame_source_diagnostic_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
+    rows: list[str] = []
+    for station_row in list(station_rows or []):
+        section_id = str(getattr(station_row, "applied_section_id", "") or "")
+        frame = _section_frame(section_by_id.get(section_id))
+        diagnostics = [str(item) for item in list(getattr(frame, "source_diagnostic_rows", []) or []) if str(item)]
+        if diagnostics:
+            rows.append(section_id + "|" + "|".join(_escape_row_value(value) for value in diagnostics))
+    return rows
 
 
 def _centerline_source_mode_from_notes(notes: str) -> str:

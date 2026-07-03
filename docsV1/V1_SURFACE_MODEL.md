@@ -458,6 +458,18 @@ The current preview implementation does not create `upstream-slope-miter` points
 
 Do not treat display fills or terrain stitches as source truth.
 
+Intersection clipping may remove ordinary daylight triangles near the junction.
+
+Build Corridor should keep the pre-clip Side Slope TIN as the first reference for gap repair.
+
+If a pre-clip side-slope triangle is outside the final `Intersection Surface` footprint and is missing after clipping, it may be restored as an `intersection_side_slope_strip`.
+
+When that leaves a Slope Face gap, Build Corridor may rebuild only the missing side-slope quad from adjacent evaluated `AppliedSection` side-slope edges.
+
+This strip is valid only when the current TIN does not already contain the quad centroid, the candidate is outside the Intersection Surface footprint, and it touches the current daylight TIN boundary.
+
+Do not use Intersection Slope Face Boundary metadata to force visible rectangular patches.
+
 Terrain stitch strips may be used only as narrow contact visualization where daylight points already match existing ground.
 
 ### 20.5 Non-Goals
