@@ -29,6 +29,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet
 from freecad.Corridor_Road.v1.models.result.intersection_topology import (
     IntersectionTopologyAnchorRow,
+    IntersectionTopologyCornerRow,
     IntersectionTopologyControlAreaRow,
     IntersectionTopologyLaneConnectionRow,
     IntersectionTopologyLegSpanRow,
@@ -45,6 +46,7 @@ def test_intersection_core_result_rows_expose_source_status_contract() -> None:
     row_types = (
         IntersectionTopologyAnchorRow,
         IntersectionTopologyLegSpanRow,
+        IntersectionTopologyCornerRow,
         IntersectionTopologyControlAreaRow,
         IntersectionTopologyLaneConnectionRow,
         IntersectionEdgeNetworkRow,
@@ -1135,7 +1137,25 @@ def test_intersection_topology_evaluation_returns_leg_spans_control_areas_and_di
     assert result.anchor_rows[0].source_status == "accepted"
     assert result.anchor_rows[0].station_lineage_status == "accepted"
     assert result.anchor_rows[0].handoff_target == "intersection-source-stage:anchor:anchor-intersection-t-01-main"
+    assert result.leg_graph_status == "ready"
+    assert result.leg_graph_order_refs == [
+        "1:intersection:t-01:leg-main-after",
+        "2:intersection:t-01:leg-main-before",
+        "3:intersection:t-01:leg-side",
+    ]
+    assert result.corner_graph_status == "warning"
+    assert result.corner_count == 3
+    assert result.curb_return_arc_count == 3
+    assert result.corner_graph_order_refs == [
+        "1:intersection:t-01:leg-main-after->intersection:t-01:leg-main-before",
+        "2:intersection:t-01:leg-main-before->intersection:t-01:leg-side",
+        "3:intersection:t-01:leg-side->intersection:t-01:leg-main-after",
+    ]
     assert result.leg_span_rows[0].leg_ref == "intersection:t-01:leg-main-before"
+    assert result.leg_span_rows[0].leg_graph_order == 2
+    assert result.leg_span_rows[0].leg_graph_angle_deg == 180.0
+    assert result.leg_span_rows[0].leg_graph_angle_source == "role_preset"
+    assert result.leg_span_rows[0].applied_section_lineage_status == "pending_applied_section_context"
     assert result.leg_span_rows[0].station_start == 480.0
     assert result.leg_span_rows[0].station_end == 520.0
     assert result.leg_span_rows[0].control_area_ref == "intersection:t-01:control-main"
@@ -1143,6 +1163,8 @@ def test_intersection_topology_evaluation_returns_leg_spans_control_areas_and_di
         "edge-policy:t-01:primary-before:pavement",
         "edge-policy:t-01:primary-before:daylight",
     )
+    assert result.corner_rows[1].source_corner_ref == "corner:intersection:t-01:left"
+    assert result.corner_rows[1].arc_point_count >= 3
     assert result.control_area_rows[1].alignment_ref == "alignment:side"
     assert result.control_area_rows[1].station_ranges == ((0.0, 120.0),)
     assert result.control_area_rows[1].control_area_result_id == "intersection:t-01:control-area-result:02"
@@ -1171,6 +1193,123 @@ def test_intersection_topology_evaluation_returns_leg_spans_control_areas_and_di
     assert result.lane_connection_rows[0].handoff_target == "intersection-source-stage:lane_connections:lane-connection-intersection-t-01-through-main"
     assert result.lane_connection_rows[0].source_status == "warning"
     assert "source_lane_connection_from_leg_status:warning" in result.lane_connection_rows[0].source_diagnostic_rows
+
+
+def test_cross_intersection_topology_reports_four_leg_graph_without_preview_geometry() -> None:
+    model = IntersectionModel(
+        schema_version=1,
+        project_id="project:demo",
+        intersection_model_id="intersection-model:cross",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:cross-01",
+                intersection_kind="cross_intersection",
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:cross"],
+                leg_rows=[
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-primary-before",
+                        "primary_before",
+                        "alignment:main",
+                        intersection_id="intersection:cross-01",
+                        region_ref="region:main",
+                        approach_station_start=80.0,
+                        approach_station_end=100.0,
+                    ),
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-primary-after",
+                        "primary_after",
+                        "alignment:main",
+                        intersection_id="intersection:cross-01",
+                        region_ref="region:main",
+                        approach_station_start=100.0,
+                        approach_station_end=120.0,
+                    ),
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-secondary-before",
+                        "secondary_before",
+                        "alignment:cross",
+                        intersection_id="intersection:cross-01",
+                        region_ref="region:cross",
+                        approach_station_start=45.0,
+                        approach_station_end=60.0,
+                    ),
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-secondary-after",
+                        "secondary_after",
+                        "alignment:cross",
+                        intersection_id="intersection:cross-01",
+                        region_ref="region:cross",
+                        approach_station_start=60.0,
+                        approach_station_end=75.0,
+                    ),
+                ],
+            )
+        ],
+        anchor_rows=[
+            IntersectionAnchorRow(
+                anchor_id="anchor:cross",
+                intersection_id="intersection:cross-01",
+                primary_alignment_ref="alignment:main",
+                primary_station=100.0,
+                secondary_station_refs={"alignment:cross": 60.0},
+                tolerance=0.05,
+            )
+        ],
+        control_area_rows=[
+            IntersectionControlArea(
+                control_area_id="control:main",
+                intersection_id="intersection:cross-01",
+                alignment_ref="alignment:main",
+                station_ranges=[(80.0, 120.0)],
+            ),
+            IntersectionControlArea(
+                control_area_id="control:cross",
+                intersection_id="intersection:cross-01",
+                alignment_ref="alignment:cross",
+                station_ranges=[(45.0, 75.0)],
+            ),
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                "policy:curb-return-cross",
+                "intersection:cross-01",
+                radius=10.0,
+                side="all",
+                approach_leg_refs=[
+                    "intersection:cross-01:leg-primary-before",
+                    "intersection:cross-01:leg-primary-after",
+                    "intersection:cross-01:leg-secondary-before",
+                    "intersection:cross-01:leg-secondary-after",
+                ],
+            )
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_topology(model)
+
+    assert result.intersection_kind == "cross_intersection"
+    assert result.leg_span_count == 4
+    assert result.leg_graph_status == "ready"
+    assert result.leg_graph_order_refs == [
+        "1:intersection:cross-01:leg-primary-after",
+        "2:intersection:cross-01:leg-secondary-after",
+        "3:intersection:cross-01:leg-primary-before",
+        "4:intersection:cross-01:leg-secondary-before",
+    ]
+    assert result.corner_graph_status == "warning"
+    assert result.corner_count == 4
+    assert result.curb_return_arc_count == 4
+    assert result.corner_graph_order_refs == [
+        "1:intersection:cross-01:leg-primary-after->intersection:cross-01:leg-secondary-after",
+        "2:intersection:cross-01:leg-secondary-after->intersection:cross-01:leg-primary-before",
+        "3:intersection:cross-01:leg-primary-before->intersection:cross-01:leg-secondary-before",
+        "4:intersection:cross-01:leg-secondary-before->intersection:cross-01:leg-primary-after",
+    ]
+    assert all(row.arc_point_count >= 3 for row in result.corner_rows)
+    assert all(row.leg_graph_angle_source == "role_preset" for row in result.leg_span_rows)
+    assert any(row.startswith("info:intersection_leg_graph_order:") for row in result.leg_graph_diagnostic_rows)
+    assert any(row.startswith("info:intersection_corner_graph_order:") for row in result.corner_graph_diagnostic_rows)
 
 
 def test_intersection_topology_evaluation_warns_about_unresolved_policy_refs() -> None:

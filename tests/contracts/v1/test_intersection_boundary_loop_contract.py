@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from freecad.Corridor_Road.v1.models.source.intersection_model import IntersectionModel
+from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionAnchorRow,
+    IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionLegRow,
+    IntersectionModel,
+    IntersectionRow,
+)
 from freecad.Corridor_Road.v1.models.result.intersection_edge_network import (
     IntersectionEdgeNetworkResult,
     IntersectionEdgeNetworkRow,
@@ -539,6 +546,92 @@ def test_intersection_boundary_loop_contract_consumes_curb_return_arc_points_as_
     assert not any("convex_hull_fallback" in row for row in result.diagnostic_rows)
 
 
+def test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross():
+    model = IntersectionModel(
+        schema_version=1,
+        project_id="project:test",
+        intersection_model_id="intersection-model:cross",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:cross-01",
+                intersection_kind="cross_intersection",
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:cross"],
+                leg_rows=[
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-primary-before",
+                        "primary_before",
+                        "alignment:main",
+                        intersection_id="intersection:cross-01",
+                    ),
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-primary-after",
+                        "primary_after",
+                        "alignment:main",
+                        intersection_id="intersection:cross-01",
+                    ),
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-secondary-before",
+                        "secondary_before",
+                        "alignment:cross",
+                        intersection_id="intersection:cross-01",
+                    ),
+                    IntersectionLegRow(
+                        "intersection:cross-01:leg-secondary-after",
+                        "secondary_after",
+                        "alignment:cross",
+                        intersection_id="intersection:cross-01",
+                    ),
+                ],
+            )
+        ],
+        anchor_rows=[
+            IntersectionAnchorRow(
+                anchor_id="anchor:cross",
+                intersection_id="intersection:cross-01",
+                primary_alignment_ref="alignment:main",
+                primary_station=100.0,
+                secondary_station_refs={"alignment:cross": 60.0},
+                tolerance=0.05,
+            )
+        ],
+        control_area_rows=[
+            IntersectionControlArea("control:main", "intersection:cross-01", "alignment:main", station_ranges=[(80.0, 120.0)]),
+            IntersectionControlArea("control:cross", "intersection:cross-01", "alignment:cross", station_ranges=[(45.0, 75.0)]),
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                "policy:curb-return-cross",
+                "intersection:cross-01",
+                radius=10.0,
+                side="all",
+                approach_leg_refs=[
+                    "intersection:cross-01:leg-primary-before",
+                    "intersection:cross-01:leg-primary-after",
+                    "intersection:cross-01:leg-secondary-before",
+                    "intersection:cross-01:leg-secondary-after",
+                ],
+            )
+        ],
+    )
+
+    result = IntersectionEvaluationService().evaluate_boundary_loops(model)
+
+    assert result.status in {"ready", "warning"}
+    assert result.ready_count == 1
+    loop = result.loop_rows[0]
+    assert loop.status == "ready"
+    assert loop.closed is True
+    assert loop.point_count >= 8
+    assert loop.area_xy > 0.0
+    assert any("candidate_source=curb_return_envelope" in row for row in loop.diagnostics)
+    assert any("intersection_boundary_curb_return_envelope_ready" in row for row in result.diagnostic_rows)
+    assert all(
+        "convex_hull_fallback_segment" not in tuple(getattr(row, "diagnostics", ()) or ())
+        for row in result.segment_rows
+    )
+
+
 def test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_for_skew_edges():
     service = IntersectionEvaluationService()
     edges = [
@@ -679,6 +772,7 @@ def run():
     test_intersection_boundary_loop_contract_does_not_let_slope_loop_override_source_perimeter()
     test_intersection_boundary_loop_contract_rejects_defaulted_edge_network_as_source()
     test_intersection_boundary_loop_contract_consumes_curb_return_arc_points_as_segments()
+    test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross()
     test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_for_skew_edges()
     test_intersection_boundary_loop_contract_rejects_competing_slope_face_loop_components()
     print("[PASS] intersection boundary loop contract tests")

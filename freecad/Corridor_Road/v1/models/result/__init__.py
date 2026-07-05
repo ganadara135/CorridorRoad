@@ -56,6 +56,7 @@ from .intersection_surface_patch import (
 from .intersection_surface_zone import IntersectionSurfaceZoneResult, IntersectionSurfaceZoneRow
 from .intersection_topology import (
     IntersectionTopologyAnchorRow,
+    IntersectionTopologyCornerRow,
     IntersectionTopologyControlAreaRow,
     IntersectionTopologyLaneConnectionRow,
     IntersectionTopologyLegSpanRow,
@@ -132,6 +133,7 @@ __all__ = [
     "IntersectionSurfaceZoneResult",
     "IntersectionSurfaceZoneRow",
     "IntersectionTopologyAnchorRow",
+    "IntersectionTopologyCornerRow",
     "IntersectionTopologyControlAreaRow",
     "IntersectionTopologyLaneConnectionRow",
     "IntersectionTopologyLegSpanRow",

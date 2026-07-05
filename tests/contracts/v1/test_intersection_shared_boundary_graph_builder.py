@@ -103,6 +103,93 @@ def _upper_cell_breakline_result() -> SharedBreaklineResult:
     )
 
 
+def _cross_upper_panel_breakline_result() -> SharedBreaklineResult:
+    rows: list[SharedBreaklineRow] = []
+    points: list[SharedBreaklinePointRow] = []
+    groups = (
+        ("primary", "left", 0.0),
+        ("primary", "right", 10.0),
+        ("secondary", "left", 20.0),
+        ("secondary", "right", 30.0),
+    )
+    for index, (alignment_ref, side, x0) in enumerate(groups, start=1):
+        prefix = f"shared:cross-upper:{index}"
+        patch_id = f"{prefix}:patch"
+        design_id = f"{prefix}:design"
+        outer_id = f"{prefix}:outer"
+        patch_points = (f"{patch_id}:p1", f"{patch_id}:p2")
+        design_points = (f"{design_id}:p1", f"{design_id}:p2")
+        outer_points = (f"{outer_id}:p1", f"{outer_id}:p2")
+        points.extend(
+            [
+                _point(patch_points[0], patch_id, 1, x0, 0.0),
+                _point(patch_points[1], patch_id, 2, x0 + 2.0, 0.0),
+                _point(design_points[0], design_id, 1, x0 + 2.0, 0.0),
+                _point(design_points[1], design_id, 2, x0 + 2.0, 1.0),
+                _point(outer_points[0], outer_id, 1, x0, 1.0),
+                _point(outer_points[1], outer_id, 2, x0 + 2.0, 1.0),
+            ]
+        )
+        rows.extend(
+            [
+                replace(
+                    _breakline(
+                        patch_id,
+                        "patch_to_intersection_slope_face",
+                        patch_points,
+                        (
+                            "intersection_surface",
+                            "intersection_slope_face_surface",
+                            "intersection_slope_face_cell_result",
+                        ),
+                    ),
+                    alignment_ref=alignment_ref,
+                    side=side,
+                ),
+                replace(
+                    _breakline(
+                        design_id,
+                        "intersection_slope_face_to_design_surface",
+                        design_points,
+                        (
+                            "intersection_slope_face_surface",
+                            "design_surface",
+                            "intersection_slope_face_cell_result",
+                        ),
+                    ),
+                    alignment_ref=alignment_ref,
+                    side=side,
+                ),
+                replace(
+                    _breakline(
+                        outer_id,
+                        "intersection_slope_face_to_corridor_slope_face",
+                        outer_points,
+                        (
+                            "intersection_slope_face_surface",
+                            "slope_face_surface",
+                            "intersection_slope_face_cell_result",
+                        ),
+                    ),
+                    alignment_ref=alignment_ref,
+                    side=side,
+                ),
+            ]
+        )
+    return SharedBreaklineResult(
+        schema_version=1,
+        project_id="project:test",
+        breakline_result_id="shared:intersection:cross-01",
+        domain_kind="intersection",
+        domain_ref="cross-01",
+        status="ready",
+        breakline_count=len(rows),
+        ready_count=len(rows),
+        breakline_rows=rows,
+        point_rows=points,
+    )
+
+
 def test_intersection_shared_boundary_graph_preserves_curb_return_bridge_candidate():
     bridge_id = "shared:curb-return-bridge-to-intersection-slope-face:1"
     shared = SharedBreaklineResult(
@@ -143,8 +230,93 @@ def test_intersection_shared_boundary_graph_preserves_curb_return_bridge_candida
         "intersection_slope_face_surface",
         "intersection_slope_face_cell_result",
     )
-    assert bridge_edges[0].left_owner == "intersection_slope_face_surface"
-    assert bridge_edges[0].right_owner == "intersection_slope_face_cell_result"
+
+
+def test_upper_slope_face_panel_candidate_uses_nearest_fallback_instead_of_first_unused_row():
+    shared = _upper_cell_breakline_result()
+    rows = list(shared.breakline_rows)
+    points = list(shared.point_rows)
+    patch = replace(rows[0], alignment_ref="primary", side="left")
+    near_design = replace(rows[1], breakline_id="shared:design-near", alignment_ref="secondary", side="right")
+    near_outer = replace(rows[2], breakline_id="shared:outer-near", alignment_ref="secondary", side="right")
+    far_design_id = "shared:design-far"
+    far_outer_id = "shared:outer-far"
+    far_design = replace(rows[1], breakline_id=far_design_id, point_refs=("far-design:p1", "far-design:p2"), alignment_ref="remote", side="right")
+    far_outer = replace(rows[2], breakline_id=far_outer_id, point_refs=("far-outer:p1", "far-outer:p2"), alignment_ref="remote", side="right")
+    points.extend(
+        [
+            _point("far-design:p1", far_design_id, 1, 100.0, 100.0),
+            _point("far-design:p2", far_design_id, 2, 100.0, 104.0),
+            _point("far-outer:p1", far_outer_id, 1, 100.0, 105.0),
+            _point("far-outer:p2", far_outer_id, 2, 104.0, 105.0),
+        ]
+    )
+    shared.breakline_rows = [patch, far_design, near_design, far_outer, near_outer]
+    shared.point_rows = points
+
+    candidates = cmd_build_corridor._intersection_upper_slope_face_panel_candidate_rows(shared)
+
+    assert len(candidates) == 1
+    assert candidates[0]["outer_edge_ref"] == "shared:outer-near"
+    assert candidates[0]["design_cap_source_ref"] == "shared:design-near"
+    assert candidates[0]["outer_match_mode"] == "nearest"
+    assert candidates[0]["design_match_mode"] == "nearest"
+
+
+def test_upper_slope_face_panel_candidates_cover_four_alignment_side_groups_for_cross():
+    shared = _cross_upper_panel_breakline_result()
+
+    candidates = cmd_build_corridor._intersection_upper_slope_face_panel_candidate_rows(
+        shared,
+        intersection_id="cross-01",
+    )
+    coverage = cmd_build_corridor._intersection_upper_slope_face_panel_coverage_summary(candidates)
+
+    assert len(candidates) == 4
+    assert {f"{row['alignment_ref']}:{row['side']}" for row in candidates} == {
+        "primary:left",
+        "primary:right",
+        "secondary:left",
+        "secondary:right",
+    }
+    assert all(row["status"] == "accepted" for row in candidates)
+    assert all(row["outer_match_mode"] == "exact" for row in candidates)
+    assert all(row["design_match_mode"] == "exact" for row in candidates)
+    assert all(float(row["loop_area_xy"]) > 0.0 for row in candidates)
+    assert coverage["status"] == "ready"
+    assert coverage["group_count"] == 4
+    assert coverage["accepted_group_count"] == 4
+    assert coverage["missing_group_count"] == 0
+
+
+def test_upper_slope_face_panel_coverage_warns_when_expected_cross_group_has_no_candidate():
+    shared = _cross_upper_panel_breakline_result()
+    shared.breakline_rows = [
+        row
+        for row in shared.breakline_rows
+        if not (
+            str(getattr(row, "breakline_role", "") or "") == "patch_to_intersection_slope_face"
+            and str(getattr(row, "alignment_ref", "") or "") == "secondary"
+            and str(getattr(row, "side", "") or "") == "right"
+        )
+    ]
+
+    candidates = cmd_build_corridor._intersection_upper_slope_face_panel_candidate_rows(
+        shared,
+        intersection_id="cross-01",
+    )
+    expected_groups = cmd_build_corridor._intersection_upper_slope_face_panel_expected_groups(shared)
+    coverage = cmd_build_corridor._intersection_upper_slope_face_panel_coverage_summary(
+        candidates,
+        expected_groups=expected_groups,
+    )
+
+    assert len(candidates) == 3
+    assert "secondary:right" in expected_groups
+    assert coverage["status"] == "warning"
+    assert coverage["expected_group_count"] == 4
+    assert coverage["missing_group_count"] == 1
+    assert coverage["missing_groups"] == ["secondary:right"]
 
 
 def test_intersection_curb_return_bridge_diagnostics_create_shared_breaklines():
@@ -1063,6 +1235,94 @@ def test_boundary_loop_promoted_edges_share_graph_ids_across_consumers():
     assert "intersection-boundary-owner:leg:02:south" in side_edge.source_refs
 
 
+def test_curb_return_envelope_boundary_loop_roles_are_canonical_for_graph_consumers():
+    boundary_loop = IntersectionBoundaryLoopResult(
+        schema_version=1,
+        project_id="project:test",
+        boundary_loop_result_id="intersection-boundary-loops:cross-01",
+        intersection_id="cross-01",
+        status="ready",
+        loop_count=1,
+        ready_count=1,
+        segment_count=2,
+        loop_rows=[
+            IntersectionBoundaryLoopRow(
+                loop_id="intersection-boundary-loop:cross-01:outer",
+                intersection_id="cross-01",
+                loop_role="outer_intersection_boundary",
+                status="ready",
+                closed=True,
+                point_count=3,
+                segment_count=2,
+                segment_refs=(
+                    "intersection-boundary-envelope:cross-01:corner:01:arc:01",
+                    "intersection-boundary-envelope:cross-01:corner-connector:02",
+                ),
+            )
+        ],
+        segment_rows=[
+            IntersectionBoundarySegmentRow(
+                segment_id="intersection-boundary-envelope:cross-01:corner:01:arc:01",
+                intersection_id="cross-01",
+                loop_ref="intersection-boundary-loop:cross-01:outer",
+                segment_role="curb_return_envelope_arc",
+                from_point_ref="outer:p1",
+                to_point_ref="outer:p2",
+                from_xyz=(0.0, 0.0, 0.0),
+                to_xyz=(1.0, 1.0, 0.0),
+                shared_breakline_ref="shared-boundary-loop:cross:arc:1",
+            ),
+            IntersectionBoundarySegmentRow(
+                segment_id="intersection-boundary-envelope:cross-01:corner-connector:02",
+                intersection_id="cross-01",
+                loop_ref="intersection-boundary-loop:cross-01:outer",
+                segment_role="curb_return_envelope_connector",
+                from_point_ref="outer:p2",
+                to_point_ref="outer:p3",
+                from_xyz=(1.0, 1.0, 0.0),
+                to_xyz=(2.0, 0.0, 0.0),
+                shared_breakline_ref="shared-boundary-loop:cross:connector:2",
+            ),
+        ],
+    )
+    shared = SharedBreaklineResult(
+        schema_version=1,
+        project_id="project:test",
+        breakline_result_id="shared-breakline:intersection:cross-01",
+        domain_kind="intersection",
+        domain_ref="cross-01",
+        status="ready",
+    )
+    diagnostics: list[str] = []
+
+    cmd_build_corridor._append_intersection_boundary_loop_shared_breaklines(
+        result_id=shared.breakline_result_id,
+        intersection_id="cross-01",
+        boundary_loop_result=boundary_loop,
+        breakline_rows=shared.breakline_rows,
+        point_rows=shared.point_rows,
+        diagnostics=diagnostics,
+    )
+    shared.breakline_count = len(shared.breakline_rows)
+    graph = cmd_build_corridor.corridor_intersection_shared_boundary_graph_result(
+        shared,
+        intersection_id="cross-01",
+    )
+
+    roles = {str(getattr(row, "edge_role", "") or "") for row in graph.edge_rows}
+    arc_edge = next(row for row in graph.edge_rows if row.edge_role == "curb_return_to_intersection_slope_face")
+    connector_edge = next(row for row in graph.edge_rows if row.edge_role == "patch_to_design_surface")
+    intersection_refs = set(cmd_build_corridor._intersection_shared_boundary_graph_refs_for_consumer(graph, "intersection_surface"))
+    design_refs = set(cmd_build_corridor._intersection_shared_boundary_graph_refs_for_consumer(graph, "design_surface"))
+    slope_refs = set(cmd_build_corridor._intersection_shared_boundary_graph_refs_for_consumer(graph, "intersection_slope_face_surface"))
+
+    assert not diagnostics
+    assert "curb_return_envelope_arc" not in roles
+    assert "curb_return_envelope_connector" not in roles
+    assert arc_edge.edge_id in intersection_refs & slope_refs
+    assert connector_edge.edge_id in intersection_refs & design_refs & slope_refs
+
+
 def test_intersection_shared_boundary_graph_summary_notes_expose_counts_and_status():
     rows = [
         {
@@ -1192,3 +1452,133 @@ def test_intersection_shared_boundary_graph_audit_reports_geometrically_closed_b
     assert audit["graph_open_cell_count"] == 1
     assert "shared_boundary_cell_not_graph_closed" in diagnostics
     assert "node_degree" in diagnostics
+
+
+def test_intersection_shared_boundary_graph_audit_reports_split_boundary_source_segments():
+    nodes = [
+        IntersectionSharedBoundaryNodeRow(f"n{index}", "cross-01", "test", x, y, 0.0)
+        for index, (x, y) in enumerate(((0.0, 0.0), (1.0, 0.0), (2.0, 0.0)), start=1)
+    ]
+    source_ref = "intersection-boundary-envelope:cross-01:corner:01:arc:01"
+    graph = IntersectionSharedBoundaryGraphResult(
+        schema_version=1,
+        project_id="project:test",
+        graph_result_id="intersection-shared-boundary-graph:split",
+        intersection_id="cross-01",
+        status="ready",
+        node_rows=nodes,
+        edge_rows=[
+            IntersectionSharedBoundaryEdgeRow(
+                "edge:surface-a",
+                "cross-01",
+                "curb_return_to_intersection_slope_face",
+                "n1",
+                "n2",
+                consumer_refs=("intersection_surface",),
+                source_refs=(source_ref,),
+            ),
+            IntersectionSharedBoundaryEdgeRow(
+                "edge:surface-b",
+                "cross-01",
+                "curb_return_to_intersection_slope_face",
+                "n2",
+                "n3",
+                consumer_refs=("intersection_slope_face_surface",),
+                source_refs=(source_ref,),
+            ),
+        ],
+    )
+
+    audit = cmd_build_corridor.intersection_shared_boundary_graph_audit(graph)
+    diagnostics = ";".join(audit["diagnostic_rows"])
+
+    assert audit["status"] == "warning"
+    assert audit["source_segment_split_count"] == 1
+    assert "shared_boundary_source_segment_split" in diagnostics
+    assert source_ref in diagnostics
+
+
+def test_boundary_loop_graph_fill_coverage_reports_each_consumer_family():
+    graph = SimpleNamespace(
+        edge_rows=[
+            SimpleNamespace(
+                edge_id="edge:design",
+                edge_role="patch_to_design_surface",
+                consumer_refs=("intersection_surface", "design_surface"),
+                source_refs=("intersection-boundary-loop:cross-01:outer:segment:01",),
+            ),
+            SimpleNamespace(
+                edge_id="edge:slope",
+                edge_role="curb_return_to_intersection_slope_face",
+                consumer_refs=("intersection_slope_face_surface", "slope_face_surface"),
+                source_refs=("intersection-boundary-loop:cross-01:outer:segment:02",),
+            ),
+            SimpleNamespace(
+                edge_id="edge:tie",
+                edge_role="intersection_tie_slope",
+                consumer_refs=("intersection_tie_slope_surface",),
+                source_refs=("intersection-boundary-loop:cross-01:outer:segment:03",),
+            ),
+        ],
+    )
+
+    coverage = cmd_build_corridor._intersection_boundary_loop_graph_fill_coverage(
+        shared_breakline_result=SimpleNamespace(breakline_rows=[]),
+        graph_result=graph,
+        graph_surface_stats={"boundary_refs": ["edge:design", "edge:tie"]},
+        boundary_loop_transition_stats={},
+    )
+
+    assert coverage["status"] == "warning"
+    assert coverage["boundary_loop_graph_edge_count"] == 3
+    assert coverage["filled_edge_count"] == 2
+    assert coverage["missing_edge_refs"] == ["edge:slope"]
+    assert "intersection_surface=1/1" in coverage["consumer_coverage_summary"]
+    assert "design_surface=1/1" in coverage["consumer_coverage_summary"]
+    assert "intersection_slope_face_surface=0/1" in coverage["consumer_coverage_summary"]
+    assert "slope_face_surface=0/1" in coverage["consumer_coverage_summary"]
+    assert "intersection_tie_slope_surface=1/1" in coverage["consumer_coverage_summary"]
+    assert "intersection_slope_face_surface=1" in coverage["consumer_missing_summary"]
+    assert "slope_face_surface=1" in coverage["consumer_missing_summary"]
+
+
+def test_boundary_loop_graph_fill_coverage_accepts_curb_return_envelope_segments():
+    graph = SimpleNamespace(
+        edge_rows=[
+            SimpleNamespace(
+                edge_id="edge:arc",
+                edge_role="curb_return_to_intersection_slope_face",
+                consumer_refs=("intersection_slope_face_surface",),
+                source_refs=("intersection-boundary-envelope:cross-01:corner:01:arc:01",),
+            )
+        ],
+    )
+
+    coverage = cmd_build_corridor._intersection_boundary_loop_graph_fill_coverage(
+        shared_breakline_result=SimpleNamespace(breakline_rows=[]),
+        graph_result=graph,
+        graph_surface_stats={"boundary_refs": ["edge:arc"]},
+        boundary_loop_transition_stats={},
+    )
+
+    assert coverage["status"] == "ready"
+    assert coverage["boundary_loop_graph_edge_count"] == 1
+    assert coverage["filled_edge_count"] == 1
+
+
+def test_upper_slope_face_panel_coverage_reports_missing_alignment_side_groups():
+    coverage = cmd_build_corridor._intersection_upper_slope_face_panel_coverage_summary(
+        [
+            {"alignment_ref": "primary", "side": "left", "status": "accepted"},
+            {"alignment_ref": "primary", "side": "right", "status": "warning"},
+            {"alignment_ref": "secondary", "side": "left", "status": "accepted"},
+            {"alignment_ref": "secondary", "side": "right", "status": "accepted"},
+        ]
+    )
+
+    assert coverage["status"] == "warning"
+    assert coverage["group_count"] == 4
+    assert coverage["accepted_group_count"] == 3
+    assert coverage["missing_group_count"] == 1
+    assert coverage["missing_groups"] == ["primary:right"]
+    assert "groups=4" in coverage["summary"]

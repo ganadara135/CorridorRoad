@@ -48,6 +48,7 @@ from ...models.result.intersection_surface_zone import (
 )
 from ...models.result.intersection_topology import (
     IntersectionTopologyAnchorRow,
+    IntersectionTopologyCornerRow,
     IntersectionTopologyControlAreaRow,
     IntersectionTopologyLaneConnectionRow,
     IntersectionTopologyLegSpanRow,
@@ -78,6 +79,23 @@ _VALID_GRADING_CROWN_BEHAVIORS = {"flatten", "preserve_primary_crown", "blend_pr
 _VALID_GRADING_TIE_IN_RULES = {"blend_to_leg_profiles", "tie_to_primary_profile", "use_normal_profile", "radial_entry_exit_blend"}
 _VALID_GRADING_CROSSFALL_TRANSITIONS = {"linear", "none", "normal_superelevation", "radial"}
 _VALID_GRADING_LOW_POINT_STRATEGIES = {"review_low_points", "sag_low_point_review", "outside_gutter", "central_island", "none"}
+
+_LEG_GRAPH_ROLE_ANGLE_DEG = {
+    "primary_after": 0.0,
+    "primary_before": 180.0,
+    "secondary_after": 90.0,
+    "secondary_before": 270.0,
+    "side_approach": 270.0,
+    "skew_after": 60.0,
+    "skew_before": 240.0,
+    "urban_side_after": 90.0,
+    "urban_side_before": 270.0,
+    "sag_side_after": 90.0,
+    "sag_side_before": 270.0,
+    "primary_approach": 180.0,
+    "left_branch": 120.0,
+    "right_branch": 240.0,
+}
 _VALID_DRAINAGE_CAPTURE_MODES = {"review_low_points", "outside_gutter", "central_island", "curb_gutter_inlets", "sag_low_point_inlets"}
 _VALID_DRAINAGE_INTENT_STATUSES = {"hint_only", "accepted", "source_owned", "draft", "missing"}
 _VALID_DRAINAGE_SOURCE_METHODS = {"manual", "detected", "preset_default", "imported"}
@@ -848,9 +866,9 @@ class IntersectionEvaluationService:
                 status="error",
                 diagnostic_rows=["error:intersection_model_missing"],
             )
+        topology = self.evaluate_topology(intersection_model, intersection_id=intersection_id)
         edge_network = edge_network_result
         if edge_network is None:
-            topology = self.evaluate_topology(intersection_model, intersection_id=intersection_id)
             edge_network = self.evaluate_edge_network(intersection_model, topology, intersection_id=intersection_id)
         surface_zones = surface_zone_result or self.evaluate_surface_zones(
             intersection_model,
@@ -944,23 +962,40 @@ class IntersectionEvaluationService:
                 "reason=slope_face_loop_is_consumer_not_outer_boundary_source"
             )
 
+        curb_envelope_points, curb_envelope_segments, curb_envelope_diagnostics = _intersection_boundary_construct_curb_return_envelope(
+            topology
+        )
+        diagnostics.extend(curb_envelope_diagnostics)
+
         candidate_segments, excluded_segment_diagnostics = _intersection_boundary_filter_outer_candidate_segments(
             candidate_segments
         )
         diagnostics.extend(excluded_segment_diagnostics)
         diagnostics.extend(_intersection_boundary_candidate_graph_diagnostics(candidate_segments))
 
-        traced_points, traced_segments, trace_diagnostics = _intersection_boundary_construct_rectilinear_source_perimeter(
-            candidate_segments
-        )
-        if not traced_points:
-            fallback_points, fallback_segments, fallback_diagnostics = _intersection_boundary_trace_closed_segments(candidate_segments)
-            traced_points, traced_segments = fallback_points, fallback_segments
-            trace_diagnostics = [*trace_diagnostics, *fallback_diagnostics]
-        diagnostics.extend(trace_diagnostics)
+        using_curb_return_envelope = bool(curb_envelope_points)
+        if using_curb_return_envelope:
+            traced_points = curb_envelope_points
+            traced_segments = curb_envelope_segments
+        else:
+            traced_points, traced_segments, trace_diagnostics = _intersection_boundary_construct_rectilinear_source_perimeter(
+                candidate_segments
+            )
+            if not traced_points:
+                fallback_points, fallback_segments, fallback_diagnostics = _intersection_boundary_trace_closed_segments(candidate_segments)
+                traced_points, traced_segments = fallback_points, fallback_segments
+                trace_diagnostics = [*trace_diagnostics, *fallback_diagnostics]
+            diagnostics.extend(trace_diagnostics)
         hull_points = _intersection_boundary_convex_hull_xyz([point for point, _ref, _sources in candidate_points])
         using_fallback_hull = not traced_points
-        if using_fallback_hull and len(hull_points) >= 3:
+        intersection_kind = str(getattr(topology, "intersection_kind", "") or "")
+        using_source_endpoint_hull = (
+            using_fallback_hull
+            and intersection_kind in {"y_intersection", "skewed_intersection"}
+            and len(hull_points) >= 3
+            and bool(candidate_points)
+        )
+        if using_fallback_hull and len(hull_points) >= 3 and not using_source_endpoint_hull:
             diagnostics.append("warning:intersection_boundary_convex_hull_fallback")
         loop_points = traced_points or hull_points
         loop_rows: list[IntersectionBoundaryLoopRow] = []
@@ -974,7 +1009,10 @@ class IntersectionEvaluationService:
             area_xy = abs(_intersection_boundary_area_xy(closed_points))
             bbox_xy = _intersection_boundary_bbox_xy(closed_points)
             loop_id = f"intersection-boundary-loop:{_id_token(str(getattr(edge_network, 'intersection_id', '') or 'main'))}:outer"
-            source_refs = tuple(_unique_text_values([ref for _point, _pref, refs in candidate_points for ref in refs]))
+            source_refs = tuple(_unique_text_values([
+                *[ref for _point, _pref, refs in candidate_points for ref in refs],
+                *[ref for _first, _second, _seg_id, _role, refs in traced_segments for ref in refs],
+            ]))
             consumer_roles = (
                 "intersection_surface",
                 "intersection_slope_face_surface",
@@ -982,7 +1020,11 @@ class IntersectionEvaluationService:
                 "slope_face_surface",
             )
             loop_diagnostics: list[str] = [
-                "info:intersection_boundary_candidate_source=segment_graph"
+                "info:intersection_boundary_candidate_source=curb_return_envelope"
+                if using_curb_return_envelope
+                else "info:intersection_boundary_candidate_source=source_endpoint_hull"
+                if using_source_endpoint_hull
+                else "info:intersection_boundary_candidate_source=segment_graph"
                 if not using_fallback_hull
                 else "warning:intersection_boundary_convex_hull_fallback"
             ]
@@ -992,11 +1034,11 @@ class IntersectionEvaluationService:
             if _polyline_self_crosses_xy(closed_points):
                 loop_diagnostics.append("error:intersection_boundary_loop_self_crossing")
                 diagnostics.append(f"error:intersection_boundary_loop_self_crossing:{loop_id}")
-            if using_fallback_hull:
+            if using_fallback_hull and not using_source_endpoint_hull:
                 loop_diagnostics.append("warning:intersection_boundary_loop_not_accepted_from_convex_hull")
             status = (
                 "ready"
-                if not using_fallback_hull and not any(item.startswith("error:") for item in loop_diagnostics)
+                if (not using_fallback_hull or using_source_endpoint_hull) and not any(item.startswith("error:") for item in loop_diagnostics)
                 else "warning"
                 if using_fallback_hull and not any(item.startswith("error:") for item in loop_diagnostics)
                 else "error"
@@ -1841,9 +1883,20 @@ class IntersectionEvaluationService:
         if not anchor_rows:
             diagnostics.append(f"warning:source_intersection_anchor_rows_missing:{row.intersection_id}")
 
+        leg_graph_rows, leg_graph_diagnostics, leg_graph_status = _topology_leg_graph_rows(leg_rows)
+        diagnostics.extend(leg_graph_diagnostics)
+        leg_graph_by_id = {
+            str(getattr(leg, "leg_id", "") or ""): (order, angle_deg, angle_source)
+            for leg, order, angle_deg, angle_source in leg_graph_rows
+            if str(getattr(leg, "leg_id", "") or "")
+        }
         leg_span_rows: list[IntersectionTopologyLegSpanRow] = []
         for index, leg in enumerate(leg_rows, start=1):
             leg_id = str(getattr(leg, "leg_id", "") or f"{row.intersection_id}:leg:{index:02d}")
+            leg_graph_order, leg_graph_angle_deg, leg_graph_angle_source = leg_graph_by_id.get(
+                leg_id,
+                (index, 0.0, "source_order_fallback"),
+            )
             alignment_ref = str(getattr(leg, "alignment_ref", "") or "")
             start = float(getattr(leg, "approach_station_start", 0.0) or 0.0)
             end = float(getattr(leg, "approach_station_end", 0.0) or 0.0)
@@ -1926,6 +1979,12 @@ class IntersectionEvaluationService:
                     arm_policy_ref=arm_policy_ref,
                     edge_policy_refs=edge_policy_refs,
                     grading_policy_ref=grading_policy_ref,
+                    leg_graph_order=leg_graph_order,
+                    leg_graph_angle_deg=leg_graph_angle_deg,
+                    leg_graph_angle_source=leg_graph_angle_source,
+                    applied_section_entry_ref="",
+                    applied_section_exit_ref="",
+                    applied_section_lineage_status="pending_applied_section_context",
                     source_method=source_method,
                     approval_status=approval_status,
                     span_source=span_source,
@@ -1935,6 +1994,15 @@ class IntersectionEvaluationService:
                     notes="; ".join(leg_diagnostics),
                 )
             )
+
+        corner_graph_rows, corner_graph_diagnostics, corner_graph_status = _topology_corner_graph_rows(
+            intersection_model=intersection_model,
+            intersection_id=row.intersection_id,
+            intersection_kind=row.intersection_kind,
+            leg_span_rows=leg_span_rows,
+            anchor_rows=anchor_rows,
+        )
+        diagnostics.extend(corner_graph_diagnostics)
 
         control_area_rows: list[IntersectionTopologyControlAreaRow] = []
         for area in self._control_areas_for_intersection(intersection_model, row.intersection_id):
@@ -2191,12 +2259,27 @@ class IntersectionEvaluationService:
             control_region_count=len(control_region_refs),
             anchor_count=len(anchor_rows),
             leg_span_count=len(leg_span_rows),
+            leg_graph_status=leg_graph_status,
+            corner_graph_status=corner_graph_status,
+            corner_count=len(corner_graph_rows),
+            curb_return_arc_count=len([row for row in corner_graph_rows if int(getattr(row, "arc_point_count", 0) or 0) >= 3]),
             control_area_count=len(control_area_rows),
             lane_connection_count=len(lane_connection_rows),
+            leg_graph_order_refs=[
+                f"{int(getattr(span, 'leg_graph_order', 0) or 0)}:{str(getattr(span, 'leg_ref', '') or '')}"
+                for span in leg_span_rows
+            ],
+            leg_graph_diagnostic_rows=leg_graph_diagnostics,
+            corner_graph_order_refs=[
+                f"{int(getattr(corner, 'corner_graph_order', 0) or 0)}:{str(getattr(corner, 'from_leg_ref', '') or '')}->{str(getattr(corner, 'to_leg_ref', '') or '')}"
+                for corner in corner_graph_rows
+            ],
+            corner_graph_diagnostic_rows=corner_graph_diagnostics,
             policy_refs=policy_refs,
             diagnostic_rows=diagnostics,
             anchor_rows=anchor_rows,
             leg_span_rows=leg_span_rows,
+            corner_rows=corner_graph_rows,
             control_area_rows=control_area_rows,
             lane_connection_rows=lane_connection_rows,
             source_refs=[ref for ref in source_refs if ref],
@@ -2372,6 +2455,204 @@ def _control_area_ref_for_alignment(
     return ""
 
 
+def _topology_leg_graph_rows(leg_rows: list[IntersectionLegRow]) -> tuple[list[tuple[IntersectionLegRow, int, float, str]], list[str], str]:
+    graph_rows: list[tuple[IntersectionLegRow, int, float, str]] = []
+    diagnostics: list[str] = []
+    role_angles_used = False
+    fallback_used = False
+    seen_angles: dict[float, list[str]] = {}
+    leg_count = len(list(leg_rows or []))
+    for index, leg in enumerate(list(leg_rows or []), start=1):
+        leg_id = str(getattr(leg, "leg_id", "") or f"leg:{index:02d}")
+        role = str(getattr(leg, "leg_role", "") or "")
+        if role in _LEG_GRAPH_ROLE_ANGLE_DEG:
+            angle_deg = float(_LEG_GRAPH_ROLE_ANGLE_DEG[role])
+            angle_source = "role_preset"
+            role_angles_used = True
+        else:
+            angle_deg = (360.0 * float(index - 1) / float(max(leg_count, 1))) % 360.0
+            angle_source = "index_even_spacing_fallback"
+            fallback_used = True
+            diagnostics.append(f"warning:intersection_leg_graph_angle_fallback:{leg_id}:{role or '-'}")
+        normalized_angle = angle_deg % 360.0
+        seen_angles.setdefault(round(normalized_angle, 6), []).append(leg_id)
+        graph_rows.append((leg, index, normalized_angle, angle_source))
+    for angle, refs in seen_angles.items():
+        if len(refs) > 1:
+            diagnostics.append(f"warning:intersection_leg_graph_duplicate_angle:{angle:.3f}:{','.join(refs)}")
+    graph_rows.sort(
+        key=lambda item: (
+            item[2],
+            int(getattr(item[0], "priority", 0) or 0),
+            str(getattr(item[0], "leg_id", "") or ""),
+        )
+    )
+    ordered: list[tuple[IntersectionLegRow, int, float, str]] = []
+    for order, (leg, _source_index, angle_deg, angle_source) in enumerate(graph_rows, start=1):
+        ordered.append((leg, order, angle_deg, angle_source))
+    if not ordered:
+        status = "error"
+    elif fallback_used:
+        status = "warning"
+    elif role_angles_used:
+        status = "ready"
+    else:
+        status = "warning"
+    if ordered:
+        diagnostics.append(
+            "info:intersection_leg_graph_order:"
+            + ",".join(
+                f"{order}:{str(getattr(leg, 'leg_id', '') or '')}@{angle_deg:.1f}"
+                for leg, order, angle_deg, _angle_source in ordered
+            )
+        )
+    return ordered, _unique_text_values(diagnostics), status
+
+
+def _topology_corner_graph_rows(
+    *,
+    intersection_model: IntersectionModel,
+    intersection_id: str,
+    intersection_kind: str,
+    leg_span_rows: list[IntersectionTopologyLegSpanRow],
+    anchor_rows: list[IntersectionTopologyAnchorRow],
+) -> tuple[list[IntersectionTopologyCornerRow], list[str], str]:
+    diagnostics: list[str] = []
+    ordered_spans = sorted(
+        [span for span in list(leg_span_rows or []) if str(getattr(span, "leg_ref", "") or "")],
+        key=lambda span: (
+            int(getattr(span, "leg_graph_order", 0) or 0),
+            str(getattr(span, "leg_ref", "") or ""),
+        ),
+    )
+    if len(ordered_spans) < 2:
+        return [], ["error:intersection_corner_graph_leg_count_insufficient"], "error"
+    source_corners = [
+        row
+        for row in list(getattr(intersection_model, "corner_rows", []) or [])
+        if str(getattr(row, "intersection_id", "") or "") == str(intersection_id or "")
+    ]
+    source_by_pair: dict[tuple[str, str], IntersectionCornerRow] = {}
+    for corner in source_corners:
+        from_ref = str(getattr(corner, "from_leg_ref", "") or "")
+        to_ref = str(getattr(corner, "to_leg_ref", "") or "")
+        if from_ref and to_ref:
+            source_by_pair[(from_ref, to_ref)] = corner
+    policies = _curb_return_policies_for_intersection(intersection_model, intersection_id)
+    policy_by_ref = {str(getattr(policy, "policy_id", "") or ""): policy for policy in policies if str(getattr(policy, "policy_id", "") or "")}
+    default_policy = policies[0] if policies else None
+    leg_span_by_ref = {str(getattr(span, "leg_ref", "") or ""): span for span in ordered_spans}
+    anchor = anchor_rows[0] if anchor_rows else None
+    anchor_context = {
+        "anchor_xyz": tuple(getattr(anchor, "point_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0)),
+        "primary_alignment": str(getattr(anchor, "primary_alignment_ref", "") or ""),
+    }
+    rows: list[IntersectionTopologyCornerRow] = []
+    for index, from_span in enumerate(ordered_spans, start=1):
+        to_span = ordered_spans[index % len(ordered_spans)]
+        from_ref = str(getattr(from_span, "leg_ref", "") or "")
+        to_ref = str(getattr(to_span, "leg_ref", "") or "")
+        corner = source_by_pair.get((from_ref, to_ref))
+        reversed_source = False
+        if corner is None and (to_ref, from_ref) in source_by_pair:
+            corner = source_by_pair[(to_ref, from_ref)]
+            reversed_source = True
+        row_diagnostics: list[str] = []
+        source_corner_ref = str(getattr(corner, "corner_id", "") or "") if corner is not None else ""
+        if corner is None:
+            row_diagnostics.append("candidate_missing_source_corner")
+            diagnostics.append(f"warning:intersection_corner_graph_candidate_missing_source:{from_ref}:{to_ref}")
+        elif reversed_source:
+            row_diagnostics.append("source_corner_direction_reversed")
+            diagnostics.append(f"warning:intersection_corner_graph_source_direction_reversed:{source_corner_ref}")
+        policy_ref = str(getattr(corner, "curb_return_policy_ref", "") or "") if corner is not None else ""
+        policy = policy_by_ref.get(policy_ref) if policy_ref else default_policy
+        if policy is None:
+            row_diagnostics.append("curb_return_policy_missing")
+            diagnostics.append(f"error:intersection_corner_graph_curb_return_policy_missing:{from_ref}:{to_ref}")
+        elif not policy_ref:
+            policy_ref = str(getattr(policy, "policy_id", "") or "")
+            row_diagnostics.append("curb_return_policy_defaulted")
+            diagnostics.append(f"warning:intersection_corner_graph_curb_return_policy_defaulted:{from_ref}:{to_ref}:{policy_ref}")
+        radius = float(getattr(policy, "radius", 0.0) or 0.0) if policy is not None else 0.0
+        if radius <= 0.0:
+            row_diagnostics.append("curb_return_radius_missing")
+            diagnostics.append(f"error:intersection_corner_graph_curb_return_radius_missing:{from_ref}:{to_ref}")
+        working_corner = corner or IntersectionCornerRow(
+            corner_id=f"{intersection_id}:corner-candidate-{index:02d}",
+            intersection_id=intersection_id,
+            from_leg_ref=from_ref,
+            to_leg_ref=to_ref,
+            side=f"corner_{index:02d}",
+            quadrant=f"quadrant_{index:02d}",
+            curb_return_policy_ref=policy_ref,
+            source_method="leg_graph_candidate",
+            approval_status="draft",
+        )
+        start_xyz, end_xyz = _intersection_curb_return_edge_endpoints(
+            corner=working_corner,
+            policy=policy,
+            leg_span_by_ref=leg_span_by_ref,
+            anchor_context=anchor_context,
+        )
+        arc_points = _intersection_curb_return_arc_points(
+            start_xyz,
+            end_xyz,
+            center_xyz=_xyz_tuple(anchor_context.get("anchor_xyz", (0.0, 0.0, 0.0))),
+            radius=radius,
+        )
+        if len(arc_points) < 3:
+            row_diagnostics.append("curb_return_arc_points_missing")
+            diagnostics.append(f"error:intersection_corner_graph_arc_points_missing:{from_ref}:{to_ref}")
+        source_status = _corner_source_status(row_diagnostics)
+        if any(
+            str(item) in {"curb_return_policy_missing", "curb_return_radius_missing", "curb_return_arc_points_missing"}
+            for item in row_diagnostics
+        ):
+            source_status = "error"
+        rows.append(
+            IntersectionTopologyCornerRow(
+                corner_result_id=f"{intersection_id}:corner-result:{index:02d}",
+                intersection_id=intersection_id,
+                corner_graph_order=index,
+                source_corner_ref=source_corner_ref,
+                from_leg_ref=from_ref,
+                to_leg_ref=to_ref,
+                side=str(getattr(working_corner, "side", "") or ""),
+                quadrant=str(getattr(working_corner, "quadrant", "") or ""),
+                curb_return_policy_ref=policy_ref,
+                radius=radius,
+                start_xyz=start_xyz,
+                end_xyz=end_xyz,
+                arc_points_xyz=tuple(arc_points),
+                arc_point_count=len(arc_points),
+                source_method=str(getattr(working_corner, "source_method", "") or ""),
+                approval_status=str(getattr(working_corner, "approval_status", "") or ""),
+                source_status=source_status,
+                source_diagnostic_rows=tuple(row_diagnostics),
+                status=source_status if source_status != "accepted" else "ready",
+                notes="; ".join(row_diagnostics),
+            )
+        )
+    if any(str(getattr(row, "status", "") or "") == "error" for row in rows):
+        status = "error"
+    elif any(str(getattr(row, "status", "") or "") == "warning" for row in rows):
+        status = "warning"
+    else:
+        status = "ready"
+    diagnostics.append(
+        "info:intersection_corner_graph_order:"
+        + ",".join(
+            f"{row.corner_graph_order}:{row.from_leg_ref}->{row.to_leg_ref}"
+            for row in rows
+        )
+    )
+    if str(intersection_kind or "") == "cross_intersection" and len(rows) != 4:
+        diagnostics.append(f"error:cross_intersection_corner_count:{len(rows)}")
+        status = "error"
+    return rows, _unique_text_values(diagnostics), status
+
+
 def _xyz_tuple_or_none(value) -> tuple[float, float, float] | None:
     try:
         if len(value) < 3:
@@ -2383,6 +2664,144 @@ def _xyz_tuple_or_none(value) -> tuple[float, float, float] | None:
 
 def _intersection_boundary_key(point: tuple[float, float, float]) -> tuple[float, float]:
     return (round(float(point[0]), 6), round(float(point[1]), 6))
+
+
+def _intersection_boundary_construct_curb_return_envelope(
+    topology: IntersectionTopologyResult | None,
+) -> tuple[
+    list[tuple[float, float, float]],
+    list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, tuple[str, ...]]],
+    list[str],
+]:
+    """Build an authoritative boundary-loop candidate from ordered curb-return arcs."""
+
+    diagnostics: list[str] = []
+    if topology is None:
+        return [], [], diagnostics
+    intersection_id = str(getattr(topology, "intersection_id", "") or "main")
+    corners = [
+        row
+        for row in sorted(
+            list(getattr(topology, "corner_rows", []) or []),
+            key=lambda item: int(getattr(item, "corner_graph_order", 0) or 0),
+        )
+        if len(tuple(getattr(row, "arc_points_xyz", ()) or ())) >= 2
+    ]
+    if len(corners) < 3:
+        diagnostics.append(
+            "info:intersection_boundary_curb_return_envelope_skipped:"
+            f"corner_arcs={len(corners)};reason=corner_arc_count_too_low"
+        )
+        return [], [], diagnostics
+
+    candidate_results = []
+    for first_reversed in (False, True):
+        ordered_arcs: list[tuple[IntersectionTopologyCornerRow, list[tuple[float, float, float]]]] = []
+        for index, corner in enumerate(corners):
+            arc_points = [_xyz_tuple(point) for point in tuple(getattr(corner, "arc_points_xyz", ()) or ())]
+            if len(arc_points) < 2:
+                continue
+            if index == 0:
+                if first_reversed:
+                    arc_points = list(reversed(arc_points))
+            else:
+                previous_end = ordered_arcs[-1][1][-1]
+                if _distance_xy(previous_end, arc_points[-1]) < _distance_xy(previous_end, arc_points[0]):
+                    arc_points = list(reversed(arc_points))
+            ordered_arcs.append((corner, arc_points))
+        points, segments, connector_count = _intersection_boundary_join_ordered_corner_arcs(
+            ordered_arcs,
+            intersection_id=intersection_id,
+        )
+        if len(points) < 4:
+            continue
+        area = abs(_intersection_boundary_area_xy(points))
+        self_crossing = _polyline_self_crosses_xy(points)
+        connector_length = sum(
+            _distance_xy(first, second)
+            for first, second, _sid, role, _refs in segments
+            if role == "curb_return_envelope_connector"
+        )
+        candidate_results.append((self_crossing, connector_length, -area, points, segments, connector_count))
+
+    if not candidate_results:
+        diagnostics.append("warning:intersection_boundary_curb_return_envelope_unavailable")
+        return [], [], diagnostics
+    candidate_results.sort(key=lambda item: (item[0], item[1], item[2]))
+    self_crossing, _connector_length, negative_area, points, segments, connector_count = candidate_results[0]
+    area = abs(float(negative_area))
+    if area <= 1.0e-6:
+        diagnostics.append("warning:intersection_boundary_curb_return_envelope_area_too_small")
+        return [], [], diagnostics
+    if self_crossing:
+        diagnostics.append("warning:intersection_boundary_curb_return_envelope_self_crossing")
+        return [], [], diagnostics
+    diagnostics.append(
+        "info:intersection_boundary_curb_return_envelope_ready:"
+        f"corners={len(corners)};points={max(0, len(points) - 1)};connectors={connector_count}"
+    )
+    if connector_count:
+        diagnostics.append(f"info:intersection_boundary_curb_return_envelope_connectors:{connector_count}")
+    return points, segments, diagnostics
+
+
+def _intersection_boundary_join_ordered_corner_arcs(
+    ordered_arcs: list[tuple[IntersectionTopologyCornerRow, list[tuple[float, float, float]]]],
+    *,
+    intersection_id: str,
+) -> tuple[
+    list[tuple[float, float, float]],
+    list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, tuple[str, ...]]],
+    int,
+]:
+    points: list[tuple[float, float, float]] = []
+    segments: list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, tuple[str, ...]]] = []
+    connector_count = 0
+    for corner_index, (corner, arc_points) in enumerate(ordered_arcs, start=1):
+        source_refs = tuple(
+            value
+            for value in (
+                str(getattr(corner, "corner_result_id", "") or ""),
+                str(getattr(corner, "source_corner_ref", "") or ""),
+                str(getattr(corner, "curb_return_policy_ref", "") or ""),
+                str(getattr(corner, "from_leg_ref", "") or ""),
+                str(getattr(corner, "to_leg_ref", "") or ""),
+            )
+            if value
+        )
+        if points and _intersection_boundary_key(points[-1]) != _intersection_boundary_key(arc_points[0]):
+            connector_count += 1
+            connector_id = (
+                f"intersection-boundary-envelope:{_id_token(intersection_id)}:"
+                f"corner-connector:{corner_index:02d}"
+            )
+            segments.append((points[-1], arc_points[0], connector_id, "curb_return_envelope_connector", source_refs))
+        if not points:
+            points.append(arc_points[0])
+        elif _intersection_boundary_key(points[-1]) != _intersection_boundary_key(arc_points[0]):
+            points.append(arc_points[0])
+        for arc_index, (first, second) in enumerate(zip(arc_points[:-1], arc_points[1:]), start=1):
+            if _intersection_boundary_key(first) == _intersection_boundary_key(second):
+                continue
+            if _intersection_boundary_key(points[-1]) != _intersection_boundary_key(first):
+                points.append(first)
+            points.append(second)
+            segment_id = (
+                f"intersection-boundary-envelope:{_id_token(intersection_id)}:"
+                f"corner:{corner_index:02d}:arc:{arc_index:02d}"
+            )
+            segments.append((first, second, segment_id, "curb_return_envelope_arc", source_refs))
+    if points and _intersection_boundary_key(points[0]) != _intersection_boundary_key(points[-1]):
+        connector_count += 1
+        connector_id = f"intersection-boundary-envelope:{_id_token(intersection_id)}:corner-connector:close"
+        last_refs = segments[-1][4] if segments else ()
+        segments.append((points[-1], points[0], connector_id, "curb_return_envelope_connector", last_refs))
+        points.append(points[0])
+    return points, segments, connector_count
+
+
+def _distance_xy(first: tuple[float, float, float], second: tuple[float, float, float]) -> float:
+    return math.hypot(float(second[0]) - float(first[0]), float(second[1]) - float(first[1]))
 
 
 def _intersection_boundary_authoritative_candidate_edges(
@@ -4168,9 +4587,17 @@ def _intersection_leg_edge_endpoints(
 
 
 def _intersection_alignment_axis(alignment_ref: str, primary_alignment_ref: str, leg_role: str) -> tuple[float, float]:
+    role = str(leg_role or "").lower()
+    if role == "primary_after":
+        return (1.0, 0.0)
+    if role == "primary_before":
+        return (-1.0, 0.0)
+    if role == "secondary_after":
+        return (0.0, 1.0)
+    if role == "secondary_before":
+        return (0.0, -1.0)
     if str(alignment_ref or "") and str(alignment_ref or "") == str(primary_alignment_ref or ""):
         return (1.0, 0.0)
-    role = str(leg_role or "").lower()
     if "primary" in role:
         return (1.0, 0.0)
     return (0.0, 1.0)
@@ -4219,9 +4646,9 @@ def _intersection_curb_return_edge_endpoints(
     start = (anchor[0] + from_axis[0] * offset, anchor[1] + from_axis[1] * offset, anchor[2])
     end = (anchor[0] + to_axis[0] * offset, anchor[1] + to_axis[1] * offset, anchor[2])
     side = str(getattr(corner, "side", "") or getattr(corner, "quadrant", "") or "").lower()
-    if side in {"left", "quadrant_01"}:
+    if side in {"left"}:
         start = (anchor[0] - from_axis[0] * offset, anchor[1] - from_axis[1] * offset, anchor[2])
-    if side in {"right", "quadrant_02"}:
+    if side in {"right"}:
         end = (anchor[0] - to_axis[0] * offset, anchor[1] - to_axis[1] * offset, anchor[2])
     return start, end
 
