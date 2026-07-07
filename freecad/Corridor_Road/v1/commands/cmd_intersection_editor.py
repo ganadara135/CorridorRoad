@@ -33,6 +33,7 @@ from ..models.source.intersection_model import (
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
+    IntersectionSlopeFacePolicyRow,
     intersection_kind_from_label,
     intersection_preset_labels,
 )
@@ -233,6 +234,7 @@ def build_intersection_model_from_sources(
         policy_refs=[
             f"curb-return:{intersection_id}:default",
             f"grading:{intersection_id}:default",
+            f"slope-face:{intersection_id}:default",
             drainage_policy_row.policy_id,
             *[row.policy_id for row in arm_policy_rows],
             *[row.policy_id for row in edge_policy_rows],
@@ -264,6 +266,9 @@ def build_intersection_model_from_sources(
                 primary_alignment_ref=primary_ref,
                 secondary_alignment_refs=secondary_refs,
             )
+        ],
+        slope_face_policy_rows=[
+            _default_slope_face_policy(intersection_id=intersection_id)
         ],
         edge_policy_rows=edge_policy_rows,
         lane_connection_rows=lane_connection_rows,
@@ -2032,6 +2037,25 @@ def _default_grading_policy(
         approval_status="draft",
         diagnostic_rows=["grading_policy_source_defaulted", "grading_policy_approval_pending"],
         notes="Default first-slice intersection grading policy. Overrides normal superelevation inside the control area.",
+    )
+
+
+def _default_slope_face_policy(*, intersection_id: str) -> IntersectionSlopeFacePolicyRow:
+    return IntersectionSlopeFacePolicyRow(
+        policy_id=f"slope-face:{intersection_id}:default",
+        intersection_id=intersection_id,
+        policy_name="Default Intersection Slope Face Policy",
+        tie_slope_overlap_m=0.5,
+        slope_face_width_offset_m=0.0,
+        blend_angle_deg=0.0,
+        max_panel_extension_m=3.0,
+        min_panel_width_m=0.25,
+        enabled=True,
+        diagnostic_level="normal",
+        source_method="preset_default",
+        approval_status="draft",
+        diagnostic_rows=["slope_face_policy_source_defaulted", "slope_face_policy_approval_pending"],
+        notes="Default source policy for dedicated Intersection Slope Face panel reach.",
     )
 
 

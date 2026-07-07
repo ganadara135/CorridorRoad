@@ -185,6 +185,34 @@ def _run_one_preset(preset_label):
                 any(str(row.get("cell_role", "") or "") == "curb_return_approach_pair" for row in tie_slope_rows),
                 "Cross Intersection should create curb_return_approach_pair Tie Slope rows.",
             )
+            accepted_approach_rows = [
+                row for row in tie_slope_rows
+                if str(row.get("cell_role", "") or "") == "curb_return_approach_pair"
+                and str(row.get("status", "") or "") == "accepted"
+            ]
+            _assert(
+                accepted_approach_rows
+                and all(str(row.get("ownership_class", "") or "") == "tie_slope_candidate" for row in accepted_approach_rows),
+                (
+                    "Accepted Cross curb-return approach windows should be owned by Intersection Tie Slope; "
+                    f"rows={accepted_approach_rows}."
+                ),
+            )
+            _assert(
+                all(str(row.get("outer_edge_source_mode", "") or "") == "legacy_slope_breakline" for row in accepted_approach_rows)
+                and all(str(row.get("inner_edge_source_mode", "") or "") == "legacy_slope_breakline" for row in accepted_approach_rows),
+                (
+                    "Cross Intersection Tie Slope should remain on the restored legacy window edge path; "
+                    f"rows={accepted_approach_rows}."
+                ),
+            )
+            _assert(
+                not [
+                    row for row in contract_rows
+                    if row.get("contract_family") == "intersection_tie_slope_target_edge"
+                ],
+                "Cross Intersection contracts should not expose the removed temporary Tie Slope target edge row.",
+            )
             secondary_approach_groups = {
                 (
                     str(row.get("gap_role", "") or ""),
@@ -195,12 +223,89 @@ def _run_one_preset(preset_label):
                 and str(row.get("road_role", "") or "") == "secondary"
                 and str(row.get("status", "") or "") == "accepted"
             }
+            primary_approach_groups = {
+                (
+                    str(row.get("gap_role", "") or ""),
+                    str(row.get("side", "") or ""),
+                )
+                for row in tie_slope_rows
+                if str(row.get("cell_role", "") or "") == "curb_return_approach_pair"
+                and str(row.get("road_role", "") or "") == "primary"
+                and str(row.get("status", "") or "") == "accepted"
+            }
+            _assert(
+                {("entry", "left"), ("entry", "right"), ("exit", "left"), ("exit", "right")}.issubset(primary_approach_groups),
+                (
+                    "Cross primary road should generate Tie Slope on entry/exit and both sides; "
+                    f"groups={sorted(primary_approach_groups)}."
+                ),
+            )
             _assert(
                 {("entry", "left"), ("entry", "right"), ("exit", "left"), ("exit", "right")}.issubset(secondary_approach_groups),
                 (
                     "Cross secondary road should mirror primary Tie Slope generation on entry/exit and both sides; "
                     f"groups={sorted(secondary_approach_groups)}."
                 ),
+            )
+            supplemental_endpoint_rows = [
+                row for row in tie_slope_rows
+                if str(row.get("supplemental_extent_role", "") or "") == "supplemental_endpoint_pair"
+            ]
+            supplemental_pair_rows = [
+                row for row in tie_slope_rows
+                if str(row.get("supplemental_extent_role", "") or "") == "intersection_supplemental_pair"
+            ]
+            _assert(
+                supplemental_endpoint_rows,
+                "Cross Intersection Tie Slope rows should expose selected supplemental endpoint candidate rows.",
+            )
+            _assert(
+                supplemental_pair_rows,
+                "Cross Intersection Tie Slope should expose intermediate supplemental Applied Section pair rows.",
+            )
+            endpoint_groups_by_road = {
+                str(row.get("road_role", "") or ""): {
+                    (
+                        str(candidate.get("gap_role", "") or ""),
+                        str(candidate.get("side", "") or ""),
+                    )
+                    for candidate in supplemental_endpoint_rows
+                    if str(candidate.get("road_role", "") or "") == str(row.get("road_role", "") or "")
+                    and str(candidate.get("status", "") or "") == "accepted"
+                }
+                for row in supplemental_endpoint_rows
+            }
+            expected_endpoint_groups = {("entry", "left"), ("entry", "right"), ("exit", "left"), ("exit", "right")}
+            for road_role in ("primary", "secondary"):
+                _assert(
+                    expected_endpoint_groups.issubset(endpoint_groups_by_road.get(road_role, set())),
+                    (
+                        f"Cross {road_role} Tie Slope should reach supplemental endpoints on entry/exit and both sides; "
+                        f"groups={sorted(endpoint_groups_by_road.get(road_role, set()))}."
+                    ),
+                )
+            _assert(
+                all(str(row.get("supplemental_endpoint_ref", "") or "") for row in supplemental_endpoint_rows),
+                (
+                    "Cross Intersection Tie Slope endpoint rows should record selected supplemental endpoint refs; "
+                    f"rows={supplemental_endpoint_rows}."
+                ),
+            )
+            _assert(
+                all(bool(row.get("inner_is_supplemental", False)) for row in supplemental_endpoint_rows),
+                (
+                    "Cross Intersection Tie Slope endpoint rows should stop on supplemental Applied Sections; "
+                    f"rows={supplemental_endpoint_rows}."
+                ),
+            )
+            _assert(
+                any(
+                    "info:intersection_tie_slope_supplemental_endpoint_selected" in ";".join(
+                        str(value or "") for value in tuple(row.get("diagnostics", ()) or ())
+                    )
+                    for row in supplemental_endpoint_rows
+                ),
+                "Cross Intersection Tie Slope diagnostics should report selected supplemental endpoint sections.",
             )
             secondary_window_kinds = {
                 str(row.get("transition_window_kind", "") or "")
@@ -236,6 +341,14 @@ def _run_one_preset(preset_label):
                 "intersection_tie_slope_approach_end_cap",
             ):
                 _assert(role in shared_roles, f"Cross Tie Slope shared breaklines should include {role}.")
+            for role in (
+                "intersection_tie_slope_supplemental_outer",
+                "intersection_tie_slope_supplemental_inner",
+                "intersection_tie_slope_supplemental_endpoint",
+                "intersection_tie_slope_supplemental_start_cap",
+                "intersection_tie_slope_supplemental_end_cap",
+            ):
+                _assert(role in shared_roles, f"Cross Tie Slope supplemental shared breaklines should include {role}.")
             _assert(
                 tie_slope_preview is not None,
                 "Cross manual QA proxy should create a dedicated Intersection Tie Slope preview.",
@@ -247,11 +360,33 @@ def _run_one_preset(preset_label):
             )
             accepted_windows = int(getattr(tie_slope_preview, "IntersectionTieSlopeAppliedSectionWindowAcceptedCount", 0) or 0)
             tie_slope_triangles = int(getattr(tie_slope_preview, "IntersectionTieSlopeTriangleCount", 0) or 0)
+            supplemental_endpoint_count = int(getattr(tie_slope_preview, "IntersectionTieSlopeSupplementalEndpointCount", 0) or 0)
+            supplemental_inner_count = int(getattr(tie_slope_preview, "IntersectionTieSlopeSupplementalInnerCount", 0) or 0)
+            ownership_summary = str(getattr(tie_slope_preview, "IntersectionTieSlopeWindowOwnershipSummary", "") or "")
+            endpoint_by_road = str(getattr(tie_slope_preview, "IntersectionTieSlopeSupplementalEndpointByRoad", "") or "")
             _assert(
                 accepted_windows > 0 and tie_slope_triangles == accepted_windows * 2,
                 (
                     "Cross Tie Slope should triangulate each accepted Applied Section window as two triangles; "
                     f"accepted={accepted_windows}, triangles={tie_slope_triangles}."
+                ),
+            )
+            _assert(
+                supplemental_endpoint_count > 0 and supplemental_inner_count >= supplemental_endpoint_count,
+                (
+                    "Cross Tie Slope surface should consume supplemental endpoint window rows; "
+                    f"endpoints={supplemental_endpoint_count}, supplemental_inner={supplemental_inner_count}."
+                ),
+            )
+            _assert(
+                "tie_slope_candidate=" in ownership_summary,
+                f"Cross Tie Slope should expose Applied Section ownership classification: {ownership_summary!r}.",
+            )
+            _assert(
+                "primary=4" in endpoint_by_road and "secondary=4" in endpoint_by_road,
+                (
+                    "Cross Tie Slope should pass supplemental endpoint windows for primary and secondary roads; "
+                    f"summary={endpoint_by_road!r}."
                 ),
             )
         _assert(daylight_preview is not None, f"{preset_label} should create an ordinary Slope Face Surface preview.")

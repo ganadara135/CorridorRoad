@@ -228,6 +228,27 @@ class IntersectionGradingPolicyRow:
 
 
 @dataclass(frozen=True)
+class IntersectionSlopeFacePolicyRow:
+    """Source policy for dedicated intersection slope-face panel behavior."""
+
+    policy_id: str
+    intersection_id: str
+    policy_name: str = "Default Intersection Slope Face Policy"
+    tie_slope_overlap_m: float = 0.5
+    slope_face_width_offset_m: float = 0.0
+    blend_angle_deg: float = 0.0
+    max_panel_extension_m: float = 3.0
+    min_panel_width_m: float = 0.25
+    enabled: bool = True
+    diagnostic_level: str = "normal"
+    source_method: str = "manual"
+    approval_status: str = "accepted"
+    diagnostic_rows: list[str] = field(default_factory=list)
+    status: str = "active"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class IntersectionDrainagePolicyRow:
     """Source policy for intersection low-point and drainage handoff intent."""
 
@@ -295,6 +316,7 @@ class IntersectionModel(SourceModelBase):
     edge_policy_rows: list[IntersectionEdgePolicyRow] = field(default_factory=list)
     lane_connection_rows: list[IntersectionLaneConnectionRow] = field(default_factory=list)
     grading_policy_rows: list[IntersectionGradingPolicyRow] = field(default_factory=list)
+    slope_face_policy_rows: list[IntersectionSlopeFacePolicyRow] = field(default_factory=list)
     drainage_policy_rows: list[IntersectionDrainagePolicyRow] = field(default_factory=list)
 
 
@@ -366,6 +388,7 @@ def intersection_row_from_kind(
         policy_refs=[
             f"curb-return:{intersection_id}:default",
             f"grading:{intersection_id}:default",
+            f"slope-face:{intersection_id}:default",
             f"drainage-policy:{intersection_id}:default",
             *[str(leg.arm_policy_ref) for leg in leg_rows if str(leg.arm_policy_ref)],
             *[

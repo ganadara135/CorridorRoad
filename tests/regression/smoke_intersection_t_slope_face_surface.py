@@ -17,12 +17,14 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     build_document_corridor_surface_model,
     corridor_build_preview_visibility_note,
     corridor_build_review_rows,
+    corridor_intersection_patch_prerequisite_result,
     corridor_shared_breakline_audit_rows,
     corridor_intersection_contract_review_rows,
     create_corridor_design_surface_preview,
     create_corridor_daylight_surface_preview,
     create_corridor_intersection_surface_preview,
     focus_corridor_intersection_contract_review_row,
+    _intersection_tie_slope_applied_section_window_rows,
     _parse_intersection_exclusion_near_boundary_kept_triangle_row,
     _intersection_tie_slope_oriented_ring_points,
     shared_breakline_audit_display_rows,
@@ -336,6 +338,17 @@ def run():
         tie_slope_preview = doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview")
         review_rows = corridor_build_review_rows(doc)
         slope_rows = [row for row in review_rows if row["role"] == "intersection_slope"]
+        prerequisite = corridor_intersection_patch_prerequisite_result(doc)
+        intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+        tie_slope_window_rows = _intersection_tie_slope_applied_section_window_rows(
+            applied,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+        accepted_tie_slope_rows = [
+            row for row in tie_slope_window_rows
+            if str(row.get("status", "") or "") == "accepted"
+        ]
 
         _assert(len(applied.sections) > 0, "T preset smoke should build Applied Sections.")
         _assert(intersection_preview is not None, "Intersection Surface preview was not created.")
@@ -345,6 +358,10 @@ def run():
         _assert(
             tie_slope_preview is not None,
             "Intersection Tie Slope preview should be created from accepted Applied Section window rows.",
+        )
+        _assert(
+            "Intersections" in _parent_group_labels(doc, tie_slope_preview),
+            "Intersection Tie Slope preview should be routed under Parametric Model > Intersections.",
         )
         _assert(
             str(getattr(tie_slope_preview, "IntersectionTieSlopeGeometrySource", "") or "") == "accepted_applied_section_window_rows",
@@ -357,6 +374,26 @@ def run():
         _assert(
             int(getattr(tie_slope_preview, "IntersectionTieSlopeAppliedSectionWindowAcceptedCount", 0) or 0) > 0,
             "Intersection Tie Slope preview should report accepted Applied Section window rows.",
+        )
+        _assert(
+            accepted_tie_slope_rows,
+            "T Intersection should still create accepted legacy Intersection Tie Slope window rows.",
+        )
+        _assert(
+            all(str(row.get("outer_edge_source_mode", "") or "") == "legacy_slope_breakline" for row in accepted_tie_slope_rows)
+            and all(str(row.get("inner_edge_source_mode", "") or "") == "legacy_slope_breakline" for row in accepted_tie_slope_rows),
+            (
+                "T Intersection Tie Slope should remain on the pre-Cross legacy window edge path; "
+                f"rows={accepted_tie_slope_rows}."
+            ),
+        )
+        _assert(
+            not any(str(row.get("outer_edge_source_mode", "") or "") == "applied_section_side_slope_edge" for row in accepted_tie_slope_rows)
+            and not any(str(row.get("inner_edge_source_mode", "") or "") == "applied_section_side_slope_edge" for row in accepted_tie_slope_rows),
+            (
+                "Cross-only Applied Section side-slope edge selection must not affect T Intersection Tie Slope; "
+                f"rows={accepted_tie_slope_rows}."
+            ),
         )
         _assert(
             doc.getObject("ReviewIntersectionTieSlopeTransitionGapHighlight") is None
@@ -569,6 +606,15 @@ def run():
             _assert(
                 role_name in breakline_notes,
                 f"Breakline Audit should expose Applied Section window Tie Slope shared breakline role: {role_name}.",
+            )
+        for role_name in (
+            "intersection_tie_slope_supplemental_outer",
+            "intersection_tie_slope_supplemental_inner",
+            "intersection_tie_slope_supplemental_endpoint",
+        ):
+            _assert(
+                role_name not in breakline_notes,
+                f"T Intersection Tie Slope should not emit Cross supplemental shared breakline role: {role_name}.",
             )
         tie_slope_window_handoff_rows = [
             row for row in breakline_display_rows
@@ -1251,24 +1297,20 @@ def run():
             "T preset boundary loop should not be accepted from convex-hull fallback.",
         )
         boundary_loop_index = next(index for index, row in enumerate(contract_rows) if row.get("contract_family") == "boundary_loop")
-        boundary_highlight = focus_corridor_intersection_contract_review_row(doc, boundary_loop_index)
+        boundary_focus = focus_corridor_intersection_contract_review_row(doc, boundary_loop_index)
         _assert(
-            str(getattr(boundary_highlight, "ContractFamily", "") or "") == "boundary_loop",
-            "Double-click/focus should create a boundary_loop contract highlight.",
+            str(getattr(boundary_focus, "Name", "") or "") == "V1CorridorIntersectionSurfacePreview",
+            "Boundary loop focus should use the built Intersection Surface preview, not create detached raw-loop geometry.",
         )
         _assert(
-            int(getattr(boundary_highlight, "HighlightedShapeCount", 0) or 0) >= 1,
-            "Boundary loop focus should highlight the authoritative outer perimeter.",
+            doc.getObject("ReviewIntersectionContractHighlight") is None,
+            "Boundary loop focus should not create a separate contract highlight object away from the intersection.",
         )
         _assert(
-            str(getattr(boundary_highlight, "BoundaryLoopRole", "") or "") == "outer_intersection_boundary",
-            "Boundary loop highlight should expose the highlighted loop role.",
+            str(getattr(boundary_focus, "PatchBoundarySource", "") or "") == "authoritative_boundary_loop",
+            "Boundary loop focus should land on the preview that consumed the authoritative boundary loop.",
         )
-        _assert(
-            "Issues" in _parent_group_labels(doc, boundary_highlight),
-            "Boundary loop highlight should be routed to Review > Issues, not Alignment/Profile containers.",
-        )
-        boundary_bbox = _shape_bbox_xy(boundary_highlight)
+        boundary_bbox = _shape_bbox_xy(boundary_focus)
         _assert(
             boundary_bbox is not None
             and float(boundary_bbox["xmin"]) <= 0.0 <= float(boundary_bbox["xmax"])

@@ -1582,11 +1582,9 @@ def test_focus_corridor_intersection_contract_review_row_creates_contract_highli
 
         focused = focus_corridor_intersection_contract_review_row(doc, boundary_index)
 
-        assert focused.Name == "ReviewIntersectionContractHighlight"
-        assert focused.CRRecordKind == "v1_intersection_contract_review_highlight"
-        assert focused.ContractFamily == "boundary_loop"
-        assert focused.ContractRowId == rows[boundary_index]["row_id"]
-        assert focused.HighlightedShapeCount >= 1
+        assert focused.Name == "V1CorridorIntersectionSurfacePreview"
+        assert focused.PatchBoundarySource == "authoritative_boundary_loop"
+        assert doc.getObject("ReviewIntersectionContractHighlight") is None
         assert focused.Shape.BoundBox.XMin > 2900.0
         assert focused.Shape.BoundBox.YMin > 3900.0
         assert focused.Shape.BoundBox.ZMin > 49.0
@@ -7336,6 +7334,7 @@ def test_shared_breakline_highlight_uses_preview_segment_rows() -> None:
                 "shared-breakline:test:d|side_slope_to_daylight|ready|0|20|5|10|30|5|10|side_slope|slope_face_surface",
                 "shared-breakline:test:e|corridor_gutter_handoff|ready|0|20|10|10|30|10|10|drainage_surface|drainage_surface",
                 "shared-breakline:test:f|curb_return_to_slope_face|ready|0|100|100|10|110|100|10|curb_return|intersection_surface",
+                "shared-breakline:test:g|legacy_untagged|ready|0|1|1|10|2|1|10|curb_return",
             ],
         )
 
@@ -8854,6 +8853,29 @@ def test_intersection_grading_policy_modes_have_distinct_z_behavior() -> None:
     assert [round(vertex.z, 6) for vertex in blended] == [15.0, 17.0, 15.0, 17.0]
     assert "blend_basis=primary_side_plane" in blended[0].notes
     assert "blend_basis=primary_side_plane" in blended[2].notes
+
+
+def test_intersection_slope_face_policy_defaults_and_source_rows_are_read() -> None:
+    default_policy = build_corridor_command._intersection_slope_face_policy_for(None, "intersection:t-01")
+
+    assert default_policy.policy_id == "slope-face:intersection:t-01:default"
+    assert default_policy.tie_slope_overlap_m == 0.5
+    assert "slope_face_policy_missing_default_applied" in default_policy.diagnostic_rows
+
+    explicit_model = SimpleNamespace(
+        slope_face_policy_rows=[
+            SimpleNamespace(
+                policy_id="slope-face:intersection:t-01:custom",
+                intersection_id="intersection:t-01",
+                tie_slope_overlap_m=0.85,
+                status="active",
+            )
+        ]
+    )
+    explicit_policy = build_corridor_command._intersection_slope_face_policy_for(explicit_model, "intersection:t-01")
+
+    assert explicit_policy.policy_id == "slope-face:intersection:t-01:custom"
+    assert explicit_policy.tie_slope_overlap_m == 0.85
 
 
 def test_intersection_patch_boundary_vertices_use_grading_plane_elevation() -> None:

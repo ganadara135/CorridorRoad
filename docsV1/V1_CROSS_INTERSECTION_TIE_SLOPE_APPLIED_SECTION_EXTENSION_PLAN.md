@@ -4,87 +4,136 @@ Last updated: 2026-07-06
 
 ## Purpose
 
-Define a simple source-driven plan to extend `Intersection Tie Slope` coverage for Cross intersections.
+Define the revised source-driven plan for extending `Intersection Tie Slope Surface` in Cross intersections.
 
-The goal is to fill the slope-side transition area from the first intersection Applied Section toward the curb-return-adjacent Applied Section, using Applied Section ordering instead of generated mesh repair.
+The target is to extend Tie Slope panels from the current transition windows inward to the end points of the intersection supplemental Applied Sections.
+
+This intentionally allows Tie Slope panels to enter the curb-return influence area when the source Applied Sections prove that the transition belongs there.
 
 ## Problem
 
-T intersections currently produce useful `Intersection Tie Slope` panels from Applied Section transition windows.
+The current Cross intersection output can build useful `Intersection Tie Slope Surface` panels along some approach windows, but it still leaves gaps near the curb-return and the rectangular intersection supplemental Applied Section corners.
 
-Cross intersections still leave visible gaps around the junction because the current Cross logic keeps only the outer `transition_pair` windows and suppresses `intersection_adjacent_pair` rows that created unwanted rectangular patches.
+Earlier attempts treated curb-return interior overlap as something to avoid. That rule is too restrictive for the desired Cross behavior.
 
-The suppressed `intersection_adjacent_pair` rows should not be restored as-is. They create internal rectangular slope patches rather than intentional curb-return approach strips.
+For Cross intersections, the user-visible target is:
 
-## Core Rule
+- use the supplemental Applied Sections that were generated for the intersection
+- extend `Intersection Tie Slope Surface` to the supplemental Applied Section end points
+- reach the rectangular corner/edge positions near the curb-return area
+- keep the surface source-driven and deterministic
 
-Cross `Intersection Tie Slope` extension must be built from Applied Section result rows and Intersection source/evaluation contracts.
+## Corrected Core Rule
 
-Do not use generated mesh, preview object geometry, or already-created surface fragments as source truth.
+`Intersection Tie Slope Surface` may enter the curb-return influence area when it is generated from valid intersection supplemental Applied Section rows.
 
-## Design Direction
+The limit is not the curb-return circle.
 
-Use the same simple idea that works for T intersections:
+The limit is the source/evaluation context:
 
-- find the Applied Section where the intersection context begins
-- find the Applied Section immediately before the curb-return-controlled area
-- build side-slope strip panels between those Applied Sections
-- repeat per participating leg and side
+- same intersection id
+- same alignment or leg ownership
+- same side
+- ordered Applied Section station sequence
+- valid side-slope edge rows
+- no intrusion into the central pavement/intersection surface ownership area
 
-For Cross intersections, this rule is applied independently to:
+In short:
 
-- primary road entry, left and right
-- primary road exit, left and right
-- each secondary road entry and exit leg, left and right
-
-The generated surface remains `Intersection Tie Slope`.
+> Do not use curb-return geometry as a hard clipping boundary for Tie Slope. Use intersection supplemental Applied Section extent as the Tie Slope reach boundary.
 
 ## Non-Goals
 
-- Do not restore Cross `intersection_adjacent_pair` as ordinary accepted Tie Slope surface rows.
-- Do not generate slope panels from `Intersection Slope Face Surface` mesh.
-- Do not use Intersections tab highlight objects as geometry input.
-- Do not directly triangulate from the current ordinary corridor `Slope Face Surface`.
-- Do not attempt watertight solid closure in this phase.
+- Do not use generated TIN mesh, preview objects, or tree objects as source truth.
+- Do not infer Tie Slope from already-created `Intersection Slope Face Surface` triangles.
+- Do not restore the earlier broad internal rectangular patches.
+- Do not merge ordinary `Slope Face Surface`, `Intersection Slope Face Surface`, and `Intersection Tie Slope Surface`.
+- Do not use Intersections-tab highlight geometry as input.
+- Do not build synthetic fallback panels when Applied Section edge data is missing.
 
 ## Source Inputs
 
-Required source/result inputs:
+Required:
 
 - `IntersectionModel`
-- `IntersectionPatchPrerequisiteResult`
+- participating leg/alignment refs
 - `AppliedSectionSet`
-- Applied Section station ordering
-- Applied Section side-slope terminal edges
-- control-area and active-intersection context refs
-- curb-return boundary segment metadata where available
+- station-ordered Applied Section rows
+- `active_intersection_id`
+- supplemental/source Applied Section classification
+- side-slope boundary or terminal edge rows for each side
 
-Optional diagnostic inputs:
+Preferred:
 
-- `IntersectionBoundarySegmentResult`
-- shared breakline result
-- existing Tie Slope window diagnostics
+- control-area refs
+- leg refs
+- road role, for example `primary` and `secondary`
+- transition role, for example `entry` and `exit`
+- shared breakline result rows for accepted Tie Slope windows
 
-## Proposed Row Model
+Diagnostic-only:
 
-Add a new Cross-only Applied Section Tie Slope row role:
+- curb-return boundary segment metadata
+- existing `Intersection Slope Face Surface` and ordinary `Slope Face Surface` preview metadata
+- Breakline Audit notes
 
-`curb_return_approach_pair`
+## Design Direction
 
-This role differs from the existing rows:
+For every Cross intersection leg and side:
 
-- `transition_pair`: region/control boundary to first intersection Applied Section
-- `intersection_adjacent_pair`: immediate internal pair; currently suppressed for Cross because it creates unwanted rectangular patches
-- `curb_return_approach_pair`: Applied Section strip from the first intersection Applied Section toward the curb-return-adjacent Applied Section
+1. Collect Applied Sections for the participating alignment.
+2. Sort by station.
+3. Identify the first and last Applied Sections that belong to the target intersection.
+4. Identify supplemental Applied Sections inside that intersection range.
+5. Build Tie Slope windows from the ordinary/intersection transition toward the supplemental Applied Section end point nearest the curb-return influence area.
+6. Repeat independently for:
+   - primary entry left/right
+   - primary exit left/right
+   - secondary entry left/right
+   - secondary exit left/right
 
-The `curb_return_approach_pair` row must carry:
+The generated object remains:
+
+`Intersection Tie Slope Surface`
+
+## Target Geometry Meaning
+
+The desired Cross behavior is not a circular curb-return fill.
+
+It is a set of Applied Section strip cells that reach the intersection supplemental Applied Section end points.
+
+Each cell is a quadrilateral strip between two adjacent Applied Sections:
+
+- outer boundary: previous Applied Section side-slope edge
+- inner boundary: next Applied Section side-slope edge
+- start/end caps: side edges connecting the two section boundaries
+
+The final accepted strip in each direction may lie inside the curb-return influence area if both boundaries are owned by intersection supplemental Applied Sections.
+
+## Candidate Row Roles
+
+Keep using accepted Applied Section window rows, but refine Cross semantics.
+
+Recommended roles:
+
+- `transition_pair`
+  - ordinary Applied Section to first intersection Applied Section
+- `intersection_supplemental_pair`
+  - pair between adjacent intersection supplemental Applied Sections
+- `supplemental_endpoint_pair`
+  - final pair reaching the intersection supplemental end point nearest the curb-return/rectangular corner
+
+Avoid reusing `intersection_adjacent_pair` for visible Cross output unless it is explicitly redefined and guarded. The old meaning produced unwanted internal rectangular patches.
+
+Each candidate row should record:
 
 - `intersection_id`
 - `intersection_kind`
 - `alignment_ref`
 - `road_role`
-- `gap_role`
+- `leg_ref`
 - `side`
+- `transition_role`
 - `cell_role`
 - `outer_applied_section_ref`
 - `inner_applied_section_ref`
@@ -94,224 +143,307 @@ The `curb_return_approach_pair` row must carry:
 - `inner_edge_xyz`
 - `loop_points_xyz`
 - `loop_area_xy`
+- `is_supplemental_outer`
+- `is_supplemental_inner`
+- `status`
 - diagnostics
 
-## Applied Section Selection Rule
+## Selection Algorithm
 
-For each leg and side:
+For each participating alignment:
 
-1. Collect Applied Sections by `alignment_id`.
-2. Keep rows with valid side-slope terminal edge for the side.
-3. Split rows into outside, transition, and intersection-context rows using:
-   - `active_intersection_id`
-   - `active_intersection_control_area_id`
-   - `region_id`
-   - station order
-4. Identify the first Applied Section with active intersection context.
-5. Identify the curb-return-adjacent Applied Section by walking inward from the first intersection section until one of these is true:
-   - the next section would cross the curb-return boundary envelope
-   - the section no longer has a stable side-slope edge
-   - the section belongs to another control area or leg context
-   - the max allowed approach step count is reached
-6. Build strips between consecutive accepted Applied Sections in this selected range.
+1. Build `sections` from `AppliedSectionSet.sections`.
+2. Keep only sections matching the target alignment.
+3. Keep only sections with usable side-slope edge points for the requested side.
+4. Sort by station.
+5. Mark sections with `active_intersection_id == target intersection`.
+6. Inside the active intersection span, identify supplemental Applied Sections.
+7. For each entry direction:
+   - start at the ordinary-to-intersection transition pair
+   - walk inward through adjacent active-intersection section pairs
+   - stop at the supplemental Applied Section end point intended for the curb-return-adjacent rectangular corner
+8. For each exit direction:
+   - start at the intersection-to-ordinary transition pair
+   - walk inward in the opposite station direction
+   - stop at the matching supplemental Applied Section end point
+9. Reject any pair that changes alignment, side, leg ownership, or target intersection id.
 
-The first implementation may limit this to one or two Applied Section spans per leg if that is enough to reach the curb-return-adjacent area in the preset.
+The first implementation may use a bounded walk count, but it must report when the selected end point was limited by the cap.
 
-## Surface Generation Rule
+## Acceptance Rules
 
-For each `curb_return_approach_pair` row:
+A row can become visible geometry only if:
 
-1. Use the two Applied Section side-slope terminal edges as strip boundaries.
-2. Orient the loop consistently.
-3. Reject loops with:
-   - fewer than four unique points
-   - near-zero area
-   - self-crossing
-   - excessive span length compared with station interval
-   - mismatch between leg alignment and Applied Section alignment
-4. Create two triangles per quadrilateral strip.
-5. Store diagnostics for suppressed or rejected rows.
+- both Applied Sections are from the same alignment
+- both edges exist for the same side
+- at least one section is active for the target intersection
+- the station order matches the entry/exit direction
+- the loop has four valid corners
+- the loop area is positive
+- the loop does not self-cross
+- the loop span is local compared with the station spacing
+- the loop does not overlap the central pavement/intersection surface ownership polygon
+
+Important correction:
+
+- the loop may overlap the curb-return influence area
+- the loop may reach inside the curb-return circle
+- this is accepted only when the inner boundary is an intersection supplemental Applied Section edge
 
 ## Shared Breakline Rule
 
-Every accepted strip must produce auditable shared breaklines:
+Every accepted cell must emit shared breakline rows.
 
-- outer edge: Tie Slope to ordinary Slope Face Surface or corridor slope face context
-- inner edge: Tie Slope to Intersection Slope Face Surface or curb-return approach context
-- start cap: Tie Slope local boundary
-- end cap: Tie Slope local boundary
+Suggested roles:
 
-If the strip reaches a curb-return-adjacent section, the inner edge should be tagged as:
+- `intersection_tie_slope_transition_outer`
+- `intersection_tie_slope_transition_inner`
+- `intersection_tie_slope_supplemental_outer`
+- `intersection_tie_slope_supplemental_inner`
+- `intersection_tie_slope_supplemental_endpoint`
+- `intersection_tie_slope_start_cap`
+- `intersection_tie_slope_end_cap`
 
-`intersection_tie_slope_to_curb_return_approach`
+The shared breakline refs must be tied to Applied Section window rows and source/result contract refs, not preview geometry.
 
-This is an audit role first. It does not need to force direct arc matching in the first slice.
+Breakline Audit should make it clear when a Tie Slope edge is:
+
+- shared with ordinary `Slope Face Surface`
+- shared with `Intersection Slope Face Surface`
+- local to another `Intersection Tie Slope Surface` cell
+- an endpoint cap at the intersection supplemental boundary
 
 ## Implementation Phases
 
-### Phase 1 - Diagnostics and Selection
+### Phase XITS-001 - Remove Obsolete Cross Tie-Slope Assumptions
 
-- Add helper to collect Cross leg Applied Sections by alignment and side.
-- Add helper to identify first intersection Applied Section.
-- Add helper to identify curb-return-adjacent Applied Section candidate.
-- Add debug metadata to show selected station windows.
-- Keep geometry unchanged until the selected rows are inspectable.
+- Remove or quarantine code that treats curb-return interior as an automatic Tie Slope rejection condition.
+- Keep protection against central pavement/intersection surface intrusion.
+- Keep old broad internal rectangular-patch generation disabled.
 
 Acceptance:
 
-- Cross preset reports candidate `curb_return_approach_pair` rows.
-- Candidate rows show correct alignment, side, station pair, and Applied Section refs.
-- Existing `intersection_adjacent_pair` remains suppressed for Cross.
+- No code path rejects a valid Cross Tie Slope candidate only because it is inside the curb-return influence area.
+- Old rectangular internal patches do not return.
 
-### Phase 2 - Surface Rows
+### Phase XITS-002 - Supplemental Applied Section Extent Diagnostics
 
-- Generate `curb_return_approach_pair` rows from selected Applied Section pairs.
-- Feed accepted rows into `_build_intersection_tie_slope_surface`.
-- Keep `transition_pair` behavior unchanged.
-- Keep Cross `intersection_adjacent_pair` suppressed.
-
-Acceptance:
-
-- `Intersection Tie Slope` still exists.
-- Cross Tie Slope triangle count increases only by accepted `curb_return_approach_pair` strips.
-- No rectangular internal patches reappear.
-
-### Phase 3 - Shared Breakline Handoff
-
-- [x] Add shared breakline rows for accepted `curb_return_approach_pair`.
-- [x] Add role summary and diagnostics to Breakline Audit.
-- [x] Confirm `geometry_mismatch`, `mesh_mismatch`, and `missing_consumer` remain zero for accepted rows.
-
-Implementation note:
-
-- `curb_return_approach_pair` rows now use explicit shared breakline roles:
-  - `intersection_tie_slope_approach_outer`
-  - `intersection_tie_slope_to_curb_return_approach`
-  - `intersection_tie_slope_approach_start_cap`
-  - `intersection_tie_slope_approach_end_cap`
-- Existing T-intersection/transition rows keep the original `intersection_tie_slope_window_*` roles.
+- Add diagnostics that list, per alignment/side:
+  - first active intersection section
+  - last active intersection section
+  - supplemental section count
+  - selected supplemental endpoint section
+  - rejected reason if no endpoint is found
 
 Acceptance:
 
-- Breakline Audit lists Tie Slope extension edges with accepted status.
-- Suppressed rows remain traceable but do not appear as generated surface geometry.
+- Intersections or Results notes show the selected supplemental endpoint refs.
+- Manual QA can compare those refs against visible Applied Section preview rows.
 
-### Phase 4 - Cross Regression Smoke
+### Phase XITS-003 - Candidate Window Expansion
 
-- [x] Extend Cross smoke test to assert:
-  - `Intersection Tie Slope` preview exists when prerequisites are accepted.
-  - internal `intersection_adjacent_pair` rows are not restored as generated Tie Slope rows.
-  - `curb_return_approach_pair` consumed count is greater than zero.
-  - accepted approach strips emit explicit shared breakline roles.
-  - total Tie Slope triangle count reflects transition plus approach strips.
-
-Implementation note:
-
-- The current Cross implementation does not keep `intersection_adjacent_pair` rows as suppressed rows. It omits them from generated Tie Slope row output and accepts only `curb_return_approach_pair` rows for this extension.
+- Extend accepted Cross Tie Slope candidate generation beyond the first transition window.
+- Walk through adjacent active-intersection Applied Section pairs until the selected supplemental endpoint is reached.
+- Generate `intersection_supplemental_pair` and `supplemental_endpoint_pair` rows.
 
 Acceptance:
 
-- [x] FreeCADCmd Cross smoke passes.
-- [x] Existing T intersection Tie Slope smoke is not regressed.
+- Candidate row count increases for Cross intersections.
+- Rows remain leg/side/station ordered.
+- Rejected rows include explicit diagnostics.
 
-Current verification note:
+### Phase XITS-004 - Surface Generation
 
-- Cross focused smoke passes after the new assertions.
-- T Tie Slope preview creation was restored for zero-span T transition windows by pairing the nearest ordinary Applied Section with the first/last intersection Applied Section.
-- T Tie Slope shared breakline handoff now reports the original `intersection_tie_slope_window_*` roles separately from Cross `curb_return_approach_pair` roles.
-- T upper rectangular panel candidates are subdivided from source shared breaklines when a single candidate is too broad.
-- T upper panel handoff roles are exposed in Breakline Audit as `intersection_upper_slope_face_panel_*` rows and consumed by the dedicated Intersection Slope Face Surface.
-- T smoke now passes.
-- Full Non-T smoke now passes for Cross, Skewed, and Y presets.
-- Y/Skewed degenerate curb-return envelopes are promoted to a diagnostic `source_endpoint_hull` boundary loop only when the loop comes from accepted source endpoints, not from generated mesh or preview geometry.
-- Cross manual QA proxy is covered by the Non-T smoke: it checks dedicated Tie Slope preview creation, Applied Section window source ownership, object separation from ordinary Slope Face and Intersection Slope Face previews, and zero shared-breakline geometry/mesh/missing-consumer mismatch.
-- Cross secondary road Tie Slope now mirrors the primary road entry/exit rule. Secondary `entry` rows use `secondary_region_start_to_intersection_start`, and Secondary `exit` rows use `secondary_intersection_end_to_region_end`.
+- Promote accepted supplemental window rows into `Intersection Tie Slope Surface` triangles.
+- Generate two triangles per valid quadrilateral window.
+- Preserve separate output object ownership.
 
-### Phase 5 - Manual QA
+Acceptance:
+
+- `Intersection Tie Slope Surface` extends to the rectangular supplemental Applied Section corners.
+- Curb-return-adjacent gaps are reduced without creating remote panels.
+- No central intersection pavement intrusion is observed.
+
+### Phase XITS-005 - Shared Breakline Handoff
+
+- Add shared breakline rows for the new supplemental and endpoint cells.
+- Add consumed refs to the Tie Slope output surface.
+- Update Breakline Audit role summaries.
+
+Acceptance:
+
+- Breakline Audit reports zero geometry mismatch, mesh mismatch, and missing consumer for accepted rows.
+- The endpoint cap role is visible and traceable.
+
+### Phase XITS-006 - Regression Tests
+
+- Add focused FreeCADCmd tests for Cross:
+  - primary entry/exit extension
+  - secondary entry/exit extension
+  - supplemental endpoint selected
+  - no old rectangular internal patch role emitted
+  - no central surface overlap
+  - accepted shared breakline roles exist
+
+Acceptance:
+
+- Cross smoke passes.
+- Existing T intersection Tie Slope behavior is unchanged.
+
+### Phase XITS-007 - Manual QA
 
 Manual checks:
 
 1. Create Cross Intersection preset.
-2. Build Applied Sections.
-3. Build Parametric.
-4. Enable `Intersection Tie Slope`.
-5. Confirm Tie Slope extends from the first intersection Applied Section toward curb-return-adjacent Applied Sections.
-6. Confirm the removed upper rectangular patch does not reappear.
-7. Confirm ordinary corridor `Slope Face Surface` and dedicated `Intersection Tie Slope` remain separate objects.
-8. Check Breakline Audit for zero geometry and mesh mismatch.
+2. Build Applied Sections with supplemental rows enabled.
+3. Show Applied Section preview.
+4. Build Parametric.
+5. Enable:
+   - `Intersection Surface`
+   - `Intersection Slope Face Surface`
+   - `Intersection Tie Slope Surface`
+   - Applied Section preview
+6. Confirm Tie Slope reaches the intersection supplemental Applied Section rectangular corner/end point.
+7. Confirm Tie Slope may enter curb-return influence area where supplemental sections support it.
+8. Confirm central pavement/intersection surface is not covered by Tie Slope.
+9. Confirm ordinary `Slope Face Surface`, `Intersection Slope Face Surface`, and `Intersection Tie Slope Surface` remain distinct.
+10. Check Breakline Audit for mismatch counts.
 
-Automated proxy:
+Acceptance:
 
-- [x] Cross preset creates `V1CorridorIntersectionTieSlopeSurfacePreview`.
-- [x] Tie Slope geometry source is `accepted_applied_section_window_rows`.
-- [x] Accepted Tie Slope window count is greater than zero and each window produces two triangles.
-- [x] Ordinary `Slope Face Surface`, dedicated `Intersection Slope Face Surface`, and `Intersection Tie Slope` remain separate preview objects.
-- [x] Breakline Audit reports zero geometry mismatch, mesh mismatch, and missing consumer count for the Cross preset.
+- The gaps shown near Cross curb-return/rectangular corners are visibly reduced.
+- The previous unwanted internal rectangular patches do not return.
 
 ## Risks
 
-- Applied Section density may be insufficient near curb returns.
-- Superelevation or skewed Cross layouts may cause side-slope edge orientation changes.
-- Secondary road exit handling may need a second pass if the preset only records secondary entry semantics.
-- Curb-return adjacency detection may need to evolve from station-only to boundary-envelope-aware selection.
+- Applied Section supplemental density may not include a usable endpoint near every curb-return corner.
+- Cross skew or unequal road widths may require per-leg endpoint selection rather than fixed walk counts.
+- Side-slope edge orientation may flip between legs.
+- A supplemental endpoint may visually sit inside the curb-return circle but still conflict with central pavement ownership; this must remain rejected.
 
 ## Fallback Policy
 
-Fallbacks are allowed only as diagnostics.
+Fallbacks are diagnostic only.
 
-If a curb-return-adjacent Applied Section cannot be identified, report:
+If the supplemental endpoint cannot be selected, report:
 
-`intersection_tie_slope_curb_return_approach_candidate_missing`
+`intersection_tie_slope_supplemental_endpoint_missing`
 
-Do not create synthetic patches from preview geometry.
+If a selected endpoint would overlap central pavement ownership, report:
+
+`intersection_tie_slope_supplemental_endpoint_intrudes_central_surface`
+
+Do not create synthetic geometry from preview objects.
 
 ## Current Status
 
-- [x] Phase 1 - Diagnostics and Selection
-- [x] Phase 2 - Surface Rows
-- [x] Phase 3 - Shared Breakline Handoff
-- [x] Phase 4 - Cross Regression Smoke
-- [x] Phase 5 - Automated QA
-- [x] Phase 6 - Manual QA Proxy
-- [ ] Phase 7 - Visual Manual QA
+- [x] XITS-001 - Remove obsolete Cross Tie-Slope assumptions
+- [x] XITS-002 - Supplemental Applied Section extent diagnostics
+- [x] XITS-003 - Candidate window expansion
+- [x] XITS-004 - Surface generation
+- [x] XITS-005 - Shared breakline handoff
+- [x] XITS-006 - Regression tests
+- [ ] XITS-007 - Manual QA
 
-## Phase 1 Implementation Note
+## Implementation Notes
 
-Implemented diagnostic-only `curb_return_approach_pair` Applied Section window rows for Cross intersections.
+### 2026-07-06 - XITS-001/XITS-002
 
-Current Cross preset probe:
+- Confirmed that the current Cross Tie Slope approach walker does not use curb-return influence as a hard rejection boundary.
+- Added supplemental Applied Section extent diagnostics to Cross approach rows.
+- Existing `curb_return_approach_pair` rows now also expose:
+  - `supplemental_extent_role`
+  - `supplemental_endpoint_ref`
+  - `supplemental_endpoint_station`
+  - `outer_is_supplemental`
+  - `inner_is_supplemental`
+- Informational diagnostics are prefixed with `info:` so accepted geometry rows do not become warnings only because trace metadata is present.
+- Kept the legacy `curb_return_approach_pair` role name for compatibility. XITS-003 can introduce the refined `intersection_supplemental_pair` and `supplemental_endpoint_pair` roles after the endpoint selection is validated.
 
-- `transition_pair`: 6 rows
-- `intersection_adjacent_pair`: 6 rows
-- `curb_return_approach_pair`: 18 candidate rows
+### 2026-07-06 - XITS-003
 
-The new rows are intentionally marked `candidate` and include `intersection_tie_slope_curb_return_approach_candidate_only`, so they are visible for review but do not yet create `Intersection Tie Slope` surface triangles.
+- Replaced the fixed three-pair Cross approach walk with a source-driven walk to the furthest valid supplemental Applied Section endpoint in the selected direction.
+- The walker remains bounded by same alignment, same intersection id, same side edge availability, and same control-area context.
+- If no supplemental endpoint is available, the walker falls back to a short diagnostic-compatible window instead of generating synthetic endpoint geometry.
+- Kept `cell_role=curb_return_approach_pair` for existing surface/breakline compatibility, and exposed the refined meanings through:
+  - `supplemental_extent_role=intersection_supplemental_pair`
+  - `supplemental_extent_role=supplemental_endpoint_pair`
+- Added regression coverage that verifies endpoint rows stop on supplemental Applied Sections.
 
-Next step: promote selected `curb_return_approach_pair` rows to accepted surface rows with guardrails against internal rectangular patch regeneration.
+### 2026-07-06 - XITS-004
 
-## Phase 2 Implementation Note
+- Promoted accepted supplemental/endpoint Applied Section window rows into the existing dedicated `Intersection Tie Slope Surface` TIN path.
+- Fixed the surface builder so informational diagnostics prefixed with `info:` do not reject otherwise accepted window rows.
+- Added TIN quality rows for:
+  - `intersection_tie_slope_window_supplemental_endpoint_count`
+  - `intersection_tie_slope_window_supplemental_inner_count`
+- Exposed those counts on the preview object as:
+  - `IntersectionTieSlopeSupplementalEndpointCount`
+  - `IntersectionTieSlopeSupplementalInnerCount`
+- Added regression coverage that verifies supplemental endpoint rows are consumed by the preview surface and that each accepted window still triangulates as two triangles.
 
-Promoted Cross `curb_return_approach_pair` rows to accepted `Intersection Tie Slope` surface rows.
+### 2026-07-06 - XITS-005
 
-Current accepted Cross preview probe:
+- Added supplemental and endpoint-aware shared breakline roles for accepted Cross Tie Slope window rows:
+  - `intersection_tie_slope_supplemental_outer`
+  - `intersection_tie_slope_supplemental_inner`
+  - `intersection_tie_slope_supplemental_endpoint`
+  - `intersection_tie_slope_supplemental_start_cap`
+  - `intersection_tie_slope_supplemental_end_cap`
+- The TIN boundary refs and Shared Breakline rows now use the same row-role resolver so surface metadata and Breakline Audit stay aligned.
+- Fixed shared breakline handoff so informational `info:` diagnostics do not reject otherwise accepted window rows.
+- Added regression coverage for supplemental shared breakline role emission.
 
-- `curb_return_approach_pair`: 24 accepted rows
-- `Intersection Tie Slope` preview: created
-- `IntersectionTieSlopeTriangleCount`: 48
-- `IntersectionTieSlopeAppliedSectionWindowRowCount`: 24
-- `IntersectionTieSlopeAppliedSectionWindowAcceptedCount`: 24
+### 2026-07-06 - XITS-006
 
-The implementation does not depend on a non-zero Region/control-area to Applied Section transition span. When Cross control-area STA and Applied Section intersection STA are both `96-144`, the generator now selects the first or last active intersection Applied Section directly and walks inward by Applied Section order.
+- Extended Cross regression smoke to verify:
+  - primary and secondary road endpoint windows exist for entry/exit and both sides
+  - intermediate supplemental Applied Section pair rows exist
+  - endpoint rows stop on supplemental Applied Sections
+  - endpoint rows expose selected supplemental endpoint refs
+  - old Cross `intersection_adjacent_pair` rows do not return
+  - supplemental endpoint rows are consumed by the dedicated preview surface
+  - supplemental shared breakline roles are emitted
+- Extended T regression smoke to verify that Cross-only supplemental shared breakline roles do not appear in T intersection output.
+- Verified both focused FreeCADCmd smoke tests after the assertions were added.
 
-Secondary road handling now follows the same entry/exit split as Primary road:
+### 2026-07-06 - Manual QA Correction: Control-Area Walk Boundary
 
-- `secondary entry left`: 3 accepted `curb_return_approach_pair` rows
-- `secondary entry right`: 3 accepted `curb_return_approach_pair` rows
-- `secondary exit left`: 3 accepted `curb_return_approach_pair` rows
-- `secondary exit right`: 3 accepted `curb_return_approach_pair` rows
-- Secondary entry window kind: `secondary_region_start_to_intersection_start`
-- Secondary exit window kind: `secondary_intersection_end_to_region_end`
+- Manual QA showed that Cross Intersection Tie Slope became smaller after XITS-003.
+- Root cause: the supplemental Applied Section walker stopped whenever adjacent Applied Sections changed `active_intersection_control_area_id`.
+- That guard was too strict for Cross intersections because the target supplemental endpoint can legitimately sit across a control-area boundary while still belonging to the same alignment, same intersection, and same side-slope edge chain.
+- Relaxed the hard same-control-area stop.
+- Kept the source-driven safety boundary at:
+  - same alignment
+  - same intersection id
+  - same side edge availability
+  - station-adjacent Applied Section order
+- Added trace metadata for allowed control-area transitions:
+  - `outer_control_area_ref`
+  - `inner_control_area_ref`
+  - `control_area_transition_allowed`
+  - `info:intersection_tie_slope_control_area_transition_allowed:<outer>-><inner>`
+- Added `control_area_transitions=<count>` to the Tie Slope window summary note so manual QA can confirm whether the extension crossed a control-area boundary.
 
-The previous Cross `intersection_adjacent_pair` suppress policy remains in place. It is not used to create these new surface rows.
+### 2026-07-06 - Rejected Attempt: Boundary Cap Consumption
 
-Next step: add explicit shared breakline handoff roles for accepted `curb_return_approach_pair` rows and expose them in Breakline Audit.
+- A Cross-only attempt consumed `corridor_intersection_tie_slope_result()` local boundary cap loops directly into the visible `Intersection Tie Slope Surface`.
+- Manual QA rejected this direction.
+- Problem: the cap loops connect curb-return boundary segments directly to Applied Section terminal edges and create large fan/wedge surfaces.
+- This does not match the intended behavior.
+- The intended behavior remains Applied Section based:
+  - find the intersection supplemental Applied Section range
+  - extend Tie Slope by adjacent Applied Section cells
+  - do not add direct curb-return-boundary-to-road-edge fan caps
+- The boundary cap consumption code and preview property were removed.
+
+### 2026-07-06 - Cleanup: Cross Adjacent Pair Suppression
+
+- Removed Cross `intersection_adjacent_pair` candidate generation from the non-zero transition-span path.
+- Reason: for Cross intersections this row duplicates the first `curb_return_approach_pair` span and reintroduces the older internal-adjacent patch ambiguity.
+- Cross Tie Slope candidates should be expressed as:
+  - `transition_pair`
+  - `curb_return_approach_pair`
+  - `supplemental_extent_role=intersection_supplemental_pair`
+  - `supplemental_extent_role=supplemental_endpoint_pair`
+- Manual QA should no longer see `intersection_adjacent_pair` in Cross `intersection_tie_slope_window` notes.

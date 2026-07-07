@@ -12,6 +12,7 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
+    IntersectionSlopeFacePolicyRow,
     intersection_kind_from_label,
     intersection_preset_labels,
     intersection_row_from_kind,
@@ -50,6 +51,7 @@ def test_intersection_row_preserves_alignment_refs_control_regions_and_legs() ->
         "edge-policy:intersection:t-01:leg-01:pavement",
         "edge-policy:intersection:t-01:leg-01:daylight",
     ]
+    assert "slope-face:intersection:t-01:default" in row.policy_refs
     assert "drainage-policy:intersection:t-01:default" in row.policy_refs
 
 
@@ -220,6 +222,21 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
                 diagnostic_rows=["drainage_locked_by_user"],
             )
         ],
+        slope_face_policy_rows=[
+            IntersectionSlopeFacePolicyRow(
+                policy_id="policy:intersection-slope-face-basic",
+                intersection_id="intersection:x-01",
+                policy_name="Locked Slope Face Policy",
+                tie_slope_overlap_m=0.75,
+                slope_face_width_offset_m=0.25,
+                blend_angle_deg=5.0,
+                max_panel_extension_m=4.0,
+                min_panel_width_m=0.3,
+                source_method="manual",
+                approval_status="locked",
+                diagnostic_rows=["slope_face_policy_locked_by_user"],
+            )
+        ],
     )
 
     assert model.intersection_rows[0].intersection_kind == "cross_intersection"
@@ -258,6 +275,10 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
     assert model.grading_policy_rows[0].diagnostic_rows == ["grading_locked_by_user"]
     assert model.drainage_policy_rows[0].gutter_edge_refs == ["policy:edge-primary-pavement"]
     assert model.drainage_policy_rows[0].drainage_element_refs == ["drainage:inlet-01"]
+    assert model.slope_face_policy_rows[0].tie_slope_overlap_m == 0.75
+    assert model.slope_face_policy_rows[0].slope_face_width_offset_m == 0.25
+    assert model.slope_face_policy_rows[0].approval_status == "locked"
+    assert model.slope_face_policy_rows[0].diagnostic_rows == ["slope_face_policy_locked_by_user"]
     assert model.drainage_policy_rows[0].flow_route_refs == ["flow-route:intersection-main"]
     assert model.drainage_policy_rows[0].intent_status == "accepted"
     assert model.drainage_policy_rows[0].approval_status == "locked"
