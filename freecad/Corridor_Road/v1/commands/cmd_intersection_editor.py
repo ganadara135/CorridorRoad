@@ -33,6 +33,7 @@ from ..models.source.intersection_model import (
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
+    IntersectionSlopeFacePolicyRow,
     intersection_kind_from_label,
     intersection_preset_labels,
 )
@@ -204,7 +205,13 @@ def build_intersection_model_from_sources(
         notes="Intersection anchor source row created from panel inputs.",
     )
     control_area_rows = _control_area_rows_from_region_choices(intersection_id, control_region_choices)
-    leg_rows = _leg_rows_from_region_choices(intersection_id, control_region_choices)
+    leg_rows = _leg_rows_from_region_choices(
+        intersection_id,
+        control_region_choices,
+        intersection_kind=kind,
+        primary_alignment_ref=primary_ref,
+        secondary_alignment_refs=secondary_refs,
+    )
     corner_rows = _default_corner_rows(intersection_id, kind, control_area_rows, leg_rows)
     arm_policy_rows = _default_arm_policy_rows(intersection_id, leg_rows)
     edge_policy_rows = _default_edge_policy_rows(intersection_id, leg_rows)
@@ -227,6 +234,7 @@ def build_intersection_model_from_sources(
         policy_refs=[
             f"curb-return:{intersection_id}:default",
             f"grading:{intersection_id}:default",
+            f"slope-face:{intersection_id}:default",
             drainage_policy_row.policy_id,
             *[row.policy_id for row in arm_policy_rows],
             *[row.policy_id for row in edge_policy_rows],
@@ -258,6 +266,9 @@ def build_intersection_model_from_sources(
                 primary_alignment_ref=primary_ref,
                 secondary_alignment_refs=secondary_refs,
             )
+        ],
+        slope_face_policy_rows=[
+            _default_slope_face_policy(intersection_id=intersection_id)
         ],
         edge_policy_rows=edge_policy_rows,
         lane_connection_rows=lane_connection_rows,
@@ -1649,37 +1660,98 @@ def _control_area_rows_from_region_choices(
 def _leg_rows_from_region_choices(
     intersection_id: str,
     control_region_choices: list[dict[str, object]],
+    *,
+    intersection_kind: str = "",
+    primary_alignment_ref: str = "",
+    secondary_alignment_refs: list[str] | None = None,
 ) -> list[IntersectionLegRow]:
+    expanded_rows = _expanded_leg_source_rows_for_intersection_kind(
+        intersection_id,
+        control_region_choices,
+        intersection_kind=intersection_kind,
+        primary_alignment_ref=primary_alignment_ref,
+        secondary_alignment_refs=secondary_alignment_refs or [],
+    )
+    if expanded_rows:
+        return expanded_rows
     rows: list[IntersectionLegRow] = []
     for index, row in enumerate(control_region_choices, start=1):
-        start = float(row.get("station_start", 0.0) or 0.0)
-        end = float(row.get("station_end", 0.0) or 0.0)
-        region_id = str(row.get("region_id", "") or "")
-        alignment_ref = str(row.get("alignment_ref", "") or "")
-        rows.append(
-            IntersectionLegRow(
-                leg_id=f"{intersection_id}:leg:{index:02d}",
-                intersection_id=intersection_id,
-                leg_role=_leg_role_from_region_id(region_id, index),
-                alignment_ref=alignment_ref,
-                region_ref=str(row.get("control_region_ref", "") or ""),
-                approach_station_start=min(start, end),
-                approach_station_end=max(start, end),
-                source_method="region_derived",
-                approval_status="draft",
-                span_source="control_region",
-                arm_policy_ref=f"arm-policy:{intersection_id}:leg:{index:02d}",
-                edge_policy_refs=[
-                    f"edge-policy:{intersection_id}:leg:{index:02d}:pavement",
-                    f"edge-policy:{intersection_id}:leg:{index:02d}:daylight",
-                ],
-                grading_policy_ref=f"grading:{intersection_id}:default",
-                priority=index,
-                diagnostic_rows=["leg_source_region_derived", "leg_approval_pending"],
-                notes="Linked from intersection control Region.",
-            )
-        )
+        rows.append(_intersection_leg_row_from_region_choice(intersection_id, row, index, _leg_role_from_region_id(str(row.get("region_id", "") or ""), index)))
     return rows
+
+
+def _expanded_leg_source_rows_for_intersection_kind(
+    intersection_id: str,
+    control_region_choices: list[dict[str, object]],
+    *,
+    intersection_kind: str = "",
+    primary_alignment_ref: str = "",
+    secondary_alignment_refs: list[str] | None = None,
+) -> list[IntersectionLegRow]:
+    """Return approach-direction legs for intersection kinds where one Region spans two approaches."""
+
+    kind = str(intersection_kind or "").strip()
+    if kind != "cross_intersection":
+        return []
+    primary_ref = str(primary_alignment_ref or "").strip()
+    secondary_refs = [str(ref or "").strip() for ref in list(secondary_alignment_refs or []) if str(ref or "").strip()]
+    primary_row = _control_region_choice_for_alignment(control_region_choices, primary_ref)
+    secondary_ref = secondary_refs[0] if secondary_refs else ""
+    secondary_row = _control_region_choice_for_alignment(control_region_choices, secondary_ref)
+    if primary_row is None or secondary_row is None:
+        return []
+    specs = [
+        (primary_row, "primary_after"),
+        (secondary_row, "secondary_after"),
+        (primary_row, "primary_before"),
+        (secondary_row, "secondary_before"),
+    ]
+    return [
+        _intersection_leg_row_from_region_choice(intersection_id, row, index, role)
+        for index, (row, role) in enumerate(specs, start=1)
+    ]
+
+
+def _control_region_choice_for_alignment(control_region_choices: list[dict[str, object]], alignment_ref: str):
+    target = str(alignment_ref or "").strip()
+    if not target:
+        return None
+    for row in list(control_region_choices or []):
+        if str(row.get("alignment_ref", "") or "").strip() == target:
+            return row
+    return None
+
+
+def _intersection_leg_row_from_region_choice(
+    intersection_id: str,
+    row: dict[str, object],
+    index: int,
+    leg_role: str,
+) -> IntersectionLegRow:
+    start = float(row.get("station_start", 0.0) or 0.0)
+    end = float(row.get("station_end", 0.0) or 0.0)
+    alignment_ref = str(row.get("alignment_ref", "") or "")
+    return IntersectionLegRow(
+        leg_id=f"{intersection_id}:leg:{index:02d}",
+        intersection_id=intersection_id,
+        leg_role=str(leg_role or f"control_region_{index:02d}"),
+        alignment_ref=alignment_ref,
+        region_ref=str(row.get("control_region_ref", "") or ""),
+        approach_station_start=min(start, end),
+        approach_station_end=max(start, end),
+        source_method="region_derived",
+        approval_status="draft",
+        span_source="control_region",
+        arm_policy_ref=f"arm-policy:{intersection_id}:leg:{index:02d}",
+        edge_policy_refs=[
+            f"edge-policy:{intersection_id}:leg:{index:02d}:pavement",
+            f"edge-policy:{intersection_id}:leg:{index:02d}:daylight",
+        ],
+        grading_policy_ref=f"grading:{intersection_id}:default",
+        priority=index,
+        diagnostic_rows=["leg_source_region_derived", "leg_approval_pending"],
+        notes="Linked from intersection control Region.",
+    )
 
 
 def _default_arm_policy_rows(intersection_id: str, leg_rows: list[IntersectionLegRow]) -> list[IntersectionArmPolicyRow]:
@@ -1965,6 +2037,25 @@ def _default_grading_policy(
         approval_status="draft",
         diagnostic_rows=["grading_policy_source_defaulted", "grading_policy_approval_pending"],
         notes="Default first-slice intersection grading policy. Overrides normal superelevation inside the control area.",
+    )
+
+
+def _default_slope_face_policy(*, intersection_id: str) -> IntersectionSlopeFacePolicyRow:
+    return IntersectionSlopeFacePolicyRow(
+        policy_id=f"slope-face:{intersection_id}:default",
+        intersection_id=intersection_id,
+        policy_name="Default Intersection Slope Face Policy",
+        tie_slope_overlap_m=0.5,
+        slope_face_width_offset_m=0.0,
+        blend_angle_deg=0.0,
+        max_panel_extension_m=3.0,
+        min_panel_width_m=0.25,
+        enabled=True,
+        diagnostic_level="normal",
+        source_method="preset_default",
+        approval_status="draft",
+        diagnostic_rows=["slope_face_policy_source_defaulted", "slope_face_policy_approval_pending"],
+        notes="Default source policy for dedicated Intersection Slope Face panel reach.",
     )
 
 

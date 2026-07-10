@@ -56,7 +56,7 @@ Superelevation is optional, but when used it should be applied before Applied Se
 
 SubAssembly Designer is optional when using existing presets, but it should be used before Assembly when reusable section definitions or closed shape rows are needed.
 
-For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Alignments` when the road sources already exist, or `Create Starter Sources` when you want a starter junction created for you.
+For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Alignments` when the road sources already exist, or `Create From Preset` when you want a maintained T Intersection, Cross Intersection, or Roundabout starter junction created for you.
 
 ## 3. Minimal Smoke Workflow
 
@@ -70,7 +70,7 @@ For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Al
 8. Optionally open SubAssembly Designer, create reusable definitions, and apply the library.
 9. Create or select an Assembly and place Subassembly definitions.
 10. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
-11. Optionally open Intersection. Use `Create Starter Sources` for a starter junction; it creates participating sources and a multi-alignment 3D Centerline.
+11. Optionally open Intersection. Use `Create From Preset` for a starter junction; it creates participating sources and a multi-alignment 3D Centerline.
 12. Optionally open Structures and apply Structure source rows.
 13. Optionally open Drainage and apply drainage source rows.
 14. Run Applied Sections.

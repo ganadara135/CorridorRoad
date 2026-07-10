@@ -39,14 +39,28 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
+    hide_applied_sections_preview_objects,
+    show_all_applied_sections_preview_object,
 )
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
+    apply_v1_corridor_model,
     build_document_corridor_model,
     build_document_corridor_surface_model,
+    corridor_intersection_contract_review_rows,
+    corridor_intersection_patch_prerequisite_result,
+    corridor_intersection_shared_breakline_result,
     corridor_build_review_rows,
+    corridor_shared_breakline_audit_rows,
+    corridor_build_visibility_groups,
     create_corridor_daylight_surface_preview,
     create_corridor_design_surface_preview,
     create_corridor_intersection_surface_preview,
+    create_corridor_subgrade_surface_preview,
+    focus_corridor_intersection_contract_review_row,
+    focus_corridor_build_guided_review_step,
+    set_corridor_build_visibility_group,
+    shared_breakline_audit_display_rows,
+    _breakline_audit_surface_row_focuses_source_only,
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_drainage import to_drainage_model
@@ -113,10 +127,6 @@ def test_intersection_starter_source_specs_cover_first_slice_types() -> None:
     expected_roles = {
         "t_intersection": {"primary", "secondary"},
         "cross_intersection": {"primary", "secondary"},
-        "skewed_intersection": {"primary", "secondary_skew"},
-        "urban_curb_gutter_intersection": {"primary", "secondary"},
-        "drainage_sag_intersection": {"primary", "secondary"},
-        "y_intersection": {"primary_approach", "left_branch", "right_branch"},
         "roundabout": {"primary", "secondary"},
     }
     for kind, roles in expected_roles.items():
@@ -184,18 +194,10 @@ def test_intersection_preset_panel_labels_map_to_source_kinds() -> None:
     assert labels == [
         "T Intersection - Basic",
         "Cross Intersection - Basic",
-        "Skewed Intersection - Basic",
-        "Urban Curb/Gutter - Basic",
-        "Drainage-Sensitive Sag - Basic",
-        "Y Intersection - Basic",
         "Roundabout - Single Lane",
     ]
     assert intersection_preset_kind_from_label("T Intersection - Basic") == "t_intersection"
     assert intersection_preset_kind_from_label("Cross Intersection - Basic") == "cross_intersection"
-    assert intersection_preset_kind_from_label("Skewed Intersection - Basic") == "skewed_intersection"
-    assert intersection_preset_kind_from_label("Urban Curb/Gutter - Basic") == "urban_curb_gutter_intersection"
-    assert intersection_preset_kind_from_label("Drainage-Sensitive Sag - Basic") == "drainage_sag_intersection"
-    assert intersection_preset_kind_from_label("Y Intersection - Basic") == "y_intersection"
     assert intersection_preset_kind_from_label("Roundabout - Single Lane") == "roundabout"
 
 
@@ -453,262 +455,6 @@ def test_cross_intersection_preset_source_completeness_marks_default_rows_for_re
         App.closeDocument(doc.Name)
 
 
-def test_skewed_intersection_preset_creates_skew_source_and_review_diagnostics() -> None:
-    spec = starter_intersection_source_specs("skewed_intersection")
-    primary_points = list(spec["alignments"][0]["points"])
-    secondary_points = list(spec["alignments"][1]["points"])
-    primary_vector = (
-        float(primary_points[-1][0]) - float(primary_points[0][0]),
-        float(primary_points[-1][1]) - float(primary_points[0][1]),
-    )
-    secondary_vector = (
-        float(secondary_points[-1][0]) - float(secondary_points[0][0]),
-        float(secondary_points[-1][1]) - float(secondary_points[0][1]),
-    )
-    dot = primary_vector[0] * secondary_vector[0] + primary_vector[1] * secondary_vector[1]
-    cross = primary_vector[0] * secondary_vector[1] - primary_vector[1] * secondary_vector[0]
-    assert abs(dot) > 1.0e-6
-    assert abs(cross) > 1.0e-6
-
-    doc = App.newDocument("CRV1SkewedIntersectionPresetSources")
-    try:
-        created = create_intersection_preset_sources(
-            doc,
-            preset_label="Skewed Intersection - Basic",
-            grading_policy="blend_primary_side",
-            drainage_mode="review_low_points",
-        )
-        model = to_intersection_model(find_v1_intersection_model(doc))
-
-        assert any("Skew Main Road" in line for line in created)
-        assert any("Skew Crossing Road" in line for line in created)
-        assert model is not None
-        assert "intersection-preset:skewed_intersection:source-completeness" in model.source_refs
-        assert "intersection-preset:skewed_intersection:skew-review" in model.source_refs
-        row = model.intersection_rows[0]
-        assert row.intersection_kind == "skewed_intersection"
-        assert "source_completeness_ref=intersection-preset:skewed_intersection:source-completeness" in row.notes
-        assert "skew_review_ref=intersection-preset:skewed_intersection:skew-review" in row.notes
-        assert row.primary_alignment_ref
-        assert len(row.secondary_alignment_refs) == 1
-        assert len(row.control_region_refs) == 2
-        assert len(model.corner_rows) == 4
-        assert all("preset_corner_review_required" in corner.diagnostic_rows for corner in model.corner_rows)
-        assert all("preset_skew_corner_geometry_review_required" in corner.diagnostic_rows for corner in model.corner_rows)
-        assert all("skew_review_ref=intersection-preset:skewed_intersection:skew-review" in corner.notes for corner in model.corner_rows)
-        assert len(model.edge_policy_rows) >= 4
-        assert all("preset_skew_edge_family_review_required" in edge.diagnostic_rows for edge in model.edge_policy_rows)
-        assert all("skew_review_ref=intersection-preset:skewed_intersection:skew-review" in edge.notes for edge in model.edge_policy_rows)
-        assert {round(float(policy.radius), 3) for policy in model.curb_return_policy_rows} == {11.0}
-
-        completeness_rows = intersection_source_completeness_rows(
-            model,
-            control_region_count=len(row.control_region_refs),
-        )
-        completeness_summary = intersection_source_completeness_summary(completeness_rows)
-        rows_by_stage = {stage_row["stage"]: stage_row for stage_row in completeness_rows}
-        assert rows_by_stage["Participants"]["status"] == "accepted"
-        assert rows_by_stage["Corners"]["approval_state"] == "draft"
-        assert rows_by_stage["Edge Families"]["approval_state"] == "draft"
-        assert completeness_summary["status"] == "warning"
-        assert completeness_summary["missing_count"] == 0
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_urban_curb_gutter_preset_creates_edge_and_drainage_handoff_rows() -> None:
-    doc = App.newDocument("CRV1UrbanCurbGutterPresetSources")
-    try:
-        created = create_intersection_preset_sources(
-            doc,
-            preset_label="Urban Curb/Gutter - Basic",
-            grading_policy="blend_primary_side",
-            drainage_mode="curb_gutter_inlets",
-        )
-        model = to_intersection_model(find_v1_intersection_model(doc))
-        drainage = to_drainage_model(doc.getObject("V1IntersectionPresetDrainage"))
-
-        assert any("Urban Main Street" in line for line in created)
-        assert any("Urban Side Street" in line for line in created)
-        assert any("Drainage rows: elements=6" in line for line in created)
-        assert model is not None
-        assert "intersection-preset:urban_curb_gutter_intersection:source-completeness" in model.source_refs
-        assert "intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review" in model.source_refs
-        row = model.intersection_rows[0]
-        assert row.intersection_kind == "urban_curb_gutter_intersection"
-        assert "source_completeness_ref=intersection-preset:urban_curb_gutter_intersection:source-completeness" in row.notes
-        assert "urban_review_ref=intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review" in row.notes
-        assert len(row.control_region_refs) == 2
-
-        edge_roles = {edge.edge_role for edge in model.edge_policy_rows}
-        assert {"curb_edge", "gutter_edge", "sidewalk_edge"}.issubset(edge_roles)
-        urban_edges = [
-            edge
-            for edge in model.edge_policy_rows
-            if edge.edge_role in {"curb_edge", "gutter_edge", "sidewalk_edge"}
-        ]
-        assert urban_edges
-        assert {edge.source_method for edge in urban_edges} == {"urban_preset_default"}
-        assert all(edge.approval_status == "draft" for edge in urban_edges)
-        assert any("preset_urban_curb_review_required" in edge.diagnostic_rows for edge in urban_edges)
-        assert any("preset_urban_gutter_review_required" in edge.diagnostic_rows for edge in urban_edges)
-        assert any("preset_urban_sidewalk_review_required" in edge.diagnostic_rows for edge in urban_edges)
-        assert all(
-            "urban_review_ref=intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review" in edge.notes
-            for edge in urban_edges
-        )
-
-        drainage_policy = model.drainage_policy_rows[0]
-        assert drainage_policy.capture_mode == "curb_gutter_inlets"
-        assert drainage_policy.inlet_spacing == 45.0
-        assert drainage_policy.gutter_edge_refs
-        assert drainage_policy.inlet_candidate_refs
-        assert drainage_policy.low_point_refs
-        assert "preset_urban_inlet_review_required" in drainage_policy.diagnostic_rows
-        assert "preset_urban_low_point_review_required" in drainage_policy.diagnostic_rows
-        assert "urban_review_ref=intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review" in drainage_policy.notes
-        assert drainage is not None
-        assert drainage.drainage_model_id == "drainage:intersection-preset-urban-curb-gutter-intersection"
-        assert len(drainage.element_rows) == 6
-        assert len([item for item in drainage.element_rows if item.element_kind == "inlet_candidate"]) == 4
-
-        completeness_rows = intersection_source_completeness_rows(
-            model,
-            control_region_count=len(row.control_region_refs),
-        )
-        completeness_summary = intersection_source_completeness_summary(completeness_rows)
-        rows_by_stage = {stage_row["stage"]: stage_row for stage_row in completeness_rows}
-        assert rows_by_stage["Edge Families"]["approval_state"] == "draft"
-        assert rows_by_stage["Drainage"]["approval_state"] == "draft"
-        assert completeness_summary["status"] == "warning"
-        assert completeness_summary["missing_count"] == 0
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_drainage_sag_preset_creates_sag_profile_and_drainage_handoff_rows() -> None:
-    doc = App.newDocument("CRV1DrainageSagPresetSources")
-    try:
-        created = create_intersection_preset_sources(
-            doc,
-            preset_label="Drainage-Sensitive Sag - Basic",
-            grading_policy="blend_primary_side",
-            drainage_mode="sag_low_point_inlets",
-        )
-        model = to_intersection_model(find_v1_intersection_model(doc))
-        drainage = to_drainage_model(doc.getObject("V1IntersectionPresetDrainage"))
-        profile_models = [
-            to_profile_model(obj)
-            for obj in list(getattr(doc, "Objects", []) or [])
-            if str(getattr(obj, "V1ObjectType", "") or "") == "V1Profile"
-        ]
-        profile_models = [profile for profile in profile_models if profile is not None]
-
-        assert any("Sag Main Road" in line for line in created)
-        assert any("Sag Side Road" in line for line in created)
-        assert any("Drainage rows: elements=6" in line for line in created)
-        assert model is not None
-        assert "intersection-preset:drainage_sag_intersection:source-completeness" in model.source_refs
-        assert "intersection-preset:drainage_sag_intersection:sag-drainage-review" in model.source_refs
-        row = model.intersection_rows[0]
-        assert row.intersection_kind == "drainage_sag_intersection"
-        assert "source_completeness_ref=intersection-preset:drainage_sag_intersection:source-completeness" in row.notes
-        assert "sag_review_ref=intersection-preset:drainage_sag_intersection:sag-drainage-review" in row.notes
-        assert len(row.control_region_refs) == 2
-
-        assert profile_models
-        assert all(len(profile.control_rows) == 3 for profile in profile_models)
-        assert all(profile.control_rows[1].kind == "sag_low_point" for profile in profile_models)
-        assert all(profile.control_rows[1].elevation < profile.control_rows[0].elevation for profile in profile_models)
-        assert all(profile.control_rows[1].elevation < profile.control_rows[2].elevation for profile in profile_models)
-
-        grading_policy = model.grading_policy_rows[0]
-        assert grading_policy.low_point_strategy == "sag_low_point_review"
-        assert "preset_sag_profile_review_required" in grading_policy.diagnostic_rows
-        assert "preset_sag_low_point_review_required" in grading_policy.diagnostic_rows
-        assert "sag_review_ref=intersection-preset:drainage_sag_intersection:sag-drainage-review" in grading_policy.notes
-
-        drainage_policy = model.drainage_policy_rows[0]
-        assert drainage_policy.capture_mode == "sag_low_point_inlets"
-        assert drainage_policy.inlet_spacing == 35.0
-        assert drainage_policy.drainage_element_refs
-        assert drainage_policy.flow_route_refs
-        assert drainage_policy.inlet_candidate_refs
-        assert drainage_policy.low_point_refs
-        assert "preset_sag_inlet_review_required" in drainage_policy.diagnostic_rows
-        assert "preset_sag_flow_route_review_required" in drainage_policy.diagnostic_rows
-        assert "preset_sag_hydraulic_sizing_required" in drainage_policy.diagnostic_rows
-        assert "sag_review_ref=intersection-preset:drainage_sag_intersection:sag-drainage-review" in drainage_policy.notes
-        assert drainage is not None
-        assert drainage.drainage_model_id == "drainage:intersection-preset-drainage-sag-intersection"
-        assert len(drainage.element_rows) == 6
-        assert len([item for item in drainage.element_rows if item.element_kind == "sag_low_point"]) == 2
-        assert len([item for item in drainage.element_rows if item.element_kind == "inlet_candidate"]) == 2
-        assert drainage.flow_route_rows[0].risk_level == "critical"
-
-        completeness_rows = intersection_source_completeness_rows(
-            model,
-            control_region_count=len(row.control_region_refs),
-        )
-        completeness_summary = intersection_source_completeness_summary(completeness_rows)
-        rows_by_stage = {stage_row["stage"]: stage_row for stage_row in completeness_rows}
-        assert rows_by_stage["Grading"]["approval_state"] == "draft"
-        assert rows_by_stage["Drainage"]["approval_state"] == "draft"
-        assert completeness_summary["status"] == "warning"
-        assert completeness_summary["missing_count"] == 0
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_y_intersection_preset_creates_branch_roles_and_review_diagnostics() -> None:
-    doc = App.newDocument("CRV1YIntersectionPresetSources")
-    try:
-        created = create_intersection_preset_sources(
-            doc,
-            preset_label="Y Intersection - Basic",
-            grading_policy="blend_primary_side",
-            drainage_mode="review_low_points",
-        )
-        model = to_intersection_model(find_v1_intersection_model(doc))
-
-        assert any("Y Left Branch Road" in line for line in created)
-        assert any("Y Right Branch Road" in line for line in created)
-        assert model is not None
-        assert "intersection-preset:y_intersection:source-completeness" in model.source_refs
-        assert "intersection-preset:y_intersection:branch-review" in model.source_refs
-        row = model.intersection_rows[0]
-        assert row.intersection_kind == "y_intersection"
-        assert "source_completeness_ref=intersection-preset:y_intersection:source-completeness" in row.notes
-        assert "branch_review_ref=intersection-preset:y_intersection:branch-review" in row.notes
-        assert len(row.secondary_alignment_refs) == 2
-        assert len(row.control_region_refs) == 3
-
-        leg_roles = {leg.leg_role for leg in row.leg_rows}
-        assert {"primary_approach", "left_branch", "right_branch"}.issubset(leg_roles)
-        assert len(model.corner_rows) == 2
-        assert {corner.side for corner in model.corner_rows} == {"left_branch", "right_branch"}
-        assert all("preset_y_branch_geometry_review_required" in corner.diagnostic_rows for corner in model.corner_rows)
-        assert all("branch_review_ref=intersection-preset:y_intersection:branch-review" in corner.notes for corner in model.corner_rows)
-        assert len(model.lane_connection_rows) == 3
-        assert {lane.movement_type for lane in model.lane_connection_rows} == {"diverge", "merge"}
-        assert all("preset_lane_connection_review_required" in lane.diagnostic_rows for lane in model.lane_connection_rows)
-        assert all("preset_y_diverge_merge_review_required" in lane.diagnostic_rows for lane in model.lane_connection_rows)
-        assert all("branch_review_ref=intersection-preset:y_intersection:branch-review" in lane.notes for lane in model.lane_connection_rows)
-
-        completeness_rows = intersection_source_completeness_rows(
-            model,
-            control_region_count=len(row.control_region_refs),
-        )
-        completeness_summary = intersection_source_completeness_summary(completeness_rows)
-        rows_by_stage = {stage_row["stage"]: stage_row for stage_row in completeness_rows}
-        assert rows_by_stage["Participants"]["status"] == "accepted"
-        assert rows_by_stage["Lane Connections"]["approval_state"] == "draft"
-        assert completeness_summary["status"] == "warning"
-        assert completeness_summary["missing_count"] == 0
-    finally:
-        App.closeDocument(doc.Name)
-
-
 def test_intersection_editor_panel_exposes_source_completeness_table() -> None:
     doc = App.newDocument("CRV1IntersectionPanelSourceCompleteness")
     try:
@@ -741,10 +487,10 @@ def test_intersection_editor_panel_exposes_source_completeness_table() -> None:
 def test_intersection_editor_panel_smoke_reports_preset_warning_stages_without_output_geometry() -> None:
     doc = App.newDocument("CRV1IntersectionPanelPresetSourceSmoke")
     try:
-        create_starter_intersection_sources(doc, "drainage_sag_intersection")
+        create_starter_intersection_sources(doc, "cross_intersection")
         _ensure_qapp()
         panel = V1IntersectionEditorTaskPanel(document=doc)
-        panel._type_combo.setCurrentText("Drainage-Sensitive Sag Intersection")
+        panel._type_combo.setCurrentText("Cross Intersection")
         panel._source_mode_combo.setCurrentText("Create Starter Sources")
         if panel._primary_alignment_combo.count() > 1:
             panel._primary_alignment_combo.setCurrentIndex(1)
@@ -775,7 +521,6 @@ def test_intersection_editor_panel_smoke_reports_preset_warning_stages_without_o
             diagnostic.startswith("handoff_target:intersection-source-stage:drainage:")
             for diagnostic in rows_by_stage["Drainage"]["diagnostics"]
         )
-        assert "source_lineage_status:hint_only" in rows_by_stage["Drainage"]["diagnostics"]
 
         preview_by_stage = {row["stage"]: row for row in panel._last_preview_stage_rows}
         assert preview_by_stage["Source Validation"]["status"] == "warning"
@@ -789,7 +534,6 @@ def test_intersection_editor_panel_smoke_reports_preset_warning_stages_without_o
             diagnostic.startswith("handoff_target:intersection-source-stage:drainage:")
             for diagnostic in preview_by_stage["Drainage"]["diagnostics"]
         )
-        assert "source_lineage_status:hint_only" in preview_by_stage["Drainage"]["diagnostics"]
         assert "source_lineage_status:source_warning" in preview_by_stage["Slope Loops"]["diagnostics"]
         assert "Source Summary: warning" in panel._status.toPlainText()
         assert "Preview Ready: yes" in panel._status.toPlainText()
@@ -2041,6 +1785,42 @@ def test_roundabout_preset_edge_network_exposes_roundabout_family_rows() -> None
         App.closeDocument(doc.Name)
 
 
+def test_roundabout_preset_records_explicit_source_policy_rows() -> None:
+    doc = App.newDocument("CRV1RoundaboutExplicitPolicy")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        policy_rows = [
+            row
+            for row in model.edge_policy_rows
+            if row.edge_family_intent == "roundabout"
+        ]
+        policy_by_rule = {row.offset_rule: row for row in policy_rows}
+        edge_network = IntersectionEvaluationService().evaluate_edge_network(model)
+        roundabout_edges = [row for row in edge_network.edge_rows if row.edge_family == "roundabout"]
+        central = next(row for row in roundabout_edges if row.edge_role == "central_island_edge")
+        outer = next(row for row in roundabout_edges if row.edge_role == "circulatory_outer_edge")
+
+        assert model is not None
+        assert "roundabout_central_island_radius" in policy_by_rule
+        assert "roundabout_circulatory_outer_radius" in policy_by_rule
+        assert "roundabout_outer_apron_width" in policy_by_rule
+        assert "roundabout_slope_face_width" in policy_by_rule
+        assert "roundabout_approach_connector_length" in policy_by_rule
+        assert "roundabout_splitter_island_length" not in policy_by_rule
+        assert "roundabout_splitter_island_width" not in policy_by_rule
+        assert "roundabout_subgrade_depth" in policy_by_rule
+        assert round(policy_by_rule["roundabout_circulatory_outer_radius"].offset_value, 3) == 20.0
+        assert policy_by_rule["roundabout_slope_face_width"].offset_value > 0.0
+        assert round(policy_by_rule["roundabout_subgrade_depth"].offset_value, 3) == 0.3
+        assert round(outer.radius, 3) == 20.0
+        assert round(central.radius, 3) == 9.0
+        assert all(row.source_status == "accepted" for row in roundabout_edges)
+        assert all("roundabout_source_policy" in row.notes for row in roundabout_edges)
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_intersection_surface_zones_expose_priority_order() -> None:
     doc = App.newDocument("CRV1IntersectionSurfaceZonePriority")
     try:
@@ -2074,10 +1854,1171 @@ def test_roundabout_preset_surface_zones_expose_roundabout_contracts() -> None:
         assert surface_zones.intersection_kind == "roundabout"
         assert surface_zones.roundabout_zone_count == len(roundabout_zones)
         assert "roundabout_central_island" in roles
-        assert "roundabout_circulatory_pavement" in roles
-        assert "roundabout_entry_exit_pavement" in roles
+        assert "roundabout_circulatory_lane" in roles
+        assert "roundabout_truck_apron" in roles
+        assert "roundabout_outer_shoulder" in roles
+        assert "roundabout_entry_exit_connector" in roles
+        assert "roundabout_splitter_island" not in roles
+        assert "roundabout_outer_shoulder_policy_missing" in " ".join(
+            " ".join(row.diagnostic_rows) for row in roundabout_zones
+        )
         assert all(row.surface_priority > 0 for row in roundabout_zones)
         assert all(row.vertical_policy_ref for row in roundabout_zones)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_boundary_loops_expose_closed_island_and_circulatory_loops() -> None:
+    doc = App.newDocument("CRV1RoundaboutBoundaryLoops")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        service = IntersectionEvaluationService()
+        edge_network = service.evaluate_edge_network(model)
+        surface_zones = service.evaluate_surface_zones(model, edge_network)
+        boundary_loops = service.evaluate_boundary_loops(model, surface_zones, edge_network)
+        loops_by_role = {row.loop_role: row for row in boundary_loops.loop_rows}
+
+        assert model is not None
+        assert boundary_loops.intersection_kind == "roundabout"
+        assert boundary_loops.status in {"ready", "warning"}
+        assert "roundabout_central_island_boundary" in loops_by_role
+        assert "roundabout_circulatory_outer_boundary" in loops_by_role
+        assert loops_by_role["roundabout_central_island_boundary"].closed is True
+        assert loops_by_role["roundabout_circulatory_outer_boundary"].closed is True
+        assert loops_by_role["roundabout_central_island_boundary"].point_count == 32
+        assert loops_by_role["roundabout_circulatory_outer_boundary"].point_count == 32
+        assert loops_by_role["roundabout_circulatory_outer_boundary"].area_xy > loops_by_role["roundabout_central_island_boundary"].area_xy
+        assert any("roundabout_boundary_loop_source=explicit_roundabout_policy" in row for row in boundary_loops.diagnostic_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_boundary_loops_include_entry_exit_connector_loops() -> None:
+    doc = App.newDocument("CRV1RoundaboutConnectorBoundaryLoops")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        service = IntersectionEvaluationService()
+        edge_network = service.evaluate_edge_network(model)
+        surface_zones = service.evaluate_surface_zones(model, edge_network)
+        boundary_loops = service.evaluate_boundary_loops(model, surface_zones, edge_network)
+        connector_loops = [
+            row
+            for row in boundary_loops.loop_rows
+            if row.loop_role == "roundabout_entry_exit_connector_boundary"
+        ]
+
+        assert model is not None
+        assert len(connector_loops) >= 4
+        assert all(row.closed for row in connector_loops)
+        assert all(row.point_count == 4 for row in connector_loops)
+        assert all(row.area_xy > 0.0 for row in connector_loops)
+        assert all("roundabout_entry_exit_connector" in row.consumer_roles for row in connector_loops)
+        assert not any("roundabout_entry_exit_surface" in row.consumer_roles for row in connector_loops)
+        assert {
+            token
+            for row in connector_loops
+            for token in ("primary-start", "primary-end", "secondary-start", "secondary-end")
+            if token in row.loop_id
+        } == {"primary-start", "primary-end", "secondary-start", "secondary-end"}
+        assert all(
+            any(str(ref).startswith("intersection-roundabout-approach-leg:") for ref in row.source_refs)
+            for row in connector_loops
+        )
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_boundary_loops_do_not_emit_splitter_island_contracts() -> None:
+    doc = App.newDocument("CRV1RoundaboutNoSplitterBoundaryLoops")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        service = IntersectionEvaluationService()
+        edge_network = service.evaluate_edge_network(model)
+        surface_zones = service.evaluate_surface_zones(model, edge_network)
+        boundary_loops = service.evaluate_boundary_loops(model, surface_zones, edge_network)
+        splitter_loops = [
+            row
+            for row in boundary_loops.loop_rows
+            if row.loop_role == "roundabout_splitter_island_boundary"
+        ]
+
+        assert model is not None
+        assert splitter_loops == []
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_boundary_loops_include_ownership_and_clip_handoff_boundaries() -> None:
+    doc = App.newDocument("CRV1RoundaboutOwnershipClipBoundaryLoops")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        service = IntersectionEvaluationService()
+        edge_network = service.evaluate_edge_network(model)
+        surface_zones = service.evaluate_surface_zones(model, edge_network)
+        boundary_loops = service.evaluate_boundary_loops(model, surface_zones, edge_network)
+        loops_by_role = {row.loop_role: row for row in boundary_loops.loop_rows}
+        approach_clip_loops = [
+            row for row in boundary_loops.loop_rows if row.loop_role == "roundabout_approach_clip_boundary"
+        ]
+        subgrade_clip_loops = [
+            row for row in boundary_loops.loop_rows if row.loop_role == "roundabout_subgrade_clip_boundary"
+        ]
+        slope_handoff_loops = [
+            row for row in boundary_loops.loop_rows if row.loop_role == "roundabout_slope_handoff_boundary"
+        ]
+
+        assert model is not None
+        assert "roundabout_outer_ownership_boundary" in loops_by_role
+        assert loops_by_role["roundabout_outer_ownership_boundary"].closed is True
+        assert loops_by_role["roundabout_outer_ownership_boundary"].point_count == 32
+        assert (
+            loops_by_role["roundabout_outer_ownership_boundary"].area_xy
+            > loops_by_role["roundabout_circulatory_outer_boundary"].area_xy
+        )
+        assert len(approach_clip_loops) >= 4
+        assert len(subgrade_clip_loops) == len(approach_clip_loops)
+        assert len(slope_handoff_loops) == len(approach_clip_loops)
+        assert all(row.closed for row in [*approach_clip_loops, *subgrade_clip_loops, *slope_handoff_loops])
+        assert all(row.point_count == 4 for row in [*approach_clip_loops, *subgrade_clip_loops, *slope_handoff_loops])
+        assert all(row.area_xy > 0.0 for row in [*approach_clip_loops, *subgrade_clip_loops, *slope_handoff_loops])
+        assert all("design_surface" in row.consumer_roles for row in approach_clip_loops)
+        assert all("subgrade_surface" in row.consumer_roles for row in subgrade_clip_loops)
+        assert all("slope_face_surface" in row.consumer_roles for row in slope_handoff_loops)
+        assert all(
+            any(str(ref).startswith("intersection-roundabout-approach-leg:") for ref in row.source_refs)
+            for row in [*approach_clip_loops, *subgrade_clip_loops, *slope_handoff_loops]
+        )
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_intersection_surface_preview_builds_annular_ring() -> None:
+    doc = App.newDocument("CRV1RoundaboutAnnularSurfacePreview")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        assert preview is not None
+        assert preview.IntersectionKind == "roundabout"
+        assert preview.PatchTriangulationMode == "roundabout_annular_strip"
+        assert preview.PatchSurfaceBoundaryStrategy == "roundabout_authoritative_boundary_loops"
+        assert int(preview.PatchStructuredStripCount) == 32
+        assert int(preview.TriangleCount) == 64
+        assert int(preview.VertexCount) == 64
+        assert int(preview.PatchBoundaryPointCount) == 64
+        assert int(preview.SharedBreaklineBoundaryLoopRefCount) == 64
+        assert int(preview.SharedBreaklineBoundaryLoopConstraintSegmentCount) == 64
+        assert int(preview.SharedBreaklineBoundaryLoopConstraintEdgeCount) == 64
+        assert preview.SharedBreaklineBoundaryLoopConstraintRoleSummary == (
+            "roundabout_circulatory_to_apron=32, roundabout_island_to_circulatory=32"
+        )
+        assert preview.SharedBreaklineAuditStatus == "ready"
+        assert int(preview.SharedBreaklineMissingConsumerCount) == 0
+        assert int(preview.SharedBreaklineGeometryMismatchCount) == 0
+        assert int(preview.SharedBreaklineMeshMismatchCount) == 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_ordinary_surface_guardrail_clips_ownership_intrusion() -> None:
+    doc = App.newDocument("CRV1RoundaboutOwnershipGuardrail")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        design_preview = create_corridor_design_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        subgrade_preview = create_corridor_subgrade_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        slope_preview = create_corridor_daylight_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        assert design_preview is not None
+        assert subgrade_preview is not None
+        assert slope_preview is not None
+        assert design_preview.RoundaboutOwnershipIntrusionStatus == "ready"
+        assert subgrade_preview.RoundaboutOwnershipIntrusionStatus == "ready"
+        assert slope_preview.RoundaboutOwnershipIntrusionStatus == "ready"
+        assert design_preview.RoundaboutOwnershipClipStatus == "ready"
+        assert subgrade_preview.RoundaboutOwnershipClipStatus == "ready"
+        assert slope_preview.RoundaboutOwnershipClipStatus == "ready"
+        assert design_preview.RoundaboutClipBoundaryStatus == "ready"
+        assert subgrade_preview.RoundaboutClipBoundaryStatus == "ready"
+        assert slope_preview.RoundaboutClipBoundaryStatus == "ready"
+        assert design_preview.RoundaboutClipBoundaryRole == "roundabout_approach_clip_boundary"
+        assert subgrade_preview.RoundaboutClipBoundaryRole == "roundabout_subgrade_clip_boundary"
+        assert slope_preview.RoundaboutClipBoundaryRole == "roundabout_slope_handoff_boundary"
+        assert design_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
+        assert subgrade_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
+        assert slope_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
+        expected_approach_roles = {
+            "primary-start",
+            "primary-end",
+            "secondary-start",
+            "secondary-end",
+        }
+        assert int(design_preview.RoundaboutClipBoundaryApproachLegCount) == 4
+        assert int(subgrade_preview.RoundaboutClipBoundaryApproachLegCount) == 4
+        assert int(slope_preview.RoundaboutClipBoundaryApproachLegCount) == 4
+        assert set(design_preview.RoundaboutClipBoundaryApproachLegRoles) == expected_approach_roles
+        assert set(subgrade_preview.RoundaboutClipBoundaryApproachLegRoles) == expected_approach_roles
+        assert set(slope_preview.RoundaboutClipBoundaryApproachLegRoles) == expected_approach_roles
+        assert design_preview.RoundaboutClipBoundaryApproachLegSource == "roundabout_approach_leg_contract"
+        assert subgrade_preview.RoundaboutClipBoundaryApproachLegSource == "roundabout_approach_leg_contract"
+        assert slope_preview.RoundaboutClipBoundaryApproachLegSource == "roundabout_approach_leg_contract"
+        assert int(design_preview.RoundaboutClipBoundaryLoopCount) > 0
+        assert int(subgrade_preview.RoundaboutClipBoundaryLoopCount) > 0
+        assert int(slope_preview.RoundaboutClipBoundaryLoopCount) > 0
+        assert int(design_preview.RoundaboutClipBoundarySegmentCount) > 0
+        assert int(subgrade_preview.RoundaboutClipBoundarySegmentCount) > 0
+        assert int(slope_preview.RoundaboutClipBoundarySegmentCount) > 0
+        assert int(design_preview.RoundaboutOwnershipIntrusionTriangleCount) == 0
+        assert int(subgrade_preview.RoundaboutOwnershipIntrusionTriangleCount) == 0
+        assert int(slope_preview.RoundaboutOwnershipIntrusionTriangleCount) == 0
+        assert int(design_preview.RoundaboutOwnershipClippedTriangleCount) > 0
+        assert int(subgrade_preview.RoundaboutOwnershipClippedTriangleCount) > 0
+        assert int(slope_preview.RoundaboutOwnershipClippedTriangleCount) > 0
+        assert design_preview.RoundaboutOwnershipClipMode == "roundabout_boundary_loop"
+        assert design_preview.RoundaboutOwnershipClipFallbackReason == ""
+        assert int(design_preview.RoundaboutClipBoundaryCrossingCandidateCount) == int(
+            design_preview.RoundaboutOwnershipClippedTriangleCount
+        )
+        assert int(design_preview.RoundaboutClipExactSupported) == 1
+        assert int(design_preview.RoundaboutClipExactCandidateCount) > 0
+        assert int(design_preview.RoundaboutClipExactGeneratedTriangleCount) > 0
+        assert int(design_preview.RoundaboutClipExactFallbackCount) >= 0
+        assert slope_preview.RoundaboutOwnershipClipMode == "roundabout_boundary_loop"
+        assert slope_preview.RoundaboutOwnershipClipFallbackReason == ""
+        assert int(slope_preview.RoundaboutClipBoundaryCrossingCandidateCount) == int(
+            slope_preview.RoundaboutOwnershipClippedTriangleCount
+        )
+        assert int(slope_preview.RoundaboutClipExactSupported) == 1
+        assert int(slope_preview.RoundaboutClipExactCandidateCount) > 0
+        assert int(slope_preview.RoundaboutClipExactGeneratedTriangleCount) > 0
+        assert int(slope_preview.RoundaboutClipExactFallbackCount) >= 0
+        for preview in (subgrade_preview,):
+            assert preview.RoundaboutOwnershipClipMode == "roundabout_boundary_loop"
+            assert preview.RoundaboutOwnershipClipFallbackReason == ""
+            assert int(preview.RoundaboutClipBoundaryCrossingCandidateCount) == int(
+                preview.RoundaboutOwnershipClippedTriangleCount
+            )
+            assert int(preview.RoundaboutClipExactSupported) == 1
+            assert int(preview.RoundaboutClipExactCandidateCount) > 0
+            assert int(preview.RoundaboutClipExactGeneratedTriangleCount) > 0
+            assert int(preview.RoundaboutClipExactFallbackCount) >= 0
+            assert list(getattr(preview, "RoundaboutClipBoundaryLoopBBoxes", []) or [])
+            assert list(getattr(preview, "RoundaboutClipBoundaryLoopAreas", []) or [])
+            assert "centroid_inside=" in preview.RoundaboutOwnershipClipReasonSummary
+            assert (
+                int(preview.RoundaboutOwnershipClipCentroidInsideCount)
+                + int(preview.RoundaboutOwnershipClipVertexInsideCount)
+                + int(preview.RoundaboutOwnershipClipEdgeCrossesCount)
+                + int(preview.RoundaboutOwnershipClipCenterInsideTriangleCount)
+                == int(preview.RoundaboutOwnershipClippedTriangleCount)
+            )
+        assert (
+            int(design_preview.RoundaboutOwnershipClipCentroidInsideCount)
+            + int(design_preview.RoundaboutOwnershipClipVertexInsideCount)
+            + int(design_preview.RoundaboutOwnershipClipEdgeCrossesCount)
+            + int(design_preview.RoundaboutOwnershipClipCenterInsideTriangleCount)
+            == int(design_preview.RoundaboutOwnershipClippedTriangleCount)
+        )
+
+        rows = corridor_build_review_rows(doc)
+        design_row = next(row for row in rows if row["role"] == "design")
+        subgrade_row = next(row for row in rows if row["role"] == "subgrade")
+        slope_row = next(row for row in rows if row["role"] == "daylight")
+        assert "roundabout_ownership=ready" in str(design_row["notes"])
+        assert "roundabout_ownership=ready" in str(subgrade_row["notes"])
+        assert "roundabout_ownership=ready" in str(slope_row["notes"])
+        assert "roundabout_ownership=warning" not in str(design_row["notes"])
+        assert "roundabout_ownership=warning" not in str(subgrade_row["notes"])
+        assert "roundabout_ownership=warning" not in str(slope_row["notes"])
+        assert "clipped_triangles=" in str(design_row["notes"])
+        assert "clipped_triangles=" in str(subgrade_row["notes"])
+        assert "clipped_triangles=" in str(slope_row["notes"])
+        assert "clip_boundary=roundabout_approach_clip_boundary:ready" in str(design_row["notes"])
+        assert "clip_boundary=roundabout_subgrade_clip_boundary:ready" in str(subgrade_row["notes"])
+        assert "clip_boundary=roundabout_slope_handoff_boundary:ready" in str(slope_row["notes"])
+
+        audit_rows = corridor_shared_breakline_audit_rows(doc)
+        audit_by_role = {str(row.get("role", "") or ""): row for row in audit_rows}
+        assert audit_by_role["design"]["roundabout_clip_boundary_status"] == "ready"
+        assert audit_by_role["design"]["roundabout_clip_boundary_role"] == "roundabout_approach_clip_boundary"
+        assert audit_by_role["design"]["roundabout_actual_clip_boundary_roles"] == ["roundabout_outer_ownership_boundary"]
+        assert audit_by_role["subgrade"]["roundabout_clip_boundary_status"] == "ready"
+        assert audit_by_role["subgrade"]["roundabout_clip_boundary_role"] == "roundabout_subgrade_clip_boundary"
+        assert audit_by_role["subgrade"]["roundabout_actual_clip_boundary_roles"] == ["roundabout_outer_ownership_boundary"]
+        assert audit_by_role["daylight"]["roundabout_clip_boundary_status"] == "ready"
+        assert audit_by_role["daylight"]["roundabout_clip_boundary_role"] == "roundabout_slope_handoff_boundary"
+        assert audit_by_role["daylight"]["roundabout_actual_clip_boundary_roles"] == ["roundabout_outer_ownership_boundary"]
+        assert "roundabout_clip_boundary=roundabout_approach_clip_boundary:ready" in str(audit_by_role["design"]["notes"])
+        assert "actual_clip_roles=roundabout_outer_ownership_boundary" in str(audit_by_role["design"]["notes"])
+        assert "roundabout_clip_boundary=roundabout_subgrade_clip_boundary:ready" in str(audit_by_role["subgrade"]["notes"])
+        assert "actual_clip_roles=roundabout_outer_ownership_boundary" in str(audit_by_role["subgrade"]["notes"])
+        assert "roundabout_clip_boundary=roundabout_slope_handoff_boundary:ready" in str(audit_by_role["daylight"]["notes"])
+        assert "actual_clip_roles=roundabout_outer_ownership_boundary" in str(audit_by_role["daylight"]["notes"])
+        assert "approach_legs=4" in str(audit_by_role["design"]["notes"])
+        assert "approach_legs=4" in str(audit_by_role["subgrade"]["notes"])
+        assert "approach_legs=4" in str(audit_by_role["daylight"]["notes"])
+        assert "primary-start" in str(audit_by_role["design"]["notes"])
+        assert "secondary-end" in str(audit_by_role["daylight"]["notes"])
+        assert "mode=roundabout_boundary_loop" in str(audit_by_role["design"]["notes"])
+        assert "mode=roundabout_boundary_loop" in str(audit_by_role["subgrade"]["notes"])
+        assert "mode=roundabout_boundary_loop" in str(audit_by_role["daylight"]["notes"])
+        assert _breakline_audit_surface_row_focuses_source_only(audit_by_role["design"]) is True
+        assert _breakline_audit_surface_row_focuses_source_only(audit_by_role["subgrade"]) is True
+        assert _breakline_audit_surface_row_focuses_source_only(audit_by_role["daylight"]) is True
+        internal_rows = shared_breakline_audit_display_rows(audit_rows, include_internal=True)
+        diagnostic_detail_roles = {
+            str(row.get("role", "") or ""): row
+            for row in internal_rows
+            if str(row.get("row_kind", "") or "") == "roundabout_clip_boundary_diagnostic"
+        }
+        assert diagnostic_detail_roles["design"]["status"] == "ready"
+        assert diagnostic_detail_roles["subgrade"]["status"] == "ready"
+        assert diagnostic_detail_roles["daylight"]["status"] == "ready"
+        assert "approach_legs=4" in str(diagnostic_detail_roles["design"]["notes"])
+        assert "approach_legs=4" in str(diagnostic_detail_roles["subgrade"]["notes"])
+        assert "approach_legs=4" in str(diagnostic_detail_roles["daylight"]["notes"])
+        assert "diagnostic_only=yes" in str(diagnostic_detail_roles["design"]["notes"])
+        assert "diagnostic_only=yes" in str(diagnostic_detail_roles["subgrade"]["notes"])
+        assert "diagnostic_only=yes" in str(diagnostic_detail_roles["daylight"]["notes"])
+        assert "actual_clip_roles=roundabout_outer_ownership_boundary" in str(diagnostic_detail_roles["design"]["role_summary"])
+        assert "actual_clip_roles=roundabout_outer_ownership_boundary" in str(diagnostic_detail_roles["daylight"]["role_summary"])
+        assert diagnostic_detail_roles["design"]["graph_edge_refs"] == []
+        assert diagnostic_detail_roles["subgrade"]["graph_edge_refs"] == []
+        assert diagnostic_detail_roles["daylight"]["graph_edge_refs"] == []
+        assert diagnostic_detail_roles["design"]["breakline_role_filter"] == ""
+        assert diagnostic_detail_roles["subgrade"]["breakline_role_filter"] == ""
+        assert diagnostic_detail_roles["daylight"]["breakline_role_filter"] == ""
+        assert "not used for ordinary surface clipping" in str(diagnostic_detail_roles["design"]["recommended_action"])
+        clip_leg_rows = [
+            row
+            for row in internal_rows
+            if str(row.get("row_kind", "") or "") == "roundabout_clip_boundary_leg"
+        ]
+        assert clip_leg_rows == []
+
+        prerequisite = corridor_intersection_patch_prerequisite_result(doc)
+        intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+        shared_result = corridor_intersection_shared_breakline_result(
+            applied,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+        rows_by_role = {}
+        for row in list(getattr(shared_result, "breakline_rows", []) or []):
+            rows_by_role.setdefault(str(getattr(row, "breakline_role", "") or ""), []).append(row)
+        expected_clip_roles = {
+            "roundabout_approach_clip_to_design_surface": "design_surface",
+            "roundabout_subgrade_to_approach_subgrade": "subgrade_surface",
+            "roundabout_slope_to_corridor_slope_face": "slope_face_surface",
+        }
+        for role, consumer in expected_clip_roles.items():
+            assert rows_by_role.get(role)
+            assert all(consumer in tuple(getattr(row, "consumer_refs", ()) or ()) for row in rows_by_role[role])
+            assert all("intersection_surface" not in tuple(getattr(row, "consumer_refs", ()) or ()) for row in rows_by_role[role])
+            assert all(str(getattr(row, "handoff_target", "") or "") == "roundabout_ordinary_surface_clip" for row in rows_by_role[role])
+        assert all(
+            "roundabout_subgrade_surface" in tuple(getattr(row, "consumer_refs", ()) or ())
+            for row in rows_by_role["roundabout_subgrade_to_approach_subgrade"]
+        )
+        diagnostics = ";".join(str(value) for value in list(getattr(shared_result, "diagnostic_rows", []) or []))
+        assert "roundabout_clip_boundary_shared_breaklines:" in diagnostics
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_lane_shoulder_guided_review_clips_to_approach_boundary() -> None:
+    doc = App.newDocument("CRV1RoundaboutLaneShoulderGuidedReviewClip")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+
+        lane_preview = focus_corridor_build_guided_review_step(doc, "subassembly_kind:lane")
+        assert lane_preview is not None
+        assert lane_preview.Label == "Applied Section Highlight - Lane"
+        assert lane_preview.DisplayMode == "section_surface_strips"
+        assert lane_preview.RoundaboutClipBoundaryRole == "roundabout_approach_clip_boundary"
+        assert lane_preview.RoundaboutReportedBoundaryRole == "roundabout_approach_clip_boundary"
+        assert lane_preview.RoundaboutActualClipBoundaryRole == "roundabout_outer_ownership_boundary"
+        assert lane_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
+        assert lane_preview.RoundaboutReviewClipMode == "actual_ownership_boundary"
+        assert lane_preview.RoundaboutClipBoundaryStatus == "ready"
+        assert lane_preview.RoundaboutClipFallbackReason == ""
+        assert int(lane_preview.RoundaboutClipBoundaryLoopCount) > 0
+        assert int(lane_preview.SkippedRoundaboutSectionCount) == 0
+        assert int(lane_preview.SkippedRoundaboutStripTriangleCount) == 0
+        assert int(lane_preview.SurfacePatchCount) > 0
+
+        shoulder_preview = focus_corridor_build_guided_review_step(doc, "subassembly_kind:shoulder")
+        assert shoulder_preview is not None
+        assert shoulder_preview.Label == "Applied Section Highlight - Shoulder"
+        assert shoulder_preview.DisplayMode == "section_surface_strips"
+        assert shoulder_preview.RoundaboutClipBoundaryRole == "roundabout_approach_clip_boundary"
+        assert shoulder_preview.RoundaboutReportedBoundaryRole == "roundabout_approach_clip_boundary"
+        assert shoulder_preview.RoundaboutActualClipBoundaryRole == "roundabout_outer_ownership_boundary"
+        assert shoulder_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
+        assert shoulder_preview.RoundaboutReviewClipMode == "actual_ownership_boundary"
+        assert shoulder_preview.RoundaboutClipBoundaryStatus == "ready"
+        assert shoulder_preview.RoundaboutClipFallbackReason == ""
+        assert int(shoulder_preview.RoundaboutClipBoundaryLoopCount) > 0
+        assert int(shoulder_preview.SkippedRoundaboutSectionCount) == 0
+        assert int(shoulder_preview.SkippedRoundaboutStripTriangleCount) == 0
+        assert int(shoulder_preview.SurfacePatchCount) > 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_applied_sections_show_all_preview_is_not_clipping_source() -> None:
+    doc = App.newDocument("CRV1RoundaboutAppliedPreviewNotClipSource")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+
+        preview = show_all_applied_sections_preview_object(doc, applied)
+        assert preview is not None
+        assert preview.Name == "V1AppliedSectionsShowAllPreview"
+        assert preview.CRRecordKind == "v1_applied_sections_show_all_preview"
+        assert preview.V1ObjectType == "V1AppliedSectionsShowAllPreview"
+
+        hidden_count = hide_applied_sections_preview_objects(doc)
+        assert hidden_count >= 0
+        assert doc.getObject("V1AppliedSectionsShowAllPreview") is preview
+        if getattr(preview, "ViewObject", None) is not None:
+            assert preview.ViewObject.Visibility is False
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        audit_rows = corridor_shared_breakline_audit_rows(doc)
+        audit_by_role = {str(row.get("role", "") or ""): row for row in audit_rows}
+        for role in ("design", "subgrade", "daylight"):
+            assert audit_by_role[role]["roundabout_actual_clip_boundary_roles"] == ["roundabout_outer_ownership_boundary"]
+
+        forbidden_tokens = {
+            "V1AppliedSectionsShowAllPreview",
+            "Applied Sections Preview - All",
+            "v1_applied_sections_show_all_preview",
+        }
+        for row in audit_rows:
+            searchable = " ".join(
+                str(value)
+                for value in (
+                    row.get("notes", ""),
+                    row.get("role_summary", ""),
+                    row.get("material_summary", ""),
+                    row.get("roundabout_clip_boundary_loop_refs", ""),
+                    row.get("roundabout_clip_boundary_segment_refs", ""),
+                    row.get("graph_edge_refs", ""),
+                )
+            )
+            assert not any(token in searchable for token in forbidden_tokens), searchable
+
+        internal_rows = shared_breakline_audit_display_rows(audit_rows, include_internal=True)
+        diagnostic_rows = [
+            row
+            for row in internal_rows
+            if str(row.get("row_kind", "") or "") == "roundabout_clip_boundary_diagnostic"
+        ]
+        assert diagnostic_rows
+        assert all(str(row.get("breakline_role_filter", "") or "") == "" for row in diagnostic_rows)
+        assert all(not list(row.get("graph_edge_refs", []) or []) for row in diagnostic_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_side_slope_guided_review_clips_to_slope_handoff_boundary() -> None:
+    doc = App.newDocument("CRV1RoundaboutSideSlopeGuidedReviewClip")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+
+        side_slope_preview = focus_corridor_build_guided_review_step(doc, "subassembly_kind:side_slope")
+
+        assert side_slope_preview is not None
+        assert side_slope_preview.Label == "Applied Section Highlight - Side Slope"
+        assert side_slope_preview.DisplayMode == "section_breaklines"
+        assert side_slope_preview.RoundaboutClipBoundaryRole == "roundabout_slope_handoff_boundary"
+        assert side_slope_preview.RoundaboutReportedBoundaryRole == "roundabout_slope_handoff_boundary"
+        assert side_slope_preview.RoundaboutActualClipBoundaryRole == "roundabout_outer_ownership_boundary"
+        assert side_slope_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
+        assert side_slope_preview.RoundaboutReviewClipMode == "source_breaklines_with_actual_boundary_metadata"
+        assert side_slope_preview.RoundaboutClipBoundaryStatus == "ready"
+        assert side_slope_preview.RoundaboutClipFallbackReason == ""
+        assert int(side_slope_preview.RoundaboutClipBoundaryLoopCount) > 0
+        assert int(side_slope_preview.SideCount) > 0
+        assert int(side_slope_preview.DegenerateSideCount) > 0
+        assert int(side_slope_preview.SkippedRoundaboutSectionCount) == 0
+        assert int(side_slope_preview.SkippedRoundaboutSideCount) == 0
+        assert int(side_slope_preview.RoundaboutClipBoundaryOnly) == 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_entry_exit_connector_surface_preview_is_disabled_for_generalization() -> None:
+    doc = App.newDocument("CRV1RoundaboutEntryExitConnectorSurfaceDisabled")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        assert preview is not None
+        assert doc.getObject("V1CorridorRoundaboutEntryExitSurfacePreview") is None
+        assert doc.getObject("V1CorridorRoundaboutEntryExitConnectorSurfacePreview") is None
+        assert preview.RoundaboutEntryExitSurfaceStatus == "not_applicable"
+        assert preview.RoundaboutEntryExitSurfacePreviewRef == ""
+        assert int(preview.RoundaboutEntryExitSurfaceTriangleCount) == 0
+        assert preview.RoundaboutEntryExitConnectorSurfaceStatus == "not_applicable"
+        assert preview.RoundaboutEntryExitConnectorSurfacePreviewRef == ""
+        assert int(preview.RoundaboutEntryExitConnectorSurfaceTriangleCount) == 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_splitter_island_surface_preview_is_removed_for_generalization() -> None:
+    doc = App.newDocument("CRV1RoundaboutNoSplitterIslandSurfacePreview")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        assert preview is not None
+        assert doc.getObject("V1CorridorRoundaboutSplitterIslandSurfacePreview") is None
+        assert preview.RoundaboutSplitterIslandSurfaceStatus == "not_applicable"
+        assert preview.RoundaboutSplitterIslandSurfacePreviewRef == ""
+        assert int(preview.RoundaboutSplitterIslandSurfaceTriangleCount) == 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_subgrade_surface_preview_uses_subgrade_clip_boundary_contracts() -> None:
+    doc = App.newDocument("CRV1RoundaboutSubgradeSurfacePreview")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        subgrade = doc.getObject("V1CorridorRoundaboutSubgradeSurfacePreview")
+
+        assert preview is not None
+        assert subgrade is not None
+        assert preview.RoundaboutSubgradeSurfaceStatus == "ready"
+        assert preview.RoundaboutSubgradeSurfacePreviewRef == subgrade.Name
+        assert int(subgrade.RoundaboutSubgradeBoundarySegmentCount) == 32
+        assert int(subgrade.RoundaboutSubgradeClipLoopCount) > 0
+        assert int(subgrade.RoundaboutSubgradeTriangleCount) == 32
+        assert int(subgrade.TriangleCount) >= int(subgrade.RoundaboutSubgradeTriangleCount)
+        assert subgrade.RoundaboutSubgradeGeometrySource == "roundabout_outer_ownership_boundary_fan"
+        assert subgrade.RoundaboutSubgradeDepthSource == "roundabout_subgrade_depth_policy"
+        assert subgrade.RoundaboutSubgradeApproachLegSource == "roundabout_approach_leg_contract"
+        assert int(subgrade.RoundaboutSubgradeApproachLegCount) == 4
+        assert set(subgrade.RoundaboutSubgradeApproachLegRoles) == {
+            "primary-start",
+            "primary-end",
+            "secondary-start",
+            "secondary-end",
+        }
+        subgrade_boundary_refs = list(subgrade.RoundaboutSubgradeBoundaryRefs)
+        assert sum(1 for ref in subgrade_boundary_refs if ":subgrade-clip-" in str(ref)) == 4
+        assert subgrade.SharedBreaklineAuditStatus == "ready"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_generic_tie_slope_surface_preview_is_disabled_for_generalization() -> None:
+    doc = App.newDocument("CRV1RoundaboutGenericTieSlopeDisabled")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        assert preview is not None
+        assert preview.IntersectionKind == "roundabout"
+        assert doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview") is None
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview") is None
+        assert preview.IntersectionTieSlopeSurfaceStatus == "not_applicable"
+        assert preview.IntersectionTieSlopeSurfacePreviewRef == ""
+        assert int(preview.IntersectionTieSlopeSurfaceTriangleCount) == 0
+        assert preview.IntersectionTieSlopeStatus == "not_applicable"
+        assert any(
+            "roundabout_generic_intersection_tie_slope_disabled" in row
+            for row in list(preview.IntersectionTieSlopeDiagnostics)
+        )
+        assert preview.IntersectionSlopeFaceSurfaceStatus == "not_applicable"
+        assert preview.IntersectionSlopeFaceSurfacePreviewRef == ""
+        assert int(preview.IntersectionSlopeFaceSurfaceTriangleCount) == 0
+        assert "Roundabout Slope Face Surface" in preview.IntersectionSlopeFaceSurfaceRecommendedAction
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_slope_face_surface_preview_uses_exposed_outer_boundary_segments() -> None:
+    doc = App.newDocument("CRV1RoundaboutSlopeFaceSurfacePreview")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        slope_face = doc.getObject("V1CorridorRoundaboutSlopeFaceSurfacePreview")
+        apron = doc.getObject("V1CorridorRoundaboutApronSurfacePreview")
+        subgrade = doc.getObject("V1CorridorRoundaboutSubgradeSurfacePreview")
+
+        assert preview is not None
+        assert apron is not None
+        assert subgrade is not None
+        assert slope_face is not None
+        assert preview.IntersectionKind == "roundabout"
+        assert preview.RoundaboutApronSurfaceStatus == "ready"
+        assert preview.RoundaboutApronSurfacePreviewRef == apron.Name
+        assert int(apron.RoundaboutApronBoundarySegmentCount) == 32
+        assert int(apron.RoundaboutApronTriangleCount) == 64
+        assert apron.RoundaboutApronGeometrySource == "roundabout_circulatory_outer_to_ownership_boundary"
+        assert apron.SharedBreaklineAuditStatus == "ready"
+        assert preview.RoundaboutSlopeFaceSurfaceStatus == "ready"
+        assert preview.RoundaboutSlopeFaceSurfacePreviewRef == slope_face.Name
+        assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview") is None
+        assert preview.IntersectionSlopeFaceSurfaceStatus == "not_applicable"
+        assert preview.IntersectionSlopeFaceSurfacePreviewRef == ""
+        assert int(slope_face.RoundaboutSlopeFaceBoundarySegmentCount) == 16
+        assert int(slope_face.RoundaboutSlopeFaceSkippedConnectorSegmentCount) == 16
+        assert int(slope_face.RoundaboutSlopeFaceSuppressionSpanCount) == 16
+        assert int(slope_face.RoundaboutSlopeFaceHandoffLoopCount) == 4
+        assert int(slope_face.RoundaboutSlopeFaceHandoffApproachLegCount) == 4
+        assert slope_face.RoundaboutSlopeFaceHandoffApproachLegSource == "roundabout_approach_leg_contract"
+        assert set(slope_face.RoundaboutSlopeFaceHandoffApproachLegRoles) == {
+            "primary-start",
+            "primary-end",
+            "secondary-start",
+            "secondary-end",
+        }
+        assert int(slope_face.RoundaboutSlopeFaceTriangleCount) == 32
+        assert int(slope_face.TriangleCount) >= 32
+        assert slope_face.RoundaboutSlopeFaceWidthSource == "roundabout_slope_face_width_policy"
+        assert slope_face.RoundaboutSlopeFaceGeometrySource == "roundabout_outer_ownership_boundary_exposed_segments"
+        assert slope_face.RoundaboutSlopeFaceSuppressionSource == "roundabout_connector_and_handoff_boundary_angle_spans"
+        assert slope_face.SharedBreaklineAuditStatus == "ready"
+        assert int(slope_face.SharedBreaklineGeometryMismatchCount) == 0
+        assert int(slope_face.SharedBreaklineMeshMismatchCount) == 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_shared_boundary_graph_uses_semantic_roles_and_highlights_locally() -> None:
+    doc = App.newDocument("CRV1RoundaboutSharedBoundaryGraphSemanticRoles")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        assert preview is not None
+        graph_rows = [str(row or "") for row in list(preview.IntersectionSharedBoundaryGraphAuditRows)]
+        assert any("|roundabout_island_to_circulatory|" in row for row in graph_rows)
+        assert any("|roundabout_circulatory_to_apron|" in row for row in graph_rows)
+        assert any("|roundabout_apron_to_slope_face|" in row for row in graph_rows)
+        assert any("|roundabout_entry_exit_connector_boundary|" in row for row in graph_rows)
+        assert not any("|roundabout_splitter_island_boundary|" in row for row in graph_rows)
+        expected_consumers = {
+            "roundabout_subgrade_to_approach_subgrade": ("subgrade_surface", "roundabout_subgrade_surface"),
+            "roundabout_slope_to_corridor_slope_face": ("slope_face_surface",),
+        }
+        for role, consumers in expected_consumers.items():
+            matching_rows = [row for row in graph_rows if f"|{role}|" in row]
+            assert matching_rows
+            for consumer in consumers:
+                assert any(f"|{consumer}" in row or f",{consumer}" in row for row in matching_rows)
+        assert not any("|roundabout_circulatory_to_slope_face|" in row for row in graph_rows)
+        assert not any("|roundabout_circulatory_to_entry_exit|" in row for row in graph_rows)
+        assert not any("|roundabout_entry_exit_to_design_surface|" in row for row in graph_rows)
+        assert not any("|roundabout_connector_to_tie_slope|" in row for row in graph_rows)
+
+        rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
+        for role in (
+            "roundabout_apron_to_slope_face",
+            "roundabout_entry_exit_connector_boundary",
+            "roundabout_subgrade_to_approach_subgrade",
+            "roundabout_slope_to_corridor_slope_face",
+        ):
+            target_index = next(
+                index
+                for index, row in enumerate(rows)
+                if row.get("contract_family") == "shared_boundary_graph"
+                and role in str(row.get("role", ""))
+            )
+            highlight = focus_corridor_intersection_contract_review_row(doc, target_index, include_internal=True)
+
+            assert highlight is not None
+            assert highlight.HighlightGeometrySource == "intersection_shared_boundary_graph_result"
+            assert int(highlight.HighlightedShapeCount) >= 1
+            assert str(highlight.ContractFamily) == "shared_boundary_graph"
+            assert "intersection-shared-boundary-graph:intersection:starter-roundabout" in ",".join(
+                list(highlight.HighlightedRefs)
+            )
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_build_parametric_outputs_route_to_intersections_tree() -> None:
+    doc = App.newDocument("CRV1RoundaboutOutputTreeRouting")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        tree = ensure_project_tree(project, include_references=False)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        slope_face = doc.getObject("V1CorridorRoundaboutSlopeFaceSurfacePreview")
+        apron = doc.getObject("V1CorridorRoundaboutApronSurfacePreview")
+        subgrade = doc.getObject("V1CorridorRoundaboutSubgradeSurfacePreview")
+
+        assert preview is not None
+        assert doc.getObject("V1CorridorRoundaboutEntryExitSurfacePreview") is None
+        assert doc.getObject("V1CorridorRoundaboutEntryExitConnectorSurfacePreview") is None
+        assert doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview") is None
+        assert apron is not None
+        assert slope_face is not None
+        assert doc.getObject("V1CorridorRoundaboutSplitterIslandSurfacePreview") is None
+        intersection_children = set(list(getattr(tree[V1_TREE_INTERSECTIONS], "Group", []) or []))
+        root_objects = set(list(getattr(doc, "RootObjects", []) or []))
+        assert apron in intersection_children
+        assert apron not in root_objects
+        assert subgrade in intersection_children
+        assert subgrade not in root_objects
+        assert slope_face in intersection_children
+        assert slope_face not in root_objects
+        assert "intersection:starter-roundabout" in str(getattr(apron, "Label", "") or "")
+        assert "intersection:starter-roundabout" in str(getattr(subgrade, "Label", "") or "")
+        assert "intersection:starter-roundabout" in str(getattr(slope_face, "Label", "") or "")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_visibility_group_controls_production_outputs() -> None:
+    doc = App.newDocument("CRV1RoundaboutVisibilityGroup")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+        create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        production_names = (
+            "V1CorridorIntersectionSurfacePreview",
+            "V1CorridorRoundaboutApronSurfacePreview",
+            "V1CorridorRoundaboutSubgradeSurfacePreview",
+            "V1CorridorRoundaboutSlopeFaceSurfacePreview",
+        )
+        production_objects = [doc.getObject(name) for name in production_names]
+        assert all(obj is not None for obj in production_objects)
+
+        changed = set_corridor_build_visibility_group(doc, "intersection", False)
+        assert changed >= len(production_objects)
+
+        changed = set_corridor_build_visibility_group(doc, "intersection", True)
+        assert changed >= len(production_objects)
+        group_by_id = {str(row["group_id"]): row for row in corridor_build_visibility_groups()}
+        intersection_group_names = set(group_by_id["intersection"]["object_names"])
+        for name in production_names[1:]:
+            assert name in intersection_group_names
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_results_tab_exposes_production_output_rows() -> None:
+    doc = App.newDocument("CRV1RoundaboutResultsTabRows")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        results = corridor_build_review_rows(doc)
+        result_titles = {str(row.get("result", "") or "") for row in results}
+        rows_by_role = {str(row.get("role", "") or ""): row for row in results}
+
+        assert "Roundabout Circulatory Surface" in result_titles
+        assert "Roundabout Entry/Exit Connector Surface" not in result_titles
+        assert "Roundabout Splitter Island Surface" not in result_titles
+        assert "Roundabout Apron Surface" in result_titles
+        assert "Roundabout Subgrade Surface" in result_titles
+        assert "Roundabout Entry Exit Surface" not in result_titles
+        assert "Roundabout Tie Slope Surface" not in result_titles
+        assert "Intersection Tie Slope Surface" not in result_titles
+        assert "Roundabout Breakline Readiness" in result_titles
+        assert rows_by_role["roundabout_circulatory"]["status"] == "ready"
+        assert rows_by_role["roundabout_apron"]["status"] == "ready"
+        assert rows_by_role["roundabout_subgrade"]["status"] == "ready"
+        assert "roundabout annular circulatory surface" in str(rows_by_role["roundabout_circulatory"]["notes"])
+        assert "roundabout annular apron surface" in str(rows_by_role["roundabout_apron"]["notes"])
+        assert "roundabout dedicated subgrade surface" in str(rows_by_role["roundabout_subgrade"]["notes"])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_intersections_tab_hides_internal_contract_rows_by_default() -> None:
+    doc = App.newDocument("CRV1RoundaboutIntersectionsTabProductionRows")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+        create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        default_rows = corridor_intersection_contract_review_rows(doc)
+        internal_rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
+        default_families = {str(row.get("contract_family", "") or "") for row in default_rows}
+        internal_families = {str(row.get("contract_family", "") or "") for row in internal_rows}
+
+        assert "drainage_hint" not in default_families
+        assert "shared_boundary_graph" not in default_families
+        assert "slope_face_cell" not in default_families
+        assert "intersection_tie_slope_window" not in default_families
+        assert "intersection_tie_slope_window" not in internal_families
+        assert "drainage_hint" in internal_families
+        assert any(str(row.get("contract_family", "") or "") == "boundary_loop" for row in default_rows)
+        assert any(str(row.get("contract_family", "") or "") == "roundabout_boundary_readiness" for row in default_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_intersections_tab_exposes_boundary_readiness_row() -> None:
+    doc = App.newDocument("CRV1RoundaboutBoundaryReadinessRow")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+
+        rows = corridor_intersection_contract_review_rows(doc)
+        readiness_rows = [
+            row
+            for row in rows
+            if str(row.get("contract_family", "") or "") == "roundabout_boundary_readiness"
+        ]
+
+        assert len(readiness_rows) == 1
+        row = readiness_rows[0]
+        assert row["status"] == "ready"
+        assert row["source_status"] == "accepted"
+        assert row["role"] == "approach_clip_and_slope_handoff"
+        assert row["output_path"] == "roundabout_boundary_readiness"
+        assert "intersection-roundabout-approach-legs:" in str(row["source_refs"])
+        assert "intersection-boundary-loop:" in str(row["boundary_refs"])
+        notes = str(row["notes"])
+        assert "approach_legs=4/4" in notes
+        assert "primary_start" in notes
+        assert "secondary_end" in notes
+        assert "roundabout_approach_clip_boundary=4/4" in notes
+        assert "roundabout_subgrade_clip_boundary=4/4" in notes
+        assert "roundabout_slope_handoff_boundary=4/4" in notes
+        assert "Roundabout ordinary-surface clip and slope handoff boundaries are ready." in notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_approach_leg_contract_splits_two_alignments_into_four_physical_approaches() -> None:
+    doc = App.newDocument("CRV1RoundaboutApproachLegContract")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        service = IntersectionEvaluationService()
+        topology = service.evaluate_topology(model)
+        approach_legs = service.evaluate_roundabout_approach_legs(model, topology)
+
+        assert approach_legs.status == "ready"
+        assert approach_legs.intersection_kind == "roundabout"
+        assert approach_legs.source_leg_count == 2
+        assert approach_legs.approach_leg_count == 4
+        assert approach_legs.accepted_approach_leg_count == 4
+        assert approach_legs.alignment_count == 2
+        assert {
+            row.approach_role for row in approach_legs.approach_leg_rows
+        } == {
+            "primary_start",
+            "primary_end",
+            "secondary_start",
+            "secondary_end",
+        }
+        assert {
+            row.alignment_ref for row in approach_legs.approach_leg_rows
+        } == {
+            "alignment:intersection-primary",
+            "alignment:intersection-secondary",
+        }
+        assert {
+            row.approach_role: round(float(row.direction_angle_deg), 3)
+            for row in approach_legs.approach_leg_rows
+        } == {
+            "primary_start": 180.0,
+            "primary_end": 0.0,
+            "secondary_start": 270.0,
+            "secondary_end": 90.0,
+        }
+        assert any(
+            "roundabout_approach_leg_contract_source=topology_leg_span_decomposition" in str(item)
+            for item in approach_legs.diagnostic_rows
+        )
+        for row in approach_legs.approach_leg_rows:
+            vx, vy = row.direction_vector_xy
+            assert 0.999 <= (vx * vx + vy * vy) <= 1.001
+            assert row.connector_boundary_role == "roundabout_entry_exit_connector_boundary"
+            assert row.corridor_clip_boundary_role == "roundabout_approach_clip_boundary"
+            assert row.subgrade_handoff_boundary_role == "roundabout_subgrade_clip_boundary"
+            assert row.slope_handoff_boundary_role == "roundabout_slope_handoff_boundary"
+            assert "roundabout_approach_clip_to_design_surface" in row.shared_breakline_roles
+            assert "roundabout_slope_face_to_corridor_slope_face" in row.shared_breakline_roles
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_roundabout_single_lane_full_smoke_validates_production_outputs() -> None:
+    doc = App.newDocument("CRV1RoundaboutSingleLaneFullSmoke")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
+        project = find_project(doc)
+        tree = ensure_project_tree(project, include_references=False)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+
+        design_preview = create_corridor_design_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        subgrade_preview = create_corridor_subgrade_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        slope_preview = create_corridor_daylight_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        intersection_preview = create_corridor_intersection_surface_preview(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        assert intersection_preview is not None
+        assert intersection_preview.PatchTriangulationMode == "roundabout_annular_strip"
+        assert int(intersection_preview.TriangleCount) > 0
+        assert intersection_preview.IntersectionSharedBoundaryGraphStatus == "ready"
+        assert int(intersection_preview.IntersectionSharedBoundaryGraphDuplicateEdgeCount) == 0
+        assert int(intersection_preview.IntersectionSharedBoundaryGraphMissingConsumerCount) == 0
+
+        for ordinary_preview in (design_preview, subgrade_preview, slope_preview):
+            assert ordinary_preview is not None
+            assert ordinary_preview.RoundaboutOwnershipIntrusionStatus == "ready"
+            assert ordinary_preview.RoundaboutOwnershipClipStatus == "ready"
+            assert int(ordinary_preview.RoundaboutOwnershipIntrusionTriangleCount) == 0
+            assert int(ordinary_preview.RoundaboutOwnershipClippedTriangleCount) > 0
+
+        production_names = (
+            "V1CorridorIntersectionSurfacePreview",
+            "V1CorridorRoundaboutApronSurfacePreview",
+            "V1CorridorRoundaboutSubgradeSurfacePreview",
+            "V1CorridorRoundaboutSlopeFaceSurfacePreview",
+        )
+        production_objects = [doc.getObject(name) for name in production_names]
+        assert all(obj is not None for obj in production_objects)
+        assert doc.getObject("V1CorridorRoundaboutEntryExitSurfacePreview") is None
+        assert doc.getObject("V1CorridorRoundaboutEntryExitConnectorSurfacePreview") is None
+        assert doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview") is None
+
+        assert intersection_preview.RoundaboutEntryExitConnectorSurfaceStatus == "not_applicable"
+        assert intersection_preview.RoundaboutEntryExitConnectorSurfacePreviewRef == ""
+        assert int(intersection_preview.RoundaboutEntryExitConnectorSurfaceTriangleCount) == 0
+        assert intersection_preview.RoundaboutSplitterIslandSurfaceStatus == "not_applicable"
+        assert intersection_preview.RoundaboutSplitterIslandSurfacePreviewRef == ""
+        assert int(intersection_preview.RoundaboutSplitterIslandSurfaceTriangleCount) == 0
+        assert intersection_preview.RoundaboutApronSurfaceStatus == "ready"
+        assert int(intersection_preview.RoundaboutApronSurfaceTriangleCount) > 0
+        assert intersection_preview.RoundaboutSubgradeSurfaceStatus == "ready"
+        assert int(intersection_preview.RoundaboutSubgradeSurfaceTriangleCount) > 0
+        assert intersection_preview.RoundaboutSlopeFaceSurfaceStatus == "ready"
+        assert int(intersection_preview.RoundaboutSlopeFaceSurfaceTriangleCount) > 0
+
+        intersection_children = set(list(getattr(tree[V1_TREE_INTERSECTIONS], "Group", []) or []))
+        root_objects = set(list(getattr(doc, "RootObjects", []) or []))
+        for obj in production_objects[1:]:
+            assert obj in intersection_children
+            assert obj not in root_objects
+
+        result_rows = corridor_build_review_rows(doc)
+        rows_by_role = {str(row.get("role", "") or ""): row for row in result_rows}
+        for role in (
+            "roundabout_circulatory",
+            "roundabout_apron",
+            "roundabout_subgrade",
+            "roundabout_breakline_readiness",
+        ):
+            assert rows_by_role[role]["status"] == "ready"
+
+        audit_rows = corridor_shared_breakline_audit_rows(doc)
+        audit_by_surface = {str(row.get("surface", "") or ""): row for row in audit_rows}
+        assert audit_by_surface["Design Surface"]["status"] == "ready"
+        assert audit_by_surface["Intersection Surface"]["status"] == "ready"
+        assert audit_by_surface["Slope Face Surface"]["status"] == "ready"
+        assert _breakline_audit_surface_row_focuses_source_only(audit_by_surface["Design Surface"]) is True
+        assert _breakline_audit_surface_row_focuses_source_only(audit_by_surface["Slope Face Surface"]) is True
+
+        internal_audit_rows = shared_breakline_audit_display_rows(audit_rows, include_internal=True)
+        diagnostic_rows = [
+            row
+            for row in internal_audit_rows
+            if str(row.get("row_kind", "") or "") == "roundabout_clip_boundary_diagnostic"
+        ]
+        assert len(diagnostic_rows) >= 3
+        assert {
+            str(row.get("status", "") or "")
+            for row in diagnostic_rows
+        } == {"ready"}
+        assert all(str(row.get("breakline_role_filter", "") or "") == "" for row in diagnostic_rows)
+        assert all(not list(row.get("graph_edge_refs", []) or []) for row in diagnostic_rows)
+        assert all("diagnostic_only=yes" in str(row.get("notes", "") or "") for row in diagnostic_rows)
+        assert any("primary-start" in str(row.get("role_summary", "") or "") for row in diagnostic_rows)
+        assert any("secondary-end" in str(row.get("role_summary", "") or "") for row in diagnostic_rows)
+        assert not [
+            row
+            for row in internal_audit_rows
+            if str(row.get("row_kind", "") or "") == "roundabout_clip_boundary_leg"
+        ]
+
+        contract_rows = corridor_intersection_contract_review_rows(doc)
+        contract_families = {str(row.get("contract_family", "") or "") for row in contract_rows}
+        assert "edge_network" not in contract_families
+        assert "surface_zone" not in contract_families
+        assert "roundabout_boundary_readiness" in contract_families
     finally:
         App.closeDocument(doc.Name)
 
@@ -2434,7 +3375,7 @@ def test_roundabout_drainage_hints_include_outside_gutter_handoff() -> None:
         assert all(row.drainage_mode == "outside_gutter" for row in outlet_rows)
         assert all(row.source_lineage_status == "hint_only" for row in outlet_rows)
         assert all(row.handoff_target.startswith("intersection-source-stage:drainage:") for row in outlet_rows)
-        assert any(row.zone_role == "roundabout_circulatory_pavement" for row in drainage_hints.hint_rows)
+        assert any(row.zone_role == "roundabout_circulatory_lane" for row in drainage_hints.hint_rows)
     finally:
         App.closeDocument(doc.Name)
 

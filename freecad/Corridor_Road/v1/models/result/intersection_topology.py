@@ -45,9 +45,41 @@ class IntersectionTopologyLegSpanRow:
     arm_policy_ref: str = ""
     edge_policy_refs: tuple[str, ...] = ()
     grading_policy_ref: str = ""
+    leg_graph_order: int = 0
+    leg_graph_angle_deg: float = 0.0
+    leg_graph_angle_source: str = ""
+    applied_section_entry_ref: str = ""
+    applied_section_exit_ref: str = ""
+    applied_section_lineage_status: str = "not_attached"
     source_method: str = ""
     approval_status: str = ""
     span_source: str = ""
+    source_status: str = "accepted"
+    source_diagnostic_rows: tuple[str, ...] = ()
+    status: str = "candidate"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class IntersectionTopologyCornerRow:
+    """One ordered corner candidate between adjacent participating legs."""
+
+    corner_result_id: str
+    intersection_id: str
+    corner_graph_order: int
+    source_corner_ref: str = ""
+    from_leg_ref: str = ""
+    to_leg_ref: str = ""
+    side: str = ""
+    quadrant: str = ""
+    curb_return_policy_ref: str = ""
+    radius: float = 0.0
+    start_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    end_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    arc_points_xyz: tuple[tuple[float, float, float], ...] = ()
+    arc_point_count: int = 0
+    source_method: str = ""
+    approval_status: str = ""
     source_status: str = "accepted"
     source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"
@@ -132,11 +164,20 @@ class IntersectionTopologyResult(ResultModelBase):
     control_region_count: int = 0
     anchor_count: int = 0
     leg_span_count: int = 0
+    leg_graph_status: str = "not_evaluated"
+    corner_graph_status: str = "not_evaluated"
+    corner_count: int = 0
+    curb_return_arc_count: int = 0
     control_area_count: int = 0
     lane_connection_count: int = 0
+    leg_graph_order_refs: list[str] = field(default_factory=list)
+    leg_graph_diagnostic_rows: list[str] = field(default_factory=list)
+    corner_graph_order_refs: list[str] = field(default_factory=list)
+    corner_graph_diagnostic_rows: list[str] = field(default_factory=list)
     policy_refs: list[str] = field(default_factory=list)
     diagnostic_rows: list[str] = field(default_factory=list)
     anchor_rows: list[IntersectionTopologyAnchorRow] = field(default_factory=list)
     leg_span_rows: list[IntersectionTopologyLegSpanRow] = field(default_factory=list)
+    corner_rows: list[IntersectionTopologyCornerRow] = field(default_factory=list)
     control_area_rows: list[IntersectionTopologyControlAreaRow] = field(default_factory=list)
     lane_connection_rows: list[IntersectionTopologyLaneConnectionRow] = field(default_factory=list)

@@ -17,12 +17,14 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     build_document_corridor_surface_model,
     corridor_build_preview_visibility_note,
     corridor_build_review_rows,
+    corridor_intersection_patch_prerequisite_result,
     corridor_shared_breakline_audit_rows,
     corridor_intersection_contract_review_rows,
     create_corridor_design_surface_preview,
     create_corridor_daylight_surface_preview,
     create_corridor_intersection_surface_preview,
     focus_corridor_intersection_contract_review_row,
+    _intersection_tie_slope_applied_section_window_rows,
     _parse_intersection_exclusion_near_boundary_kept_triangle_row,
     _intersection_tie_slope_oriented_ring_points,
     shared_breakline_audit_display_rows,
@@ -336,6 +338,17 @@ def run():
         tie_slope_preview = doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview")
         review_rows = corridor_build_review_rows(doc)
         slope_rows = [row for row in review_rows if row["role"] == "intersection_slope"]
+        prerequisite = corridor_intersection_patch_prerequisite_result(doc)
+        intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+        tie_slope_window_rows = _intersection_tie_slope_applied_section_window_rows(
+            applied,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+        accepted_tie_slope_rows = [
+            row for row in tie_slope_window_rows
+            if str(row.get("status", "") or "") == "accepted"
+        ]
 
         _assert(len(applied.sections) > 0, "T preset smoke should build Applied Sections.")
         _assert(intersection_preview is not None, "Intersection Surface preview was not created.")
@@ -345,6 +358,10 @@ def run():
         _assert(
             tie_slope_preview is not None,
             "Intersection Tie Slope preview should be created from accepted Applied Section window rows.",
+        )
+        _assert(
+            "Intersections" in _parent_group_labels(doc, tie_slope_preview),
+            "Intersection Tie Slope preview should be routed under Parametric Model > Intersections.",
         )
         _assert(
             str(getattr(tie_slope_preview, "IntersectionTieSlopeGeometrySource", "") or "") == "accepted_applied_section_window_rows",
@@ -357,6 +374,26 @@ def run():
         _assert(
             int(getattr(tie_slope_preview, "IntersectionTieSlopeAppliedSectionWindowAcceptedCount", 0) or 0) > 0,
             "Intersection Tie Slope preview should report accepted Applied Section window rows.",
+        )
+        _assert(
+            accepted_tie_slope_rows,
+            "T Intersection should still create accepted legacy Intersection Tie Slope window rows.",
+        )
+        _assert(
+            all(str(row.get("outer_edge_source_mode", "") or "") == "legacy_slope_breakline" for row in accepted_tie_slope_rows)
+            and all(str(row.get("inner_edge_source_mode", "") or "") == "legacy_slope_breakline" for row in accepted_tie_slope_rows),
+            (
+                "T Intersection Tie Slope should remain on the pre-Cross legacy window edge path; "
+                f"rows={accepted_tie_slope_rows}."
+            ),
+        )
+        _assert(
+            not any(str(row.get("outer_edge_source_mode", "") or "") == "applied_section_side_slope_edge" for row in accepted_tie_slope_rows)
+            and not any(str(row.get("inner_edge_source_mode", "") or "") == "applied_section_side_slope_edge" for row in accepted_tie_slope_rows),
+            (
+                "Cross-only Applied Section side-slope edge selection must not affect T Intersection Tie Slope; "
+                f"rows={accepted_tie_slope_rows}."
+            ),
         )
         _assert(
             doc.getObject("ReviewIntersectionTieSlopeTransitionGapHighlight") is None
@@ -569,6 +606,15 @@ def run():
             _assert(
                 role_name in breakline_notes,
                 f"Breakline Audit should expose Applied Section window Tie Slope shared breakline role: {role_name}.",
+            )
+        for role_name in (
+            "intersection_tie_slope_supplemental_outer",
+            "intersection_tie_slope_supplemental_inner",
+            "intersection_tie_slope_supplemental_endpoint",
+        ):
+            _assert(
+                role_name not in breakline_notes,
+                f"T Intersection Tie Slope should not emit Cross supplemental shared breakline role: {role_name}.",
             )
         tie_slope_window_handoff_rows = [
             row for row in breakline_display_rows
@@ -892,6 +938,7 @@ def run():
             "suppressed_legacy_upper_cells=",
             "mode=upper_rectangular_panel",
             "source=accepted_upper_rectangular_panel_boundary",
+            "expected_groups=",
         ):
             _assert(
                 token in upper_panel_result_notes,
@@ -1148,6 +1195,7 @@ def run():
             "suppressed_legacy_upper_cells=",
             "mode=upper_rectangular_panel",
             "source=accepted_upper_rectangular_panel_boundary",
+            "expected_groups=",
         ):
             _assert(
                 token in upper_panel_contract_notes,
@@ -1211,7 +1259,15 @@ def run():
                 zone_id in downstream_zone_refs,
                 f"Downstream intersection contracts should retain surface-zone ref {zone_id}.",
             )
+        topology_rows = [row for row in contract_rows if row.get("contract_family") == "topology"]
         boundary_loop_rows = [row for row in contract_rows if row.get("contract_family") == "boundary_loop"]
+        _assert(topology_rows, "Intersections tab should expose the topology row.")
+        topology_notes = str(topology_rows[0].get("notes", "") or "")
+        for token in ("kind=", "legs=", "corners=", "curb_return_arcs=", "leg_graph=", "corner_graph="):
+            _assert(
+                token in topology_notes,
+                f"Intersections tab topology row should include {token}: {topology_notes}",
+            )
         _assert(boundary_loop_rows, "Intersections tab should expose the authoritative boundary_loop row.")
         _assert(
             any(row.get("status") == "ready" and row.get("role") == "outer_intersection_boundary" for row in boundary_loop_rows),
@@ -1227,6 +1283,11 @@ def run():
             if row.get("status") == "ready" and row.get("role") == "outer_intersection_boundary"
         )
         ready_boundary_notes = str(ready_boundary_loop.get("notes", "") or "")
+        for token in ("kind=", "surface_boundary_mode=", "surface_boundary_loop="):
+            _assert(
+                token in ready_boundary_notes,
+                f"Boundary loop row notes should include {token}: {ready_boundary_notes}",
+            )
         _assert(
             _note_int(ready_boundary_notes, "points") >= 8 and _note_int(ready_boundary_notes, "segments") >= 8,
             "T preset boundary loop should expose a non-trivial source perimeter, not a simple bbox or convex hull.",
@@ -1236,24 +1297,20 @@ def run():
             "T preset boundary loop should not be accepted from convex-hull fallback.",
         )
         boundary_loop_index = next(index for index, row in enumerate(contract_rows) if row.get("contract_family") == "boundary_loop")
-        boundary_highlight = focus_corridor_intersection_contract_review_row(doc, boundary_loop_index)
+        boundary_focus = focus_corridor_intersection_contract_review_row(doc, boundary_loop_index)
         _assert(
-            str(getattr(boundary_highlight, "ContractFamily", "") or "") == "boundary_loop",
-            "Double-click/focus should create a boundary_loop contract highlight.",
+            str(getattr(boundary_focus, "Name", "") or "") == "V1CorridorIntersectionSurfacePreview",
+            "Boundary loop focus should use the built Intersection Surface preview, not create detached raw-loop geometry.",
         )
         _assert(
-            int(getattr(boundary_highlight, "HighlightedShapeCount", 0) or 0) >= 1,
-            "Boundary loop focus should highlight the authoritative outer perimeter.",
+            doc.getObject("ReviewIntersectionContractHighlight") is None,
+            "Boundary loop focus should not create a separate contract highlight object away from the intersection.",
         )
         _assert(
-            str(getattr(boundary_highlight, "BoundaryLoopRole", "") or "") == "outer_intersection_boundary",
-            "Boundary loop highlight should expose the highlighted loop role.",
+            str(getattr(boundary_focus, "PatchBoundarySource", "") or "") == "authoritative_boundary_loop",
+            "Boundary loop focus should land on the preview that consumed the authoritative boundary loop.",
         )
-        _assert(
-            "Issues" in _parent_group_labels(doc, boundary_highlight),
-            "Boundary loop highlight should be routed to Review > Issues, not Alignment/Profile containers.",
-        )
-        boundary_bbox = _shape_bbox_xy(boundary_highlight)
+        boundary_bbox = _shape_bbox_xy(boundary_focus)
         _assert(
             boundary_bbox is not None
             and float(boundary_bbox["xmin"]) <= 0.0 <= float(boundary_bbox["xmax"])
@@ -1307,83 +1364,42 @@ def run():
             "T preset slope_face_cell contract rows should be ready.",
         )
         first_cell_index = next(index for index, row in enumerate(internal_contract_rows) if row.get("contract_family") == "slope_face_cell")
-        cell_highlight = focus_corridor_intersection_contract_review_row(doc, first_cell_index, include_internal=True)
+        cell_focus = focus_corridor_intersection_contract_review_row(doc, first_cell_index, include_internal=True)
         _assert(
-            str(getattr(cell_highlight, "ContractFamily", "") or "") == "slope_face_cell",
-            "Double-click/focus should create a slope_face_cell contract highlight.",
+            str(getattr(cell_focus, "Name", "") or "") == "V1CorridorIntersectionSlopeFaceSurfacePreview",
+            "Internal slope_face_cell focus should select the generated Intersection Slope Face Surface preview.",
         )
         _assert(
-            int(getattr(cell_highlight, "HighlightedShapeCount", 0) or 0) >= 2,
-            "Slope face cell focus should highlight the cell shared breakline boundary segments.",
-        )
-        cell_bbox = _shape_bbox_xy(cell_highlight)
-        _assert(
-            cell_bbox is not None and max(float(cell_bbox["xlen"]), float(cell_bbox["ylen"])) <= 24.001,
-            f"Slope face cell focus should be clipped to the intersection neighborhood: {cell_bbox}.",
+            doc.getObject("ReviewIntersectionContractHighlight") is None,
+            "Internal slope_face_cell rows should not create legacy contract highlight geometry.",
         )
         first_graph_edge_index = next(
             index
             for index, row in enumerate(internal_contract_rows)
             if row.get("contract_family") == "shared_boundary_graph" and str(row.get("role", "") or "").startswith("edge:")
         )
-        graph_edge_highlight = focus_corridor_intersection_contract_review_row(doc, first_graph_edge_index, include_internal=True)
+        graph_edge_focus = focus_corridor_intersection_contract_review_row(doc, first_graph_edge_index, include_internal=True)
         _assert(
-            str(getattr(graph_edge_highlight, "ContractFamily", "") or "") == "shared_boundary_graph",
-            "Double-click/focus should create a shared_boundary_graph edge highlight.",
+            str(getattr(graph_edge_focus, "Name", "") or "") == "V1CorridorIntersectionSlopeFaceSurfacePreview",
+            "Internal shared_boundary_graph edge focus should select the generated Intersection Slope Face Surface preview.",
         )
         _assert(
-            int(getattr(graph_edge_highlight, "HighlightedShapeCount", 0) or 0) == 1,
-            "Shared Boundary Graph edge focus should highlight the selected canonical graph edge only.",
+            doc.getObject("ReviewIntersectionContractHighlight") is None,
+            "Internal shared_boundary_graph edge rows should not create legacy contract highlight geometry.",
         )
-        _assert(
-            "Issues" in _parent_group_labels(doc, graph_edge_highlight),
-            "Shared Boundary Graph edge highlight should be routed to Review > Issues, not Alignment/Profile containers.",
-        )
-        for graph_index, graph_row in enumerate(internal_contract_rows):
-            if graph_row.get("contract_family") != "shared_boundary_graph":
-                continue
-            if not str(graph_row.get("role", "") or "").startswith("edge:"):
-                continue
-            graph_highlight = focus_corridor_intersection_contract_review_row(doc, graph_index, include_internal=True)
-            graph_bbox = _shape_bbox_xy(graph_highlight)
-            _assert(
-                graph_bbox is not None and max(float(graph_bbox["xlen"]), float(graph_bbox["ylen"])) <= 24.001,
-                f"Shared Boundary Graph focus should be clipped to the intersection neighborhood: "
-                f"{graph_row.get('row_id')}; {graph_bbox}.",
-            )
         first_graph_cell_index = next(
             index
             for index, row in enumerate(internal_contract_rows)
             if row.get("contract_family") == "shared_boundary_graph" and str(row.get("role", "") or "").startswith("cell:")
         )
-        graph_cell_highlight = focus_corridor_intersection_contract_review_row(doc, first_graph_cell_index, include_internal=True)
+        graph_cell_focus = focus_corridor_intersection_contract_review_row(doc, first_graph_cell_index, include_internal=True)
         _assert(
-            str(getattr(graph_cell_highlight, "ContractFamily", "") or "") == "shared_boundary_graph",
-            "Double-click/focus should create a shared_boundary_graph cell highlight.",
+            str(getattr(graph_cell_focus, "Name", "") or "") == "V1CorridorIntersectionSlopeFaceSurfacePreview",
+            "Internal shared_boundary_graph cell focus should select the generated Intersection Slope Face Surface preview.",
         )
         _assert(
-            int(getattr(graph_cell_highlight, "HighlightedShapeCount", 0) or 0) >= 1,
-            "Shared Boundary Graph cell focus should highlight the selected canonical graph cell boundary.",
-        )
-        _assert(
-            "Issues" in _parent_group_labels(doc, graph_cell_highlight),
-            "Shared Boundary Graph cell highlight should be routed to Review > Issues, not Alignment/Profile containers.",
-        )
-        for graph_index, graph_row in enumerate(internal_contract_rows):
-            if graph_row.get("contract_family") != "shared_boundary_graph":
-                continue
-            if not str(graph_row.get("role", "") or "").startswith("cell:"):
-                continue
-            graph_highlight = focus_corridor_intersection_contract_review_row(doc, graph_index, include_internal=True)
-            graph_bbox = _shape_bbox_xy(graph_highlight)
-            _assert(
-                graph_bbox is not None
-                and float(graph_bbox["xmin"]) >= -12.001
-                and float(graph_bbox["xmax"]) <= 12.001
-                and float(graph_bbox["ymin"]) >= -12.001
-                and float(graph_bbox["ymax"]) <= 12.001,
-                f"Shared Boundary Graph cell focus should be clipped to the intersection neighborhood: "
-                f"{graph_row.get('row_id')}; {graph_bbox}.",
+            doc.getObject("ReviewIntersectionContractHighlight") is None,
+            "Internal shared_boundary_graph cell rows should not create legacy contract highlight geometry.",
             )
         _assert(
             int(getattr(slope_face_preview, "TriangleCount", 0) or 0)
@@ -1391,8 +1407,9 @@ def run():
             + int(getattr(slope_face_preview, "IntersectionSlopeFaceBoundaryStripTriangleCount", 0) or 0)
             + int(getattr(slope_face_preview, "IntersectionSharedBoundaryGraphSurfaceTriangleCount", 0) or 0)
             + int(getattr(slope_face_preview, "IntersectionBoundaryLoopTransitionTriangleCount", 0) or 0)
+            + int(getattr(slope_face_preview, "IntersectionUpperSlopeFacePanelTriangleCount", 0) or 0)
             + int(getattr(slope_face_preview, "IntersectionSlopeFaceCellTriangleCount", 0) or 0),
-            "Dedicated Intersection Slope Face Surface should be composed from explicit perimeter, boundary-loop transition, boundary-strip, graph-cell, and cell triangles in this preset.",
+            "Dedicated Intersection Slope Face Surface should be composed from explicit perimeter, boundary-loop transition, upper-panel, boundary-strip, graph-cell, and cell triangles in this preset.",
         )
         _assert(
             int(getattr(slope_face_preview, "IntersectionBoundaryLoopTransitionTriangleCount", 0) or 0) == 0,

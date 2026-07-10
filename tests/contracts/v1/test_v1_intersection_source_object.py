@@ -24,6 +24,7 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
+    IntersectionSlopeFacePolicyRow,
 )
 from freecad.Corridor_Road.v1.objects.obj_intersection import (
     create_or_update_v1_intersection_model_object,
@@ -193,6 +194,17 @@ def test_intersection_source_object_round_trips_phase2_policy_rows() -> None:
                     diagnostic_rows=["grading_locked_by_user"],
                 )
             ],
+            slope_face_policy_rows=[
+                IntersectionSlopeFacePolicyRow(
+                    policy_id="slope-face:intersection:t-01:default",
+                    intersection_id="intersection:t-01",
+                    tie_slope_overlap_m=0.65,
+                    slope_face_width_offset_m=0.15,
+                    source_method="manual",
+                    approval_status="locked",
+                    diagnostic_rows=["slope_face_policy_locked_by_user"],
+                )
+            ],
             drainage_policy_rows=[
                 IntersectionDrainagePolicyRow(
                     policy_id="drainage-policy:intersection:t-01:default",
@@ -218,6 +230,7 @@ def test_intersection_source_object_round_trips_phase2_policy_rows() -> None:
         assert obj.ArmPolicyCount == 1
         assert obj.EdgePolicyCount == 1
         assert obj.LaneConnectionCount == 1
+        assert obj.SlopeFacePolicyCount == 1
         assert obj.DrainagePolicyCount == 1
         assert restored is not None
         assert restored.result_refs == [
@@ -238,6 +251,9 @@ def test_intersection_source_object_round_trips_phase2_policy_rows() -> None:
         ]
         assert restored.control_area_rows[0].source_method == "region_derived"
         assert restored.control_area_rows[0].approval_status == "draft"
+        assert restored.slope_face_policy_rows[0].tie_slope_overlap_m == 0.65
+        assert restored.slope_face_policy_rows[0].slope_face_width_offset_m == 0.15
+        assert restored.slope_face_policy_rows[0].diagnostic_rows == ["slope_face_policy_locked_by_user"]
         assert restored.control_area_rows[0].intent_status == "region_derived"
         assert restored.control_area_rows[0].source_region_refs == ["regions:main/region:main-intersection"]
         assert restored.control_area_rows[0].diagnostic_rows == ["control_area_region_derived"]

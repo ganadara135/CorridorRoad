@@ -648,6 +648,47 @@ def show_all_applied_sections_preview_object(document, applied_section_set):
     return obj
 
 
+def hide_applied_sections_preview_objects(document) -> int:
+    """Hide Applied Sections review preview objects without deleting result data."""
+
+    if document is None:
+        return 0
+    preview_kinds = {
+        "v1_applied_section_show_preview",
+        "v1_applied_sections_show_all_preview",
+        "v1_applied_section_station_marker",
+    }
+    preview_names = {
+        "V1AppliedSectionShowPreview",
+        "V1AppliedSectionsShowAllPreview",
+        "V1AppliedSectionStationMarker",
+    }
+    hidden_count = 0
+    seen_names: set[str] = set()
+    for obj in list(getattr(document, "Objects", []) or []):
+        name = str(getattr(obj, "Name", "") or "")
+        record_kind = str(getattr(obj, "CRRecordKind", "") or "")
+        if name not in preview_names and record_kind not in preview_kinds:
+            continue
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        view_object = getattr(obj, "ViewObject", None)
+        if view_object is None:
+            continue
+        try:
+            if bool(getattr(view_object, "Visibility", False)):
+                hidden_count += 1
+            view_object.Visibility = False
+        except Exception:
+            continue
+    try:
+        document.recompute()
+    except Exception:
+        pass
+    return hidden_count
+
+
 def _remove_applied_section_station_marker_object(document) -> None:
     if document is None:
         return
@@ -901,6 +942,10 @@ class V1AppliedSectionsTaskPanel:
         show_all_button.setToolTip("Show every generated Applied Section in the 3D View.")
         show_all_button.clicked.connect(self._show_all_review_rows)
         action_row.addWidget(show_all_button)
+        hide_all_button = QtWidgets.QPushButton("Hide All")
+        hide_all_button.setToolTip("Hide Applied Section preview objects in the 3D View.")
+        hide_all_button.clicked.connect(self._hide_all_review_rows)
+        action_row.addWidget(hide_all_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -1181,6 +1226,23 @@ class V1AppliedSectionsTaskPanel:
         except Exception as exc:
             self._summary.setPlainText(f"All Applied Sections preview was not shown:\n{exc}")
             _show_message(self.form, "Applied Sections", f"All Applied Sections preview was not shown.\n{exc}")
+
+    def _hide_all_review_rows(self) -> None:
+        try:
+            hidden_count = hide_applied_sections_preview_objects(self.document)
+            if Gui is not None:
+                try:
+                    Gui.Selection.clearSelection()
+                except Exception:
+                    pass
+            self._summary.setPlainText(
+                "Applied Sections previews hidden.\n"
+                f"Objects hidden: {hidden_count}\n\n"
+                "Use Show All or double-click a table row to show previews again."
+            )
+        except Exception as exc:
+            self._summary.setPlainText(f"Applied Sections previews were not hidden:\n{exc}")
+            _show_message(self.form, "Applied Sections", f"Applied Sections previews were not hidden.\n{exc}")
 
     def _apply_review_row_style(self, row_index: int, status: str) -> None:
         color = applied_section_review_row_color(status)

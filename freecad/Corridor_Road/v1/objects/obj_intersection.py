@@ -23,6 +23,7 @@ from ..models.source.intersection_model import (
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
+    IntersectionSlopeFacePolicyRow,
 )
 
 
@@ -80,6 +81,7 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "EdgePolicyRowsJson", "Intersections", "intersection edge policy rows")
     _add_property(obj, "App::PropertyString", "LaneConnectionRowsJson", "Intersections", "intersection lane connection rows")
     _add_property(obj, "App::PropertyString", "GradingPolicyRowsJson", "Intersections", "intersection grading policy rows")
+    _add_property(obj, "App::PropertyString", "SlopeFacePolicyRowsJson", "Intersections", "intersection slope-face policy rows")
     _add_property(obj, "App::PropertyString", "DrainagePolicyRowsJson", "Intersections", "intersection drainage policy rows")
     _add_property(obj, "App::PropertyStringList", "ControlRegionRefs", "Intersections", "linked control region refs")
     _add_property(obj, "App::PropertyInteger", "AnchorCount", "Summary", "anchor row count")
@@ -91,6 +93,7 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "EdgePolicyCount", "Summary", "edge policy row count")
     _add_property(obj, "App::PropertyInteger", "LaneConnectionCount", "Summary", "lane connection row count")
     _add_property(obj, "App::PropertyInteger", "GradingPolicyCount", "Summary", "grading policy row count")
+    _add_property(obj, "App::PropertyInteger", "SlopeFacePolicyCount", "Summary", "slope-face policy row count")
     _add_property(obj, "App::PropertyInteger", "DrainagePolicyCount", "Summary", "drainage policy row count")
     _add_property(obj, "App::PropertyString", "LastValidationStatus", "Diagnostics", "last validation status")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Traceability", "source refs")
@@ -124,6 +127,8 @@ def ensure_v1_intersection_properties(obj) -> None:
         obj.LaneConnectionRowsJson = "[]"
     if not str(getattr(obj, "GradingPolicyRowsJson", "") or ""):
         obj.GradingPolicyRowsJson = "[]"
+    if not str(getattr(obj, "SlopeFacePolicyRowsJson", "") or ""):
+        obj.SlopeFacePolicyRowsJson = "[]"
     if not str(getattr(obj, "DrainagePolicyRowsJson", "") or ""):
         obj.DrainagePolicyRowsJson = "[]"
     if not str(getattr(obj, "LastValidationStatus", "") or ""):
@@ -187,6 +192,7 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     edge_policy_rows = list(getattr(intersection_model, "edge_policy_rows", []) or [])
     lane_connection_rows = list(getattr(intersection_model, "lane_connection_rows", []) or [])
     grading_policy_rows = list(getattr(intersection_model, "grading_policy_rows", []) or [])
+    slope_face_policy_rows = list(getattr(intersection_model, "slope_face_policy_rows", []) or [])
     drainage_policy_rows = list(getattr(intersection_model, "drainage_policy_rows", []) or [])
     control_refs: list[str] = []
     for row in intersection_rows:
@@ -210,6 +216,7 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     obj.EdgePolicyRowsJson = _json_dumps(edge_policy_rows)
     obj.LaneConnectionRowsJson = _json_dumps(lane_connection_rows)
     obj.GradingPolicyRowsJson = _json_dumps(grading_policy_rows)
+    obj.SlopeFacePolicyRowsJson = _json_dumps(slope_face_policy_rows)
     obj.DrainagePolicyRowsJson = _json_dumps(drainage_policy_rows)
     obj.ControlRegionRefs = control_refs
     obj.SourceRefs = [str(ref) for ref in list(getattr(intersection_model, "source_refs", []) or []) if str(ref)]
@@ -223,6 +230,7 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     obj.EdgePolicyCount = len(edge_policy_rows)
     obj.LaneConnectionCount = len(lane_connection_rows)
     obj.GradingPolicyCount = len(grading_policy_rows)
+    obj.SlopeFacePolicyCount = len(slope_face_policy_rows)
     obj.DrainagePolicyCount = len(drainage_policy_rows)
     obj.LastValidationStatus = "stored" if intersection_rows else "empty"
     try:
@@ -262,6 +270,10 @@ def to_intersection_model(obj) -> IntersectionModel | None:
         grading_policy_rows=[
             _grading_policy_from_json(row, index)
             for index, row in enumerate(_json_list(obj.GradingPolicyRowsJson))
+        ],
+        slope_face_policy_rows=[
+            _slope_face_policy_from_json(row, index)
+            for index, row in enumerate(_json_list(obj.SlopeFacePolicyRowsJson))
         ],
         drainage_policy_rows=[
             _drainage_policy_from_json(row, index)
@@ -476,6 +488,26 @@ def _grading_policy_from_json(row: dict[str, object], index: int) -> Intersectio
         tie_in_rule=str(row.get("tie_in_rule", "") or "blend_to_leg_profiles"),
         crossfall_transition=str(row.get("crossfall_transition", "") or "linear"),
         low_point_strategy=str(row.get("low_point_strategy", "") or "review_low_points"),
+        source_method=str(row.get("source_method", "") or "manual"),
+        approval_status=str(row.get("approval_status", "") or "accepted"),
+        diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
+        status=str(row.get("status", "") or "active"),
+        notes=str(row.get("notes", "") or ""),
+    )
+
+
+def _slope_face_policy_from_json(row: dict[str, object], index: int) -> IntersectionSlopeFacePolicyRow:
+    return IntersectionSlopeFacePolicyRow(
+        policy_id=str(row.get("policy_id", "") or f"slope-face:policy-{index + 1}"),
+        intersection_id=str(row.get("intersection_id", "") or ""),
+        policy_name=str(row.get("policy_name", "") or "Default Intersection Slope Face Policy"),
+        tie_slope_overlap_m=_float_value(row.get("tie_slope_overlap_m", 0.5), 0.5),
+        slope_face_width_offset_m=_float_value(row.get("slope_face_width_offset_m", 0.0)),
+        blend_angle_deg=_float_value(row.get("blend_angle_deg", 0.0)),
+        max_panel_extension_m=_float_value(row.get("max_panel_extension_m", 3.0), 3.0),
+        min_panel_width_m=_float_value(row.get("min_panel_width_m", 0.25), 0.25),
+        enabled=bool(row.get("enabled", True)),
+        diagnostic_level=str(row.get("diagnostic_level", "") or "normal"),
         source_method=str(row.get("source_method", "") or "manual"),
         approval_status=str(row.get("approval_status", "") or "accepted"),
         diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],

@@ -1346,6 +1346,11 @@ def _is_v1_intersection_build_parametric_output(child):
         "v1_corridor_intersection_slope_face_loop_preview",
         "v1_corridor_intersection_slope_face_surface_preview",
         "v1_corridor_intersection_slope_face_boundary_preview",
+        "v1_corridor_intersection_tie_slope_surface_preview",
+        "v1_corridor_roundabout_entry_exit_surface_preview",
+        "v1_corridor_roundabout_apron_surface_preview",
+        "v1_corridor_roundabout_subgrade_surface_preview",
+        "v1_corridor_roundabout_slope_face_surface_preview",
         "v1_intersection_contract_review_highlight",
     }:
         return True
@@ -1364,6 +1369,11 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionSlopeFaceLoopPreview",
             "V1CorridorIntersectionSlopeFaceSurfacePreview",
             "V1CorridorIntersectionSlopeFaceBoundaryPreview",
+            "V1CorridorIntersectionTieSlopeSurfacePreview",
+            "V1CorridorRoundaboutEntryExitSurfacePreview",
+            "V1CorridorRoundaboutApronSurfacePreview",
+            "V1CorridorRoundaboutSubgradeSurfacePreview",
+            "V1CorridorRoundaboutSlopeFaceSurfacePreview",
         ),
         name_prefixes=(
             "V1CorridorIntersectionSurfacePreview",
@@ -1373,6 +1383,11 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionSlopeFaceLoopPreview",
             "V1CorridorIntersectionSlopeFaceSurfacePreview",
             "V1CorridorIntersectionSlopeFaceBoundaryPreview",
+            "V1CorridorIntersectionTieSlopeSurfacePreview",
+            "V1CorridorRoundaboutEntryExitSurfacePreview",
+            "V1CorridorRoundaboutApronSurfacePreview",
+            "V1CorridorRoundaboutSubgradeSurfacePreview",
+            "V1CorridorRoundaboutSlopeFaceSurfacePreview",
         ),
     ):
         return True
@@ -1384,6 +1399,7 @@ def _is_v1_intersection_build_parametric_output(child):
         "Intersection Slope Face Loops",
         "Intersection Slope Face Surface",
         "Intersection Slope Face Boundary",
+        "Intersection Tie Slope",
     }:
         return True
     return False

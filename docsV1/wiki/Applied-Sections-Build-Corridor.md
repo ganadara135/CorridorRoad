@@ -123,7 +123,28 @@ For intersections, Build Parametric keeps the generated output families separate
 It is not built from temporary highlight objects or generated mesh repair.
 
 Use the `Breakline Audit` tab to review shared boundary handoff rows.
-The compact `Intersection Tie Slope Window Handoff` row confirms that the accepted window edges were consumed by the generated tie-slope surface.
+Breakline Audit confirms whether accepted `Intersection Tie Slope Surface` edges were consumed by the generated surface.
+Low-level Applied Section window rows remain diagnostic metadata instead of normal user-facing Intersections rows.
+
+For `Roundabout - Single Lane`, Build Parametric uses roundabout-specific ownership instead of ordinary T/Cross intersection ownership.
+
+Current production roundabout output rows include:
+
+- `Roundabout Circulatory Surface`
+- `Roundabout Apron Surface`
+- `Roundabout Subgrade Surface`
+- `Roundabout Slope Face Surface`
+- `Roundabout Breakline Readiness`
+
+Ordinary corridor outputs should stop at explicit roundabout boundaries:
+
+- Design Surface, Lane review, and Shoulder review consume `roundabout_approach_clip_boundary`.
+- Subgrade Surface consumes `roundabout_subgrade_clip_boundary`.
+- ordinary Slope Face Surface and Side Slope review consume `roundabout_slope_handoff_boundary`.
+
+The roundabout interior is owned by dedicated roundabout outputs.
+
+`Roundabout Entry Exit Surface`, `Roundabout Entry/Exit Connector Surface`, `Roundabout Splitter Island Surface`, and generic roundabout `Intersection Tie Slope Surface` are not generated as production outputs until explicit source models justify them.
 
 ## Supplemental Sampling
 
