@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.0.8`. This release improves source-driven Intersection slope-face output, adds Applied Section window-based Intersection Tie Slope surfaces, refines shared breakline audit review, and removes obsolete Intersections review rows and temporary highlight objects. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.0.9`. This release refines the maintained Intersection preset set, improves Cross Intersection tie-slope handling, adds Roundabout-specific surface ownership and clipping behavior, and keeps low-level diagnostic rows out of normal user review tables. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -78,13 +78,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.0.8`
-- Release date: `2026-07-03`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.8
+- Current release: `v1.0.9`
+- Release date: `2026-07-10`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.9
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.0.8` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
+`1.0.9` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
 
 ## Main Commands
 

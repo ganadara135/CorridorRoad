@@ -57,42 +57,6 @@ INTERSECTION_PRESET_ROWS: tuple[dict[str, object], ...] = (
         "summary": "Creates primary and secondary through-road source sets for a four-leg intersection.",
     },
     {
-        "label": "Skewed Intersection - Basic",
-        "kind": "skewed_intersection",
-        "legs": 4,
-        "edge_note": "4 skew-aware curb-return corners",
-        "grading": "blend_primary_side",
-        "drainage": "review_low_points",
-        "summary": "Creates primary and skewed secondary through-road source sets for a four-leg starter.",
-    },
-    {
-        "label": "Urban Curb/Gutter - Basic",
-        "kind": "urban_curb_gutter_intersection",
-        "legs": 4,
-        "edge_note": "curb, gutter, sidewalk, and inlet source hints",
-        "grading": "blend_primary_side",
-        "drainage": "curb_gutter_inlets",
-        "summary": "Creates urban street source sets with curb, gutter, sidewalk, and inlet handoff intent.",
-    },
-    {
-        "label": "Drainage-Sensitive Sag - Basic",
-        "kind": "drainage_sag_intersection",
-        "legs": 4,
-        "edge_note": "sag low-point, inlet, and flow-route handoff hints",
-        "grading": "blend_primary_side",
-        "drainage": "sag_low_point_inlets",
-        "summary": "Creates sag-profile source sets with low-point and drainage handoff intent.",
-    },
-    {
-        "label": "Y Intersection - Basic",
-        "kind": "y_intersection",
-        "legs": 3,
-        "edge_note": "2 diverging branch corners",
-        "grading": "blend_primary_side",
-        "drainage": "review_low_points",
-        "summary": "Creates one primary approach and two branch source sets for a basic Y intersection.",
-    },
-    {
         "label": "Roundabout - Single Lane",
         "kind": "roundabout",
         "legs": 4,
@@ -355,26 +319,6 @@ class V1IntersectionPresetsTaskPanel:
         elif str(row.get("kind", "")) == "cross_intersection":
             self._radius_spin.setValue(10.0)
             self._control_length_spin.setValue(28.0)
-            self._grading_combo.setCurrentText("blend_primary_side")
-            self._drainage_combo.setCurrentText("review_low_points")
-        elif str(row.get("kind", "")) == "skewed_intersection":
-            self._radius_spin.setValue(11.0)
-            self._control_length_spin.setValue(30.0)
-            self._grading_combo.setCurrentText("blend_primary_side")
-            self._drainage_combo.setCurrentText("review_low_points")
-        elif str(row.get("kind", "")) == "urban_curb_gutter_intersection":
-            self._radius_spin.setValue(8.0)
-            self._control_length_spin.setValue(28.0)
-            self._grading_combo.setCurrentText("blend_primary_side")
-            self._drainage_combo.setCurrentText("curb_gutter_inlets")
-        elif str(row.get("kind", "")) == "drainage_sag_intersection":
-            self._radius_spin.setValue(9.0)
-            self._control_length_spin.setValue(32.0)
-            self._grading_combo.setCurrentText("blend_primary_side")
-            self._drainage_combo.setCurrentText("sag_low_point_inlets")
-        elif str(row.get("kind", "")) == "y_intersection":
-            self._radius_spin.setValue(15.0)
-            self._control_length_spin.setValue(26.0)
             self._grading_combo.setCurrentText("blend_primary_side")
             self._drainage_combo.setCurrentText("review_low_points")
         else:
@@ -760,7 +704,7 @@ def _apply_preset_source_completeness_status(model, *, preset_label: str) -> Non
     """Mark preset-authored source rows as explicit review-required defaults."""
 
     kind = intersection_preset_kind_from_label(preset_label) or str(preset_label or "").strip()
-    if kind not in {"t_intersection", "cross_intersection", "skewed_intersection", "urban_curb_gutter_intersection", "drainage_sag_intersection", "y_intersection"}:
+    if kind not in {"t_intersection", "cross_intersection", "roundabout"}:
         return
     preset_ref = f"intersection-preset:{kind}:source-completeness"
     try:
@@ -834,243 +778,6 @@ def _apply_preset_source_completeness_status(model, *, preset_label: str) -> Non
             row,
             approval_status=str(getattr(row, "approval_status", "") or "draft"),
             diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_drainage_policy_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "drainage_policy_rows", []) or [])
-    ]
-    if kind == "y_intersection":
-        branch_ref = f"intersection-preset:{kind}:branch-review"
-        try:
-            model.source_refs = _unique_text_values([*list(getattr(model, "source_refs", []) or []), branch_ref])
-        except Exception:
-            pass
-        branch_note = (
-            "Y preset branch defaults require approach angle and diverge/merge movement review; "
-            f"branch_review_ref={branch_ref}."
-        )
-        model.intersection_rows = [
-            replace(
-                row,
-                notes=_append_note(str(getattr(row, "notes", "") or ""), branch_note),
-            )
-            for row in list(getattr(model, "intersection_rows", []) or [])
-        ]
-        model.corner_rows = [
-            replace(
-                row,
-                diagnostic_rows=_append_diagnostics(
-                    getattr(row, "diagnostic_rows", []) or [],
-                    "preset_y_branch_geometry_review_required",
-                ),
-                notes=_append_note(str(getattr(row, "notes", "") or ""), branch_note),
-            )
-            for row in list(getattr(model, "corner_rows", []) or [])
-        ]
-        model.lane_connection_rows = [
-            replace(
-                row,
-                diagnostic_rows=_append_diagnostics(
-                    getattr(row, "diagnostic_rows", []) or [],
-                    "preset_y_diverge_merge_review_required",
-                ),
-                notes=_append_note(str(getattr(row, "notes", "") or ""), branch_note),
-            )
-            for row in list(getattr(model, "lane_connection_rows", []) or [])
-        ]
-    if kind == "skewed_intersection":
-        skew_ref = f"intersection-preset:{kind}:skew-review"
-        try:
-            model.source_refs = _unique_text_values([*list(getattr(model, "source_refs", []) or []), skew_ref])
-        except Exception:
-            pass
-        skew_note = (
-            "Skewed preset defaults require skew angle, corner radius, and grading transition review; "
-            f"skew_review_ref={skew_ref}."
-        )
-        model.intersection_rows = [
-            replace(
-                row,
-                notes=_append_note(str(getattr(row, "notes", "") or ""), skew_note),
-            )
-            for row in list(getattr(model, "intersection_rows", []) or [])
-        ]
-        model.corner_rows = [
-            replace(
-                row,
-                diagnostic_rows=_append_diagnostics(
-                    getattr(row, "diagnostic_rows", []) or [],
-                    "preset_skew_corner_geometry_review_required",
-                ),
-                notes=_append_note(str(getattr(row, "notes", "") or ""), skew_note),
-            )
-            for row in list(getattr(model, "corner_rows", []) or [])
-        ]
-        model.edge_policy_rows = [
-            replace(
-                row,
-                diagnostic_rows=_append_diagnostics(
-                    getattr(row, "diagnostic_rows", []) or [],
-                    "preset_skew_edge_family_review_required",
-                ),
-                notes=_append_note(str(getattr(row, "notes", "") or ""), skew_note),
-            )
-            for row in list(getattr(model, "edge_policy_rows", []) or [])
-        ]
-    if kind == "urban_curb_gutter_intersection":
-        urban_ref = f"intersection-preset:{kind}:urban-curb-gutter-review"
-        try:
-            model.source_refs = _unique_text_values([*list(getattr(model, "source_refs", []) or []), urban_ref])
-        except Exception:
-            pass
-        _apply_urban_curb_gutter_source_rows(model, urban_ref=urban_ref)
-    if kind == "drainage_sag_intersection":
-        sag_ref = f"intersection-preset:{kind}:sag-drainage-review"
-        try:
-            model.source_refs = _unique_text_values([*list(getattr(model, "source_refs", []) or []), sag_ref])
-        except Exception:
-            pass
-        _apply_drainage_sag_source_rows(model, sag_ref=sag_ref)
-
-
-def _apply_drainage_sag_source_rows(model, *, sag_ref: str = "") -> None:
-    """Add sag low-point, inlet, and flow-route review defaults."""
-
-    intersection_rows = list(getattr(model, "intersection_rows", []) or [])
-    if not intersection_rows:
-        return
-    intersection_id = str(getattr(intersection_rows[0], "intersection_id", "") or "intersection:sag")
-    note = (
-        "Drainage-sensitive sag preset defaults require inlet, flow-route, hydraulic sizing, and outlet review; "
-        f"sag_review_ref={sag_ref}."
-    )
-    model.intersection_rows = [
-        replace(
-            row,
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in intersection_rows
-    ]
-    sag_low_point_refs = [
-        f"drainage:sag-low-point:{intersection_id}:primary",
-        f"drainage:sag-low-point:{intersection_id}:secondary",
-    ]
-    inlet_refs = [
-        f"drainage:sag-inlet-candidate:{intersection_id}:left",
-        f"drainage:sag-inlet-candidate:{intersection_id}:right",
-    ]
-    flow_refs = [f"flow-route:sag-intersection:{intersection_id}:outlet-review"]
-    model.grading_policy_rows = [
-        replace(
-            row,
-            low_point_strategy="sag_low_point_review",
-            diagnostic_rows=_append_diagnostics(
-                getattr(row, "diagnostic_rows", []) or [],
-                "preset_sag_profile_review_required",
-                "preset_sag_low_point_review_required",
-            ),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "grading_policy_rows", []) or [])
-    ]
-    model.drainage_policy_rows = [
-        replace(
-            row,
-            capture_mode="sag_low_point_inlets",
-            inlet_spacing=35.0,
-            drainage_element_refs=_unique_text_values([*list(getattr(row, "drainage_element_refs", []) or []), *inlet_refs]),
-            flow_route_refs=_unique_text_values([*list(getattr(row, "flow_route_refs", []) or []), *flow_refs]),
-            inlet_candidate_refs=_unique_text_values([*list(getattr(row, "inlet_candidate_refs", []) or []), *inlet_refs]),
-            low_point_refs=_unique_text_values([*list(getattr(row, "low_point_refs", []) or []), *sag_low_point_refs]),
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(
-                getattr(row, "diagnostic_rows", []) or [],
-                "preset_sag_inlet_review_required",
-                "preset_sag_flow_route_review_required",
-                "preset_sag_hydraulic_sizing_required",
-            ),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "drainage_policy_rows", []) or [])
-    ]
-
-
-def _apply_urban_curb_gutter_source_rows(model, *, urban_ref: str = "") -> None:
-    """Add source-visible curb, gutter, sidewalk, and inlet handoff defaults."""
-
-    intersection_rows = list(getattr(model, "intersection_rows", []) or [])
-    if not intersection_rows:
-        return
-    intersection_id = str(getattr(intersection_rows[0], "intersection_id", "") or "intersection:urban")
-    note = (
-        "Urban curb/gutter preset defaults require curb return, sidewalk, inlet, and low-point review; "
-        f"urban_review_ref={urban_ref}."
-    )
-    model.intersection_rows = [
-        replace(
-            row,
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in intersection_rows
-    ]
-    intersection_rows = list(getattr(model, "intersection_rows", []) or [])
-    existing_policy_ids = {str(getattr(row, "policy_id", "") or "") for row in list(getattr(model, "edge_policy_rows", []) or [])}
-    extra_edges = []
-    for index, leg in enumerate(list(getattr(intersection_rows[0], "leg_rows", []) or []), start=1):
-        leg_ref = str(getattr(leg, "leg_id", "") or "")
-        for role, offset, subassembly_kind, diagnostic in (
-            ("curb_edge", 3.8, "curb", "preset_urban_curb_review_required"),
-            ("gutter_edge", 4.2, "gutter", "preset_urban_gutter_review_required"),
-            ("sidewalk_edge", 6.0, "sidewalk", "preset_urban_sidewalk_review_required"),
-        ):
-            policy_id = f"edge-policy:{intersection_id}:leg:{index:02d}:{role.replace('_edge', '')}"
-            if policy_id in existing_policy_ids:
-                continue
-            existing_policy_ids.add(policy_id)
-            extra_edges.append(
-                IntersectionEdgePolicyRow(
-                    policy_id=policy_id,
-                    intersection_id=intersection_id,
-                    leg_ref=leg_ref,
-                    edge_role=role,
-                    side="both",
-                    offset_rule="urban_curb_gutter_offset",
-                    offset_value=offset,
-                    elevation_rule="from_grading_policy",
-                    source_policy_ref=str(getattr(leg, "arm_policy_ref", "") or ""),
-                    edge_family_intent=subassembly_kind,
-                    source_method="urban_preset_default",
-                    approval_status="draft",
-                    subassembly_kind=subassembly_kind,
-                    diagnostic_rows=[
-                        "edge_family_subassembly_defaulted",
-                        "edge_family_approval_pending",
-                        diagnostic,
-                    ],
-                    notes=note,
-                )
-            )
-    model.edge_policy_rows = [*list(getattr(model, "edge_policy_rows", []) or []), *extra_edges]
-    gutter_refs = [
-        str(getattr(row, "policy_id", "") or "")
-        for row in list(getattr(model, "edge_policy_rows", []) or [])
-        if str(getattr(row, "edge_role", "") or "") == "gutter_edge"
-    ]
-    inlet_refs = [f"drainage:urban-inlet-candidate:{index:02d}" for index in range(1, min(len(gutter_refs), 4) + 1)]
-    low_point_refs = [f"drainage:urban-low-point:{index:02d}" for index in range(1, min(len(gutter_refs), 4) + 1)]
-    model.drainage_policy_rows = [
-        replace(
-            row,
-            capture_mode="curb_gutter_inlets",
-            inlet_spacing=45.0,
-            gutter_edge_refs=_unique_text_values([*list(getattr(row, "gutter_edge_refs", []) or []), *gutter_refs]),
-            inlet_candidate_refs=_unique_text_values([*list(getattr(row, "inlet_candidate_refs", []) or []), *inlet_refs]),
-            low_point_refs=_unique_text_values([*list(getattr(row, "low_point_refs", []) or []), *low_point_refs]),
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(
-                getattr(row, "diagnostic_rows", []) or [],
-                "preset_urban_inlet_review_required",
-                "preset_urban_low_point_review_required",
-            ),
             notes=_append_note(str(getattr(row, "notes", "") or ""), note),
         )
         for row in list(getattr(model, "drainage_policy_rows", []) or [])
@@ -1260,6 +967,170 @@ def _apply_preset_policy_options(
             )
             for row in list(getattr(model, "drainage_policy_rows", []) or [])
         ]
+    if _model_intersection_kind(model) == "roundabout":
+        _ensure_roundabout_source_policy_rows(model, radius=radius_value)
+
+
+def _model_intersection_kind(model) -> str:
+    rows = list(getattr(model, "intersection_rows", []) or [])
+    if not rows:
+        return ""
+    return str(getattr(rows[0], "intersection_kind", "") or "").strip()
+
+
+def _model_intersection_id(model) -> str:
+    rows = list(getattr(model, "intersection_rows", []) or [])
+    if not rows:
+        return ""
+    return str(getattr(rows[0], "intersection_id", "") or "").strip()
+
+
+def _ensure_roundabout_source_policy_rows(model, *, radius: float | None = None) -> None:
+    """Add explicit source policy rows for the Roundabout starter contract.
+
+    The first implementation slice keeps the values in EdgePolicy rows so existing
+    object serialization can carry them without introducing a new source model
+    family mid-stream.
+    """
+
+    intersection_id = _model_intersection_id(model)
+    if not intersection_id:
+        return
+    outer_radius = _positive_float_or_none(radius) or _first_curb_return_radius(model) or 18.0
+    central_island_radius = max(outer_radius * 0.45, 1.0)
+    circulatory_lane_width = max(outer_radius - central_island_radius, 1.0)
+    approach_connector_length = max(outer_radius * 1.25, 12.0)
+    apron_width = max(circulatory_lane_width * 0.15, 0.5)
+    slope_face_width = max(apron_width, 0.5)
+    subgrade_depth = 0.30
+    policy_rows = [
+        IntersectionEdgePolicyRow(
+            policy_id=f"roundabout-policy:{intersection_id}:central-island-radius",
+            intersection_id=intersection_id,
+            edge_role="central_island_edge",
+            side="inside",
+            offset_rule="roundabout_central_island_radius",
+            offset_value=central_island_radius,
+            elevation_rule="roundabout_radial_crossfall",
+            edge_family_intent="roundabout",
+            source_method="preset_explicit",
+            approval_status="accepted",
+            diagnostic_rows=[],
+            notes=f"roundabout_policy=central_island_radius; radius={central_island_radius:.3f}m",
+        ),
+        IntersectionEdgePolicyRow(
+            policy_id=f"roundabout-policy:{intersection_id}:circulatory-outer-radius",
+            intersection_id=intersection_id,
+            edge_role="circulatory_outer_edge",
+            side="outside",
+            offset_rule="roundabout_circulatory_outer_radius",
+            offset_value=outer_radius,
+            elevation_rule="roundabout_radial_crossfall",
+            edge_family_intent="roundabout",
+            source_method="preset_explicit",
+            approval_status="accepted",
+            diagnostic_rows=[],
+            notes=(
+                f"roundabout_policy=circulatory_outer_radius; radius={outer_radius:.3f}m; "
+                f"lane_width={circulatory_lane_width:.3f}m"
+            ),
+        ),
+        IntersectionEdgePolicyRow(
+            policy_id=f"roundabout-policy:{intersection_id}:outer-apron-width",
+            intersection_id=intersection_id,
+            edge_role="outer_apron_edge",
+            side="outside",
+            offset_rule="roundabout_outer_apron_width",
+            offset_value=apron_width,
+            elevation_rule="roundabout_radial_crossfall",
+            edge_family_intent="roundabout",
+            source_method="preset_explicit",
+            approval_status="accepted",
+            diagnostic_rows=[],
+            notes=f"roundabout_policy=outer_apron_width; width={apron_width:.3f}m",
+        ),
+        IntersectionEdgePolicyRow(
+            policy_id=f"roundabout-policy:{intersection_id}:slope-face-width",
+            intersection_id=intersection_id,
+            edge_role="slope_face_edge",
+            side="outside",
+            offset_rule="roundabout_slope_face_width",
+            offset_value=slope_face_width,
+            elevation_rule="from_grading_policy",
+            edge_family_intent="roundabout",
+            source_method="preset_explicit",
+            approval_status="accepted",
+            diagnostic_rows=[],
+            notes=f"roundabout_policy=slope_face_width; width={slope_face_width:.3f}m",
+        ),
+        IntersectionEdgePolicyRow(
+            policy_id=f"roundabout-policy:{intersection_id}:approach-connector-length",
+            intersection_id=intersection_id,
+            edge_role="entry_exit_edge",
+            side="both",
+            offset_rule="roundabout_approach_connector_length",
+            offset_value=approach_connector_length,
+            elevation_rule="from_grading_policy",
+            edge_family_intent="roundabout",
+            source_method="preset_explicit",
+            approval_status="accepted",
+            diagnostic_rows=[],
+            notes=f"roundabout_policy=approach_connector_length; length={approach_connector_length:.3f}m",
+        ),
+        IntersectionEdgePolicyRow(
+            policy_id=f"roundabout-policy:{intersection_id}:subgrade-depth",
+            intersection_id=intersection_id,
+            edge_role="subgrade_edge",
+            side="both",
+            offset_rule="roundabout_subgrade_depth",
+            offset_value=subgrade_depth,
+            elevation_rule="below_roundabout_finished_grade",
+            edge_family_intent="roundabout",
+            source_method="preset_explicit",
+            approval_status="accepted",
+            diagnostic_rows=[],
+            notes=f"roundabout_policy=subgrade_depth; depth={subgrade_depth:.3f}m",
+        ),
+    ]
+    existing = {
+        str(getattr(row, "policy_id", "") or ""): row
+        for row in list(getattr(model, "edge_policy_rows", []) or [])
+    }
+    for row in policy_rows:
+        existing[str(getattr(row, "policy_id", "") or "")] = row
+    model.edge_policy_rows = list(existing.values())
+    new_refs = [str(getattr(row, "policy_id", "") or "") for row in policy_rows]
+    model.intersection_rows = [
+        replace(
+            row,
+            policy_refs=_unique_policy_refs([*list(getattr(row, "policy_refs", []) or []), *new_refs]),
+            notes=(
+                str(getattr(row, "notes", "") or "").strip()
+                + " Roundabout explicit source policy rows added."
+            ).strip(),
+        )
+        for row in list(getattr(model, "intersection_rows", []) or [])
+    ]
+
+
+def _first_curb_return_radius(model) -> float | None:
+    for row in list(getattr(model, "curb_return_policy_rows", []) or []):
+        value = _positive_float_or_none(getattr(row, "radius", 0.0))
+        if value is not None:
+            return value
+    return None
+
+
+def _unique_policy_refs(values) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
 
 
 def _grading_crown_behavior(mode: str) -> str:
@@ -1520,47 +1391,6 @@ def _create_preset_drainage_source(
             policy_set_ref=policy_id,
         ),
     ]
-    if str(intersection_kind or "") == "urban_curb_gutter_intersection":
-        for index, side in enumerate(("left", "right", "upstream", "downstream"), start=1):
-            element_rows.append(
-                DrainageElementRow(
-                    drainage_element_id=f"drainage:urban-inlet-candidate:{index:02d}",
-                    element_kind="inlet_candidate",
-                    alignment_ref=str(primary_alignment_ref or ""),
-                    intersection_ref=intersection_ref,
-                    side=side,
-                    station_start=start,
-                    station_end=end,
-                    policy_set_ref=policy_id,
-                )
-            )
-    if str(intersection_kind or "") == "drainage_sag_intersection":
-        for index, side in enumerate(("primary", "secondary"), start=1):
-            element_rows.append(
-                DrainageElementRow(
-                    drainage_element_id=f"drainage:sag-low-point:{index:02d}",
-                    element_kind="sag_low_point",
-                    alignment_ref=str(primary_alignment_ref if index == 1 else secondary_alignment_ref or primary_alignment_ref),
-                    intersection_ref=intersection_ref,
-                    side=side,
-                    station_start=start,
-                    station_end=end,
-                    policy_set_ref=policy_id,
-                )
-            )
-        for index, side in enumerate(("left", "right"), start=1):
-            element_rows.append(
-                DrainageElementRow(
-                    drainage_element_id=f"drainage:sag-inlet-candidate:{index:02d}",
-                    element_kind="inlet_candidate",
-                    alignment_ref=str(primary_alignment_ref or ""),
-                    intersection_ref=intersection_ref,
-                    side=side,
-                    station_start=start,
-                    station_end=end,
-                    policy_set_ref=policy_id,
-                )
-            )
     model = DrainageModel(
         schema_version=1,
         project_id=_project_id(project),
@@ -1585,12 +1415,8 @@ def _create_preset_drainage_source(
                 to_element_ref=outlet_hint_id,
                 outlet_ref=outlet_hint_id,
                 direction="review",
-                risk_level="critical" if str(intersection_kind or "") == "drainage_sag_intersection" else "high",
-                notes=(
-                    "Sag preset handoff only; replace inlet/outlet hints with hydraulic sizing and real Structures."
-                    if str(intersection_kind or "") == "drainage_sag_intersection"
-                    else "Preset handoff only; replace with real inlet/outfall Structures during drainage design."
-                ),
+                risk_level="high",
+                notes="Preset handoff only; replace with real inlet/outfall Structures during drainage design.",
             )
         ],
         source_refs=[

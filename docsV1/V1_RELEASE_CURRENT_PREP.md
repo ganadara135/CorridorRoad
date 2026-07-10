@@ -1,28 +1,28 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-07-03
-Status: `1.0.8` release prepared
+Date: 2026-07-10
+Status: `1.0.9` release prepared
 Scope: post-`1.0.0` v1 updates
 
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.8` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.9` release.
 
 ## Release Status
 
-- Release version: `1.0.8`
-- Release date: `2026-07-03`
-- Tag: `v1.0.8`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.8
+- Release version: `1.0.9`
+- Release date: `2026-07-10`
+- Tag: `v1.0.9`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.9
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.0.8` / `2026-07-03`.
-- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.8` release section.
+- [x] `package.xml` version/date updated to `1.0.9` / `2026-07-10`.
+- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.9` release section.
 - [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
@@ -70,14 +70,14 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG `1.0.8` contains the Intersection Tie Slope, Upper Slope Face panel, shared breakline audit, and Intersections review cleanup work.
-- [x] README and local Wiki drafts now point to the `1.0.8` release.
+- [x] CHANGELOG `1.0.9` contains the maintained Intersection preset, Cross Intersection Tie Slope, Roundabout ownership/clipping, shared breakline audit, and review cleanup work.
+- [x] README and local Wiki drafts now point to the `1.0.9` release.
 
 ## Historical Document Notes
 
 The `1.0.0` release planning and validation records still mention Drainage as a placeholder or under-development stage because that was true for the `2026-05-02` release baseline.
 
-Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.8` changelog section.
+Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.9` changelog section.
 
 ## Release Validation Checklist
 
@@ -103,7 +103,7 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`Parametric Road 1.0.8 improves source-driven Intersection slope-face output, adds Applied Section window-based Intersection Tie Slope Surface generation, refines the upper rectangular slope-face panel handoff, reduces obsolete Intersections-tab review rows, and keeps shared breakline audit focused on accepted source/result contracts. Advanced hydraulic analysis, automatic pipe sizing, complete drawing-sheet production, and complete exchange coverage remain future work.`
+`Parametric Road 1.0.9 refines the maintained Intersection preset set, improves Cross Intersection Tie Slope behavior, adds Roundabout-specific surface ownership and clipping, keeps low-level diagnostic rows out of normal user review tables, and updates wiki guidance for the current T, Cross, and Roundabout workflows. Advanced hydraulic analysis, automatic pipe sizing, complete drawing-sheet production, and complete exchange coverage remain future work.`
 
 Suggested highlights:
 
@@ -137,5 +137,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.0.8` and date `2026-07-03`.
-- The intended release tag is `v1.0.8`.
+- `package.xml` declares version `1.0.9` and date `2026-07-10`.
+- The intended release tag is `v1.0.9`.

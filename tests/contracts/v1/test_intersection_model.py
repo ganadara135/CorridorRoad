@@ -22,11 +22,11 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
 def test_intersection_type_presets_are_user_selectable() -> None:
     labels = intersection_preset_labels()
 
-    assert labels == ["T Intersection", "Cross Intersection", "Y Intersection"]
+    assert labels == ["T Intersection", "Cross Intersection", "Roundabout"]
     assert intersection_kind_from_label("T Intersection") == "t_intersection"
     assert intersection_kind_from_label("Cross Intersection") == "cross_intersection"
-    assert intersection_kind_from_label("Y Intersection") == "y_intersection"
-    assert set(INTERSECTION_KIND_PRESETS) == {"t_intersection", "cross_intersection", "y_intersection"}
+    assert intersection_kind_from_label("Roundabout") == "roundabout"
+    assert set(INTERSECTION_KIND_PRESETS) == {"t_intersection", "cross_intersection", "roundabout"}
 
 
 def test_intersection_row_preserves_alignment_refs_control_regions_and_legs() -> None:

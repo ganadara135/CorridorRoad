@@ -38,6 +38,10 @@ from ...models.result.intersection_drainage_hint import (
     IntersectionDrainageHintResult,
     IntersectionDrainageHintRow,
 )
+from ...models.result.intersection_roundabout_approach_leg import (
+    IntersectionRoundaboutApproachLegResult,
+    IntersectionRoundaboutApproachLegRow,
+)
 from ...models.result.intersection_slope_face_loop import (
     IntersectionSlopeFaceLoopResult,
     IntersectionSlopeFaceLoopRow,
@@ -83,8 +87,10 @@ _VALID_GRADING_LOW_POINT_STRATEGIES = {"review_low_points", "sag_low_point_revie
 _LEG_GRAPH_ROLE_ANGLE_DEG = {
     "primary_after": 0.0,
     "primary_before": 180.0,
+    "primary_control": 0.0,
     "secondary_after": 90.0,
     "secondary_before": 270.0,
+    "secondary_control": 90.0,
     "side_approach": 270.0,
     "skew_after": 60.0,
     "skew_before": 240.0,
@@ -390,7 +396,7 @@ class IntersectionEvaluationService:
             zone_family = str(getattr(zone, "zone_family", "") or "")
             zone_ref = str(getattr(zone, "zone_id", "") or "")
             grading_row = grading_context_by_zone.get(zone_ref)
-            if design_role in {"central_pavement", "roundabout_circulatory_pavement"}:
+            if design_role in {"central_pavement", "roundabout_circulatory_lane"}:
                 row_diagnostics = []
                 if not drainage_policy_ref:
                     row_diagnostics.append("warning:low_point_hint_drainage_policy_missing")
@@ -435,7 +441,7 @@ class IntersectionEvaluationService:
                         notes=_drainage_hint_note("low_point_candidate", drainage_mode, design_role),
                     )
                 )
-            if design_role in {"curb_return_pavement", "roundabout_entry_exit_pavement"} or zone_family == "slope":
+            if design_role in {"curb_return_pavement", "roundabout_entry_exit_connector"} or zone_family == "slope":
                 row_diagnostics = []
                 if not drainage_policy_ref:
                     row_diagnostics.append("warning:inlet_recommendation_drainage_policy_missing")
@@ -876,6 +882,14 @@ class IntersectionEvaluationService:
             intersection_id=intersection_id,
         )
         diagnostics = list(getattr(surface_zones, "diagnostic_rows", []) or [])
+        if str(getattr(topology, "intersection_kind", "") or "") == "roundabout":
+            return _roundabout_boundary_loop_result(
+                intersection_model,
+                topology,
+                surface_zones,
+                edge_network,
+                diagnostics=diagnostics,
+            )
         edge_by_id = {
             str(getattr(edge, "edge_id", "") or ""): edge
             for edge in list(getattr(edge_network, "edge_rows", []) or [])
@@ -1457,6 +1471,80 @@ class IntersectionEvaluationService:
             diagnostic_rows=diagnostics,
             loop_rows=loop_rows,
             source_refs=list(getattr(surface_zones, "source_refs", []) or []),
+        )
+
+    def evaluate_roundabout_approach_legs(
+        self,
+        intersection_model: IntersectionModel | None,
+        topology_result: IntersectionTopologyResult | None = None,
+        *,
+        intersection_id: str = "",
+    ) -> IntersectionRoundaboutApproachLegResult:
+        """Evaluate four physical approach-leg contracts for roundabout builders."""
+
+        if intersection_model is None:
+            return IntersectionRoundaboutApproachLegResult(
+                schema_version=1,
+                project_id="corridorroad-v1",
+                status="error",
+                diagnostic_rows=["error:intersection_model_missing"],
+            )
+        topology = topology_result or self.evaluate_topology(intersection_model, intersection_id=intersection_id)
+        diagnostics = list(getattr(topology, "diagnostic_rows", []) or [])
+        intersection_kind = str(getattr(topology, "intersection_kind", "") or "")
+        intersection_ref = str(getattr(topology, "intersection_id", "") or intersection_id or "")
+        if intersection_kind != "roundabout":
+            return IntersectionRoundaboutApproachLegResult(
+                schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+                project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+                label=f"Roundabout Approach Legs - {intersection_ref or 'not-applicable'}",
+                approach_leg_result_id=f"intersection-roundabout-approach-legs:{intersection_ref or 'not-applicable'}",
+                intersection_id=intersection_ref,
+                intersection_kind=intersection_kind,
+                status="not_applicable",
+                diagnostic_rows=[
+                    *diagnostics,
+                    f"info:roundabout_approach_leg_contract_not_applicable:{intersection_kind or 'unknown'}",
+                ],
+                source_refs=list(getattr(topology, "source_refs", []) or []),
+            )
+        if str(getattr(topology, "status", "") or "") == "error":
+            return IntersectionRoundaboutApproachLegResult(
+                schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+                project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+                label=f"Roundabout Approach Legs - {intersection_ref or 'error'}",
+                approach_leg_result_id=f"intersection-roundabout-approach-legs:{intersection_ref or 'error'}",
+                intersection_id=intersection_ref,
+                intersection_kind=intersection_kind,
+                status="error",
+                diagnostic_rows=diagnostics,
+                source_refs=list(getattr(topology, "source_refs", []) or []),
+            )
+
+        diagnostics.append("info:roundabout_approach_leg_contract_source=topology_leg_span_decomposition")
+        rows = _roundabout_approach_leg_rows(intersection_model, topology, diagnostics=diagnostics)
+        accepted_count = len([row for row in rows if row.status == "ready"])
+        if not rows:
+            diagnostics.append("error:roundabout_approach_leg_rows_missing")
+        elif accepted_count < 4:
+            diagnostics.append(f"warning:roundabout_approach_leg_count_below_four:{accepted_count}")
+        alignment_count = len(_unique_text_values([str(getattr(row, "alignment_ref", "") or "") for row in rows]))
+        status = "error" if any(str(item).startswith("error:roundabout_approach_leg") for item in diagnostics) else ("ready" if accepted_count >= 4 else "warning")
+        return IntersectionRoundaboutApproachLegResult(
+            schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+            project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+            label=f"Roundabout Approach Legs - {intersection_ref}",
+            approach_leg_result_id=f"intersection-roundabout-approach-legs:{intersection_ref or 'main'}",
+            intersection_id=intersection_ref,
+            intersection_kind=intersection_kind,
+            status=status,
+            source_leg_count=len(list(getattr(topology, "leg_span_rows", []) or [])),
+            approach_leg_count=len(rows),
+            accepted_approach_leg_count=accepted_count,
+            alignment_count=alignment_count,
+            diagnostic_rows=diagnostics,
+            approach_leg_rows=rows,
+            source_refs=list(getattr(topology, "source_refs", []) or []),
         )
 
     def evaluate_edge_network(
@@ -4852,11 +4940,109 @@ def _curb_return_contact_station_refs(
     return output
 
 
+def _roundabout_approach_leg_rows(
+    intersection_model: IntersectionModel,
+    topology_result: IntersectionTopologyResult,
+    *,
+    diagnostics: list[str],
+) -> list[IntersectionRoundaboutApproachLegRow]:
+    """Split roundabout source leg spans into physical approach directions."""
+
+    intersection_id = str(getattr(topology_result, "intersection_id", "") or "")
+    center = _roundabout_center_xyz(intersection_model, topology_result)
+    rows: list[IntersectionRoundaboutApproachLegRow] = []
+    role_counts: dict[str, int] = {}
+    shared_roles = (
+        "roundabout_approach_clip_to_design_surface",
+        "roundabout_entry_exit_connector_to_circulatory_surface",
+        "roundabout_subgrade_to_corridor_subgrade",
+        "roundabout_slope_face_to_corridor_slope_face",
+    )
+    for span_index, span in enumerate(list(getattr(topology_result, "leg_span_rows", []) or []), start=1):
+        leg_role = str(getattr(span, "leg_role", "") or f"leg_{span_index}")
+        base_role = _roundabout_approach_base_role(leg_role, span_index)
+        role_counts[base_role] = role_counts.get(base_role, 0) + 1
+        if role_counts[base_role] > 1:
+            base_role = f"{base_role}_{role_counts[base_role]}"
+        station_start = float(getattr(span, "station_start", 0.0) or 0.0)
+        station_end = float(getattr(span, "station_end", 0.0) or 0.0)
+        station_min = min(station_start, station_end)
+        station_max = max(station_start, station_end)
+        base_angle = float(getattr(span, "leg_graph_angle_deg", 0.0) or 0.0)
+        source_diagnostics = list(getattr(span, "source_diagnostic_rows", ()) or ())
+        geometry_diagnostics: list[str] = []
+        if not str(getattr(span, "alignment_ref", "") or ""):
+            geometry_diagnostics.append("error:roundabout_approach_leg_alignment_ref_missing")
+        if abs(station_max - station_min) <= 1.0e-9:
+            geometry_diagnostics.append("error:roundabout_approach_leg_station_span_degenerate")
+        for endpoint_suffix, handoff_station, direction_sign, direction_angle in (
+            ("start", station_min, -1, base_angle + 180.0),
+            ("end", station_max, 1, base_angle),
+        ):
+            approach_role = f"{base_role}_{endpoint_suffix}"
+            direction_angle = float(direction_angle) % 360.0
+            direction_rad = math.radians(direction_angle)
+            direction_vector = (math.cos(direction_rad), math.sin(direction_rad))
+            row_diagnostics = [*source_diagnostics, *geometry_diagnostics]
+            for diagnostic in geometry_diagnostics:
+                diagnostics.append(f"{diagnostic}:{approach_role}")
+            status = "error" if geometry_diagnostics else "ready"
+            rows.append(
+                IntersectionRoundaboutApproachLegRow(
+                    approach_leg_id=(
+                        f"intersection-roundabout-approach-leg:"
+                        f"{_id_token(intersection_id or 'main')}:{_id_token(approach_role)}"
+                    ),
+                    intersection_id=intersection_id,
+                    approach_role=approach_role,
+                    approach_index=len(rows) + 1,
+                    source_leg_ref=str(getattr(span, "leg_ref", "") or ""),
+                    source_leg_role=leg_role,
+                    alignment_ref=str(getattr(span, "alignment_ref", "") or ""),
+                    control_area_ref=str(getattr(span, "control_area_ref", "") or ""),
+                    station_start=station_min,
+                    station_end=station_max,
+                    handoff_station=handoff_station,
+                    inner_station=handoff_station,
+                    outer_station=station_max if endpoint_suffix == "start" else station_min,
+                    direction_sign=direction_sign,
+                    direction_angle_deg=direction_angle,
+                    direction_vector_xy=direction_vector,
+                    approach_center_xyz=center,
+                    roundabout_center_xyz=center,
+                    shared_breakline_roles=shared_roles,
+                    source_status="warning" if source_diagnostics else "accepted",
+                    source_diagnostic_rows=tuple(row_diagnostics),
+                    status=status,
+                    notes=(
+                        "physical_roundabout_approach_leg_from_topology_span; "
+                        f"source_leg={str(getattr(span, 'leg_ref', '') or '')}; "
+                        f"endpoint={endpoint_suffix}; "
+                        f"handoff_sta={handoff_station:.3f}"
+                    ),
+                )
+            )
+    if len(rows) != 4:
+        diagnostics.append(f"warning:roundabout_approach_leg_expected_four_rows:actual={len(rows)}")
+    return rows
+
+
+def _roundabout_approach_base_role(leg_role: str, span_index: int) -> str:
+    text = str(leg_role or "").strip().lower().replace("-", "_")
+    if "primary" in text:
+        return "primary"
+    if "secondary" in text:
+        return "secondary"
+    if text:
+        return _id_token(text).replace("-", "_")
+    return f"leg_{int(span_index or 0):02d}"
+
+
 def _roundabout_edge_network_rows(
     intersection_model: IntersectionModel,
     topology_result: IntersectionTopologyResult,
 ) -> list[IntersectionEdgeNetworkRow]:
-    """Return first-slice roundabout edge-family rows for source/topology review."""
+    """Return roundabout edge-family rows for source/topology review."""
 
     row = IntersectionEvaluationService._find_topology_intersection_row(
         intersection_model,
@@ -4867,9 +5053,16 @@ def _roundabout_edge_network_rows(
     policies = _curb_return_policies_for_intersection(intersection_model, topology_result.intersection_id)
     policy = policies[0] if policies else None
     policy_ref = str(getattr(policy, "policy_id", "") or f"roundabout-policy:{topology_result.intersection_id}:default")
-    radius = float(getattr(policy, "radius", 0.0) or 18.0)
+    roundabout_policy = _roundabout_source_policy_values(intersection_model, topology_result.intersection_id)
+    radius = float(roundabout_policy.get("circulatory_outer_radius", 0.0) or getattr(policy, "radius", 0.0) or 18.0)
     if radius <= 0.0:
         radius = 18.0
+    central_radius = float(roundabout_policy.get("central_island_radius", 0.0) or radius * 0.5)
+    if central_radius <= 0.0:
+        central_radius = radius * 0.5
+    connector_length = float(roundabout_policy.get("approach_connector_length", 0.0) or max(radius * 1.25, 12.0))
+    apron_width = float(roundabout_policy.get("outer_apron_width", 0.0) or 0.0)
+    policy_diagnostics = _roundabout_source_policy_diagnostics(roundabout_policy)
     contact_station_refs = _curb_return_contact_station_refs(
         intersection_model,
         topology_result,
@@ -4900,10 +5093,16 @@ def _roundabout_edge_network_rows(
             leg_ref=",".join(leg_refs),
             alignment_ref=",".join(alignment_refs),
             side="inside",
-            radius=radius * 0.5,
+            radius=central_radius,
             contact_station_refs=contact_station_refs,
-            status="candidate",
-            notes="roundabout_first_slice_central_island_edge",
+            source_status="warning" if policy_diagnostics else "accepted",
+            source_diagnostic_rows=policy_diagnostics,
+            status="accepted" if not policy_diagnostics else "candidate",
+            notes=(
+                "roundabout_source_policy_central_island_edge; "
+                f"central_island_radius={central_radius:.3f}m; "
+                f"circulatory_outer_radius={radius:.3f}m"
+            ),
         ),
         IntersectionEdgeNetworkRow(
             edge_id=_edge_network_row_id(topology_result.intersection_id, "roundabout", 1, 2, "circulatory_outer_edge", "outside"),
@@ -4916,8 +5115,15 @@ def _roundabout_edge_network_rows(
             side="outside",
             radius=radius,
             contact_station_refs=contact_station_refs,
-            status="candidate",
-            notes="roundabout_first_slice_circulatory_edge",
+            source_status="warning" if policy_diagnostics else "accepted",
+            source_diagnostic_rows=policy_diagnostics,
+            status="accepted" if not policy_diagnostics else "candidate",
+            notes=(
+                "roundabout_source_policy_circulatory_edge; "
+                f"central_island_radius={central_radius:.3f}m; "
+                f"circulatory_outer_radius={radius:.3f}m; "
+                f"outer_apron_width={apron_width:.3f}m"
+            ),
         ),
     ]
     for index, span in enumerate(list(getattr(topology_result, "leg_span_rows", []) or []), start=1):
@@ -4942,11 +5148,449 @@ def _roundabout_edge_network_rows(
                         (),
                     )
                 },
-                status="candidate",
-                notes="roundabout_first_slice_entry_exit_edge",
+                source_status="warning" if policy_diagnostics else "accepted",
+                source_diagnostic_rows=policy_diagnostics,
+                status="accepted" if not policy_diagnostics else "candidate",
+                notes=(
+                    "roundabout_source_policy_entry_exit_edge; "
+                    f"approach_connector_length={connector_length:.3f}m"
+                ),
             )
         )
     return rows
+
+
+def _roundabout_source_policy_values(
+    intersection_model: IntersectionModel,
+    intersection_id: str,
+) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for row in list(getattr(intersection_model, "edge_policy_rows", []) or []):
+        if str(getattr(row, "intersection_id", "") or "") != str(intersection_id or ""):
+            continue
+        if str(getattr(row, "edge_family_intent", "") or "") != "roundabout":
+            continue
+        rule = str(getattr(row, "offset_rule", "") or "").strip()
+        value = float(getattr(row, "offset_value", 0.0) or 0.0)
+        if rule == "roundabout_central_island_radius":
+            values["central_island_radius"] = value
+        elif rule == "roundabout_circulatory_outer_radius":
+            values["circulatory_outer_radius"] = value
+        elif rule == "roundabout_outer_apron_width":
+            values["outer_apron_width"] = value
+        elif rule == "roundabout_slope_face_width":
+            values["slope_face_width"] = value
+        elif rule == "roundabout_approach_connector_length":
+            values["approach_connector_length"] = value
+        elif rule == "roundabout_subgrade_depth":
+            values["subgrade_depth"] = value
+    return values
+
+
+def _roundabout_source_policy_diagnostics(values: dict[str, float]) -> tuple[str, ...]:
+    diagnostics: list[str] = []
+    required = (
+        "central_island_radius",
+        "circulatory_outer_radius",
+        "approach_connector_length",
+    )
+    for key in required:
+        if float(values.get(key, 0.0) or 0.0) <= 0.0:
+            diagnostics.append(f"roundabout_source_policy_missing:{key}")
+    if (
+        float(values.get("central_island_radius", 0.0) or 0.0) > 0.0
+        and float(values.get("circulatory_outer_radius", 0.0) or 0.0) > 0.0
+        and float(values.get("central_island_radius", 0.0) or 0.0)
+        >= float(values.get("circulatory_outer_radius", 0.0) or 0.0)
+    ):
+        diagnostics.append("roundabout_source_policy_invalid:central_island_exceeds_outer_radius")
+    return tuple(diagnostics)
+
+
+def _roundabout_boundary_loop_result(
+    intersection_model: IntersectionModel,
+    topology_result: IntersectionTopologyResult,
+    surface_zones: IntersectionSurfaceZoneResult,
+    edge_network: IntersectionEdgeNetworkResult,
+    *,
+    diagnostics: list[str],
+) -> IntersectionBoundaryLoopResult:
+    intersection_id = str(getattr(topology_result, "intersection_id", "") or "")
+    policy_values = _roundabout_source_policy_values(intersection_model, intersection_id)
+    policy_diagnostics = list(_roundabout_source_policy_diagnostics(policy_values))
+    center = _roundabout_center_xyz(intersection_model, topology_result)
+    outer_radius = float(policy_values.get("circulatory_outer_radius", 0.0) or 0.0)
+    central_radius = float(policy_values.get("central_island_radius", 0.0) or 0.0)
+    if outer_radius <= 0.0:
+        outer_radius = _roundabout_edge_radius(edge_network, "circulatory_outer_edge") or 18.0
+        policy_diagnostics.append("roundabout_boundary_loop_outer_radius_fallback")
+    if central_radius <= 0.0:
+        central_radius = _roundabout_edge_radius(edge_network, "central_island_edge") or outer_radius * 0.45
+        policy_diagnostics.append("roundabout_boundary_loop_central_radius_fallback")
+    apron_width = max(float(policy_values.get("outer_apron_width", 0.0) or 0.0), 0.0)
+    ownership_radius = max(outer_radius + apron_width, outer_radius)
+    loop_rows: list[IntersectionBoundaryLoopRow] = []
+    segment_rows: list[IntersectionBoundarySegmentRow] = []
+    loop_specs = [
+        (
+            "central-island",
+            "roundabout_central_island_boundary",
+            central_radius,
+            _roundabout_circle_points(center, central_radius, segment_count=32),
+            (),
+            "roundabout_source_policy",
+        ),
+        (
+            "circulatory-outer",
+            "roundabout_circulatory_outer_boundary",
+            outer_radius,
+            _roundabout_circle_points(center, outer_radius, segment_count=32),
+            (),
+            "roundabout_source_policy",
+        ),
+        (
+            "outer-ownership",
+            "roundabout_outer_ownership_boundary",
+            ownership_radius,
+            _roundabout_circle_points(center, ownership_radius, segment_count=32),
+            (),
+            "roundabout_source_policy",
+        ),
+    ]
+    connector_length = float(policy_values.get("approach_connector_length", 0.0) or max(outer_radius * 1.25, 12.0))
+    connector_width = max(outer_radius - central_radius, 1.0)
+    clip_depth = max(min(connector_width * 0.25, 3.0), 0.75)
+    approach_legs = IntersectionEvaluationService().evaluate_roundabout_approach_legs(
+        intersection_model,
+        topology_result,
+    )
+    approach_leg_rows = list(getattr(approach_legs, "approach_leg_rows", []) or [])
+    if approach_leg_rows:
+        diagnostics.append(
+            "info:roundabout_boundary_loop_source=roundabout_approach_leg_contract:"
+            f"{len(approach_leg_rows)}"
+        )
+    else:
+        diagnostics.append("warning:roundabout_boundary_loop_approach_leg_rows_missing")
+    for connector_index, approach_leg in enumerate(approach_leg_rows, start=1):
+        angle = float(getattr(approach_leg, "direction_angle_deg", 0.0) or 0.0)
+        approach_role = str(getattr(approach_leg, "approach_role", "") or f"approach-{connector_index:02d}")
+        direction_suffix = _id_token(approach_role)
+        approach_source_refs = (
+            str(getattr(approach_legs, "approach_leg_result_id", "") or ""),
+            str(getattr(approach_leg, "approach_leg_id", "") or ""),
+        )
+        connector_points = _roundabout_entry_exit_connector_points(
+            center,
+            outer_radius=outer_radius,
+            connector_length=connector_length,
+            connector_width=connector_width,
+            angle_deg=angle,
+        )
+        loop_specs.append(
+            (
+                f"entry-exit-{connector_index:02d}-{direction_suffix}",
+                "roundabout_entry_exit_connector_boundary",
+                0.0,
+                connector_points,
+                approach_source_refs,
+                "roundabout_approach_leg_contract",
+            )
+        )
+        clip_points = _roundabout_cross_boundary_loop_points(
+            center,
+            radius=outer_radius + connector_length,
+            boundary_width=connector_width,
+            boundary_depth=clip_depth,
+            angle_deg=angle,
+        )
+        for boundary_suffix, boundary_role in (
+            ("approach-clip", "roundabout_approach_clip_boundary"),
+            ("subgrade-clip", "roundabout_subgrade_clip_boundary"),
+            ("slope-handoff", "roundabout_slope_handoff_boundary"),
+        ):
+            loop_specs.append(
+                (
+                    f"{boundary_suffix}-{connector_index:02d}-{direction_suffix}",
+                    boundary_role,
+                    0.0,
+                    clip_points,
+                    approach_source_refs,
+                    "roundabout_approach_leg_contract",
+                )
+            )
+    radial_loop_roles = {
+        "roundabout_central_island_boundary",
+        "roundabout_circulatory_outer_boundary",
+        "roundabout_outer_ownership_boundary",
+    }
+    rectangular_loop_roles = {
+        "roundabout_entry_exit_connector_boundary",
+        "roundabout_approach_clip_boundary",
+        "roundabout_subgrade_clip_boundary",
+        "roundabout_slope_handoff_boundary",
+    }
+    for loop_index, (suffix, role, radius, points, spec_source_refs, source_label) in enumerate(loop_specs, start=1):
+        loop_id = f"intersection-boundary-loop:{_id_token(intersection_id or 'main')}:roundabout:{suffix}"
+        loop_diagnostics = [
+            f"info:intersection_boundary_candidate_source={source_label}",
+            *policy_diagnostics,
+        ]
+        if spec_source_refs:
+            loop_diagnostics.append("info:roundabout_boundary_loop_approach_leg_source_refs")
+        closed_points = [*points, points[0]] if points else []
+        if role in radial_loop_roles and radius <= 0.0:
+            loop_diagnostics.append(f"error:roundabout_boundary_loop_radius_invalid:{suffix}")
+        if role in rectangular_loop_roles and not points:
+            loop_diagnostics.append(f"error:roundabout_rectangular_loop_points_missing:{suffix}")
+        if role in radial_loop_roles and len(points) < 8:
+            loop_diagnostics.append(f"error:roundabout_boundary_loop_point_count_too_low:{suffix}")
+        if role in rectangular_loop_roles and len(points) < 4:
+            loop_diagnostics.append(f"error:roundabout_rectangular_loop_point_count_too_low:{suffix}")
+        area_xy = abs(_intersection_boundary_area_xy(closed_points)) if closed_points else 0.0
+        if area_xy <= 1.0e-6:
+            loop_diagnostics.append(f"error:roundabout_boundary_loop_area_too_small:{suffix}")
+        source_refs = tuple(
+            _unique_text_values(
+                [
+                    str(getattr(surface_zones, "surface_zone_result_id", "") or ""),
+                    str(getattr(edge_network, "edge_network_result_id", "") or ""),
+                    *[str(ref) for ref in tuple(spec_source_refs or ()) if str(ref)],
+                    *[
+                        str(getattr(edge, "edge_id", "") or "")
+                        for edge in list(getattr(edge_network, "edge_rows", []) or [])
+                        if str(getattr(edge, "edge_family", "") or "") == "roundabout"
+                    ],
+                ]
+            )
+        )
+        status = "error" if any(item.startswith("error:") for item in loop_diagnostics) else "ready"
+        loop_segment_ids: list[str] = []
+        for segment_index, (first, second) in enumerate(zip(closed_points[:-1], closed_points[1:]), start=1):
+            segment_id = f"{loop_id}:segment:{segment_index:02d}"
+            loop_segment_ids.append(segment_id)
+            segment_rows.append(
+                IntersectionBoundarySegmentRow(
+                    segment_id=segment_id,
+                    intersection_id=intersection_id,
+                    loop_ref=loop_id,
+                    segment_role=role,
+                    from_point_ref=f"{loop_id}:point:{segment_index:02d}",
+                    to_point_ref=f"{loop_id}:point:{(segment_index % len(points)) + 1:02d}",
+                    from_xyz=first,
+                    to_xyz=second,
+                    source_refs=source_refs,
+                    expected_consumers=_roundabout_boundary_expected_consumers(role),
+                    shared_breakline_ref=f"shared-breakline:{_id_token(segment_id)}",
+                    graph_edge_ref=f"intersection-shared-boundary-graph:{_id_token(segment_id)}",
+                    diagnostics=tuple(item for item in loop_diagnostics if item.startswith("error:")),
+                    notes="Roundabout source-policy boundary segment.",
+                )
+            )
+        loop_rows.append(
+            IntersectionBoundaryLoopRow(
+                loop_id=loop_id,
+                intersection_id=intersection_id,
+                loop_role=role,
+                status=status,
+                closed=_points_closed_xy(closed_points),
+                source_status="accepted" if not policy_diagnostics else "warning",
+                point_count=len(points),
+                segment_count=len(loop_segment_ids),
+                area_xy=area_xy,
+                bbox_xy=_intersection_boundary_bbox_xy(closed_points) if closed_points else (0.0, 0.0, 0.0, 0.0),
+                source_refs=source_refs,
+                segment_refs=tuple(loop_segment_ids),
+                consumer_roles=_roundabout_boundary_expected_consumers(role),
+                loop_points_xyz=tuple(closed_points),
+                diagnostics=tuple(loop_diagnostics),
+                recommended_action=(
+                    "Use this roundabout boundary loop as a source for circulatory surface and shared breaklines."
+                    if status == "ready"
+                    else "Repair explicit roundabout source policy values before surface handoff."
+                ),
+                notes=f"Roundabout {suffix} boundary from explicit source policy.",
+            )
+        )
+    diagnostics = [
+        *list(diagnostics or []),
+        "info:roundabout_boundary_loop_source=explicit_roundabout_policy",
+        *[f"warning:{item}" for item in policy_diagnostics if not item.startswith("roundabout_source_policy_missing")],
+        *[f"error:{item}" for item in policy_diagnostics if item.startswith("roundabout_source_policy_missing")],
+    ]
+    error_count = len([row for row in loop_rows if row.status == "error"]) + len([row for row in diagnostics if str(row).startswith("error:")])
+    warning_count = len([row for row in diagnostics if str(row).startswith("warning:")])
+    ready_count = len([row for row in loop_rows if row.status == "ready"])
+    status = "error" if error_count else ("warning" if warning_count else "ready")
+    return IntersectionBoundaryLoopResult(
+        schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+        project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+        label=f"Roundabout Boundary Loops - {intersection_id or 'main'}",
+        boundary_loop_result_id=f"intersection-boundary-loops:{intersection_id or 'main'}",
+        intersection_id=intersection_id,
+        intersection_kind="roundabout",
+        status=status,
+        loop_count=len(loop_rows),
+        ready_count=ready_count,
+        warning_count=warning_count,
+        error_count=error_count,
+        segment_count=len(segment_rows),
+        diagnostic_rows=diagnostics,
+        loop_rows=loop_rows,
+        segment_rows=segment_rows,
+        source_refs=list(getattr(surface_zones, "source_refs", []) or []),
+    )
+
+
+def _roundabout_center_xyz(
+    intersection_model: IntersectionModel,
+    topology_result: IntersectionTopologyResult,
+) -> tuple[float, float, float]:
+    intersection_id = str(getattr(topology_result, "intersection_id", "") or "")
+    for row in list(getattr(intersection_model, "intersection_rows", []) or []):
+        if str(getattr(row, "intersection_id", "") or "") == intersection_id:
+            return (
+                float(getattr(row, "intersection_point_x", 0.0) or 0.0),
+                float(getattr(row, "intersection_point_y", 0.0) or 0.0),
+                float(getattr(row, "intersection_point_z", 0.0) or 0.0),
+            )
+    return (0.0, 0.0, 0.0)
+
+
+def _roundabout_edge_radius(
+    edge_network: IntersectionEdgeNetworkResult,
+    edge_role: str,
+) -> float:
+    role = str(edge_role or "")
+    for row in list(getattr(edge_network, "edge_rows", []) or []):
+        if str(getattr(row, "edge_family", "") or "") != "roundabout":
+            continue
+        if str(getattr(row, "edge_role", "") or "") != role:
+            continue
+        radius = float(getattr(row, "radius", 0.0) or 0.0)
+        if radius > 0.0:
+            return radius
+    return 0.0
+
+
+def _roundabout_circle_points(
+    center: tuple[float, float, float],
+    radius: float,
+    *,
+    segment_count: int,
+) -> list[tuple[float, float, float]]:
+    radius_value = float(radius or 0.0)
+    count = max(int(segment_count or 0), 8)
+    if radius_value <= 0.0:
+        return []
+    cx, cy, cz = _xyz_tuple(center)
+    return [
+        (
+            cx + math.cos((2.0 * math.pi * index) / count) * radius_value,
+            cy + math.sin((2.0 * math.pi * index) / count) * radius_value,
+            cz,
+        )
+        for index in range(count)
+    ]
+
+
+def _roundabout_entry_exit_connector_points(
+    center: tuple[float, float, float],
+    *,
+    outer_radius: float,
+    connector_length: float,
+    connector_width: float,
+    angle_deg: float,
+) -> list[tuple[float, float, float]]:
+    radius = float(outer_radius or 0.0)
+    length = float(connector_length or 0.0)
+    width = float(connector_width or 0.0)
+    if radius <= 0.0 or length <= 0.0 or width <= 0.0:
+        return []
+    cx, cy, cz = _xyz_tuple(center)
+    angle = math.radians(float(angle_deg or 0.0))
+    ux = math.cos(angle)
+    uy = math.sin(angle)
+    px = -uy
+    py = ux
+    half_width = width * 0.5
+    inner = radius
+    outer = radius + length
+    return [
+        (cx + ux * inner + px * half_width, cy + uy * inner + py * half_width, cz),
+        (cx + ux * outer + px * half_width, cy + uy * outer + py * half_width, cz),
+        (cx + ux * outer - px * half_width, cy + uy * outer - py * half_width, cz),
+        (cx + ux * inner - px * half_width, cy + uy * inner - py * half_width, cz),
+    ]
+
+
+def _roundabout_cross_boundary_loop_points(
+    center: tuple[float, float, float],
+    *,
+    radius: float,
+    boundary_width: float,
+    boundary_depth: float,
+    angle_deg: float,
+) -> list[tuple[float, float, float]]:
+    radius_value = float(radius or 0.0)
+    width = float(boundary_width or 0.0)
+    depth = max(float(boundary_depth or 0.0), 0.25)
+    if radius_value <= 0.0 or width <= 0.0:
+        return []
+    cx, cy, cz = _xyz_tuple(center)
+    angle = math.radians(float(angle_deg or 0.0))
+    ux = math.cos(angle)
+    uy = math.sin(angle)
+    px = -uy
+    py = ux
+    half_width = width * 0.5
+    inner = max(radius_value - depth * 0.5, 0.0)
+    outer = radius_value + depth * 0.5
+    return [
+        (cx + ux * inner + px * half_width, cy + uy * inner + py * half_width, cz),
+        (cx + ux * outer + px * half_width, cy + uy * outer + py * half_width, cz),
+        (cx + ux * outer - px * half_width, cy + uy * outer - py * half_width, cz),
+        (cx + ux * inner - px * half_width, cy + uy * inner - py * half_width, cz),
+    ]
+
+
+def _roundabout_boundary_expected_consumers(role: str) -> tuple[str, ...]:
+    text = str(role or "")
+    if text == "roundabout_central_island_boundary":
+        return ("intersection_surface", "roundabout_central_island", "roundabout_circulatory_surface")
+    if text == "roundabout_circulatory_outer_boundary":
+        return (
+            "intersection_surface",
+            "roundabout_circulatory_surface",
+            "roundabout_apron_surface",
+        )
+    if text == "roundabout_entry_exit_connector_boundary":
+        return (
+            "roundabout_entry_exit_connector",
+            "design_surface",
+            "roundabout_circulatory_surface",
+        )
+    if text == "roundabout_outer_ownership_boundary":
+        return (
+            "roundabout_apron_surface",
+            "roundabout_slope_face_surface",
+        )
+    if text == "roundabout_approach_clip_boundary":
+        return (
+            "design_surface",
+            "roundabout_entry_exit_connector",
+        )
+    if text == "roundabout_subgrade_clip_boundary":
+        return (
+            "subgrade_surface",
+            "roundabout_subgrade_surface",
+        )
+    if text == "roundabout_slope_handoff_boundary":
+        return (
+            "slope_face_surface",
+            "roundabout_slope_face_surface",
+        )
+    return ("roundabout_surface",)
 
 
 def _roundabout_surface_zone_rows(
@@ -4954,11 +5598,13 @@ def _roundabout_surface_zone_rows(
     edge_network: IntersectionEdgeNetworkResult,
     roundabout_edges: list[IntersectionEdgeNetworkRow],
 ) -> list[IntersectionSurfaceZoneRow]:
-    """Return first-slice roundabout surface-zone contracts from roundabout edge rows."""
+    """Return dedicated roundabout surface-zone contracts from source policy rows."""
 
     if not roundabout_edges:
         return []
     grading_ref = _surface_zone_grading_policy_ref(intersection_model, edge_network.intersection_id)
+    policy_values = _roundabout_source_policy_values(intersection_model, edge_network.intersection_id)
+    apron_width = float(policy_values.get("outer_apron_width", 0.0) or 0.0)
     edge_by_id = {
         str(getattr(row, "edge_id", "") or ""): row
         for row in list(getattr(edge_network, "edge_rows", []) or [])
@@ -5000,9 +5646,9 @@ def _roundabout_surface_zone_rows(
             IntersectionSurfaceZoneRow(
                 zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-circulatory",
                 intersection_id=edge_network.intersection_id,
-                zone_role="roundabout_circulatory_roadway",
+                zone_role="roundabout_circulatory_lane",
                 zone_family="roundabout",
-                design_zone_role="roundabout_circulatory_pavement",
+                design_zone_role="roundabout_circulatory_lane",
                 surface_role="design",
                 source_edge_refs=source_edge_refs,
                 boundary_edge_refs=source_edge_refs,
@@ -5011,12 +5657,76 @@ def _roundabout_surface_zone_rows(
                 leg_refs=tuple(_unique_text_values([row.leg_ref for row in [*central_edges, *circulatory_edges]])),
                 alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in [*central_edges, *circulatory_edges]])),
                 vertical_policy_ref=grading_ref,
-                surface_priority=_surface_priority("roundabout_circulatory_pavement"),
+                surface_priority=_surface_priority("roundabout_circulatory_lane"),
                 triangulation_method="pending_roundabout_ring_zone",
                 source_status="warning" if source_diagnostics else "accepted",
                 source_diagnostic_rows=source_diagnostics,
                 status="candidate",
                 notes="Roundabout circulatory roadway source-zone contract only; no triangulation generated.",
+            )
+        )
+        apron_diagnostics = tuple(
+            item
+            for item in (
+                *source_diagnostics,
+                "warning:roundabout_truck_apron_width_policy_missing" if apron_width <= 0.0 else "",
+            )
+            if item
+        )
+        zone_rows.append(
+            IntersectionSurfaceZoneRow(
+                zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-truck-apron",
+                intersection_id=edge_network.intersection_id,
+                zone_role="roundabout_truck_apron",
+                zone_family="roundabout",
+                design_zone_role="roundabout_truck_apron",
+                surface_role="design",
+                source_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                boundary_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                inner_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                leg_refs=tuple(_unique_text_values([row.leg_ref for row in circulatory_edges])),
+                alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in circulatory_edges])),
+                vertical_policy_ref=grading_ref,
+                surface_priority=_surface_priority("roundabout_truck_apron"),
+                triangulation_method="pending_roundabout_apron_zone",
+                source_status="warning" if apron_diagnostics else "accepted",
+                source_diagnostic_rows=apron_diagnostics,
+                status="warning" if apron_diagnostics else "candidate",
+                diagnostic_rows=apron_diagnostics,
+                notes="Roundabout truck-apron source-zone contract from outer-apron policy; no triangulation generated.",
+            )
+        )
+        shoulder_diagnostics = tuple(
+            item
+            for item in (
+                *source_diagnostics,
+                "warning:roundabout_outer_shoulder_policy_missing",
+            )
+            if item
+        )
+        zone_rows.append(
+            IntersectionSurfaceZoneRow(
+                zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-outer-shoulder",
+                intersection_id=edge_network.intersection_id,
+                zone_role="roundabout_outer_shoulder",
+                zone_family="roundabout",
+                design_zone_role="roundabout_outer_shoulder",
+                surface_role="design",
+                source_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                boundary_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                inner_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                leg_refs=tuple(_unique_text_values([row.leg_ref for row in circulatory_edges])),
+                alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in circulatory_edges])),
+                vertical_policy_ref=grading_ref,
+                surface_priority=_surface_priority("roundabout_outer_shoulder"),
+                triangulation_method="pending_roundabout_outer_shoulder_zone",
+                surface_generation_role="diagnostic_only",
+                surface_generation_status="blocked",
+                source_status="warning",
+                source_diagnostic_rows=shoulder_diagnostics,
+                status="warning",
+                diagnostic_rows=shoulder_diagnostics,
+                notes="Roundabout outer-shoulder source-zone contract is waiting for an explicit shoulder-width policy.",
             )
         )
     for index, edge in enumerate(entry_edges, start=1):
@@ -5026,9 +5736,9 @@ def _roundabout_surface_zone_rows(
             IntersectionSurfaceZoneRow(
                 zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-entry-exit-{index:02d}",
                 intersection_id=edge_network.intersection_id,
-                zone_role="roundabout_entry_exit",
+                zone_role="roundabout_entry_exit_connector",
                 zone_family="roundabout",
-                design_zone_role="roundabout_entry_exit_pavement",
+                design_zone_role="roundabout_entry_exit_connector",
                 surface_role="design",
                 source_edge_refs=source_edge_refs,
                 boundary_edge_refs=source_edge_refs,
@@ -5037,12 +5747,15 @@ def _roundabout_surface_zone_rows(
                 alignment_refs=(str(edge.alignment_ref),) if str(edge.alignment_ref) else (),
                 control_area_refs=(str(edge.control_area_ref),) if str(edge.control_area_ref) else (),
                 vertical_policy_ref=grading_ref,
-                surface_priority=_surface_priority("roundabout_entry_exit_pavement"),
+                surface_priority=_surface_priority("roundabout_entry_exit_connector"),
                 triangulation_method="pending_roundabout_entry_exit_zone",
+                surface_generation_role="diagnostic_only",
+                surface_generation_status="blocked",
                 source_status="warning" if source_diagnostics else "accepted",
                 source_diagnostic_rows=source_diagnostics,
-                status="candidate",
-                notes="Roundabout entry/exit source-zone contract only; no triangulation generated.",
+                status="warning",
+                diagnostic_rows=tuple([*source_diagnostics, "info:roundabout_entry_exit_connector_surface_generation_deferred"]),
+                notes="Roundabout entry/exit connector source-zone contract only; production surface generation is deferred to connector geometry phase.",
             )
         )
     return zone_rows
@@ -5053,9 +5766,11 @@ def _surface_priority(design_zone_role: str) -> int:
     priorities = {
         "central_pavement": 100,
         "roundabout_central_island": 98,
-        "roundabout_circulatory_pavement": 96,
+        "roundabout_circulatory_lane": 96,
+        "roundabout_truck_apron": 94,
+        "roundabout_outer_shoulder": 92,
         "curb_return_pavement": 90,
-        "roundabout_entry_exit_pavement": 88,
+        "roundabout_entry_exit_connector": 88,
         "main_pavement": 70,
         "side_pavement": 70,
         "leg_pavement": 70,
@@ -5762,8 +6477,10 @@ def _intersection_crossfall_context(zone_role: str, grading_mode: str) -> str:
         "central_pavement",
         "curb_return_pavement",
         "roundabout_central_island",
-        "roundabout_circulatory_pavement",
-        "roundabout_entry_exit_pavement",
+        "roundabout_circulatory_lane",
+        "roundabout_truck_apron",
+        "roundabout_outer_shoulder",
+        "roundabout_entry_exit_connector",
     }:
         return "intersection_override" if mode != "use_normal_superelevation" else "normal_superelevation"
     if mode in {"flatten_intersection", "blend_primary_side", "keep_primary_crown", "roundabout_radial_crossfall"}:
@@ -5834,7 +6551,7 @@ def _intersection_drainage_outlet_hint_rows(
     candidate_zones = [
         row
         for row in list(getattr(surface_zones, "zone_rows", []) or [])
-        if str(getattr(row, "design_zone_role", "") or "") in {"central_pavement", "roundabout_circulatory_pavement"}
+        if str(getattr(row, "design_zone_role", "") or "") in {"central_pavement", "roundabout_circulatory_lane"}
     ]
     if not candidate_zones:
         return []

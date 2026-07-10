@@ -11,8 +11,8 @@ This checklist verifies the edge-network-first Intersection workflow from source
 
 This QA covers:
 
-- T, Cross, Skewed, Urban Curb/Gutter, Drainage-Sensitive Sag, Y, and Roundabout preset-driven intersection source creation
-- `Intersection` workflow for T, Cross, Skewed, Urban Curb/Gutter, Drainage-Sensitive Sag, Y, and Roundabout starter contracts
+- T, Cross, and Roundabout preset-driven intersection source creation
+- `Intersection` workflow for T, Cross, and Roundabout starter contracts
 - multi-alignment 3D Centerline handoff
 - Applied Sections with active intersection context
 - Build Parametric `Intersections` review rows
@@ -66,10 +66,6 @@ Run it once for each preset:
 
 - `T Intersection - Basic`
 - `Cross Intersection - Basic`
-- `Skewed Intersection - Basic`
-- `Urban Curb/Gutter - Basic`
-- `Drainage-Sensitive Sag - Basic`
-- `Y Intersection - Basic`
 - `Roundabout - Single Lane`
 
 Steps:
@@ -169,10 +165,6 @@ Record one row per preset when manual QA is executed in a real FreeCAD document.
 | --- | --- | --- | --- | --- | --- | --- |
 | `T Intersection - Basic` | `t_intersection` | `warning`; preset default/draft Anchor, Control Areas, Corners, Edge Families, Lane Connections, Grading, and Drainage rows require review. | Intersections contract rows expose two curb-return edge groups without creating standalone edge-network geometry. | `Intersections` rows present for topology, edge network, surface zones, corridor clip, grading, drainage hints, and Slope Face loops. Warnings must be source-completeness or planned-handoff warnings. | `Intersection Patch` remains transitional/review-required; planned pavement, subgrade, Slope Face, and curb-return target rows should be discoverable when surface-zone contracts exist. | Record central pavement, curb-return, ordinary Slope Face suppression, and intersection Slope Face loop readiness. |
 | `Cross Intersection - Basic` | `cross_intersection` | `warning`; four corner defaults and lane/edge/grading/drainage defaults remain draft. | Intersections contract rows expose four curb-return groups and primary/secondary through-road identity without preview geometry. | No topology `error` rows. Corridor clipping should cover both participating alignments. | Planned intersection zone targets should be discoverable; final zone bodies remain planned until dedicated builders are accepted. | Record whether curb-return zones overlap or self-cross. |
-| `Skewed Intersection - Basic` | `skewed_intersection` | `warning`; skew corner and skew edge-family rows require source review. | Intersections contract rows preserve non-orthogonal Alignment lineage without global-axis rectangular repair. | Surface-zone and corridor-clip rows should remain source/result driven; skew warnings must be explicit. | Planned zone targets should remain reviewable; no final handoff should be accepted from mesh repair. | Record skew angle readability, corner policy diagnostics, and any asymmetric curb-return warnings. |
-| `Urban Curb/Gutter - Basic` | `urban_curb_gutter_intersection` | `warning`; curb, gutter, sidewalk, inlet, and low-point rows are draft starter intent. | Intersections contract rows include pavement plus curb/gutter/sidewalk edge-family refs where available. | Drainage hints should expose gutter edge refs, inlet candidate refs, and low-point refs. | Watertight target discovery may show planned pavement/subgrade/Slope Face/curb-return rows; final inlet/outlet solids remain outside this preset. | Record gutter edge refs, inlet candidate count, and whether Drainage source rows are visible. |
-| `Drainage-Sensitive Sag - Basic` | `drainage_sag_intersection` | `warning`; sag Profile controls, low-point refs, inlet candidates, flow-route refs, and hydraulic sizing remain review-required. | Intersections contract rows preserve sag main/side Alignment lineage; source-stage table should show warning/draft Grading and Drainage rows. | Grading context should report `sag_low_point_review`; Drainage hints should expose sag low points, inlet candidates, and critical flow-route review. | Planned zone targets remain discoverable; final simulation/export must stay blocked until hydraulic sizing and real inlet/outlet Structures replace hints. | Record Profile middle control as `sag_low_point`, inlet candidate refs, flow-route refs, and critical drainage warnings. |
-| `Y Intersection - Basic` | `y_intersection` | `warning`; branch geometry and diverge/merge lane-connection defaults require review. | Intersections contract rows preserve primary approach, left branch, and right branch source Alignment lineage. | Surface-zone rows should remain non-self-crossing; branch warnings must stay source diagnostics. | Planned zone targets should remain reviewable; no final handoff should be accepted from branch mesh repair. | Record left/right branch roles and diverge/merge movement rows. |
 | `Roundabout - Single Lane` | `roundabout` | `warning`; first-slice roundabout source contract, outside-gutter drainage hints, and radial grading require review. | Intersections contract rows expose `roundabout` family rows: central island, circulatory outer edge, and entry/exit edges. | Surface zones should include central island, circulatory pavement, and entry/exit pavement. `roundabout_edge_network_first_slice_source_only` is acceptable. | Planned handoff only. Final roundabout triangulation and accepted zone solids are not yet claimed complete. | Record roundabout edge-family rows, radial grading context, outside-gutter drainage hints, and missing explicit Drainage Element warnings. |
 
 Manual execution status:
@@ -181,10 +173,6 @@ Manual execution status:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `T Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending |  |
 | `Cross Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending |  |
-| `Skewed Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending |  |
-| `Urban Curb/Gutter - Basic` | pending | pending | pending | pending | pending | pending | pending |  |
-| `Drainage-Sensitive Sag - Basic` | pending | pending | pending | pending | pending | pending | pending |  |
-| `Y Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending |  |
 | `Roundabout - Single Lane` | pending | pending | pending | pending | pending | pending | pending |  |
 
 ## Source Handoff And Lineage Checks
@@ -199,49 +187,6 @@ Use these checks while the `Intersection` panel is still in read-only review mod
 | Drainage preview | `source_lineage_status:<status>` | `hint_only`, `source_warning`, or `accepted` lineage is visible in preview diagnostics. | Drainage hints appear as geometry or generic warnings without lineage status. |
 | Grading preview | `handoff_target:intersection-preview-stage:grading:<zone>` | Grading context rows point to the review stage for the affected surface zone. | Grading warnings cannot be traced to a zone or review stage. |
 | Slope Loops preview | `source_lineage_status:<status>` | Slope loop rows show accepted or warning lineage before any triangle output is trusted. | Warning/error loops can be mistaken for accepted triangulation input. |
-
-## Skewed Practical Exclusion Footprint QA
-
-Use this checklist for `Skewed Intersection - Basic` and any manually authored skewed T-intersection.
-
-Purpose:
-
-- verify curb-return surface generation separately from adjacent-surface clipping
-- confirm Design/Slope clipping uses a practical exclusion footprint when it is ready
-- confirm missing or degraded footprints are visible before the user trusts adjacent surface clipping
-
-Steps:
-
-1. Create or load a skewed T-intersection source model.
-2. Run `Build Sections`.
-3. Run `Build Parametric`.
-4. Open Build Parametric `Guided Review`.
-5. Find the `Intersections` step notes.
-6. Confirm curb-return triangulation reports `structured_strip_curb_return_blend` or equivalent ready surface context.
-7. Confirm Design/Slope exclusion notes include boundary strategy and practical footprint status.
-8. If the footprint is ready, confirm notes do not ask for corrective action.
-9. If the footprint is recovered or degraded, confirm the notes include a diagnostic such as `intersection_exclusion_footprint_outer_loop_recovered:exterior_hull`.
-10. If the footprint is missing, confirm adjacent clipping uses conservative skip and no valid adjacent triangles disappear.
-11. Toggle the Design, Slope Face, Breaklines, and Diagnostics visibility groups.
-12. Visually confirm the recovered footprint covers the skewed pavement/curb-return footprint and does not swallow unrelated corridor surface.
-13. Check Shared Breakline Audit.
-14. Confirm no geometry mismatch or missing-consumer warning is introduced by the skewed footprint recovery.
-
-Pass criteria:
-
-- curb-return surface remains generated from source/result contracts
-- practical footprint status is visible as `ready`, `degraded`, or `missing`
-- `missing` or `degraded` status includes a recommended action
-- ready/recovered footprint clips only triangles inside the skewed intersection footprint
-- missing footprint preserves adjacent surface triangles and reports conservative skip
-- no Report View traceback appears
-
-Fail conditions:
-
-- ordinary Design or Slope Face triangles disappear when practical footprint status is `missing`
-- Review notes mention clipping but do not expose footprint status
-- recommended action is missing for `missing` or `degraded` footprint status
-- the user must inspect raw tree objects to understand the skewed footprint state
 
 ## Intersection Existing Alignment QA
 
@@ -370,115 +315,6 @@ Dedicated Slope Face record:
 17. Confirm drainage-hint rows expose same-context Drainage source handoff targets.
 18. Open Watertight Solids and confirm planned intersection zone target rows are discoverable.
 
-## Skewed Intersection QA
-
-1. Open `Intersection`.
-2. Select `Skewed Intersection - Basic`.
-3. Confirm Radius is `11 m` and Control Length is `30 m`.
-4. Click `Create Sources`.
-5. Confirm `Skew Main Road` and `Skew Crossing Road` Alignment, Profile, Stationing, and Region sources are created.
-6. Confirm the secondary Alignment is visibly non-orthogonal to the primary Alignment.
-7. Confirm the stored `IntersectionModel` uses `intersection_kind = skewed_intersection`.
-8. Confirm source refs include `intersection-preset:skewed_intersection:source-completeness` and `intersection-preset:skewed_intersection:skew-review`.
-9. Confirm four corner rows exist and include `preset_skew_corner_geometry_review_required`.
-10. Confirm edge-family rows include `preset_skew_edge_family_review_required`.
-11. Build Sections.
-12. Build Parametric.
-13. Confirm topology and edge-network rows carry warning diagnostics rather than silent fallback geometry.
-14. Confirm edge-network rows preserve skewed Alignment lineage and do not snap to an orthogonal/global-axis rectangle.
-15. Confirm surface-zone rows are source/result rows and do not claim repaired mesh ownership.
-16. Confirm corridor-clip rows are present for both participating Alignments.
-17. Open Cross Section Viewer.
-19. Confirm Intersection Context rows identify the correct active leg and control area near the skewed crossing.
-20. Confirm Slope Loop preview/review rows expose source-lineage diagnostics for skew-controlled edge families.
-21. Open Watertight Solids.
-22. Confirm planned intersection zone targets remain discoverable and no final accepted solid is created from skew mesh repair.
-
-Expected result:
-
-- source status: `warning`
-- preview status: `warning` or `accepted` with visible skew diagnostics
-- Build Parametric status: reviewable warnings, no topology errors
-- Watertight status: planned/review-required only
-
-## Urban Curb/Gutter QA
-
-1. Open `Intersection`.
-2. Select `Urban Curb/Gutter - Basic`.
-3. Confirm Drainage Mode is `curb_gutter_inlets`.
-4. Click `Create Sources`.
-5. Confirm `Urban Main Street` and `Urban Side Street` Alignment, Profile, Stationing, and Region sources are created.
-6. Confirm the stored `IntersectionModel` uses `intersection_kind = urban_curb_gutter_intersection`.
-7. Confirm source refs include `intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review`.
-8. Confirm edge-family rows include `curb_edge`, `gutter_edge`, and `sidewalk_edge`.
-9. Confirm curb/gutter/sidewalk edge rows are draft source rows, not generated output geometry.
-10. Confirm diagnostics include:
-    - `preset_urban_curb_review_required`
-    - `preset_urban_gutter_review_required`
-    - `preset_urban_sidewalk_review_required`
-11. Confirm drainage policy has `capture_mode = curb_gutter_inlets`.
-12. Confirm drainage policy has gutter edge refs, inlet candidate refs, and low-point refs.
-13. Confirm preset Drainage source object includes inlet candidate rows.
-14. Build Sections.
-15. Build Parametric.
-16. Confirm pavement, curb, gutter, and sidewalk edge-family intent is visible or reported in `Intersections` contract rows.
-17. Confirm drainage-hint rows expose inlet candidate and low-point handoff context.
-18. Confirm drainage-hint diagnostics include Drainage source-stage handoff targets and source-lineage status.
-19. Confirm Build Parametric warnings are review-required inlet/low-point handoff warnings, not exceptions.
-20. Open Cross Section Viewer.
-21. Confirm Intersection Context shows drainage source status at urban control-area stations.
-22. Open Watertight Solids.
-23. Confirm final inlet/outlet solids are not claimed complete by this preset.
-
-Expected result:
-
-- source status: `warning`
-- preview status: edge-family preview/review rows visible
-- Build Parametric status: drainage and edge-family warnings remain actionable
-- Watertight status: planned intersection zone targets only; inlet/outlet Structures remain future source work
-
-## Drainage-Sensitive Sag QA
-
-1. Open `Intersection`.
-2. Select `Drainage-Sensitive Sag - Basic`.
-3. Confirm Drainage Mode is `sag_low_point_inlets`.
-4. Click `Create Sources`.
-5. Confirm `Sag Main Road` and `Sag Side Road` Alignment, Profile, Stationing, and Region sources are created.
-6. Open or inspect the created Profile sources.
-7. Confirm the middle Profile control kind is `sag_low_point`.
-8. Confirm the middle Profile elevation is lower than the start and end controls.
-9. Confirm the stored `IntersectionModel` uses `intersection_kind = drainage_sag_intersection`.
-10. Confirm source refs include `intersection-preset:drainage_sag_intersection:sag-drainage-review`.
-11. Confirm grading policy has `low_point_strategy = sag_low_point_review`.
-12. Confirm grading diagnostics include:
-    - `preset_sag_profile_review_required`
-    - `preset_sag_low_point_review_required`
-13. Confirm drainage policy has `capture_mode = sag_low_point_inlets`.
-14. Confirm drainage policy has low-point refs, inlet candidate refs, and flow-route refs.
-15. Confirm drainage diagnostics include:
-    - `preset_sag_inlet_review_required`
-    - `preset_sag_flow_route_review_required`
-    - `preset_sag_hydraulic_sizing_required`
-16. Confirm preset Drainage source object includes sag low-point and inlet candidate rows.
-17. Confirm the Drainage flow route risk is `critical`.
-18. Build Sections.
-19. Build Parametric.
-20. Confirm edge-network contract rows preserve sag main and side Alignment lineage.
-21. Confirm grading-context rows report sag low-point review intent.
-22. Confirm drainage-hint rows expose inlet and flow-route handoff context.
-23. Confirm drainage-hint diagnostics include Drainage source-stage handoff targets and `source_lineage_status:hint_only` until real Drainage source is accepted.
-24. Open Cross Section Viewer.
-25. Confirm Intersection Context reports warning source status for Grading and Drainage.
-26. Open Watertight Solids.
-27. Confirm final simulation/export package is not considered accepted until hydraulic sizing and real inlet/outlet Structures replace hints.
-
-Expected result:
-
-- source status: `warning`
-- preview status: source/result preview visible with sag diagnostics
-- Build Parametric status: sag grading and drainage handoff warnings visible
-- Watertight status: final handoff blocked or review-required until drainage source is accepted
-
 ## Roundabout Preset QA
 
 Roundabout is currently a preset-driven first-slice source contract.
@@ -522,26 +358,6 @@ Fail conditions:
 - grading context falls back silently to ordinary road crossfall
 - outlet handoff is absent for `outside_gutter` mode
 
-## Y Intersection QA
-
-1. Open `Intersections`.
-2. Select `Y Intersection`.
-3. Use `Create Starter Sources`.
-4. Confirm the skewed/diverging Alignment sources are created.
-5. Confirm generated source geometry does not fall back to global-axis rectangular assumptions.
-6. Build Sections.
-7. Build Parametric.
-8. Confirm edge-network contract rows follow the participating Alignment directions.
-9. Confirm curb-return policy is applied per leg pair.
-10. Confirm surface-zone rows remain non-self-crossing.
-11. Confirm Slope Face zone rows have explicit daylight, pavement, and curb-return boundary refs.
-12. Confirm Slope Face loop rows do not silently fall back to global-axis rectangular assumptions.
-13. Confirm ready Slope Face loops can generate separate `Intersection Slope Face Surface` output.
-14. Confirm warning/error Slope Face loops remain diagnostics only.
-15. Confirm Slope Loop preview/review rows expose source-lineage status before any loop is accepted for triangulation.
-17. Confirm Cross Section Viewer reports the correct active leg and control area at a focused station.
-18. Confirm Watertight Solids reports planned intersection zone targets.
-
 ## Lane / Shoulder / Side Slope Stitching Regression QA
 
 Purpose:
@@ -554,7 +370,7 @@ Run this regression for at least:
 
 - `T Intersection - Basic`
 - `Cross Intersection - Basic`
-- one non-orthogonal starter such as `Y Intersection - Basic` or `Skewed Intersection - Basic`
+- one supported non-T starter such as `Cross Intersection - Basic` or `Roundabout - Single Lane`
 
 Setup:
 
@@ -618,7 +434,7 @@ Record:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pending | `T Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending | pending |  |
 | pending | `Cross Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending | pending |  |
-| pending | `Y Intersection - Basic` or `Skewed Intersection - Basic` | pending | pending | pending | pending | pending | pending | pending | pending |  |
+| pending | `Cross Intersection - Basic` or `Roundabout - Single Lane` | pending | pending | pending | pending | pending | pending | pending | pending |  |
 
 Fail conditions:
 
@@ -729,6 +545,6 @@ Notes:
 Future QA should add:
 
 - direct comparison against Civil 3D or OpenRoads sample intersections
-- visual screenshots for accepted T, Cross, Y, and Roundabout baseline cases
+- visual screenshots for accepted T, Cross, and Roundabout baseline cases
 - watertight solid build checks after intersection zone solid builders are implemented
 - drainage flow route checks that consume intersection inlet recommendations

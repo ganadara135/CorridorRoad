@@ -44,7 +44,7 @@ This mode is best for real design work where the road geometry is already known.
 
 It does not replace your Alignment, Profile, Stationing, or Region sources.
 
-### 2. Create Starter Sources
+### 2. Create Preset Sources
 
 Use this mode when you want Parametric Road to create a starter junction for testing or early layout.
 
@@ -53,9 +53,9 @@ This mode creates editable source objects first, then links them into the Inters
 Typical use:
 
 1. Open `Intersections`.
-2. Select the intersection type, such as T, Cross, or Y.
-3. Set `Source Mode` to `Create Starter Sources`.
-4. Click `Create Starter Sources`.
+2. Select one of the maintained presets: T Intersection, Cross Intersection, or Roundabout.
+3. Set `Source Mode` to `Create From Preset`.
+4. Click `Create Sources`.
 5. Confirm the status message lists created Alignment, Profile, Stationing, Region, and `3D Centerline` rows.
 6. Review the generated 3D Centerline.
 7. Click `Apply` to create or update the Intersection source model.
@@ -66,9 +66,9 @@ This mode is best for quick testing, examples, tutorials, and early concept setu
 
 The generated sources are normal editable v1 source objects. You can modify them after creation.
 
-## Starter Sources
+## Preset Sources
 
-`Source Mode = Create Starter Sources` creates editable starter data for the selected intersection type.
+`Source Mode = Create From Preset` creates editable starter data for the selected intersection type.
 
 Preset-driven starter design uses the `Intersection` panel.
 
@@ -89,13 +89,7 @@ These presets should create source intent and policy rows first. Final corridor 
 
 Preset-authored default and draft rows carry a `source_completeness_ref` note that points back to the preset source-completeness audit.
 
-Y preset branch rows also carry `branch_review_ref=intersection-preset:y_intersection:branch-review` for branch geometry and diverge/merge movement review.
-
-Skewed preset rows carry `skew_review_ref=intersection-preset:skewed_intersection:skew-review` for skew geometry, corner, and edge-family review.
-
-Urban curb/gutter preset rows carry `urban_review_ref=intersection-preset:urban_curb_gutter_intersection:urban-curb-gutter-review` for curb, gutter, sidewalk, inlet, and low-point review.
-
-Drainage-sensitive sag preset rows carry `sag_review_ref=intersection-preset:drainage_sag_intersection:sag-drainage-review` for sag Profile, low-point, inlet candidate, and flow-route review.
+The active preset set is intentionally limited to T Intersection, Cross Intersection, and Roundabout so each preset has a maintained source contract, output path, and review path.
 
 It also creates or reuses the Assembly/Subassembly source used by the generated control Regions.
 
@@ -119,7 +113,7 @@ This lets the patch tilt toward the side-road height instead of forcing the whol
 
 Standalone edge-network geometry is not exposed as a panel command.
 Low-level edge-network, surface-zone, drainage-hint, slope-face-cell, and shared-boundary-graph rows are hidden from the normal Build Parametric `Intersections` table.
-Use the higher-level topology, boundary loop, Intersection Tie Slope window, upper slope-face panel, Results, and Breakline Audit rows for review.
+Use the higher-level topology, boundary loop, Results, Visibility, and Breakline Audit rows for review.
 
 In existing-alignment mode, the panel can run Auto Detect and apply the resulting `IntersectionModel`.
 
@@ -131,13 +125,7 @@ Build Parametric Subassembly review highlights keep same-kind Lane, Shoulder, an
 
 The older `Intersections` command is no longer exposed in the workbench workflow.
 
-Use the single `Intersection` panel for starter source creation, existing Alignment linking, edge-network preview, and source-model application.
-
-Roundabout support is currently a first-slice preset workflow.
-
-It exposes roundabout edge-network, surface-zone, grading-context, and drainage-handoff contracts for review.
-
-It does not yet perform final roundabout operation analysis, capacity review, hydraulic design, or final roundabout mesh certification.
+Use the single `Intersection` panel for preset source creation, existing Alignment linking, and source-model application.
 
 The starter workflow creates:
 
@@ -164,6 +152,145 @@ The 3D Centerline stage therefore supports a multi-alignment result:
 - Applied Sections consume only the 3D Centerline rows that match their active Alignment
 
 This avoids using the primary road baseline for the side road.
+
+## T And Cross Intersection Surface Behavior
+
+T Intersection and Cross Intersection use the same source-driven handoff principle, but their current outputs are reviewed separately.
+
+For both presets:
+
+- Lane, Shoulder, Design Surface, Subgrade Surface, ordinary Slope Face Surface, Intersection Surface, Intersection Slope Face Surface, and Intersection Tie Slope Surface remain separate output families.
+- Intersection-specific geometry is generated from Intersection source/evaluation contracts and Applied Section result rows.
+- Temporary highlight objects are presentation-only and are not used as source truth.
+- Low-level edge-network and surface-zone rows are hidden from the default `Intersections` table unless internal diagnostics are explicitly requested.
+
+### T Intersection
+
+T Intersection is the most mature intersection preset.
+
+It uses:
+
+- a source-owned intersection patch
+- curb-return boundary rows
+- dedicated `Intersection Slope Face Surface`
+- dedicated `Intersection Tie Slope Surface`
+- ordinary corridor clipping outside the intersection ownership area
+
+The current review goal is to keep the T-intersection boundary readable and source-traceable while avoiding standalone edge-network preview objects.
+
+### Cross Intersection
+
+Cross Intersection is supported as a maintained preset, but it is still more sensitive to boundary and tie-slope review than T Intersection.
+
+The Cross preset uses the intersection supplemental Applied Sections on both the primary and secondary roads.
+
+`Intersection Tie Slope Surface` is generated from accepted Applied Section transition windows.
+
+For Cross intersections, the Tie Slope may extend toward the curb-return influence area when the contributing rows are valid intersection supplemental Applied Sections.
+
+The limit is not a generated curb-return mesh.
+
+The limit is the source/evaluation context:
+
+- same intersection id
+- same alignment or leg ownership
+- same side
+- ordered Applied Section station sequence
+- valid side-slope edge rows
+- no intrusion into the central pavement ownership area
+
+Use the `Results`, `Intersections`, and `Breakline Audit` tabs together when reviewing Cross intersections.
+
+Expected Cross review signs:
+
+- `Intersection Surface` is generated as an intersection-owned patch.
+- `Intersection Tie Slope Surface` appears only from accepted Applied Section windows.
+- ordinary `Slope Face Surface` remains separate from `Intersection Slope Face Surface`.
+- low-level target-edge highlight rows are not shown as normal user-facing contracts.
+- warning rows should describe source or boundary readiness, not hidden mesh repair.
+
+Known Cross limitation:
+
+- Cross tie-slope and curb-return-adjacent fill still require manual visual QA when the supplemental Applied Sections are dense or the leg geometry is highly skewed.
+
+## Roundabout Current Behavior
+
+Roundabout is a maintained preset named `Roundabout - Single Lane`.
+
+`Single Lane` describes the circulatory roadway configuration, not the number of participating approach roads.
+
+The preset currently creates two source Alignments that produce four physical approach directions:
+
+- primary start
+- primary end
+- secondary start
+- secondary end
+
+Roundabout output is not treated as ordinary T/Cross intersection geometry.
+
+The roundabout interior belongs to roundabout-specific result contracts.
+
+Ordinary corridor geometry must stop at explicit roundabout ownership boundaries.
+
+### Roundabout Output Families
+
+Current production roundabout outputs are:
+
+- `Roundabout Circulatory Surface`
+- `Roundabout Apron Surface`
+- `Roundabout Subgrade Surface`
+- `Roundabout Slope Face Surface`
+- `Roundabout Breakline Readiness`
+
+The following transitional or diagnostic outputs are intentionally not generated as normal production surfaces:
+
+- `Roundabout Entry Exit Surface`
+- `Roundabout Entry/Exit Connector Surface`
+- `Roundabout Splitter Island Surface`
+- generic `Intersection Tie Slope Surface` for roundabout
+
+Splitter islands and entry/exit connector surfaces need explicit source models before they return as production geometry.
+
+### Roundabout Ordinary Surface Clipping
+
+Roundabout clipping is ownership-based.
+
+Ordinary corridor outputs consume roundabout boundary contracts:
+
+- `roundabout_approach_clip_boundary` clips ordinary Design Surface, Lane review, and Shoulder review.
+- `roundabout_subgrade_clip_boundary` clips ordinary Subgrade Surface.
+- `roundabout_slope_handoff_boundary` clips ordinary Slope Face Surface and Side Slope review.
+
+The dedicated roundabout outputs own the interior:
+
+- circulatory lane
+- apron / roundabout shoulder
+- roundabout subgrade
+- roundabout slope face
+
+Lane and Shoulder Guided Review highlights should visually match the same clipped ownership area used by Design Surface.
+
+Side Slope Guided Review should match ordinary Slope Face ownership and should not pass through the roundabout interior.
+
+### Roundabout Breakline Review
+
+Use the `Breakline Audit` tab to confirm roundabout handoff state.
+
+Expected ready signs:
+
+- ordinary Design Surface consumes the approach clip boundary.
+- ordinary Subgrade consumes the subgrade clip boundary.
+- ordinary Slope Face consumes the slope handoff boundary.
+- dedicated roundabout outputs report accepted boundary consumption.
+- internal connector/splitter diagnostics do not appear as required production surfaces.
+
+Roundabout support does not yet include:
+
+- multi-lane circulatory design
+- capacity analysis
+- swept-path design
+- hydraulic sizing
+- final watertight solid certification
 
 ## Intersection-Aware Applied Sections
 
@@ -200,7 +327,7 @@ In Build Parametric, the `Intersections` tab is a contract review table.
 Double-click an `Intersections` table row to create a bright `Intersection Contract Highlight` object in the 3D View.
 
 The highlight focuses the selected contract row when a row still has explicit review geometry.
-Rows that represent accepted generated outputs, such as `intersection_tie_slope_window` or the upper slope-face panel, focus the generated preview surface instead.
+Rows that represent accepted generated outputs focus the generated preview surface instead of creating separate temporary highlight geometry.
 
 During Build Parametric, the `Intersection Surface` owns its footprint.
 
@@ -257,8 +384,8 @@ Build Parametric now separates three slope-face output families near intersectio
 It uses the transition between ordinary-corridor Applied Sections and active-intersection Applied Sections as its source.
 Temporary `Intersection Tie Slope Highlight` objects are no longer generated.
 
-The Build Parametric `Intersections` tab shows the compact `intersection_tie_slope_window` row for this handoff.
-Double-clicking that row focuses the generated `Intersection Tie Slope Surface` preview.
+Review the generated `Intersection Tie Slope Surface` through the `Results`, `Visibility`, and `Breakline Audit` tabs.
+Low-level window and target-edge rows are diagnostic-only and are not part of the normal user-facing Intersections review table.
 
 The upper rectangular slope-face panel is reviewed through `Intersection Slope Face Surface` metadata and Breakline Audit rows.
 Temporary `Intersection Upper Slope Face Panel Highlight` objects are no longer generated.
@@ -266,7 +393,7 @@ Temporary `Intersection Upper Slope Face Panel Highlight` objects are no longer 
 Review these outputs in this order:
 
 1. Results: confirm `Intersection Slope Face Surface` and `Intersection Tie Slope Surface` are `ready`.
-2. Intersections: confirm `intersection_tie_slope_window` is present and low-level legacy rows are hidden.
+2. Intersections: confirm only high-level source and output contract rows are shown.
 3. Breakline Audit: confirm shared breakline counts are consumed with no geometry or mesh mismatch.
 4. Visibility: toggle ordinary `Slope Face Surface`, `Intersection Slope Face Surface`, and `Intersection Tie Slope Surface` independently.
 
@@ -285,9 +412,9 @@ Double-click a Region row to show the built object set for that Region.
 Use this sequence for the starter workflow:
 
 1. Open `Intersections`.
-2. Select the intersection type.
-3. Set `Source Mode` to `Create Starter Sources`.
-4. Click `Create Starter Sources`.
+2. Select `T Intersection - Basic`, `Cross Intersection - Basic`, or `Roundabout - Single Lane`.
+3. Set `Source Mode` to `Create From Preset`.
+4. Click `Create Sources`.
 5. Confirm the status message includes `3D Centerline`.
 6. Review the generated 3D Centerline.
 7. Apply the Intersection source model.
@@ -297,7 +424,13 @@ Use this sequence for the starter workflow:
 
 ## Current Limits
 
-Intersection support is a first-slice workflow.
+Intersection support is source-driven and actively evolving.
+
+The maintained preset set is limited to T Intersection, Cross Intersection, and Roundabout.
+
+Removed experimental presets are not exposed in the default panel or source preset list.
+
+Low-level edge-network, surface-zone, drainage-hint, slope-face-cell, shared-boundary-graph, and target-edge rows are internal diagnostics unless explicitly surfaced for development review.
 
 Topology evaluation now reports first-slice source-completeness diagnostics for missing leg Profile refs, 3D Centerline refs, Region refs, control Region refs, and missing curb-return, grading, or drainage policy rows.
 

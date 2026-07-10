@@ -1,12 +1,12 @@
 # Parametric Road V1 Wiki Drafts
 
-Target release: `v1.0.8`
+Target release: `v1.0.9`
 
 These files are draft source pages for the GitHub Wiki.
 
 Current release links:
 
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.8
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.9
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 
@@ -40,7 +40,7 @@ Release rule:
 - v1 is the primary workflow.
 - Superelevation is the source stage after 3D Centerline and before Assembly.
 - SubAssembly Designer owns reusable cross-section behavior; Assembly places those definitions and Applied Sections evaluates them.
-- Intersections can create starter multi-alignment sources and a matching 3D Centerline preview.
+- Intersections can create maintained Preset Sources for T Intersection, Cross Intersection, and Roundabout workflows.
 - Drainage is an active source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review.
 - Advanced hydraulic analysis and automatic pipe sizing remain future work.
 - Watertight Solids is the final output stage after AI Assist and is gated on Build Corridor prerequisites.

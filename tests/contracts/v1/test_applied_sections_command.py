@@ -14,6 +14,7 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     applied_section_review_rows,
     apply_v1_applied_section_set,
     build_document_applied_section_set,
+    hide_applied_sections_preview_objects,
     show_all_applied_sections_preview_object,
     show_applied_section_preview_object,
 )
@@ -396,6 +397,7 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         assert not any(check.text() == "Fast Evaluation" for check in panel.form.findChildren(QtWidgets.QCheckBox))
         assert "Build Sections" in button_labels
         assert "Show All" in button_labels
+        assert "Hide All" in button_labels
         assert "Validate" not in button_labels
         assert "Apply" not in button_labels
         assert progress_bars[0].format() == "Ready"
@@ -672,6 +674,35 @@ def test_show_all_applied_sections_preview_object_creates_combined_section_lines
         assert obj.StationStart <= obj.StationEnd
         assert len(obj.Shape.Edges) >= len(result.sections) * 4
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
+        assert not hasattr(obj, "RoundaboutClipBoundaryRole")
+        assert not hasattr(obj, "RoundaboutOwnershipClipMode")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_hide_applied_sections_preview_objects_hides_existing_previews() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=45.0)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        result = build_document_applied_section_set(doc, project=project)
+
+        selected_preview = show_applied_section_preview_object(doc, result, 0)
+        all_preview = show_all_applied_sections_preview_object(doc, result)
+
+        assert getattr(selected_preview.ViewObject, "Visibility", False) is True
+        assert getattr(all_preview.ViewObject, "Visibility", False) is True
+
+        hidden_count = hide_applied_sections_preview_objects(doc)
+
+        assert hidden_count >= 1
+        assert selected_preview.ViewObject.Visibility is False
+        assert all_preview.ViewObject.Visibility is False
     finally:
         App.closeDocument(doc.Name)
 

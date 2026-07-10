@@ -2,7 +2,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-Parametric Road `1.0.8` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name and improves source-driven Intersection slope-face, Tie Slope, and shared breakline review behavior.
+Parametric Road `1.0.9` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name and improves maintained Intersection presets, Cross Intersection tie-slope behavior, Roundabout-specific surface ownership, and shared breakline review behavior.
 
 The current local FreeCAD runtime for development and manual QA is FreeCAD `1.1.1`.
 
@@ -19,7 +19,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 ## Release And Tutorial
 
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.8
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.9
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum discussion: https://forum.freecad.org/viewtopic.php?t=103783
 
@@ -71,7 +71,8 @@ Available in the v1 release direction:
 - Superelevation source editing, station sample review, 3D crossfall bars, and Applied Sections / Build Parametric handoff
 - SubAssembly Designer reusable point/link/shape definitions with Assembly placement and Applied Sections evaluation
 - Assembly and Region source editing
-- Intersections starter sources, multi-alignment Region review, and multi-alignment 3D Centerline preview
+- Intersections starter sources for T Intersection, Cross Intersection, and Roundabout, with multi-alignment Region review and multi-alignment 3D Centerline preview
+- Cross Intersection and Roundabout source-driven surface handoff review, including dedicated intersection/roundabout slope outputs and roundabout ordinary-surface clipping
 - Structure source editing, connection points, native drainage-structure previews, and Structure Output packages
 - Drainage source editing, Flow Routes, Structure-backed pipe network preview, and Drainage Review
 - Applied Sections generation

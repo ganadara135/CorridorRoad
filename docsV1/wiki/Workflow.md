@@ -64,7 +64,7 @@ Build Parametric should use the same reviewed Source Geometry centerline for its
 
 If Build Parametric reports a fallback centerline source, rebuild 3D Centerline before rebuilding Applied Sections and Build Corridor.
 
-For Intersections, 3D Centerline can be multi-alignment. Starter Sources create the participating Alignment/Profile/Stationing/Region sources and then generate a multi-alignment 3D Centerline preview so the primary road and side road do not share one baseline.
+For Intersections, 3D Centerline can be multi-alignment. Preset Sources create the participating Alignment/Profile/Stationing/Region sources and then generate a multi-alignment 3D Centerline preview so the participating roads do not share one baseline.
 
 Superelevation is the station-based crossfall source after 3D Centerline. It does not replace Assembly; it overrides lane and shoulder crossfall during Applied Sections generation.
 
@@ -121,14 +121,16 @@ Use this order when changing Region or Surface Transition settings:
 
 Intersections are source-stage control data.
 
-Use `Create Starter Sources` when a quick test junction is needed. It creates editable Alignment, Profile, Stationing, and Region sources, then generates the 3D Centerline preview for the participating Alignments.
+Use `Create From Preset` when a quick test junction is needed. The maintained presets are `T Intersection - Basic`, `Cross Intersection - Basic`, and `Roundabout - Single Lane`.
+
+It creates editable Alignment, Profile, Stationing, and Region sources, then generates the 3D Centerline preview for the participating Alignments.
 
 Use this order for the starter workflow:
 
 1. Open Intersection.
-2. Select the intersection type.
-3. Set Source Mode to `Create Starter Sources`.
-4. Create starter sources.
+2. Select `T Intersection - Basic`, `Cross Intersection - Basic`, or `Roundabout - Single Lane`.
+3. Set Source Mode to `Create From Preset`.
+4. Click `Create Sources`.
 5. Confirm the status message includes the generated 3D Centerline.
 6. Review or refresh 3D Centerline.
 7. Apply Intersection.
@@ -137,6 +139,10 @@ Use this order for the starter workflow:
 10. Review Region Boundaries and Slope Face Issues.
 
 Build Parametric reads Region source rows from all participating Alignments. The Region Boundaries table includes an Alignment column for this reason.
+
+For Cross Intersection, review `Intersection Surface`, `Intersection Slope Face Surface`, and `Intersection Tie Slope Surface` as separate output families.
+
+For Roundabout, ordinary Design/Subgrade/Slope outputs should stop at roundabout ownership boundaries, while dedicated Roundabout Circulatory, Apron, Subgrade, and Slope Face outputs own the roundabout interior.
 
 ## Drainage And Structure Flow
 

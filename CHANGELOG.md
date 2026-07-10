@@ -9,6 +9,23 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-07-10
+
+### Added
+- Added Roundabout-specific surface ownership and clipping handoff behavior so approach Design, Lane, Shoulder, Subgrade, Side Slope, and Slope Face review outputs stop at explicit roundabout boundaries.
+- Added dedicated roundabout production outputs for circulatory pavement, apron, subgrade, slope face, and breakline readiness review.
+- Added Cross Intersection tie-slope handling for both primary and secondary road approaches using source-driven Applied Section transition context.
+- Added Applied Sections `Hide All` support to match the existing `Show All` review workflow.
+
+### Changed
+- Limited maintained Intersection presets to `T Intersection`, `Cross Intersection`, and `Roundabout`.
+- Updated Build Parametric and wiki review guidance so low-level Intersection diagnostic rows stay internal unless explicitly surfaced for development review.
+- Refined Breakline Audit and Intersections double-click behavior to avoid creating stale alignment-side highlight artifacts for accepted generated outputs.
+
+### Removed
+- Removed obsolete Roundabout transitional connector, splitter island, and generic Intersection Tie Slope production outputs.
+- Removed unmaintained Intersection preset variants from the public preset list.
+
 ## [1.0.8] - 2026-07-03
 
 ### Added

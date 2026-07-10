@@ -4728,6 +4728,67 @@ def test_intersection_exclusion_clips_tin_triangles_crossing_polygon_edges() -> 
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_exact_cut_generated_triangle_count") == 4
 
 
+def test_roundabout_boundary_clip_exact_cuts_crossing_tin_triangles() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:roundabout-design",
+        surface_kind="design_surface",
+        vertex_rows=[
+            TINVertex("v1", -2.0, 1.0, 0.0),
+            TINVertex("v2", 8.0, 1.0, 0.0),
+            TINVertex("v3", 3.0, 8.0, 0.0),
+            TINVertex("v4", 20.0, 20.0, 0.0),
+            TINVertex("v5", 25.0, 20.0, 0.0),
+            TINVertex("v6", 20.0, 25.0, 0.0),
+        ],
+        triangle_rows=[
+            TINTriangle("t-crossing", "v1", "v2", "v3"),
+            TINTriangle("t-outside", "v4", "v5", "v6"),
+        ],
+    )
+    original_spec = build_corridor_command._roundabout_ownership_boundary_spec
+    original_summary = build_corridor_command._roundabout_clip_boundary_contract_summary
+    original_polygons = build_corridor_command._roundabout_clip_boundary_polygons
+    build_corridor_command._roundabout_ownership_boundary_spec = lambda *args, **kwargs: {
+        "center": (1.0, 1.0, 0.0),
+        "ownership_radius": 10.0,
+        "source": "roundabout:test",
+    }
+    build_corridor_command._roundabout_clip_boundary_contract_summary = lambda *args, **kwargs: {
+        "status": "ready",
+        "boundary_role": "roundabout_approach_clip_boundary",
+        "boundary_result_id": "roundabout-boundary:test",
+        "loop_count": 1,
+        "segment_count": 4,
+        "loop_refs": ["roundabout-loop:test"],
+        "segment_refs": ["roundabout-segment:test"],
+    }
+    build_corridor_command._roundabout_clip_boundary_polygons = lambda *args, **kwargs: [
+        [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)]
+    ]
+    try:
+        clipped = build_corridor_command._clip_tin_surface_by_roundabout_ownership(
+            surface,
+            None,
+            surface_role="design_surface",
+        )
+    finally:
+        build_corridor_command._roundabout_ownership_boundary_spec = original_spec
+        build_corridor_command._roundabout_clip_boundary_contract_summary = original_summary
+        build_corridor_command._roundabout_clip_boundary_polygons = original_polygons
+
+    assert clipped is not None
+    assert clipped.triangle_rows[-1].triangle_id == "t-outside"
+    assert any(row.quality_ref == "roundabout_ownership_exact_clip" for row in clipped.triangle_rows)
+    assert build_corridor_command._tin_quality_text(clipped, "roundabout_ownership_clip_mode") == "roundabout_boundary_loop"
+    assert build_corridor_command._tin_quality_float(clipped, "roundabout_ownership_clip_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(clipped, "roundabout_clip_exact_candidate_count") == 1
+    assert build_corridor_command._tin_quality_float(clipped, "roundabout_clip_exact_generated_triangle_count") > 0
+    assert build_corridor_command._tin_quality_float(clipped, "roundabout_clip_exact_fallback_count") == 0
+    assert build_corridor_command._tin_quality_float(clipped, "roundabout_clip_exact_supported") == 1
+
+
 def test_intersection_exclusion_clips_tin_with_recovered_skewed_footprint() -> None:
     tie_in_result = _curb_return_variant_tie_in_result(side_angle_deg=62.0)
     intersection_model = _curb_return_variant_model(radius=12.0)
@@ -7519,15 +7580,13 @@ def test_shared_breakline_audit_summary_explains_status_only_warning() -> None:
             build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMeshMatchCount", 1)
             build_corridor_command._set_preview_integer_property(preview, "SharedBreaklineMeshMismatchCount", 0)
 
+        rows = build_corridor_command.corridor_shared_breakline_audit_rows(doc)
         summary = build_corridor_command.corridor_shared_breakline_audit_summary(doc)
 
-        assert summary["status"] == "warning"
-        assert summary["title"] == "Shared breakline issues found: 2 surface(s)"
-        assert "geometry_mismatch=0" in summary["notes"]
-        assert "mesh_mismatch=0" in summary["notes"]
-        assert "missing_consumer=0" in summary["notes"]
-        assert "reversed=0" in summary["notes"]
-        assert "status_warning=2" in summary["notes"]
+        assert [row["status"] for row in rows] == ["ready", "ready"]
+        assert summary["status"] == "ready"
+        assert summary["title"] == "No shared breakline issues"
+        assert "2 audited surface(s)" in summary["notes"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -11194,7 +11253,7 @@ def test_build_corridor_disclosure_reports_consumed_applied_section_result_roles
         App.closeDocument(doc.Name)
 
 
-def test_subassembly_kind_review_does_not_stitch_across_alignment_scopes() -> None:
+def test_subassembly_kind_review_lane_uses_section_surface_strips_without_shape_polygons() -> None:
     doc, project = _new_project_doc()
     try:
         def lane_section(section_id: str, alignment_id: str, station: float, x: float, y: float, tangent: float) -> AppliedSection:
@@ -11288,9 +11347,221 @@ def test_subassembly_kind_review_does_not_stitch_across_alignment_scopes() -> No
         )
 
         assert obj is not None
+        assert obj.SourceMode == "applied_section_link_rows"
+        assert obj.DisplayMode == "section_surface_strips"
         assert int(obj.SectionCount) == 4
         assert int(obj.ContinuityScopeCount) == 2
+        assert int(obj.LinkCount) == 4
+        assert int(obj.ShapeCount) == 0
         assert int(obj.SurfacePatchCount) == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_subassembly_kind_review_shoulder_uses_section_surface_strips_without_shape_polygons() -> None:
+    doc, project = _new_project_doc()
+    try:
+        def shoulder_section(section_id: str, alignment_id: str, station: float, x: float, y: float, tangent: float) -> AppliedSection:
+            left_x = x
+            left_y = y + 1.5
+            if tangent == 90.0:
+                left_x = x - 1.5
+                left_y = y
+            return AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id=section_id,
+                corridor_id="corridor:main",
+                alignment_id=alignment_id,
+                profile_id=f"profile:{alignment_id}",
+                assembly_id="assembly:intersection-starter",
+                station=station,
+                template_id="template:basic-road",
+                region_id=f"region:{alignment_id}",
+                frame=AppliedSectionFrame(station=station, x=x, y=y, z=10.0, tangent_direction_deg=tangent),
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="shoulder:left",
+                        kind="shoulder",
+                        source_template_id="template:basic-road",
+                        source_instance_ref="shoulder:left",
+                        side="left",
+                        width=1.5,
+                    )
+                ],
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint(
+                        "shoulder:left:start",
+                        "shoulder:left",
+                        "fg_surface",
+                        x,
+                        y,
+                        10.0,
+                        lateral_offset=0.0,
+                        side="left",
+                    ),
+                    AppliedSectionSubassemblyPoint(
+                        "shoulder:left:end",
+                        "shoulder:left",
+                        "fg_surface",
+                        left_x,
+                        left_y,
+                        9.97,
+                        lateral_offset=1.5,
+                        side="left",
+                    ),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink(
+                        "shoulder:left:fg",
+                        "shoulder:left",
+                        "shoulder:left:start",
+                        "shoulder:left:end",
+                        "shoulder_fg",
+                        surface_role="design_surface",
+                    )
+                ],
+            )
+
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id="sections:interleaved-alignments",
+            corridor_id="corridor:main",
+            alignment_id="alignment:primary",
+            station_rows=[
+                AppliedSectionStationRow("row:primary:0", 0.0, "section:primary:0"),
+                AppliedSectionStationRow("row:secondary:0", 0.0, "section:secondary:0"),
+                AppliedSectionStationRow("row:primary:20", 20.0, "section:primary:20"),
+                AppliedSectionStationRow("row:secondary:20", 20.0, "section:secondary:20"),
+            ],
+            sections=[
+                shoulder_section("section:primary:0", "alignment:primary", 0.0, 0.0, 0.0, 0.0),
+                shoulder_section("section:secondary:0", "alignment:secondary", 0.0, 50.0, 0.0, 90.0),
+                shoulder_section("section:primary:20", "alignment:primary", 20.0, 20.0, 0.0, 0.0),
+                shoulder_section("section:secondary:20", "alignment:secondary", 20.0, 50.0, 20.0, 90.0),
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+
+        obj = build_corridor_command._create_subassembly_kind_review_highlight(
+            document=doc,
+            project=project,
+            kind="shoulder",
+            visible=False,
+        )
+
+        assert obj is not None
+        assert obj.SourceMode == "applied_section_link_rows"
+        assert obj.DisplayMode == "section_surface_strips"
+        assert int(obj.SectionCount) == 4
+        assert int(obj.ContinuityScopeCount) == 2
+        assert int(obj.LinkCount) == 4
+        assert int(obj.ShapeCount) == 0
+        assert int(obj.SurfacePatchCount) == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_subassembly_kind_review_strips_skip_intersection_owned_sections() -> None:
+    doc, project = _new_project_doc()
+    try:
+        def lane_section(section_id: str, station: float, *, intersection_owned: bool = False) -> AppliedSection:
+            return AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id=section_id,
+                corridor_id="corridor:main",
+                alignment_id="alignment:primary",
+                profile_id="profile:primary",
+                assembly_id="assembly:road",
+                station=station,
+                template_id="template:basic-road",
+                region_id="region:primary-intersection" if intersection_owned else "region:ordinary",
+                frame=AppliedSectionFrame(station=station, x=station, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                active_intersection_id="intersection:test" if intersection_owned else "",
+                active_intersection_control_area_id="control-area:test" if intersection_owned else "",
+                active_intersection_control_region_refs=["region:primary-intersection"] if intersection_owned else [],
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane:left",
+                        kind="lane",
+                        source_template_id="template:basic-road",
+                        source_instance_ref="lane:left",
+                        side="left",
+                        width=3.5,
+                    )
+                ],
+                subassembly_point_rows=[
+                    AppliedSectionSubassemblyPoint(
+                        "lane:left:start",
+                        "lane:left",
+                        "fg_surface",
+                        station,
+                        0.0,
+                        10.0,
+                        lateral_offset=0.0,
+                        side="left",
+                    ),
+                    AppliedSectionSubassemblyPoint(
+                        "lane:left:end",
+                        "lane:left",
+                        "fg_surface",
+                        station,
+                        3.5,
+                        9.93,
+                        lateral_offset=3.5,
+                        side="left",
+                    ),
+                ],
+                subassembly_link_rows=[
+                    AppliedSectionSubassemblyLink(
+                        "lane:left:fg",
+                        "lane:left",
+                        "lane:left:start",
+                        "lane:left:end",
+                        "lane_fg",
+                        surface_role="design_surface",
+                    )
+                ],
+            )
+
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id="sections:intersection-filter",
+            corridor_id="corridor:main",
+            alignment_id="alignment:primary",
+            station_rows=[
+                AppliedSectionStationRow("row:0", 0.0, "section:0"),
+                AppliedSectionStationRow("row:10", 10.0, "section:10"),
+                AppliedSectionStationRow("row:20", 20.0, "section:20"),
+                AppliedSectionStationRow("row:30", 30.0, "section:30"),
+                AppliedSectionStationRow("row:40", 40.0, "section:40"),
+            ],
+            sections=[
+                lane_section("section:0", 0.0),
+                lane_section("section:10", 10.0),
+                lane_section("section:20", 20.0, intersection_owned=True),
+                lane_section("section:30", 30.0),
+                lane_section("section:40", 40.0),
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+
+        obj = build_corridor_command._create_subassembly_kind_review_highlight(
+            document=doc,
+            project=project,
+            kind="lane",
+            visible=False,
+        )
+
+        assert obj is not None
+        assert obj.DisplayMode == "section_surface_strips"
+        assert int(obj.SectionCount) == 4
+        assert int(obj.LinkCount) == 4
+        assert int(obj.SurfacePatchCount) == 4
+        assert int(obj.SkippedIntersectionSectionCount) == 1
     finally:
         App.closeDocument(doc.Name)
 

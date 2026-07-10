@@ -6,7 +6,7 @@ Non-T intersection Slope Face Surface readiness smoke test.
 
 This smoke intentionally does not claim non-T dedicated Intersection Slope Face
 Surface completion.  It keeps the broader preset limitation traceable while
-ensuring Cross, Skewed, and Y starter presets do not regress into build errors
+ensuring the remaining non-T starter presets do not regress into build errors
 or misleading ready states.
 
 Run in FreeCAD Python environment:
@@ -44,8 +44,7 @@ from freecad.Corridor_Road.v1.objects.obj_intersection import (
 
 NON_T_PRESETS = (
     "Cross Intersection - Basic",
-    "Skewed Intersection - Basic",
-    "Y Intersection - Basic",
+    "Roundabout - Single Lane",
 )
 
 

@@ -34,6 +34,10 @@ from .intersection_boundary_loop import (
 from .intersection_corridor_clipping import IntersectionCorridorClipResult, IntersectionCorridorClipRow
 from .intersection_drainage_hint import IntersectionDrainageHintResult, IntersectionDrainageHintRow
 from .intersection_patch_boundary import IntersectionPatchBoundaryPointRow, IntersectionPatchBoundaryResult
+from .intersection_roundabout_approach_leg import (
+    IntersectionRoundaboutApproachLegResult,
+    IntersectionRoundaboutApproachLegRow,
+)
 from .intersection_tie_in_edge import IntersectionTieInEdgeResult, IntersectionTieInEdgeRow
 from .intersection_edge_network import IntersectionEdgeNetworkResult, IntersectionEdgeNetworkRow
 from .intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
@@ -108,6 +112,8 @@ __all__ = [
     "IntersectionDrainageHintRow",
     "IntersectionPatchBoundaryPointRow",
     "IntersectionPatchBoundaryResult",
+    "IntersectionRoundaboutApproachLegResult",
+    "IntersectionRoundaboutApproachLegRow",
     "IntersectionTieInEdgeResult",
     "IntersectionTieInEdgeRow",
     "IntersectionEdgeNetworkResult",

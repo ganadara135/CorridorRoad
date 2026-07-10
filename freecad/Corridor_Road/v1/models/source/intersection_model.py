@@ -18,24 +18,9 @@ INTERSECTION_KIND_PRESETS: dict[str, dict[str, object]] = {
         "default_leg_roles": ("primary_before", "primary_after", "secondary_before", "secondary_after"),
         "minimum_alignment_count": 2,
     },
-    "skewed_intersection": {
-        "label": "Skewed Intersection",
-        "default_leg_roles": ("primary_before", "primary_after", "skew_before", "skew_after"),
-        "minimum_alignment_count": 2,
-    },
-    "urban_curb_gutter_intersection": {
-        "label": "Urban Curb/Gutter Intersection",
-        "default_leg_roles": ("primary_before", "primary_after", "urban_side_before", "urban_side_after"),
-        "minimum_alignment_count": 2,
-    },
-    "drainage_sag_intersection": {
-        "label": "Drainage-Sensitive Sag Intersection",
-        "default_leg_roles": ("primary_before", "primary_after", "sag_side_before", "sag_side_after"),
-        "minimum_alignment_count": 2,
-    },
-    "y_intersection": {
-        "label": "Y Intersection",
-        "default_leg_roles": ("primary_approach", "left_branch", "right_branch"),
+    "roundabout": {
+        "label": "Roundabout",
+        "default_leg_roles": ("primary_before", "primary_after", "secondary_before", "secondary_after"),
         "minimum_alignment_count": 2,
     },
 }
