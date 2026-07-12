@@ -31,17 +31,17 @@ Generated geometry, preview objects, report rows, and exchange packages are outp
 
 Use FreeCAD Python for tests that depend on FreeCAD modules.
 
-Current local environment:
+Development environment:
 
 - FreeCAD version: `1.1.1`
-- Workbench path: `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
-- FreeCADCmd: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
-- FreeCAD Python: `D:\Program Files\FreeCAD 1.1\bin\python.exe`
+- Workbench path: clone the repository under the active FreeCAD `Mod` directory
+- Set `FREECAD_BIN` to the FreeCAD `bin` directory on each development computer
+- Run `scripts/check_freecad_environment.ps1` to validate GUI, command-line, and Python executables
 
 Preferred local path:
 
 ```powershell
-& 'D:\Program Files\FreeCAD 1.1\bin\python.exe' tests/contracts/v1/test_earthwork_review_handoff.py
+& "$env:FREECAD_BIN\python.exe" tests/contracts/v1/test_earthwork_review_handoff.py
 ```
 
 Prefer focused contract and service tests over UI-only manual checking.

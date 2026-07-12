@@ -1,18 +1,16 @@
 param(
-    [string]$FreeCADExe = "D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe",
+    [string]$FreeCADExe = "",
     [string]$DocumentPath = "",
     [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "freecad_environment.ps1")
+$FreeCADExe = Resolve-FreeCADExecutable -Kind GUI -ExplicitPath $FreeCADExe
 
 function Write-Step {
     param([string]$Text)
     Write-Host ("[CorridorRoad] " + $Text)
-}
-
-if (-not (Test-Path -LiteralPath $FreeCADExe)) {
-    throw "FreeCAD executable not found: $FreeCADExe"
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

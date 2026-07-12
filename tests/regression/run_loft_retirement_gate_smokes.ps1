@@ -1,26 +1,11 @@
 param(
-    [string]$FreeCADCmdPath = "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe"
+    [string]$FreeCADCmdPath = ""
 )
 
-$resolvedFreeCADCmd = $FreeCADCmdPath
-if (-not (Get-Command $resolvedFreeCADCmd -ErrorAction SilentlyContinue)) {
-    $fallbacks = @(
-        "D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe",
-        "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe",
-        "C:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe",
-        "C:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe"
-    )
-    foreach ($candidate in $fallbacks) {
-        if (Test-Path -LiteralPath $candidate) {
-            $resolvedFreeCADCmd = $candidate
-            break
-        }
-    }
-}
-
-if (-not (Get-Command $resolvedFreeCADCmd -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath $resolvedFreeCADCmd)) {
-    throw "FreeCADCmd executable not found. Pass -FreeCADCmdPath or install FreeCADCmd in a standard location."
-}
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $repoRoot "scripts\freecad_environment.ps1")
+$resolvedFreeCADCmd = Resolve-FreeCADExecutable -Kind Cmd -ExplicitPath $FreeCADCmdPath
+Set-Location $repoRoot
 
 $tests = @(
     "tests/regression/smoke_corridor_compat_aliases.py",

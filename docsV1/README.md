@@ -9,12 +9,12 @@ Current public release:
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 
-Current local FreeCAD environment:
+Development FreeCAD environment:
 
 - FreeCAD version: `1.1.1`
-- Workbench path: `C:\Users\ganad\AppData\Roaming\FreeCAD\v1-1\Mod\CorridorRoad`
-- GUI executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe`
-- command-line validation executable: `D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe`
+- Workbench path: clone this repository under the active FreeCAD `Mod` directory
+- Executable directory: set `FREECAD_BIN` to the FreeCAD `bin` directory
+- Environment check: run `scripts/check_freecad_environment.ps1`
 
 Baseline document:
 
