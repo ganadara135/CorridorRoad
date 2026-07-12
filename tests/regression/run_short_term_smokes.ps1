@@ -1,26 +1,11 @@
 param(
-    [string]$FreeCADCmdPath = "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe"
+    [string]$FreeCADCmdPath = ""
 )
 
-$resolvedFreeCADCmd = $FreeCADCmdPath
-if (-not (Get-Command $resolvedFreeCADCmd -ErrorAction SilentlyContinue)) {
-    $fallbacks = @(
-        "D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe",
-        "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe",
-        "C:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe",
-        "C:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe"
-    )
-    foreach ($candidate in $fallbacks) {
-        if (Test-Path -LiteralPath $candidate) {
-            $resolvedFreeCADCmd = $candidate
-            break
-        }
-    }
-}
-
-if (-not (Get-Command $resolvedFreeCADCmd -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath $resolvedFreeCADCmd)) {
-    throw "FreeCADCmd executable not found. Pass -FreeCADCmdPath or install FreeCADCmd in a standard location."
-}
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $repoRoot "scripts\freecad_environment.ps1")
+$resolvedFreeCADCmd = Resolve-FreeCADExecutable -Kind Cmd -ExplicitPath $FreeCADCmdPath
+Set-Location $repoRoot
 
 $tests = @(
     "tests/regression/smoke_tree_schema.py",
@@ -47,7 +32,7 @@ $tests = @(
     "tests/regression/smoke_cutfill_source_matrix.py",
     "tests/regression/smoke_cutfill_quality_review.py",
     "tests/regression/smoke_profile_fg_tools.py",
-    "tests/regression/smoke_pvi_starter_defaults.py"
+    "tests/regression/smoke_pvi_starter_defaults.py",
     "tests/regression/smoke_cross_section_viewer_payload.py"
 )
 

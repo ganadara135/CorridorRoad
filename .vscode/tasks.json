@@ -1,5 +1,43 @@
-// .vscode/tasks.json
 {
   "version": "2.0.0",
-  "tasks": []
+  "tasks": [
+    {
+      "label": "FreeCAD: Check Environment",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\check_freecad_environment.ps1"],
+      "problemMatcher": []
+    },
+    {
+      "label": "FreeCAD: Manual Review Dry Run",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\launch_v1_manual_review.ps1", "-DryRun"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Short-term Smokes",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\tests\\regression\\run_short_term_smokes.ps1"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Practical Scope Smokes",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\tests\\regression\\run_practical_scope_smokes.ps1"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Loft Retirement Gate",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\tests\\regression\\run_loft_retirement_gate_smokes.ps1"],
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
 }

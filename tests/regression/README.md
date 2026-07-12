@@ -21,16 +21,16 @@ Use runner scripts instead of maintaining long copied command lists in this docu
 Short-term regression pass:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tests/regression/run_short_term_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe'
+powershell -ExecutionPolicy Bypass -File tests/regression/run_short_term_smokes.ps1
 ```
 
 Practical engineering scope:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tests/regression/run_practical_scope_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe'
+powershell -ExecutionPolicy Bypass -File tests/regression/run_practical_scope_smokes.ps1
 ```
 
-If `FreeCADCmd` is not on `PATH`, the practical-scope runner also tries common `FreeCAD 1.1` install locations on `C:` and `D:` before failing.
+The runners resolve FreeCAD from an explicit parameter, `FREECAD_BIN`, `PATH`, or common install locations, in that order. Run `scripts/check_freecad_environment.ps1` to verify the selected installation.
 
 ## Running One Smoke
 
@@ -43,7 +43,7 @@ FreeCADCmd -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding
 With an explicit executable path:
 
 ```powershell
-& 'D:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding='utf-8').read())"
+& "$env:FREECAD_BIN\FreeCADCmd.exe" -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding='utf-8').read())"
 ```
 
 ## Maintained Bundles
