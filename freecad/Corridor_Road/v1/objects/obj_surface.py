@@ -8,6 +8,14 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     App = None
 
 from ..models.result.surface_model import SurfaceBuildRelation, SurfaceModel, SurfaceRow, SurfaceSpanRow
+from .persistence_payload_adapter import (
+    ensure_incremental_result_properties,
+    ensure_model_payload_properties,
+    make_incremental_record,
+    read_model_payload,
+    write_incremental_record,
+    write_model_payload,
+)
 
 
 class V1SurfaceModelObject:
@@ -79,6 +87,8 @@ def ensure_v1_surface_model_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SurfaceSpanDiagnosticRefs", "Surface Spans", "diagnostic refs")
     _add_property(obj, "App::PropertyStringList", "SurfaceSpanNotes", "Surface Spans", "span notes")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
+    ensure_model_payload_properties(obj, add_property=_add_property)
+    ensure_incremental_result_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1SurfaceModel"
@@ -173,6 +183,22 @@ def update_v1_surface_model_object(obj, surface_model: SurfaceModel, *, label: s
     obj.SurfaceSpanDiagnosticRefs = [_join_refs(row.diagnostic_refs) for row in spans]
     obj.SurfaceSpanNotes = [str(row.notes) for row in spans]
     obj.SourceRefs = [str(ref) for ref in list(getattr(surface_model, "source_refs", []) or []) if str(ref)]
+    result_fingerprint = write_model_payload(
+        obj,
+        surface_model,
+        model_type="SurfaceModel",
+        row_fields=("surface_rows", "build_relation_rows", "comparison_rows", "span_rows"),
+        required_refs=("project_id", "surface_model_id"),
+    )
+    write_incremental_record(
+        obj,
+        make_incremental_record(
+            stage_name="surface_model",
+            result_fingerprint=result_fingerprint,
+            consumed_source_refs=getattr(surface_model, "source_refs", ()),
+            consumed_result_refs=(getattr(surface_model, "corridor_id", ""),),
+        ),
+    )
     try:
         obj.touch()
     except Exception:
@@ -186,6 +212,9 @@ def to_surface_model(obj) -> SurfaceModel | None:
     if not _is_v1_surface_model(obj):
         return None
     ensure_v1_surface_model_properties(obj)
+    payload_result = read_model_payload(obj, expected_model_type="SurfaceModel", model_class=SurfaceModel)
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     surface_ids = list(getattr(obj, "SurfaceIds", []) or [])
     surface_rows = [
         SurfaceRow(

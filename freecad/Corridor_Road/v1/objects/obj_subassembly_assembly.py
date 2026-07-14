@@ -16,6 +16,7 @@ from ..models.source.assembly_model import (
     serialize_code_rules,
     serialize_subassembly_parameters,
 )
+from .persistence_payload_adapter import ensure_model_payload_properties, read_model_payload, write_model_payload
 
 
 class V1AssemblySubassemblyModelObject:
@@ -93,6 +94,7 @@ def ensure_v1_assembly_subassembly_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SubassemblyLinkCodeRows", "Subassemblies", "link code rules")
     _add_property(obj, "App::PropertyStringList", "SubassemblyShapeCodeRows", "Subassemblies", "shape code rules")
     _add_property(obj, "App::PropertyStringList", "SubassemblyNotes", "Subassemblies", "subassembly notes")
+    ensure_model_payload_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1AssemblySubassemblyModel"
@@ -206,6 +208,13 @@ def update_v1_assembly_subassembly_model_object(
     obj.SubassemblyLinkCodeRows = [serialize_code_rules(subassembly.link_code_rules) for _template_id, subassembly in subassemblies]
     obj.SubassemblyShapeCodeRows = [serialize_code_rules(subassembly.shape_code_rules) for _template_id, subassembly in subassemblies]
     obj.SubassemblyNotes = [str(subassembly.notes) for _template_id, subassembly in subassemblies]
+    write_model_payload(
+        obj,
+        assembly_model,
+        model_type="AssemblySubassemblyModel",
+        row_fields=("template_rows",),
+        required_refs=("project_id", "assembly_id"),
+    )
     try:
         obj.touch()
     except Exception:
@@ -219,6 +228,13 @@ def to_assembly_subassembly_model(obj) -> AssemblySubassemblyModel | None:
     if not _is_v1_assembly_subassembly_model(obj):
         return None
     ensure_v1_assembly_subassembly_properties(obj)
+    payload_result = read_model_payload(
+        obj,
+        expected_model_type="AssemblySubassemblyModel",
+        model_class=AssemblySubassemblyModel,
+    )
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     template_ids = list(getattr(obj, "TemplateIds", []) or [])
     templates: list[SubassemblySectionTemplate] = []
     for index, template_id in enumerate(template_ids):

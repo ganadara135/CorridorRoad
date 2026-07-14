@@ -319,8 +319,8 @@ def test_assembly_subassembly_object_round_trips_definition_refs_and_overrides()
     assert obj.V1ObjectType == "V1AssemblySubassemblyModel"
     assert obj.SubassemblyDefinitionRefs == ["subassembly-definition:lane-basic"]
     assert restored_subassembly.definition_ref == "subassembly-definition:lane-basic"
-    assert restored_subassembly.parameter_overrides["width"] == "3.75"
-    assert restored_subassembly.parameter_overrides["slope"] == "-2.5"
+    assert restored_subassembly.parameter_overrides["width"] == 3.75
+    assert restored_subassembly.parameter_overrides["slope"] == -2.5
 
 
 def test_subassembly_definition_preset_creates_reusable_road_primitives() -> None:

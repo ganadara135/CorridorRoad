@@ -34,7 +34,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 Typical toolbar order:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersection -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersection -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist`
 
 Main stages:
 
@@ -59,7 +59,7 @@ Main stages:
 - Structure Output
 - Outputs & Exchange
 - AI Assist
-- Watertight Solids
+- Watertight Solids (paused compatibility surface)
 
 ## Current Scope
 
@@ -78,7 +78,7 @@ Available in the v1 release direction:
 - Applied Sections generation
 - Build Corridor preview surfaces, Region Boundary review, Surface Transitions, and diagnostics
 - Cross Section, Plan/Profile, and Earthwork review surfaces
-- Watertight Solids final-stage target discovery, validation, build, and simulation package handoff
+- existing Watertight Solids compatibility behavior; active feature development is paused
 
 In progress:
 

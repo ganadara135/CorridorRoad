@@ -14,10 +14,10 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import (
     AppliedSectionStationRow,
 )
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel
+from freecad.Corridor_Road.v1.services.builders import supplemental_sampled_sections
 from freecad.Corridor_Road.v1.services.builders.corridor_surface_geometry_service import (
     CorridorDesignSurfaceGeometryRequest,
     CorridorSurfaceGeometryService,
-    _supplemental_sampled_sections,
     supplemental_sampling_summary,
 )
 from freecad.Corridor_Road.v1.services.builders.applied_section_service import (
@@ -144,8 +144,8 @@ def _section_set(sections: list[AppliedSection]) -> AppliedSectionSet:
 def test_supplemental_sampling_recursively_follows_centerline_frame() -> None:
     sections = [_section("s0", 0.0), _section("s10", 10.0)]
 
-    low_sections = _supplemental_sampled_sections(sections, max_spacing=10.0, frame_resolver=_arc_frame)
-    high_sections = _supplemental_sampled_sections(sections, max_spacing=1.0, frame_resolver=_arc_frame)
+    low_sections = supplemental_sampled_sections(sections, max_spacing=10.0, frame_resolver=_arc_frame)
+    high_sections = supplemental_sampled_sections(sections, max_spacing=1.0, frame_resolver=_arc_frame)
 
     assert len(low_sections) > 2
     assert len(high_sections) > len(low_sections)
@@ -160,7 +160,7 @@ def test_supplemental_sampling_recursively_follows_centerline_frame() -> None:
 def test_supplemental_sampling_does_not_densify_straight_centerline_by_spacing_only() -> None:
     sections = [_section("s0", 0.0), _section("s100", 100.0)]
 
-    sampled = _supplemental_sampled_sections(sections, max_spacing=1.0, frame_resolver=_straight_frame)
+    sampled = supplemental_sampled_sections(sections, max_spacing=1.0, frame_resolver=_straight_frame)
 
     assert sampled == sections
 
@@ -190,7 +190,7 @@ def test_supplemental_sampling_summary_treats_source_geometry_as_centerline_sour
 def test_supplemental_sections_preserve_subassembly_surface_ownership() -> None:
     sections = [_section("s0", 0.0), _section("s10", 10.0)]
 
-    sampled = _supplemental_sampled_sections(sections, max_spacing=5.0, frame_resolver=None)
+    sampled = supplemental_sampled_sections(sections, max_spacing=5.0, frame_resolver=None)
     supplemental = [section for section in sampled if "supplemental:" in section.applied_section_id]
 
     assert supplemental
@@ -308,7 +308,7 @@ def test_applied_section_overlap_guard_clips_overlapping_regular_and_supplementa
 
 def test_design_surface_uses_supplemental_frame_series() -> None:
     sections = [_section("s0", 0.0), _section("s10", 10.0)]
-    high_sections = _supplemental_sampled_sections(sections, max_spacing=1.0, frame_resolver=_arc_frame)
+    high_sections = supplemental_sampled_sections(sections, max_spacing=1.0, frame_resolver=_arc_frame)
     surface = CorridorSurfaceGeometryService().build_design_surface(
         CorridorDesignSurfaceGeometryRequest(
             project_id="project:test",

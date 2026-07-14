@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - Part is not available in plain Python.
 
 from ..services.evaluation import AlignmentStationSamplingService
 from .obj_alignment import find_v1_alignment, to_alignment_model
+from .project_document_adapter import ProjectDocumentAdapter
 
 
 class V1StationingObject:
@@ -142,6 +143,7 @@ def create_v1_stationing(
     alignment=None,
     interval: float = 20.0,
     label: str = "Stations",
+    document_adapter: ProjectDocumentAdapter | None = None,
 ):
     """Create one v1 stationing object by sampling a v1 alignment."""
 
@@ -156,29 +158,25 @@ def create_v1_stationing(
     if alignment_model is None:
         raise RuntimeError("A V1Alignment is required before generating v1 stations.")
 
-    try:
-        obj = doc.addObject("Part::FeaturePython", "V1Stationing")
-    except Exception:
-        obj = doc.addObject("App::FeaturePython", "V1Stationing")
-    V1StationingObject(obj)
-    try:
-        ViewProviderV1Stationing(obj.ViewObject)
-    except Exception:
-        pass
-    obj.Label = label
-    obj.ProjectId = _project_id(project)
-    obj.StationingId = f"stationing:{str(getattr(obj, 'Name', '') or 'stations')}"
-    obj.AlignmentId = alignment_model.alignment_id
-    obj.ShowTicks = True
-    update_v1_stationing_from_alignment(obj, alignment_model, interval=interval)
-
-    if project is not None:
+    adapter = document_adapter or ProjectDocumentAdapter(doc)
+    with adapter.transaction("Create v1 stationing"):
+        obj = adapter.create_object(
+            "Part::FeaturePython",
+            "V1Stationing",
+            fallback_type_id="App::FeaturePython",
+        )
+        V1StationingObject(obj)
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            ViewProviderV1Stationing(obj.ViewObject)
         except Exception:
             pass
+        adapter.set_value(obj, "Label", label)
+        adapter.set_value(obj, "ProjectId", _project_id(project or adapter.project()))
+        adapter.set_value(obj, "StationingId", f"stationing:{str(getattr(obj, 'Name', '') or 'stations')}")
+        adapter.set_value(obj, "AlignmentId", alignment_model.alignment_id)
+        adapter.set_value(obj, "ShowTicks", True)
+        update_v1_stationing_from_alignment(obj, alignment_model, interval=interval)
+        adapter.route_to_project_tree(obj, project=project)
     return obj
 
 
@@ -223,8 +221,7 @@ def update_v1_stationing_from_alignment(stationing, alignment_model, *, interval
     station_kind_counts = _station_kind_counts(stationing.StationKinds)
     stationing.TangentStationCount = int(kind_counts.get("tangent", 0))
     stationing.CurveStationCount = int(
-        kind_counts.get("sampled_curve", 0)
-        + kind_counts.get("circular_curve", 0)
+        sum((kind_counts.get("sampled_curve", 0), kind_counts.get("circular_curve", 0)))
     )
     stationing.TransitionStationCount = int(kind_counts.get("transition_curve", 0))
     stationing.MajorStationCount = int(station_kind_counts.get("major", 0))

@@ -10,14 +10,14 @@
     xmlns = 'https://wiki.freecad.org/Package_Metadata'
 >
 
-    <!--[ Versions ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Versions -->
 
     <freecadmin>1.0.3</freecadmin>
     <pythonmin>3.10</pythonmin>
     <version>1.0.9</version>
     <date>2026-07-10</date>
 
-    <!--[ Dependencies ]―――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Dependencies -->
 
     <depend
         type = 'internal'
@@ -27,12 +27,12 @@
         type = 'internal'
     >mesh</depend>
 
-    <!--[ Info ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Info -->
 
     <description>FreeCAD workbench for parametric road corridor design, review, and output preparation.</description>
     <name>Parametric Road</name>
 
-    <!--[ Tags ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Tags -->
 
     <tag>Workflow</tag>
     <tag>Corridor</tag>
@@ -43,29 +43,29 @@
     <tag>Cut</tag>
 
 
-    <!--[ Maintainers ]――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Maintainers -->
 
     <maintainer
         email = 'ganadara135@gmail.com'
     >Kcod</maintainer>
 
-    <!--[ Authors ]――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Authors -->
 
     <author
         email = 'ganadara135@gmail.com'
     >Kcod</author>
 
-    <!--[ Licenses ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Licenses -->
 
     <license
         file = 'LICENSE'
     >LGPL-2.1-or-later</license>
 
-    <!--[ Icon ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Icon -->
 
     <icon>freecad/Corridor_Road/resources/icons/corridorroad_workbench.svg</icon>
 
-    <!--[ Urls ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- URLs -->
 
     <url
         type = 'documentation'
@@ -84,7 +84,7 @@
         type = 'readme'
     >https://raw.githubusercontent.com/ganadara135/CorridorRoad/main/ADDON_OVERVIEW.md</url>
 
-    <!--[ Content ]――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
+    <!-- Content -->
 
     <content>
         <workbench>

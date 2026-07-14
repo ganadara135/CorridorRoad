@@ -4,6 +4,13 @@ Date: 2026-07-10
 Status: `1.0.9` release prepared
 Scope: post-`1.0.0` v1 updates
 
+## Development Scope After 1.0.9
+
+- Ramp is removed from the active product and development scope.
+- Watertight Solid behavior shipped in 1.0.9 remains a compatibility surface, but further development is paused.
+- Watertight work is limited to critical defect repair, data-loss prevention, compatibility maintenance, and test preservation.
+- The current development and validation runtime is FreeCAD 1.1.1; package metadata retains FreeCAD 1.0.3 as the compatibility floor.
+
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
@@ -48,7 +55,7 @@ Available or actively represented in the current v1 workflow:
 - Drainage Review tables for pipeline candidates, segments, networks, and junctions
 - Build Corridor Region Boundary and Surface Transition review
 - Intersections starter sources with multi-alignment Region review and automatic 3D Centerline preview generation
-- Watertight Solids target discovery, validation, selected/enabled build actions, display controls, and package export
+- existing Watertight Solids target discovery and package behavior, retained as paused compatibility
 
 ## Current Future Work
 
@@ -86,7 +93,7 @@ Before tagging the next release:
 1. Restart FreeCAD.
 2. Activate the Parametric Road workbench.
 3. Confirm toolbar order:
-   `Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+   `Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist`
 4. Open each primary panel.
 5. Run a minimal Alignment -> Stations -> Profile -> 3D Centerline path.
 6. Optionally apply Superelevation and confirm sample preview.
@@ -95,9 +102,8 @@ Before tagging the next release:
 9. Apply Drainage `Drainage Structures Flow` preset and show Flow Network.
 10. Run Applied Sections.
 11. Run Build Corridor.
-12. Open Watertight Solids and confirm target discovery.
-13. Build one Structure or Drainage target where prerequisites are available.
-14. Confirm the report view has no unexpected traceback.
+12. Optionally open Watertight Solids as a compatibility-only check; do not expand targets or workflow coverage.
+13. Confirm the report view has no unexpected traceback.
 
 ## Release Notes Draft
 
@@ -120,7 +126,7 @@ Suggested highlights:
 - Structures now support connection-ready native drainage objects and clearer 3D review geometry.
 - Drainage now has Elements, Policies, Flow Routes, Structure refs, and Flow Network preview.
 - Drainage now opens empty when no source object exists, so users intentionally add rows or load preset data.
-- Watertight Solids now discovers and builds road, Subassembly, drainage, and structure targets with package handoff.
+- Existing Watertight Solids discovery and package handoff remain available as paused compatibility behavior.
 - Build Parametric and Watertight Solid outputs are easier to inspect from the FreeCAD tree.
 - Drainage Flow Network previews now follow shared 3D Centerline elevation context more reliably.
 - Applied Sections row review now shows the selected Assembly line without station marker clutter.

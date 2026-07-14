@@ -24,7 +24,7 @@ Typical v1 workflow:
 11. Generate Applied Sections.
 12. Build Parametric preview surfaces.
 13. Review Cross Sections, Drainage, Plan/Profile, Earthwork, Intersections, and Breakline Audit diagnostics.
-14. Prepare Watertight Solids, Structure Output, and exchange handoff data where available.
+14. Prepare Structure Output and exchange handoff data; Watertight Solid remains compatibility-only while development is paused.
 
 ## Available Areas
 
@@ -44,14 +44,14 @@ Typical v1 workflow:
 - Plan/Profile Connection Review
 - Earthwork Viewer and v1-native earthwork report pipeline
 - Structure editor and Structure Output package workflow
-- Watertight Solids final-stage workflow for selected road, component, drainage, and structure solid targets
+- Existing Watertight Solids workflow retained as a paused compatibility surface
 - Outputs & Exchange entry point
 - AI Assist entry point
 
 ## In Progress
 
 - Advanced hydraulic analysis, automatic pipe sizing, and full drainage report output are not part of the current release scope.
-- Watertight Solid package composition is continuing toward terrain-inclusive simulation handoff.
+- Watertight Solid development is paused; no target, topology, simulation, UI, or exchange expansion is active.
 
 ## Design Direction
 

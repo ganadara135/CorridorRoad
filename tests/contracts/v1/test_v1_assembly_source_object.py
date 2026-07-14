@@ -107,7 +107,7 @@ def test_v1_assembly_subassembly_model_object_roundtrips_to_source_model() -> No
         assert model.template_rows[0].subassembly_rows[1].enabled is False
         assert model.template_rows[0].subassembly_rows[1].target_ref == "drainage:side-ditch-right"
         assert model.template_rows[0].subassembly_rows[1].parameters["shape"] == "trapezoid"
-        assert model.template_rows[0].subassembly_rows[1].parameters["bottom_width"] == "0.6"
+        assert model.template_rows[0].subassembly_rows[1].parameters["bottom_width"] == 0.6
     finally:
         App.closeDocument(doc.Name)
 

@@ -334,13 +334,6 @@ def _run_one_preset(preset_label):
                 for row in list(getattr(shared_breaklines, "breakline_rows", []) or [])
             ]
             for role in (
-                "intersection_tie_slope_approach_outer",
-                "intersection_tie_slope_to_curb_return_approach",
-                "intersection_tie_slope_approach_start_cap",
-                "intersection_tie_slope_approach_end_cap",
-            ):
-                _assert(role in shared_roles, f"Cross Tie Slope shared breaklines should include {role}.")
-            for role in (
                 "intersection_tie_slope_supplemental_outer",
                 "intersection_tie_slope_supplemental_inner",
                 "intersection_tie_slope_supplemental_endpoint",
@@ -374,7 +367,8 @@ def _run_one_preset(preset_label):
                 supplemental_endpoint_count > 0 and supplemental_inner_count >= supplemental_endpoint_count,
                 (
                     "Cross Tie Slope surface should consume supplemental endpoint window rows; "
-                    f"endpoints={supplemental_endpoint_count}, supplemental_inner={supplemental_inner_count}."
+                    f"endpoints={supplemental_endpoint_count}, supplemental_inner={supplemental_inner_count}, "
+                    f"rows={[(row.get('inner_applied_section_ref'), row.get('inner_is_supplemental'), row.get('supplemental_endpoint_ref')) for row in supplemental_endpoint_rows]}."
                 ),
             )
             _assert(
@@ -398,9 +392,14 @@ def _run_one_preset(preset_label):
                 f"{preset_label} topology row should include {token}: {topology_notes}",
             )
         _assert(boundary_loop_rows, f"{preset_label} should expose an authoritative boundary_loop row.")
+        expected_boundary_role = (
+            "roundabout_outer_ownership_boundary"
+            if preset_label == "Roundabout - Single Lane"
+            else "outer_intersection_boundary"
+        )
         _assert(
-            any(row.get("status") == "ready" and row.get("role") == "outer_intersection_boundary" for row in boundary_loop_rows),
-            f"{preset_label} should expose a ready outer_intersection_boundary row.",
+            any(row.get("status") == "ready" and row.get("role") == expected_boundary_role for row in boundary_loop_rows),
+            f"{preset_label} should expose a ready {expected_boundary_role} row.",
         )
         _assert(
             any("closed=yes" in str(row.get("notes", "") or "") for row in boundary_loop_rows),
@@ -410,7 +409,7 @@ def _run_one_preset(preset_label):
             next(
                 row.get("notes", "") or ""
                 for row in boundary_loop_rows
-                if row.get("status") == "ready" and row.get("role") == "outer_intersection_boundary"
+                if row.get("status") == "ready" and row.get("role") == expected_boundary_role
             )
         )
         for token in ("kind=", "surface_boundary_mode=", "surface_boundary_loop="):

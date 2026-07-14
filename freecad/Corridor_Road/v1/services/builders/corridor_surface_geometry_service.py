@@ -1787,7 +1787,7 @@ def _section_rows_for_request(request: CorridorDesignSurfaceGeometryRequest, *, 
     )
     if not bool(getattr(request, "supplemental_sampling_enabled", False)):
         return sections
-    return _supplemental_sampled_sections(
+    return supplemental_sampled_sections(
         sections,
         max_spacing=float(getattr(request, "supplemental_sampling_max_spacing", SUPPLEMENTAL_SAMPLING_MAX_SPACING) or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
         tangent_delta_threshold_deg=float(
@@ -2083,7 +2083,7 @@ def _is_transition_generated_section(section) -> bool:
     return "surface_transition_generated:" in str(getattr(frame, "notes", "") or "")
 
 
-def _supplemental_sampled_sections(
+def supplemental_sampled_sections(
     sections: list[object],
     *,
     max_spacing: float,
@@ -2091,6 +2091,12 @@ def _supplemental_sampled_sections(
     chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
     frame_resolver: SupplementalFrameResolver | None = None,
 ) -> list[object]:
+    """Return result-only sections augmented with deterministic supplemental samples.
+
+    The returned rows are derived evaluation results. Callers must not persist them as
+    user-authored source stations.
+    """
+
     if len(sections) < 2:
         return sections
     spacing = max(float(max_spacing or 0.0), 0.1)
@@ -2132,7 +2138,7 @@ def supplemental_sampling_summary(
     """Return output-only supplemental frame diagnostics for Guided Review."""
 
     source_sections = list(sections or [])
-    sampled_sections = _supplemental_sampled_sections(
+    sampled_sections = supplemental_sampled_sections(
         source_sections,
         max_spacing=max_spacing,
         tangent_delta_threshold_deg=tangent_delta_threshold_deg,

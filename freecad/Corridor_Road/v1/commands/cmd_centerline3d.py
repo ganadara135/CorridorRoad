@@ -18,6 +18,7 @@ from freecad.Corridor_Road.objects.obj_project import ensure_project_tree, find_
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ..models.result.centerline3d import Centerline3DResult
+from ..models.result.centerline3d_arc_fit import Centerline3DArcFitResult
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_stationing import find_v1_stationing
@@ -27,21 +28,6 @@ from ..services.evaluation import (
     Centerline3DEvaluationService,
     Centerline3DSourceGeometryService,
     ProfileEvaluationService,
-)
-from ..services.evaluation.centerline3d_source_geometry_service import (
-    _arc_fit_max_radial_error as _source_geometry_arc_fit_max_radial_error,
-    _arc_fit_quality_from_points as _source_geometry_arc_fit_quality_from_points,
-    _arc_fit_tolerance as _source_geometry_arc_fit_tolerance,
-    _arc_xy_from_source_element as _source_geometry_arc_xy_from_source_element,
-    _circle_center_from_three_points as _source_geometry_circle_center_from_three_points,
-    _clean_xy_pairs as _source_geometry_clean_xy_pairs,
-    _distance2d as _source_geometry_distance2d,
-    _fit_plan_arc_from_points as _source_geometry_fit_plan_arc_from_points,
-    _horizontal_source_point as _source_geometry_horizontal_source_point,
-    _normalized_arc_fit_tolerances as _source_geometry_normalized_arc_fit_tolerances,
-    _numeric_source_values as _source_geometry_numeric_source_values,
-    _point_line_distance as _source_geometry_point_line_distance,
-    _positive_angle_delta as _source_geometry_positive_angle_delta,
 )
 
 
@@ -944,23 +930,9 @@ def _centerline3d_horizontal_source_point(
     arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
     arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
 ) -> tuple[float, float] | None:
-    return _source_geometry_horizontal_source_point(
-        alignment,
-        alignment_service,
-        station,
-        arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
-        arc_fit_relative_tolerance=arc_fit_relative_tolerance,
-    )
-
-
-def _centerline3d_arc_xy_from_source_element(
-    alignment,
-    station: float,
-    *,
-    arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
-    arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
-) -> tuple[float, float] | None:
-    return _source_geometry_arc_xy_from_source_element(
+    return Centerline3DSourceGeometryService(
+        alignment_service=alignment_service,
+    ).evaluate_horizontal_point(
         alignment,
         station,
         arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
@@ -985,38 +957,6 @@ def _centerline3d_element_is_curve(element) -> bool:
     x_values = list(payload.get("x_values", []) or []) if isinstance(payload, dict) else []
     y_values = list(payload.get("y_values", []) or []) if isinstance(payload, dict) else []
     return "curve" in kind or "arc" in kind or min(len(x_values), len(y_values)) > 2
-
-
-def _fit_plan_arc_from_points(points: list[tuple[float, float]]) -> tuple[float, float, float, float, float] | None:
-    return _source_geometry_fit_plan_arc_from_points(points)
-
-
-def _circle_center_from_three_points(
-    first: tuple[float, float],
-    middle: tuple[float, float],
-    last: tuple[float, float],
-) -> tuple[float, float] | None:
-    return _source_geometry_circle_center_from_three_points(first, middle, last)
-
-
-def _positive_angle_delta(start: float, end: float) -> float:
-    return _source_geometry_positive_angle_delta(start, end)
-
-
-def _point_line_distance(point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]) -> float:
-    return _source_geometry_point_line_distance(point, start, end)
-
-
-def _clean_xy_pairs(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    return _source_geometry_clean_xy_pairs(points)
-
-
-def _numeric_source_values(values) -> list[float]:
-    return _source_geometry_numeric_source_values(values)
-
-
-def _distance2d(x0: float, y0: float, x1: float, y1: float) -> float:
-    return _source_geometry_distance2d(x0, y0, x1, y1)
 
 
 def _centerline3d_source_interval_stations(
@@ -1156,13 +1096,13 @@ def _centerline3d_interval_has_arc_fit(
     payload = getattr(element, "geometry_payload", {}) or {}
     if not isinstance(payload, dict):
         return False
-    points = list(zip(_numeric_source_values(payload.get("x_values", [])), _numeric_source_values(payload.get("y_values", []))))
+    points = Centerline3DSourceGeometryService.plan_points_from_geometry_payload(payload)
     return bool(
         _arc_fit_quality_from_points(
             points,
             arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
             arc_fit_relative_tolerance=arc_fit_relative_tolerance,
-        ).get("accepted", False)
+        ).accepted
     )
 
 
@@ -1181,7 +1121,7 @@ def _centerline3d_interval_has_rejected_arc_fit(
         arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
         arc_fit_relative_tolerance=arc_fit_relative_tolerance,
     )
-    return quality.get("arc") is not None and not bool(quality.get("accepted", False))
+    return quality.arc is not None and not quality.accepted
 
 
 def _centerline3d_arc_fit_detail_label(
@@ -1199,13 +1139,13 @@ def _centerline3d_arc_fit_detail_label(
         arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
         arc_fit_relative_tolerance=arc_fit_relative_tolerance,
     )
-    arc = quality.get("arc")
+    arc = quality.arc
     if arc is None:
         return ""
     center_x, center_y, radius, _start_angle, sweep_angle = arc
-    radial_error = float(quality.get("radial_error", 0.0) or 0.0)
-    tolerance = float(quality.get("tolerance", 0.0) or 0.0)
-    status = "accepted" if bool(quality.get("accepted", False)) else "rejected"
+    radial_error = float(quality.radial_error or 0.0)
+    tolerance = float(quality.tolerance or 0.0)
+    status = "accepted" if quality.accepted else "rejected"
     return (
         f"|arc_fit_status={status}|arc_radius={float(radius):.3f}|"
         f"arc_sweep_deg={math.degrees(float(sweep_angle)):.3f}|"
@@ -1220,15 +1160,15 @@ def _centerline3d_arc_fit_quality(
     *,
     arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
     arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
-) -> dict[str, object]:
+) -> Centerline3DArcFitResult:
     station = 0.5 * (float(start) + float(end))
     element = _centerline3d_active_alignment_element(alignment, station)
     if element is None:
-        return {"accepted": False, "arc": None, "radial_error": 0.0, "tolerance": 0.0}
+        return Centerline3DSourceGeometryService.evaluate_plan_arc_fit([])
     payload = getattr(element, "geometry_payload", {}) or {}
     if not isinstance(payload, dict):
-        return {"accepted": False, "arc": None, "radial_error": 0.0, "tolerance": 0.0}
-    points = list(zip(_numeric_source_values(payload.get("x_values", [])), _numeric_source_values(payload.get("y_values", []))))
+        return Centerline3DSourceGeometryService.evaluate_plan_arc_fit([])
+    points = Centerline3DSourceGeometryService.plan_points_from_geometry_payload(payload)
     return _arc_fit_quality_from_points(
         points,
         arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
@@ -1241,29 +1181,16 @@ def _arc_fit_quality_from_points(
     *,
     arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
     arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
-) -> dict[str, object]:
-    return _source_geometry_arc_fit_quality_from_points(
+) -> Centerline3DArcFitResult:
+    return Centerline3DSourceGeometryService.evaluate_plan_arc_fit(
         points,
         arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
         arc_fit_relative_tolerance=arc_fit_relative_tolerance,
     )
 
 
-def _arc_fit_tolerance(
-    radius: float,
-    *,
-    arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
-    arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
-) -> float:
-    return _source_geometry_arc_fit_tolerance(
-        radius,
-        arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
-        arc_fit_relative_tolerance=arc_fit_relative_tolerance,
-    )
-
-
 def _normalized_arc_fit_tolerances(absolute: float, relative: float) -> tuple[float, float]:
-    return _source_geometry_normalized_arc_fit_tolerances(absolute, relative)
+    return Centerline3DSourceGeometryService.normalize_arc_fit_tolerances(absolute, relative)
 
 
 def _normalized_source_geometry_sample_spacing(value: float) -> float:
@@ -1271,10 +1198,6 @@ def _normalized_source_geometry_sample_spacing(value: float) -> float:
         return max(0.01, float(value))
     except Exception:
         return float(SOURCE_GEOMETRY_CURVE_SAMPLE_MAX_SPACING)
-
-
-def _arc_fit_max_radial_error(points: list[tuple[float, float]], center_x: float, center_y: float, radius: float) -> float:
-    return _source_geometry_arc_fit_max_radial_error(points, center_x, center_y, radius)
 
 
 def _centerline3d_span_overlaps_horizontal_curve(alignment, start: float, end: float) -> bool:

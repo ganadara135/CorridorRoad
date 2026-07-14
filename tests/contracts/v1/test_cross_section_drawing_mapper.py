@@ -210,6 +210,9 @@ def test_cross_section_drawing_payload_returns_empty_state_without_sections() ->
     assert payload.drawing_id == "sections:empty:empty-drawing"
     assert payload.geometry_rows == []
     assert payload.summary_rows[0].kind == "missing_section"
+    assert payload.source_refs == []
+    assert payload.result_refs == ["sections:empty"]
+    assert payload.diagnostic_rows[0].kind == "cross_section_applied_section_missing"
 
 
 if __name__ == "__main__":

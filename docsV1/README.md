@@ -11,7 +11,8 @@ Current public release:
 
 Development FreeCAD environment:
 
-- FreeCAD version: `1.1.1`
+- package compatibility floor: FreeCAD `1.0.3`
+- recommended and validated FreeCAD version: `1.1.1`
 - Workbench path: clone this repository under the active FreeCAD `Mod` directory
 - Executable directory: set `FREECAD_BIN` to the FreeCAD `bin` directory
 - Environment check: run `scripts/check_freecad_environment.ps1`
@@ -19,6 +20,10 @@ Development FreeCAD environment:
 Baseline document:
 
 - [V1_MASTER_PLAN.md](./V1_MASTER_PLAN.md)
+- [V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md](./V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md) - active repository-wide architecture and stabilization plan; Ramp removed from active scope and Watertight Solid development paused
+- [V1_SUPPORTED_DOMAIN_STATUS.md](./V1_SUPPORTED_DOMAIN_STATUS.md) - single current-scope, ownership, runtime, and document-classification index
+- [V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md](./V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md) - final FreeCAD 1.1.1 supported-domain acceptance checklist
+- [V1_PERSISTENCE_SCHEMA_INVENTORY.md](./V1_PERSISTENCE_SCHEMA_INVENTORY.md) - active typed-payload, migration, compatibility, and incremental-result persistence baseline
 - [V1_RELEASE_1_0_0_PLAN.md](./V1_RELEASE_1_0_0_PLAN.md)
 - [V1_RELEASE_1_0_0_VALIDATION_RECORD.md](./V1_RELEASE_1_0_0_VALIDATION_RECORD.md)
 - [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
@@ -181,20 +186,20 @@ Preferred review workflow:
 - treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
-- use `Watertight Solids` as the final toolbar stage after `AI Assist`; it should remain disabled or blocked until Build Corridor has produced accepted corridor prerequisites
+- retain `Watertight Solids` only as a paused compatibility surface; do not expand targets, topology, simulation, UI, or exchange behavior
 - use `Structures` as the v1 source editor for bridge, culvert, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
-- continue Structures enhancement as connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, Drainage handoff, and Watertight Solid readiness as described in `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`
+- continue Structures stabilization as connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, and Drainage/output handoff
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
 - treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical Subassembly bodies with thickness, material, volume, or export identity
 - use the representation strategy table in `V1_MASTER_PLAN.md` when deciding whether a subsystem should be semantic-first, geometry-first, topology-first, or contract-first
-- generate watertight solids through a topology-first pipeline: closed semantic Applied Section profiles, deterministic edge networks, face adjacency, shell validation, then Part solid geometry
+- treat topology-first Watertight pipeline documents as paused compatibility references, not active implementation commitments
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical
 - in the active workbench layout, keep the `Corridor` stage centered on `Build Corridor` rather than exposing low-level intermediate generators
 - in the active workbench layout, expose `Outputs & Exchange` and `AI Assist` as explicit top-level stages even before their detailed v1-native hubs are fully implemented
-- in the active workbench layout, place `Watertight Solids` after `AI Assist` as the final stage and gate it on successful Build Corridor prerequisites
+- if `Watertight Solids` remains visible after `AI Assist`, label and treat it as paused compatibility behavior gated by existing prerequisites
 - in the active workbench layout, keep `Survey & Surface` aligned to the TIN-first strategy and avoid exposing DEM-first terrain workflow as a primary stage action
 
 UX reset rule:

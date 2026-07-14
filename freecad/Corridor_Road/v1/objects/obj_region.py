@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from ..models.source.region_model import RegionModel, RegionRow
 from ..services.evaluation.region_resolution_service import RegionValidationService
+from .persistence_payload_adapter import ensure_model_payload_properties, read_model_payload, write_model_payload
 
 
 class V1RegionModelObject:
@@ -74,6 +75,7 @@ def ensure_v1_region_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "NotesRows", "Source", "region notes")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "region validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "region diagnostics")
+    ensure_model_payload_properties(obj, add_property=_add_property)
     _remove_property(obj, "PrimaryKinds")
     _remove_property(obj, "AppliedLayerRows")
     _remove_property(obj, "StructureRefs")
@@ -167,6 +169,13 @@ def update_v1_region_model_object(obj, region_model: RegionModel, *, label: str 
         f"{row.severity}|{row.kind}|{row.source_ref}|{row.message}"
         for row in validation.diagnostic_rows
     ]
+    write_model_payload(
+        obj,
+        region_model,
+        model_type="RegionModel",
+        row_fields=("region_rows", "policy_sets", "transition_rows", "constraint_rows"),
+        required_refs=("project_id", "region_model_id"),
+    )
     try:
         obj.touch()
     except Exception:
@@ -180,6 +189,9 @@ def to_region_model(obj) -> RegionModel | None:
     if not _is_v1_region_model(obj):
         return None
     ensure_v1_region_properties(obj)
+    payload_result = read_model_payload(obj, expected_model_type="RegionModel", model_class=RegionModel)
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     ids = list(getattr(obj, "RegionIds", []) or [])
     starts = _float_list(getattr(obj, "StationStarts", []) or [])
     ends = _float_list(getattr(obj, "StationEnds", []) or [])

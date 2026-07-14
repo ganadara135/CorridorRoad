@@ -4,6 +4,7 @@ param(
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repoRoot "scripts\freecad_environment.ps1")
+Assert-CorridorRoadWorkbenchLayout -RepositoryRoot $repoRoot
 $resolvedFreeCADCmd = Resolve-FreeCADExecutable -Kind Cmd -ExplicitPath $FreeCADCmdPath
 Set-Location $repoRoot
 

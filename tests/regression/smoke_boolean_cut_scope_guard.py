@@ -91,7 +91,7 @@ def run():
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
     _assert(_shape_ok(cor), "Corridor did not generate geometry")
     status = str(getattr(cor, "Status", "") or "")
-    _assert("corridorModes=boolean_cut=1" in status, "Corridor status missing boolean_cut mode summary")
+    _assert("structCorridorModes=boolean_cut=1" in status, f"Corridor status missing boolean_cut mode summary: {status}")
     _assert("notchSchema=" not in status, "Boolean-cut workflow should not imply notch schema usage")
     _assert("notchBuild=" not in status, "Boolean-cut workflow should not imply notch build mode")
     _assert(str(getattr(cor, "ResolvedNotchSchemaName", "") or "") == "-", "Boolean-cut workflow should keep notch schema empty")

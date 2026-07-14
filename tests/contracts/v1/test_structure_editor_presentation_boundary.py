@@ -1,0 +1,11 @@
+from freecad.Corridor_Road.v1.commands.cmd_structure_editor import V1StructureEditorTaskPanel
+from freecad.Corridor_Road.v1.ui.editors import StructureEditorTaskPanelPresentation
+
+
+def test_structure_editor_command_panel_uses_ui_presentation_boundary() -> None:
+    assert issubclass(V1StructureEditorTaskPanel, StructureEditorTaskPanelPresentation)
+    assert V1StructureEditorTaskPanel.getStandardButtons is StructureEditorTaskPanelPresentation.getStandardButtons
+    assert V1StructureEditorTaskPanel.accept is StructureEditorTaskPanelPresentation.accept
+    assert V1StructureEditorTaskPanel.reject is StructureEditorTaskPanelPresentation.reject
+    assert V1StructureEditorTaskPanel._set_status is StructureEditorTaskPanelPresentation._set_status
+    assert V1StructureEditorTaskPanel._set_detail_validation is StructureEditorTaskPanelPresentation._set_detail_validation

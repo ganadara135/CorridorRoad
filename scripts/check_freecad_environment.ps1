@@ -4,6 +4,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "freecad_environment.ps1")
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+Assert-CorridorRoadWorkbenchLayout -RepositoryRoot $repoRoot
 $binPath = Resolve-FreeCADBin -ExplicitPath $FreeCADBin
 $guiPath = Resolve-FreeCADExecutable -Kind GUI -ExplicitPath $binPath
 $cmdPath = Resolve-FreeCADExecutable -Kind Cmd -ExplicitPath $binPath
@@ -24,6 +25,23 @@ if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
 & $cmdPath --version
 if ($LASTEXITCODE -ne 0) {
     throw "FreeCADCmd version check failed with exit code $LASTEXITCODE."
+}
+
+$expectedPackagePath = Join-Path $repoRoot "freecad\Corridor_Road\__init__.py"
+$escapedExpectedPackagePath = $expectedPackagePath.Replace("'", "''")
+$importCheck = @"
+import os
+import freecad.Corridor_Road as package
+actual = os.path.normcase(os.path.realpath(package.__file__))
+expected = os.path.normcase(os.path.realpath(r'$escapedExpectedPackagePath'))
+print('[CorridorRoad] Imported package : ' + actual)
+if actual != expected:
+    raise RuntimeError('CorridorRoad import path mismatch: expected=' + expected + '; actual=' + actual)
+"@
+
+& $cmdPath -c $importCheck
+if ($LASTEXITCODE -ne 0) {
+    throw "CorridorRoad package import-path check failed with exit code $LASTEXITCODE."
 }
 
 Write-Host "[PASS] FreeCAD development environment is available."

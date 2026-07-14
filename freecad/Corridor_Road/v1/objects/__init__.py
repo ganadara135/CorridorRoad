@@ -1,5 +1,7 @@
 """FreeCAD document objects for ParametricRoad v1 source models."""
 
+from .project_document_adapter import ProjectDocumentAdapter
+
 from .obj_alignment import (
     V1AlignmentObject,
     create_sample_v1_alignment,
@@ -130,6 +132,7 @@ from .obj_simulation_package import (
 )
 
 __all__ = [
+    "ProjectDocumentAdapter",
     "V1AlignmentObject",
     "V1AppliedSectionSetObject",
     "V1AssemblySubassemblyModelObject",

@@ -397,7 +397,7 @@ def test_resolve_v1_target_container_routes_build_parametric_output_record_kinds
         App.closeDocument(doc.Name)
 
 
-def test_route_to_v1_tree_places_intersection_contract_highlight_under_3d_centerline() -> None:
+def test_route_to_v1_tree_places_intersection_contract_highlight_under_review_issues() -> None:
     doc, project = _new_project_doc()
     try:
         tree = ensure_project_tree(project, include_references=False)
@@ -411,8 +411,8 @@ def test_route_to_v1_tree_places_intersection_contract_highlight_under_3d_center
 
         folder = route_to_v1_tree(project, highlight)
 
-        assert folder == tree[V1_TREE_CENTERLINE3D]
-        assert highlight.Name in _group_names(tree[V1_TREE_CENTERLINE3D])
+        assert folder == tree[V1_TREE_ISSUES]
+        assert highlight.Name in _group_names(tree[V1_TREE_ISSUES])
         assert highlight.Name not in _group_names(tree[V1_TREE_ALIGNMENTS])
     finally:
         App.closeDocument(doc.Name)

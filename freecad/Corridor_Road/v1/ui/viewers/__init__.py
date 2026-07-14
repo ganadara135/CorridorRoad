@@ -4,6 +4,10 @@ from .cross_section_viewer import CrossSectionPreviewTaskPanel, CrossSectionView
 from .earthwork_review_view import EarthworkPreviewTaskPanel, EarthworkViewerTaskPanel
 from .profile_review_view import PlanProfilePreviewTaskPanel, PlanProfileViewerTaskPanel
 from .tin_review_view import TinReviewPreviewTaskPanel, TinReviewViewerTaskPanel
+from .build_corridor_view import (
+    BuildCorridorTaskPanelPresentation,
+    BuildCorridorViewModel,
+)
 
 __all__ = [
     "CrossSectionPreviewTaskPanel",
@@ -14,4 +18,6 @@ __all__ = [
     "PlanProfileViewerTaskPanel",
     "TinReviewPreviewTaskPanel",
     "TinReviewViewerTaskPanel",
+    "BuildCorridorTaskPanelPresentation",
+    "BuildCorridorViewModel",
 ]

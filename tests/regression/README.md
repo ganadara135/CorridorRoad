@@ -32,6 +32,37 @@ powershell -ExecutionPolicy Bypass -File tests/regression/run_practical_scope_sm
 
 The runners resolve FreeCAD from an explicit parameter, `FREECAD_BIN`, `PATH`, or common install locations, in that order. Run `scripts/check_freecad_environment.ps1` to verify the selected installation.
 
+The environment check and maintained runners stop before testing when more than one `CorridorRoad` or `Corridor-Road` workbench exists under the active FreeCAD `Mod` directory. They do not remove or rename duplicate installations automatically.
+
+## Local Validation Tiers
+
+Local development dependencies are listed in `requirements-dev.txt`. Install them into the selected FreeCAD Python environment when needed:
+
+```powershell
+& "$env:FREECAD_BIN\python.exe" -m pip install -r requirements-dev.txt
+```
+
+Run a single local validation tier:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Compile
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Lint
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Architecture
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Fast
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Contracts
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Smokes
+```
+
+`Architecture` checks the v1 package dependency rules without importing FreeCAD modules. `Fast` runs Compile, Architecture, and a focused set of service and command contracts intended for frequent local use.
+
+Run the complete local sequence:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Full
+```
+
+These are local development commands. The project CI configuration remains unchanged.
+
 ## Running One Smoke
 
 Prefer `-c "exec(open(...).read())"` so FreeCAD runs the Python file as a script.

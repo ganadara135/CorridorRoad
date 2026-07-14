@@ -16,11 +16,59 @@
       "problemMatcher": []
     },
     {
+      "label": "Validate: Compile",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\run_local_validation.ps1", "-Tier", "Compile"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate: Lint",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\run_local_validation.ps1", "-Tier", "Lint"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate: Architecture",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\run_local_validation.ps1", "-Tier", "Architecture"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate: Fast",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\run_local_validation.ps1", "-Tier", "Fast"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate: V1 Contracts",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\run_local_validation.ps1", "-Tier", "Contracts"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate: Full Local",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\run_local_validation.ps1", "-Tier", "Full"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
       "label": "Test: Short-term Smokes",
       "type": "shell",
       "command": "powershell",
       "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\tests\\regression\\run_short_term_smokes.ps1"],
-      "group": { "kind": "test", "isDefault": true },
+      "group": "test",
       "problemMatcher": []
     },
     {

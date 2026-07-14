@@ -1614,7 +1614,7 @@ class PlanProfileViewerTaskPanel:
             self._status_label.setStyleSheet("color: #b33;")
             return
         try:
-            from ...commands.cmd_review_stations import show_station_highlight
+            from ..presentation.station_highlight_service import show_station_highlight
 
             highlight = show_station_highlight(document, row)
             if Gui is not None and highlight is not None:

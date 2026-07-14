@@ -22,6 +22,7 @@ from ..models.source.structure_model import (
     StructurePlacement,
     StructureRow,
 )
+from .persistence_payload_adapter import ensure_model_payload_properties, read_model_payload, write_model_payload
 
 
 DRAINAGE_READY_STRUCTURE_KINDS = {"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"}
@@ -128,6 +129,7 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "InfluenceOffsetMaxes", "Influence Zones", "influence max offsets")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "structure validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "structure diagnostics")
+    ensure_model_payload_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1StructureModel"
@@ -254,6 +256,22 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.InfluenceOffsetMaxes = [_optional_float_value(row.offset_max) for row in zone_rows]
     obj.ValidationStatus = _validation_status(diagnostics)
     obj.DiagnosticRows = diagnostics
+    write_model_payload(
+        obj,
+        structure_model,
+        model_type="StructureModel",
+        row_fields=(
+            "structure_rows",
+            "geometry_spec_rows",
+            "bridge_geometry_spec_rows",
+            "culvert_geometry_spec_rows",
+            "retaining_wall_geometry_spec_rows",
+            "connection_point_rows",
+            "interaction_rule_rows",
+            "influence_zone_rows",
+        ),
+        required_refs=("project_id", "structure_model_id"),
+    )
     try:
         obj.touch()
     except Exception:
@@ -267,6 +285,9 @@ def to_structure_model(obj) -> StructureModel | None:
     if not _is_v1_structure_model(obj):
         return None
     ensure_v1_structure_properties(obj)
+    payload_result = read_model_payload(obj, expected_model_type="StructureModel", model_class=StructureModel)
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     ids = list(getattr(obj, "StructureIds", []) or [])
     starts = _float_list(getattr(obj, "StationStarts", []) or [])
     ends = _float_list(getattr(obj, "StationEnds", []) or [])
@@ -432,7 +453,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
         geometry_spec_ref = str(getattr(row, "geometry_spec_ref", "") or "").strip()
         geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
-        reference_mode = str(getattr(row, "reference_mode", "") or "").strip().lower()
         geometry_source_mode = _geometry_source_mode(row)
         placement = getattr(row, "placement", None)
         if not structure_id:

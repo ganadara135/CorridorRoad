@@ -13,6 +13,11 @@ from ..models.source.drainage_model import (
     DrainageModel,
     DrainagePolicySet,
 )
+from .persistence_payload_adapter import (
+    ensure_model_payload_properties,
+    read_model_payload,
+    write_model_payload,
+)
 from ..services.evaluation.drainage_resolution_service import DrainageValidationService
 
 
@@ -110,6 +115,7 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "diagnostic rows")
+    ensure_model_payload_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1DrainageModel"
@@ -219,6 +225,13 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
             *list(getattr(drainage_model, "diagnostic_rows", []) or []),
         ]
     ]
+    write_model_payload(
+        obj,
+        drainage_model,
+        model_type="DrainageModel",
+        row_fields=("element_rows", "policy_rows", "flow_route_rows"),
+        required_refs=("project_id", "drainage_model_id"),
+    )
     try:
         obj.touch()
     except Exception:
@@ -232,6 +245,13 @@ def to_drainage_model(obj) -> DrainageModel | None:
     if not _is_v1_drainage_model(obj):
         return None
     ensure_v1_drainage_properties(obj)
+    payload_result = read_model_payload(
+        obj,
+        expected_model_type="DrainageModel",
+        model_class=DrainageModel,
+    )
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     element_ids = list(getattr(obj, "DrainageElementIds", []) or [])
     element_count = max(
         len(element_ids),

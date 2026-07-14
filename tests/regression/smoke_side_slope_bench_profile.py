@@ -152,10 +152,11 @@ def run():
     _assert("benchSections=2" in cor_status, "Corridor status should propagate bench section count")
     _assert("ruled=auto:bench_profile" in cor_status, "Corridor should auto-enable the ruled fallback for bench profiles")
     _assert(int(getattr(cor_bench, "AutoFixedSectionCount", 0) or 0) == 0, "Bench corridor should keep SectionSet point order without auto-flip")
+    corridor_face_count = len(list(getattr(getattr(cor_bench, "Shape", None), "Faces", []) or []))
+    grading_facet_count = int(getattr(getattr(dgs_bench, "Mesh", None), "CountFacets", 0) or 0)
     _assert(
-        len(list(getattr(getattr(cor_bench, "Shape", None), "Faces", []) or []))
-        == int(getattr(dgs_bench, "FaceCount", 0) or 0),
-        "Bench corridor face count should match grading strip contract",
+        corridor_face_count == grading_facet_count,
+        f"Bench corridor faces should match triangulated grading facets: corridor={corridor_face_count}, grading={grading_facet_count}",
     )
     dgs_status = str(getattr(dgs_bench, "Status", "") or "")
     _assert("bench=left" in dgs_status, "Design grading surface status should propagate bench summary")

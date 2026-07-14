@@ -1,317 +1,212 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
-"""
-CorridorRoad fixed-tree smoke test (headless-friendly).
+"""Parametric Road v1-only project-tree smoke test.
 
-Run in FreeCAD Python environment:
-    FreeCADCmd tests/regression/smoke_tree_schema.py
-or inside Python console:
-    exec(open("tests/regression/smoke_tree_schema.py", "r", encoding="utf-8").read())
+Run with:
+    FreeCADCmd -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding='utf-8').read())"
+
+Ramp is outside the active product scope and Watertight Solid development is
+paused, so this baseline smoke intentionally does not require either subtree.
+Compatibility coverage for persisted legacy objects belongs in focused tests.
 """
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.corridor_compat import CORRIDOR_CHILD_LINK_PROPERTY, CORRIDOR_SEGMENT_NAME
 from freecad.Corridor_Road.objects.obj_project import (
-    ALN_REF_NAME_PROP,
-    ALN_REF_PROP,
-    ALIGNMENT_ASSEMBLY,
-    ALIGNMENT_CENTERLINE,
-    ALIGNMENT_CORRIDOR,
-    ALIGNMENT_HORIZONTAL,
-    ALIGNMENT_REGIONS,
-    ALIGNMENT_ROOT,
-    ALIGNMENT_SECTIONS,
-    ALIGNMENT_STATIONING,
-    ALIGNMENT_VERTICAL,
-    TREE_ANALYSIS,
-    TREE_INPUTS,
-    TREE_INPUTS_STRUCTURES,
-    TREE_INPUTS_SURVEY,
-    TREE_INPUTS_TERRAINS,
     TREE_KEY_PROP,
-    TREE_REFERENCES,
-    TREE_SURFACES,
+    V1_TREE_AI_ASSIST,
+    V1_TREE_ALIGNMENT_PROFILE,
+    V1_TREE_ALIGNMENTS,
+    V1_TREE_APPLIED_SECTIONS,
+    V1_TREE_ASSEMBLIES,
+    V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
+    V1_TREE_CORRIDOR_MODEL,
+    V1_TREE_DESIGN_TIN,
+    V1_TREE_DRAINAGE,
+    V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS,
+    V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
+    V1_TREE_EXISTING_GROUND_TIN_RESULT,
+    V1_TREE_EXISTING_GROUND_TIN_SOURCE,
+    V1_TREE_INTERSECTIONS,
+    V1_TREE_OUTPUTS_EXCHANGE,
+    V1_TREE_PROFILES,
+    V1_TREE_PROJECT_SETUP,
+    V1_TREE_QUANTITIES,
+    V1_TREE_QUANTITIES_EARTHWORK,
+    V1_TREE_REGIONS,
+    V1_TREE_REVIEW,
+    V1_TREE_SOURCE_DATA,
+    V1_TREE_STATIONS,
+    V1_TREE_STRUCTURES,
+    V1_TREE_SUPERELEVATION,
+    V1_TREE_SURFACES,
     CorridorRoadProject,
-    assign_project_region_plan,
     ensure_project_tree,
+    route_to_v1_tree,
 )
-from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan
-from freecad.Corridor_Road.objects.project_links import link_project
+
+
+def _assert(condition, message):
+    if not condition:
+        raise Exception(message)
 
 
 def _group(obj):
     return list(getattr(obj, "Group", []) or [])
 
 
-def _key(obj):
+def _tree_key(obj):
     return str(getattr(obj, TREE_KEY_PROP, "") or "")
 
 
-def _iter_tree_folders(root):
-    out = []
+def _tree_folders(project):
+    output = []
     seen = set()
 
-    def walk(node):
-        for ch in _group(node):
-            nm = str(getattr(ch, "Name", "") or "")
-            if nm in seen:
+    def walk(owner):
+        for child in _group(owner):
+            name = str(getattr(child, "Name", "") or "")
+            if name in seen:
                 continue
-            seen.add(nm)
-            if _key(ch):
-                out.append(ch)
-                walk(ch)
+            seen.add(name)
+            if _tree_key(child):
+                output.append(child)
+                walk(child)
 
-    walk(root)
-    return out
-
-
-def _find_folder(root, key):
-    for f in _iter_tree_folders(root):
-        if _key(f) == key:
-            return f
-    return None
+    walk(project)
+    return output
 
 
-def _owners(root, child):
-    out = []
-    all_owners = [root] + _iter_tree_folders(root)
-    for o in all_owners:
-        if child in _group(o):
-            out.append(o)
-    return out
+def _owners(project, child):
+    return [owner for owner in [project] + _tree_folders(project) if child in _group(owner)]
 
 
-def _owner_key(root, child):
-    owners = _owners(root, child)
-    if not owners:
-        return ""
-    # In tree policy, object should be under one folder owner.
-    if len(owners) > 1:
-        keys = [str(_key(o) or "project_root") for o in owners]
-        raise Exception(f"Multiple owners for {child.Name}: {keys}")
-    o = owners[0]
-    return _key(o) or "project_root"
+def _add_string_property(obj, name, value):
+    if not hasattr(obj, name):
+        obj.addProperty("App::PropertyString", name, "Smoke", "v1 tree routing smoke value")
+    setattr(obj, name, str(value))
 
 
-def _owner_folder(root, child):
-    owners = _owners(root, child)
-    if not owners:
-        return None
-    if len(owners) > 1:
-        keys = [str(_key(o) or "project_root") for o in owners]
-        raise Exception(f"Multiple owners for {child.Name}: {keys}")
-    return owners[0]
-
-
-def _parent_folder(root, child_folder):
-    if child_folder is None:
-        return None
-    for o in [root] + _iter_tree_folders(root):
-        if child_folder in _group(o):
-            return o
-    return None
-
-
-def _assert(cond, msg):
-    if not cond:
-        raise Exception(msg)
-
-
-def _add_alignment_link(obj, alignment):
-    if not hasattr(obj, "Alignment"):
-        obj.addProperty("App::PropertyLink", "Alignment", "Smoke", "Alignment link")
-    obj.Alignment = alignment
+def _route_case(document, project, tree, *, name, expected_key, record_kind=""):
+    obj = document.addObject("App::FeaturePython", name)
+    if record_kind:
+        _add_string_property(obj, "CRRecordKind", record_kind)
+    owner = route_to_v1_tree(project, obj)
+    _assert(owner == tree[expected_key], f"{name} route mismatch: expected={expected_key}")
+    owners = _owners(project, obj)
+    _assert(len(owners) == 1, f"{name} must have exactly one tree owner, got={len(owners)}")
+    _assert(owners[0] == tree[expected_key], f"{name} owner mismatch after routing")
+    return obj
 
 
 def run():
-    doc = App.newDocument("CRSmokeTree")
+    document = App.newDocument("CRV1TreeSmoke")
+    try:
+        project = document.addObject("App::FeaturePython", "CorridorRoadProject")
+        CorridorRoadProject(project)
+        project.Label = "Parametric Road Project"
+        tree = ensure_project_tree(project, include_references=False)
 
-    prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
-    CorridorRoadProject(prj)
-    prj.Label = "CorridorRoad Project"
-    ensure_project_tree(prj, include_references=False)
+        required_roots = (
+            V1_TREE_PROJECT_SETUP,
+            V1_TREE_SOURCE_DATA,
+            V1_TREE_ALIGNMENT_PROFILE,
+            V1_TREE_SURFACES,
+            V1_TREE_CORRIDOR_MODEL,
+            V1_TREE_DRAINAGE,
+            V1_TREE_STRUCTURES,
+            V1_TREE_QUANTITIES_EARTHWORK,
+            V1_TREE_REVIEW,
+            V1_TREE_OUTPUTS_EXCHANGE,
+            V1_TREE_AI_ASSIST,
+        )
+        for key in required_roots:
+            _assert(tree.get(key) is not None, f"Missing v1 root folder: {key}")
 
-    # Base fixed folders.
-    for k in (TREE_INPUTS, TREE_INPUTS_TERRAINS, TREE_INPUTS_SURVEY, TREE_INPUTS_STRUCTURES, TREE_SURFACES, TREE_ANALYSIS):
-        _assert(_find_folder(prj, k) is not None, f"Missing tree folder: {k}")
+        root_labels = [str(getattr(row, "Label", "") or "") for row in _group(project)]
+        for retired_label in ("01_Inputs", "02_Alignments", "04_Analysis"):
+            _assert(retired_label not in root_labels, f"Retired legacy root was recreated: {retired_label}")
 
-    # Alignment branch + alignment-related objects.
-    aln = doc.addObject("Part::FeaturePython", "HorizontalAlignment")
-    aln.Label = "MainLine"
-    link_project(prj, links={"Alignment": aln}, adopt_extra=[aln])
-    aln2 = doc.addObject("Part::FeaturePython", "HorizontalAlignment")
-    aln2.Label = "MainLine"
-    link_project(prj, adopt_extra=[aln2])
+        alignment_children = [str(getattr(row, "Label", "") or "") for row in _group(tree[V1_TREE_ALIGNMENT_PROFILE])]
+        _assert(
+            alignment_children[:4] == ["Alignments", "Stations", "Profiles", "Superelevation"],
+            f"Alignment/Profile subtree order mismatch: {alignment_children[:4]}",
+        )
 
-    st = doc.addObject("Part::FeaturePython", "Stationing")
-    _add_alignment_link(st, aln)
-    link_project(prj, links={"Stationing": st}, adopt_extra=[st])
+        _route_case(document, project, tree, name="V1AlignmentSmoke", expected_key=V1_TREE_ALIGNMENTS)
+        _route_case(document, project, tree, name="V1StationingSmoke", expected_key=V1_TREE_STATIONS)
+        _route_case(document, project, tree, name="V1ProfileSmoke", expected_key=V1_TREE_PROFILES)
+        _route_case(document, project, tree, name="V1SuperelevationSourceSmoke", expected_key=V1_TREE_SUPERELEVATION)
+        _route_case(document, project, tree, name="V1AssemblyModelSmoke", expected_key=V1_TREE_ASSEMBLIES)
+        _route_case(document, project, tree, name="V1RegionModelSmoke", expected_key=V1_TREE_REGIONS)
+        _route_case(document, project, tree, name="V1AppliedSectionSetSmoke", expected_key=V1_TREE_APPLIED_SECTIONS)
+        _route_case(document, project, tree, name="V1CorridorModelSmoke", expected_key=V1_TREE_CORRIDOR_MODEL)
+        _route_case(document, project, tree, name="V1SurfaceModelSmoke", expected_key=V1_TREE_DESIGN_TIN)
+        _route_case(document, project, tree, name="V1StructureModelSmoke", expected_key=V1_TREE_STRUCTURES)
+        _route_case(document, project, tree, name="V1QuantityModelSmoke", expected_key=V1_TREE_QUANTITIES)
 
-    va = doc.addObject("Part::FeaturePython", "VerticalAlignment")
-    pb = doc.addObject("Part::FeaturePython", "ProfileBundle")
-    fg = doc.addObject("Part::FeaturePython", "FinishedGradeFG")
-    if not hasattr(pb, "Stationing"):
-        pb.addProperty("App::PropertyLink", "Stationing", "Smoke", "Stationing link")
-    if not hasattr(pb, "VerticalAlignment"):
-        pb.addProperty("App::PropertyLink", "VerticalAlignment", "Smoke", "VA link")
-    pb.Stationing = st
-    pb.VerticalAlignment = va
-    if not hasattr(fg, "SourceVA"):
-        fg.addProperty("App::PropertyLink", "SourceVA", "Smoke", "VA link")
-    fg.SourceVA = va
-    asm = doc.addObject("Part::FeaturePython", "AssemblyTemplate")
-    reg = doc.addObject("Part::FeaturePython", "RegionPlan")
-    RegionPlan(reg)
-    sec = doc.addObject("Part::FeaturePython", "SectionSet")
-    if not hasattr(sec, "SourceCenterlineDisplay"):
-        sec.addProperty("App::PropertyLink", "SourceCenterlineDisplay", "Smoke", "Display link")
-    if not hasattr(sec, "AssemblyTemplate"):
-        sec.addProperty("App::PropertyLink", "AssemblyTemplate", "Smoke", "Assembly link")
-    disp = doc.addObject("Part::FeaturePython", "Centerline3DDisplay")
-    if not hasattr(disp, "Alignment"):
-        disp.addProperty("App::PropertyLink", "Alignment", "Smoke", "Alignment link")
-    if not hasattr(disp, "VerticalAlignment"):
-        disp.addProperty("App::PropertyLink", "VerticalAlignment", "Smoke", "VA link")
-    disp.Alignment = aln
-    disp.VerticalAlignment = va
-    sec.SourceCenterlineDisplay = disp
-    sec.AssemblyTemplate = asm
-    cl_boundary = doc.addObject("Part::Feature", "CenterlineBoundaryMarker")
-    if not hasattr(cl_boundary, "ParentCenterline3DDisplay"):
-        cl_boundary.addProperty("App::PropertyLink", "ParentCenterline3DDisplay", "Smoke", "Centerline display link")
-    cl_boundary.ParentCenterline3DDisplay = disp
-    cor = doc.addObject("Part::FeaturePython", "Corridor")
-    if not hasattr(cor, "SourceSectionSet"):
-        cor.addProperty("App::PropertyLink", "SourceSectionSet", "Smoke", "Section set link")
-    cor.SourceSectionSet = sec
-    cor_seg = doc.addObject("Part::Feature", CORRIDOR_SEGMENT_NAME)
-    if not hasattr(cor_seg, CORRIDOR_CHILD_LINK_PROPERTY):
-        cor_seg.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Smoke", "Corridor link")
-    setattr(cor_seg, CORRIDOR_CHILD_LINK_PROPERTY, cor)
-    assign_project_region_plan(prj, reg)
-    link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, cor_seg, disp, cl_boundary])
+        _route_case(
+            document,
+            project,
+            tree,
+            name="IntersectionSourceSmoke",
+            expected_key=V1_TREE_INTERSECTIONS,
+            record_kind="v1_intersection_model",
+        )
+        _route_case(
+            document,
+            project,
+            tree,
+            name="DrainageSourceSmoke",
+            expected_key=V1_TREE_DRAINAGE,
+            record_kind="v1_drainage_model",
+        )
+        _route_case(
+            document,
+            project,
+            tree,
+            name="TINSourceSmoke",
+            expected_key=V1_TREE_EXISTING_GROUND_TIN_SOURCE,
+            record_kind="tin_surface_source",
+        )
+        _route_case(
+            document,
+            project,
+            tree,
+            name="TINResultSmoke",
+            expected_key=V1_TREE_EXISTING_GROUND_TIN_RESULT,
+            record_kind="tin_surface_result",
+        )
+        _route_case(
+            document,
+            project,
+            tree,
+            name="TINPreviewSmoke",
+            expected_key=V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
+            record_kind="tin_mesh_preview",
+        )
+        _route_case(
+            document,
+            project,
+            tree,
+            name="TINDiagnosticsSmoke",
+            expected_key=V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS,
+            record_kind="tin_diagnostics",
+        )
+        _route_case(
+            document,
+            project,
+            tree,
+            name="CorridorPreviewSmoke",
+            expected_key=V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
+            record_kind="v1_corridor_surface_preview",
+        )
 
-    # Late-binding alignment context should not leave an empty ALN_Unassigned root behind.
-    sec_late = doc.addObject("Part::FeaturePython", "SectionSetLateBind")
-    if not hasattr(sec_late, "SourceCenterlineDisplay"):
-        sec_late.addProperty("App::PropertyLink", "SourceCenterlineDisplay", "Smoke", "Display link")
-    link_project(prj, adopt_extra=[sec_late])
-    disp_late = doc.addObject("Part::FeaturePython", "Centerline3DDisplayLateBind")
-    if not hasattr(disp_late, "Alignment"):
-        disp_late.addProperty("App::PropertyLink", "Alignment", "Smoke", "Alignment link")
-    if not hasattr(disp_late, "VerticalAlignment"):
-        disp_late.addProperty("App::PropertyLink", "VerticalAlignment", "Smoke", "VA link")
-    disp_late.Alignment = aln
-    disp_late.VerticalAlignment = va
-    sec_late.SourceCenterlineDisplay = disp_late
-    link_project(prj, adopt_extra=[disp_late, sec_late])
-
-    _assert(_find_folder(prj, ALIGNMENT_ROOT) is not None, "Missing alignment root")
-    for k in (ALIGNMENT_HORIZONTAL, ALIGNMENT_STATIONING, ALIGNMENT_VERTICAL, ALIGNMENT_CENTERLINE, ALIGNMENT_ASSEMBLY, ALIGNMENT_REGIONS, ALIGNMENT_SECTIONS, ALIGNMENT_CORRIDOR):
-        _assert(_find_folder(prj, k) is not None, f"Missing alignment subfolder: {k}")
-    roots = [f for f in _iter_tree_folders(prj) if _key(f) == ALIGNMENT_ROOT]
-    _assert(len(roots) >= 2, "Expected at least two alignment roots")
-    aln_root_1 = None
-    aln_root_2 = None
-    for r in roots:
-        if str(getattr(r, ALN_REF_NAME_PROP, "") or "") == str(getattr(aln, "Name", "") or ""):
-            aln_root_1 = r
-        if str(getattr(r, ALN_REF_NAME_PROP, "") or "") == str(getattr(aln2, "Name", "") or ""):
-            aln_root_2 = r
-    _assert(aln_root_1 is not None, "Missing alignment root for first alignment")
-    _assert(aln_root_2 is not None, "Missing alignment root for second alignment")
-    _assert(aln_root_1 != aln_root_2, "Two alignments were mapped to the same root")
-    _assert(str(getattr(aln_root_1, "Label", "")) != str(getattr(aln_root_2, "Label", "")), "Duplicate alignment root labels")
-    _assert(getattr(aln_root_1, ALN_REF_PROP, None) is None, "Alignment root should not keep legacy direct link")
-    _assert(getattr(aln_root_2, ALN_REF_PROP, None) is None, "Alignment root should not keep legacy direct link")
-    late_owner = _owner_key(prj, sec_late)
-    _assert(late_owner == ALIGNMENT_SECTIONS, f"Late-bound section set should land in alignment sections, got {late_owner}")
-    empty_unassigned = [
-        f for f in _iter_tree_folders(prj)
-        if _key(f) == ALIGNMENT_ROOT and str(getattr(f, "Label", "") or "").startswith("ALN_Unassigned")
-    ]
-    _assert(not empty_unassigned, "Empty ALN_Unassigned root should be pruned after linked section generation")
-
-    # Surface / analysis / input / optional references.
-    terr = doc.addObject("App::FeaturePython", "ExistingTerrain")
-    terr.Label = "Existing Terrain"
-    link_project(prj, links={"Terrain": terr}, adopt_extra=[terr])
-
-    dgs = doc.addObject("App::FeaturePython", "DesignGradingSurface")
-    dtm = doc.addObject("App::FeaturePython", "DesignTerrain")
-    cfc = doc.addObject("App::FeaturePython", "CutFillCalc")
-    link_project(
-        prj,
-        links={"DesignGradingSurface": dgs, "DesignTerrain": dtm, "CutFillCalc": cfc},
-        adopt_extra=[dgs, dtm, cfc],
-    )
-
-    misc = doc.addObject("App::FeaturePython", "MiscObject")
-    link_project(prj, adopt_extra=[misc])
-    _assert(_find_folder(prj, TREE_REFERENCES) is not None, "Missing optional references folder")
-    ext = doc.addObject("App::FeaturePython", "ExternalSurface")
-    ext.Label = "External Surface"
-    topo = doc.addObject("App::FeaturePython", "TopoSurface")
-    topo.Label = "Topo Surface"
-    link_project(prj, adopt_extra=[ext, topo])
-    va_unlinked = doc.addObject("Part::FeaturePython", "VerticalAlignmentLoose")
-    link_project(prj, adopt_extra=[va_unlinked])
-
-    expected = {
-        aln: ALIGNMENT_HORIZONTAL,
-        aln2: ALIGNMENT_HORIZONTAL,
-        st: ALIGNMENT_STATIONING,
-        va: ALIGNMENT_VERTICAL,
-        pb: ALIGNMENT_VERTICAL,
-        fg: ALIGNMENT_VERTICAL,
-        disp: ALIGNMENT_CENTERLINE,
-        asm: ALIGNMENT_ASSEMBLY,
-        reg: ALIGNMENT_REGIONS,
-        sec: ALIGNMENT_SECTIONS,
-        cor: ALIGNMENT_CORRIDOR,
-        cor_seg: ALIGNMENT_CORRIDOR,
-        terr: TREE_INPUTS_TERRAINS,
-        dgs: TREE_SURFACES,
-        dtm: TREE_SURFACES,
-        cfc: TREE_ANALYSIS,
-        misc: TREE_REFERENCES,
-        ext: TREE_REFERENCES,
-        topo: TREE_INPUTS_TERRAINS,
-        va_unlinked: ALIGNMENT_VERTICAL,
-    }
-
-    for obj, want_key in expected.items():
-        got_key = _owner_key(prj, obj)
-        _assert(got_key == want_key, f"{obj.Name} owner mismatch: got={got_key}, want={want_key}")
-    _assert(getattr(cl_boundary, "ParentCenterline3DDisplay", None) == disp, "Boundary marker should keep parent display link")
-    _assert(not _owners(prj, cl_boundary), "CenterlineBoundaryMarker should not be adopted into project tree folders")
-    _assert(_owner_key(prj, disp_late) == ALIGNMENT_CENTERLINE, "Late-bound 3D centerline display should land in alignment centerline folder")
-
-    # No direct project links: object should still land under a valid alignment root.
-    # Current routing prefers a document-level fallback alignment when one exists,
-    # and only falls back to ALN_Unassigned when no alignment context is available.
-    prj2 = doc.addObject("App::FeaturePython", "CorridorRoadProject")
-    CorridorRoadProject(prj2)
-    prj2.Label = "CorridorRoad Project (No Links)"
-    ensure_project_tree(prj2, include_references=False)
-    va2 = doc.addObject("Part::FeaturePython", "VerticalAlignmentNoLinks")
-    link_project(prj2, adopt_extra=[va2])
-    va2_owner = _owner_folder(prj2, va2)
-    _assert(va2_owner is not None, "No-links VA has no owner")
-    _assert(_key(va2_owner) == ALIGNMENT_VERTICAL, "No-links VA should be in vertical folder")
-    va2_root = _parent_folder(prj2, va2_owner)
-    _assert(va2_root is not None, "No-links VA alignment root not found")
-    _assert(_key(va2_root) == ALIGNMENT_ROOT, "No-links VA parent must be alignment root")
-    _assert(str(getattr(va2_root, "Label", "") or "").startswith("ALN_"), "No-links VA should map to an alignment root label")
-    _assert(
-        str(getattr(va2_root, ALN_REF_NAME_PROP, "") or "") in ("", str(getattr(aln, "Name", "") or "")),
-        "No-links VA should use the doc fallback alignment root or ALN_Unassigned",
-    )
-
-    doc.recompute()
-    print("[PASS] CorridorRoad fixed-tree smoke test completed.")
+        document.recompute()
+        print("[PASS] Parametric Road v1-only project-tree smoke test completed.")
+    finally:
+        App.closeDocument(document.Name)
 
 
 if __name__ == "__main__":

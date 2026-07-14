@@ -1,0 +1,4 @@
+# Local development dependencies only. CI development is frozen by project policy.
+flake8>=7.0,<8.0
+pytest>=8.0,<9.0
+

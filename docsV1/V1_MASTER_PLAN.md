@@ -5,6 +5,15 @@ Branch: `v1-dev`
 Status: Draft baseline
 Audience: product planning, architecture, UI/UX, implementation, testing, release
 
+## Current Scope Override
+
+This 2026-04-24 baseline contains historical target-state material. The following decisions supersede any conflicting text below:
+
+- Ramp is removed from the active product and development scope. Ramp models, editors, results, review, output, and UI described below are historical proposals only.
+- Watertight Solid development is paused. Existing behavior remains compatibility-only and is limited to critical repair, data-loss prevention, compatibility maintenance, and test preservation.
+- The active workflow ends at supported review, output, exchange, and AI proposal surfaces. Watertight may remain visible only as a paused compatibility surface.
+- Current domain status and document classification are defined by `V1_SUPPORTED_DOMAIN_STATUS.md`.
+
 ## 1. Purpose
 
 This document is the authoritative baseline for the Parametric Road v1 redesign.
@@ -24,12 +33,12 @@ Key product decisions:
 - keep the FreeCAD Addon release path and repository link structure
 - stop considering backward compatibility with the legacy `0.2.9` development line
 - replace DEM-centric terrain handling with TIN-centric terrain handling
-- treat the product as a corridor-network platform that must handle mainline, ramps, and intersections together
+- treat the product as a corridor-network platform that handles mainline and intersections through explicit source/evaluation contracts
 - treat cross sections as parametric corridor slices, not as editable output wires
 - add drainage as a first-class design and review subsystem rather than leaving it as an implied side effect
 - add earthwork-balance and mass-haul analysis as a first-class v1 subsystem
-- add watertight solid outputs as a final corridor-result stage for selected corridor, Region, drainage, structure, and Subassembly targets
-- make terrain-inclusive whole-road simulation a primary downstream goal for watertight solid output, with road, terrain, drainage, and structure bodies prepared as validated simulation-ready solids where practical
+- preserve existing watertight solid output compatibility without active target, topology, simulation, UI, or exchange expansion
+- retain terrain-inclusive simulation as a deferred Digital Twin goal that requires an explicit decision to resume Watertight development
 - support practical import/export through `LandXML`, `DXF`, and `IFC`
 - add AI-assisted design as a recommendation and alternative-generation layer, not as opaque auto-magic
 - remove the dedicated Cross Section Editor concept for v1
@@ -575,7 +584,7 @@ Practical rules:
 
 - bridge flows may exist temporarily for implementation and verification
 - bridge wording must not define final user-facing actions
-- `Alignment Network`, `Profiles & Superelevation`, `Templates & Assemblies`, `Intersections & Ramps`, `Structures & Drainage`, `Build Corridor Network`, `Review`, `Exchange`, `AI Assist`, and `Watertight Solids` should be treated as explicit product stages
+- `Alignment Network`, `Profiles & Superelevation`, `Templates & Assemblies`, `Intersections`, `Structures & Drainage`, `Build Corridor Network`, `Review`, `Exchange`, and `AI Assist` are the active product stages; Watertight remains a paused compatibility surface
 - review surfaces should appear when their prerequisites exist, not earlier by hidden routing
 
 Reference:
@@ -737,7 +746,7 @@ Geometry and rule changes should be authored through dedicated editors:
 
 - `Template Editor`
 - `Region Editor`
-- `Ramp Editor`
+- no Ramp editor; historical Ramp editor proposals are outside active scope
 - `Intersection Editor / Junction Manager`
 - `Drainage Editor / Drainage Manager`
 - `Override Manager`
@@ -1002,7 +1011,7 @@ Recommended top-level command flow:
 4. `Profiles & Superelevation`
 5. `Templates & Assemblies`
 6. `Regions`
-7. `Intersections & Ramps`
+7. `Intersections`
 8. `Structures & Drainage`
 9. `Build Corridor Network`
 10. `Review Sections`
@@ -1039,7 +1048,7 @@ Working classification:
 - expose as primary v1 flow: `Alignment`, `Stations`, `Profile`
 - keep now, refactor later: `Typical Section`, `Region Plan`, `Structure Editor`
 - replace early with v1-native review UI: `Cross Section Viewer`, `Plan/Profile Review`, `Earthwork Balance Review`
-- build as v1-only UI: `Intersections & Ramps`, `Drainage`, `3D Review`, `AI Assist`, `Output Review`, `Exchange Review`, `Watertight Solids`
+- build as v1-only UI: `Intersections`, `Drainage`, `3D Review`, `AI Assist`, `Output Review`, and `Exchange Review`; preserve Watertight only as paused compatibility
 
 This policy is expanded in `docsV1/V1_UX_RESET_PLAN.md`.
 

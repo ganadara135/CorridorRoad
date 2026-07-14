@@ -25,6 +25,14 @@ from ..models.result.applied_section import (
     AppliedSectionSubassemblyShape,
 )
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
+from .persistence_payload_adapter import (
+    ensure_incremental_result_properties,
+    ensure_model_payload_properties,
+    make_incremental_record,
+    read_model_payload,
+    write_incremental_record,
+    write_model_payload,
+)
 
 
 class V1AppliedSectionSetObject:
@@ -159,6 +167,8 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
     _add_property(obj, "App::PropertyString", "ReviewShapeStatus", "Review", "full review shape build status")
     _add_property(obj, "App::PropertyInteger", "ReviewShapeStationCount", "Review", "station count used by the full review shape")
+    ensure_model_payload_properties(obj, add_property=_add_property)
+    ensure_incremental_result_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1AppliedSectionSet"
@@ -295,6 +305,21 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.DiagnosticRows = _diagnostic_rows(sections)
     _set_applied_section_diagnostic_summary(obj, station_rows, sections)
     obj.SourceRefs = [str(ref) for ref in list(getattr(applied_section_set, "source_refs", []) or []) if str(ref)]
+    result_fingerprint = write_model_payload(
+        obj,
+        applied_section_set,
+        model_type="AppliedSectionSet",
+        row_fields=("station_rows", "sections"),
+        required_refs=("project_id", "applied_section_set_id"),
+    )
+    write_incremental_record(
+        obj,
+        make_incremental_record(
+            stage_name="applied_sections",
+            result_fingerprint=result_fingerprint,
+            consumed_source_refs=getattr(applied_section_set, "source_refs", ()),
+        ),
+    )
     obj.ReviewShapeStatus = "not_built"
     obj.ReviewShapeStationCount = 0
     _set_empty_applied_section_set_shape(obj)
@@ -467,6 +492,9 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     if not _is_v1_applied_section_set(obj):
         return None
     ensure_v1_applied_section_set_properties(obj)
+    payload_result = read_model_payload(obj, expected_model_type="AppliedSectionSet", model_class=AppliedSectionSet)
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     station_values = _float_list(getattr(obj, "StationValues", []) or [])
     section_ids = list(getattr(obj, "AppliedSectionIds", []) or [])
     station_rows: list[AppliedSectionStationRow] = []
