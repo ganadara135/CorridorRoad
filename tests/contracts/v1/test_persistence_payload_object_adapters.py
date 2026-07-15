@@ -1,6 +1,8 @@
 import FreeCAD as App
 
+import freecad.Corridor_Road.v1.objects.obj_applied_section as applied_section_object
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel, CorridorStationRow
+from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import _persist_incremental_corridor_model
 from freecad.Corridor_Road.v1.models.source.assembly_model import AssemblySubassemblyModel, SubassemblySectionTemplate
 from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
@@ -9,6 +11,10 @@ from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_s
 from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
     create_or_update_v1_assembly_subassembly_model_object,
     to_assembly_subassembly_model,
+)
+from freecad.Corridor_Road.v1.objects.obj_applied_section import (
+    create_or_update_v1_applied_section_set_object,
+    to_applied_section_set,
 )
 from freecad.Corridor_Road.v1.objects.persistence_payload_adapter import read_incremental_record
 
@@ -131,4 +137,49 @@ def test_corridor_persistence_reuses_unchanged_result_without_resetting_presenta
         assert second.BuildServiceVersion == "corridor-model-persistence:1"
         assert second.BuildAccepted is True
     finally:
+        App.closeDocument(doc.Name)
+
+
+def test_applied_section_payload_restore_is_cached_and_invalidated_on_update() -> None:
+    doc = App.newDocument("CRV1AppliedSectionPayloadCache")
+    original_read = applied_section_object.read_model_payload
+    calls = 0
+
+    def counted_read(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_read(*args, **kwargs)
+
+    try:
+        initial = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:persistence",
+            applied_section_set_id="applied-sections:initial",
+        )
+        obj = create_or_update_v1_applied_section_set_object(doc, initial)
+        applied_section_object.clear_applied_section_set_payload_cache(obj)
+        applied_section_object.read_model_payload = counted_read
+
+        first = to_applied_section_set(obj)
+        second = to_applied_section_set(obj)
+
+        assert first is not None
+        assert second is first
+        assert calls == 1
+
+        updated = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:persistence",
+            applied_section_set_id="applied-sections:updated",
+        )
+        create_or_update_v1_applied_section_set_object(doc, updated)
+
+        restored = to_applied_section_set(obj)
+
+        assert restored is not None
+        assert restored.applied_section_set_id == "applied-sections:updated"
+        assert calls == 2
+    finally:
+        applied_section_object.read_model_payload = original_read
+        applied_section_object.clear_applied_section_set_payload_cache()
         App.closeDocument(doc.Name)

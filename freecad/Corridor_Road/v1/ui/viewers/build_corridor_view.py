@@ -82,6 +82,8 @@ class BuildCorridorTaskPanelPresentation:
             document_identity=self._document_identity,
             document_label=str(label or "No document"),
         )
+        self._loaded_review_tabs: set[str] = set()
+        self._review_tab_ids: dict[int, str] = {}
         self.form = self._build_ui()
         self._refresh_summary()
 
@@ -315,16 +317,18 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         visibility_layout = QtWidgets.QVBoxLayout(visibility_tab)
         visibility_layout.setContentsMargins(8, 8, 8, 8)
         visibility_layout.setAlignment(QtCore.Qt.AlignTop)
-        tabs.addTab(guided_tab, "Guided Review")
-        tabs.addTab(results_tab, "Results")
-        tabs.addTab(issues_tab, "Slope Diagnostics")
-        tabs.addTab(intersections_tab, "Intersections")
-        tabs.addTab(breakline_tab, "Breakline Audit")
-        tabs.addTab(regions_tab, "Regions")
-        tabs.addTab(drainage_tab, "Drainage")
-        tabs.addTab(visibility_tab, "Visibility")
+        self._review_tab_ids = {
+            tabs.addTab(guided_tab, "Guided Review"): "guided",
+            tabs.addTab(results_tab, "Results"): "results",
+            tabs.addTab(issues_tab, "Side Slope Diagnostics"): "slope_issues",
+            tabs.addTab(intersections_tab, "Intersections"): "intersections",
+            tabs.addTab(breakline_tab, "Breakline Audit"): "breakline_audit",
+            tabs.addTab(regions_tab, "Regions"): "regions",
+            tabs.addTab(drainage_tab, "Drainage"): "drainage",
+            tabs.addTab(visibility_tab, "Visibility"): "visibility",
+        }
         try:
-            tabs.currentChanged.connect(lambda _index: self._sync_tabs_height_later())
+            tabs.currentChanged.connect(self._on_review_tab_changed)
         except Exception:
             pass
         layout.addWidget(tabs)
@@ -390,12 +394,12 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             pass
         self._review_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_review_row(row_index))
         results_layout.addWidget(self._review_table)
-        issue_label = QtWidgets.QLabel("Slope Face Diagnostics")
-        issue_label.setToolTip("Double-click a fallback issue row to select and fit the related 3D review marker.")
+        issue_label = QtWidgets.QLabel("Side Slope Diagnostics")
+        issue_label.setToolTip("Double-click a warning or error row to select and fit its traceable diagnostic marker.")
         issues_layout.addWidget(issue_label)
-        self._slope_issue_table = QtWidgets.QTableWidget(0, 5)
-        self._slope_issue_table.setHorizontalHeaderLabels(["Station", "Side", "Reason", "Status", "Marker"])
-        _compact_build_corridor_table(self._slope_issue_table, [90, 60, 150, 80, 130])
+        self._slope_issue_table = QtWidgets.QTableWidget(0, 6)
+        self._slope_issue_table.setHorizontalHeaderLabels(["Context", "Station", "Side", "Reason", "Status", "Marker"])
+        _compact_build_corridor_table(self._slope_issue_table, [110, 90, 60, 150, 80, 130])
         self._slope_issue_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._slope_issue_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._slope_issue_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -410,10 +414,10 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         self._slope_issue_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_slope_face_issue_row(row_index))
         issues_layout.addWidget(self._slope_issue_table)
         issue_nav_row = QtWidgets.QHBoxLayout()
-        previous_issue_button = QtWidgets.QPushButton("Previous Fallback Issue")
+        previous_issue_button = QtWidgets.QPushButton("Previous Side Slope Issue")
         previous_issue_button.clicked.connect(lambda: self._focus_adjacent_slope_face_issue(-1))
         issue_nav_row.addWidget(previous_issue_button)
-        next_issue_button = QtWidgets.QPushButton("Next Fallback Issue")
+        next_issue_button = QtWidgets.QPushButton("Next Side Slope Issue")
         next_issue_button.clicked.connect(lambda: self._focus_adjacent_slope_face_issue(1))
         issue_nav_row.addWidget(next_issue_button)
         issue_nav_row.addStretch(1)
@@ -675,6 +679,50 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         except Exception:
             self._sync_tabs_height()
 
+    def _on_review_tab_changed(self, tab_index: int) -> None:
+        tab_id = self._review_tab_ids.get(int(tab_index))
+        if tab_id:
+            self._load_review_tab(tab_id)
+        self._sync_tabs_height_later()
+
+    def _load_review_tab(self, tab_id: str, *, force: bool = False) -> None:
+        """Populate one review tab on demand without changing engineering state."""
+
+        if not force and tab_id in self._loaded_review_tabs:
+            return
+        if tab_id == "guided":
+            self._set_guided_review_rows(
+                corridor_build_guided_review_steps(
+                    self.document,
+                    supplemental_sampling_enabled=self._use_supplemental_sampling(),
+                    supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(),
+                    supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(),
+                    supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation(),
+                )
+            )
+            self._sync_supplemental_sampling_frame_count_label()
+        elif tab_id == "results":
+            self._set_review_rows(corridor_build_review_rows(self.document))
+        elif tab_id == "slope_issues":
+            self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+        elif tab_id == "intersections":
+            self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
+        elif tab_id == "breakline_audit":
+            self._refresh_shared_breakline_audit()
+        elif tab_id == "regions":
+            self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
+            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
+        elif tab_id == "drainage":
+            self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
+        elif tab_id == "visibility":
+            self._sync_visibility_checks()
+            self._sync_visibility_group_checks()
+            self._sync_guided_visibility_checks()
+            self._sync_daylight_contact_marker_check()
+        else:
+            return
+        self._loaded_review_tabs.add(tab_id)
+
     def _sync_tabs_height(self) -> None:
         tabs = getattr(self, "_tabs", None)
         if tabs is None:
@@ -695,6 +743,8 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             pass
 
     def _refresh_summary(self):
+        previously_loaded_tabs = set(self._loaded_review_tabs)
+        self._loaded_review_tabs.clear()
         applied_obj = find_v1_applied_section_set(self.document)
         applied = to_applied_section_set(applied_obj)
         if applied is None:
@@ -704,15 +754,9 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             )
             self.view_model.summary_text = summary_text
             self._summary.setPlainText(summary_text)
-            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document, supplemental_sampling_enabled=self._use_supplemental_sampling(), supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(), supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(), supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation()))
-            self._set_review_rows(corridor_build_review_rows(self.document))
-            self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
-            self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
-            self._refresh_shared_breakline_audit()
-            self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
-            self._sync_surface_transition_station_options_from_selected_region()
-            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-            self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
+            self._load_review_tab("guided", force=True)
+            for tab_id in sorted(previously_loaded_tabs - {"guided"}):
+                self._load_review_tab(tab_id, force=True)
             self._sync_tabs_height_later()
             return
         applied_summary = corridor_applied_sections_review_summary(self.document)
@@ -730,16 +774,9 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         )
         self.view_model.summary_text = summary_text
         self._summary.setPlainText(summary_text)
-        self._set_guided_review_rows(corridor_build_guided_review_steps(self.document, supplemental_sampling_enabled=self._use_supplemental_sampling(), supplemental_sampling_max_spacing=self._supplemental_sampling_max_spacing(), supplemental_sampling_tangent_delta_deg=self._supplemental_sampling_tangent_delta_deg(), supplemental_sampling_chord_deviation=self._supplemental_sampling_chord_deviation()))
-        self._sync_supplemental_sampling_frame_count_label()
-        self._set_review_rows(corridor_build_review_rows(self.document))
-        self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
-        self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
-        self._refresh_shared_breakline_audit()
-        self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
-        self._sync_surface_transition_station_options_from_selected_region()
-        self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-        self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
+        self._load_review_tab("guided", force=True)
+        for tab_id in sorted(previously_loaded_tabs - {"guided"}):
+            self._load_review_tab(tab_id, force=True)
         self._sync_tabs_height_later()
 
     def _apply(self, *, close_after: bool = False) -> bool:
@@ -1011,10 +1048,11 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             row_index = self._slope_issue_table.rowCount()
             self._slope_issue_table.insertRow(row_index)
             values = [
+                str(row.get("owner_context", "Ordinary road") or "Ordinary road"),
                 str(row.get("station_label", "") or ""),
                 str(row.get("side", "") or ""),
                 str(row.get("reason", "") or ""),
-                str(row.get("status", "") or ""),
+                str(row.get("review_status", row.get("status", "")) or ""),
                 str(row.get("marker_object", "") or ""),
             ]
             for col, value in enumerate(values):
@@ -1763,7 +1801,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             self._summary.setPlainText(
                 "\n".join(
                     [
-                        "Slope Face fallback issue marker shown.",
+                        "Side Slope diagnostic marker shown.",
                         f"Station: {issue.get('station_label', '')}",
                         f"Side: {issue.get('side', '')}",
                         f"Reason: {issue.get('reason', '')}",
@@ -1772,7 +1810,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Slope Face fallback issue was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Side Slope diagnostic was not shown.\n{exc}")
 
     def _show_intersection_contract_review_row(self, row_index: int) -> None:
         try:
@@ -1815,7 +1853,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             self._summary.setPlainText(
                 "\n".join(
                     [
-                        "Slope Face fallback issue marker shown.",
+                        "Side Slope diagnostic marker shown.",
                         f"Issue: {target_index + 1} / {len(corridor_slope_face_issue_rows(self.document))}",
                         f"Station: {issue.get('station_label', '')}",
                         f"Side: {issue.get('side', '')}",
@@ -1825,7 +1863,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Slope Face fallback issue was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Side Slope diagnostic was not shown.\n{exc}")
 
     def _selected_slope_face_issue_row_index(self) -> int:
         rows = self._slope_issue_table.selectionModel().selectedRows() if hasattr(self, "_slope_issue_table") else []

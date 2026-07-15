@@ -35,6 +35,46 @@ from .persistence_payload_adapter import (
 )
 
 
+# Applied Sections can be large because each evaluated station carries point,
+# subassembly, diagnostic, and context rows.  Review consumers commonly ask for
+# the same accepted result several times during one UI interaction.  Cache only
+# payload-backed results and key them by the persisted identity so a write or a
+# source/result fingerprint change naturally invalidates the entry.
+_APPLIED_SECTION_SET_PAYLOAD_CACHE: dict[
+    int, tuple[tuple[str, str, str], AppliedSectionSet]
+] = {}
+_APPLIED_SECTION_SET_PAYLOAD_CACHE_LIMIT = 16
+
+
+def _applied_section_set_payload_cache_key(obj) -> tuple[str, str, str] | None:
+    payload_schema = str(getattr(obj, "PayloadSchemaVersion", "") or "")
+    checksum = str(getattr(obj, "ModelPayloadChecksum", "") or "")
+    fingerprint = str(getattr(obj, "SourceFingerprint", "") or "")
+    if not checksum:
+        return None
+    return payload_schema, checksum, fingerprint
+
+
+def clear_applied_section_set_payload_cache(obj=None) -> None:
+    """Discard cached payload restoration for one result object or all objects."""
+
+    if obj is None:
+        _APPLIED_SECTION_SET_PAYLOAD_CACHE.clear()
+        return
+    _APPLIED_SECTION_SET_PAYLOAD_CACHE.pop(id(obj), None)
+
+
+def _cache_applied_section_set_payload(
+    obj,
+    cache_key: tuple[str, str, str],
+    model: AppliedSectionSet,
+) -> None:
+    _APPLIED_SECTION_SET_PAYLOAD_CACHE[id(obj)] = (cache_key, model)
+    while len(_APPLIED_SECTION_SET_PAYLOAD_CACHE) > _APPLIED_SECTION_SET_PAYLOAD_CACHE_LIMIT:
+        oldest_object_id = next(iter(_APPLIED_SECTION_SET_PAYLOAD_CACHE))
+        _APPLIED_SECTION_SET_PAYLOAD_CACHE.pop(oldest_object_id, None)
+
+
 class V1AppliedSectionSetObject:
     """Document object proxy that stores v1 AppliedSectionSet result summaries."""
 
@@ -235,6 +275,7 @@ def create_or_update_v1_applied_section_set_object(
 def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectionSet, *, label: str = "Applied Sections"):
     """Write AppliedSectionSet result summaries into a FreeCAD object."""
 
+    clear_applied_section_set_payload_cache(obj)
     ensure_v1_applied_section_set_properties(obj)
     station_rows = list(getattr(applied_section_set, "station_rows", []) or [])
     sections = list(getattr(applied_section_set, "sections", []) or [])
@@ -492,9 +533,18 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     if not _is_v1_applied_section_set(obj):
         return None
     ensure_v1_applied_section_set_properties(obj)
+    payload_cache_key = _applied_section_set_payload_cache_key(obj)
+    cached = _APPLIED_SECTION_SET_PAYLOAD_CACHE.get(id(obj))
+    if cached is not None and cached[0] == payload_cache_key:
+        return cached[1]
     payload_result = read_model_payload(obj, expected_model_type="AppliedSectionSet", model_class=AppliedSectionSet)
     if payload_result is not None:
-        return payload_result.model if payload_result.accepted else None
+        model = payload_result.model if payload_result.accepted else None
+        if model is not None and payload_cache_key is not None:
+            _cache_applied_section_set_payload(obj, payload_cache_key, model)
+        elif cached is not None:
+            clear_applied_section_set_payload_cache(obj)
+        return model
     station_values = _float_list(getattr(obj, "StationValues", []) or [])
     section_ids = list(getattr(obj, "AppliedSectionIds", []) or [])
     station_rows: list[AppliedSectionStationRow] = []

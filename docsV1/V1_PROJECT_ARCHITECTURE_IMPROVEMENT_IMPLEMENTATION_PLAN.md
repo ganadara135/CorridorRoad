@@ -1515,6 +1515,20 @@ Post-plan follow-up:
 2. collect reproducible timings by stage and document size before changing algorithms or persistence behavior
 3. keep legacy aggregate-test and UI-detail gaps as separate maintenance items
 
+Build Parametric panel performance maintenance completed on 2026-07-14:
+
+- profiling identified repeated `AppliedSectionSet` payload restoration during initial review-panel loading as the primary delay
+- accepted payload-backed `AppliedSectionSet` restoration now reuses a bounded checksum/fingerprint-keyed object-adapter cache and invalidates on result persistence update
+- only Guided Review loads at panel open; Results, Side Slope Diagnostics, Intersections, Breakline Audit, Regions, Drainage, and Visibility load when their tab is first opened
+- a 90-section reproducible local fixture reduced initial panel construction from about 12.5 seconds to about 0.38 seconds; this measurement does not change source, result, output, or presentation ownership
+- focused payload-cache invalidation and inactive-tab deferral contracts passed under FreeCAD 1.1.1; no Ramp, Watertight, or CI scope changed
+
+Build Parametric panel performance user validation accepted on 2026-07-14:
+
+- the user confirmed that the reported initial panel-opening slowdown is resolved
+- initial Guided Review loading, deferred review-tab loading, Refresh behavior, and Apply workflow remain accepted
+- this closes the explicitly deferred performance follow-up without reopening the completed Phase 1 through Phase 5 architecture boundaries
+
 ### Phase 0: Baseline recovery
 
 - complete Workstream A

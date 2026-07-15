@@ -168,7 +168,7 @@ Use a corridor with side_slope Subassemblies and slope-face surface roles.
 2. Confirm side_slope rows exist at source and supplemental stations.
 3. Rebuild Build Parametric.
 4. In Guided Review, double-click `Side Slope`.
-5. Review `Slope Face` or `Slope Face Diagnostics`.
+5. Review `Slope Face` or `Side Slope Diagnostics`.
 6. Confirm slope-face geometry follows the curve and remains tied to the side_slope rows.
 
 Pass conditions:

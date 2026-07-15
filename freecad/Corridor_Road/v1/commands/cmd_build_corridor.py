@@ -293,7 +293,7 @@ CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("centerline", "1. Centerline", ("centerline",), "Check 3D centerline continuity and station ordering."),
     ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
     ("intersections", "4. Intersections", ("intersection",), "Check intersection-controlled Region context and Applied Sections handoff."),
-    ("slope_issues", "5. Slope Face Diagnostics", ("daylight", "intersection_slope"), "Check ordinary and intersection-owned Slope Face output diagnostics separately."),
+    ("slope_issues", "5. Side Slope", ("daylight", "intersection_slope"), "Review ordinary and intersection-owned Side Slope result surfaces and their diagnostics separately."),
     ("drainage", "6. Drainage Surface", ("centerline", "drainage"), "Check roadside ditch surfaces and intersection low-point drainage coverage."),
     ("drainage_flow", "7. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
 )
@@ -2868,6 +2868,10 @@ def corridor_subassembly_kind_guided_review_rows(document=None) -> list[dict[str
         if kind in summaries
     ] + sorted(kind for kind in summaries if kind not in SUBASSEMBLY_GUIDED_REVIEW_KIND_ORDER)
     for kind in ordered_kinds:
+        # Side Slope is reviewed through its accepted daylight/intersection result,
+        # not through partial Applied Section point rows.
+        if kind == "side_slope":
+            continue
         summary = summaries[kind]
         roles = dict(summary.get("surface_roles", {}) or {})
         preset_statuses = dict(summary.get("preset_statuses", {}) or {})
@@ -2946,9 +2950,13 @@ def corridor_slope_face_issue_rows(document=None) -> list[dict[str, str]]:
     for text in list(getattr(obj, "SlopeFaceIssueRows", []) or []):
         row = _parse_slope_face_issue_row_text(str(text or ""))
         if row:
+            row.setdefault("owner_context", "Ordinary road")
             rows.append(row)
     if not rows:
         rows = _parse_slope_face_issue_summary_text(str(getattr(obj, "SlopeFaceIssueStations", "") or ""))
+    for row in rows:
+        row.setdefault("owner_context", "Ordinary road")
+        row["review_status"] = _slope_face_issue_review_status(row)
     return rows
 
 
@@ -2977,21 +2985,26 @@ def corridor_build_guided_review_steps(
             intersection_status = str(intersection_slope.get("status", "missing") or "missing")
             if base_status == "error" or intersection_status == "error":
                 status = "error"
-            elif base_status == "ready" and issue_count:
+            elif (base_status == "ready" or intersection_status == "ready") and issue_count:
                 status = "warning"
-            elif base_status == "ready" and intersection_status in {"ready", "empty", "missing"}:
+            elif base_status == "ready" or intersection_status == "ready":
                 status = "ready"
             else:
-                status = base_status
+                status = intersection_status if intersection_status not in {"missing", "empty"} else base_status
             intersection_count = intersection_slope.get("triangle_or_point_count", "")
             intersection_note = f"; intersection slope triangles={intersection_count}" if intersection_count not in {"", None} else ""
             boundary_review_note = _slope_face_boundary_guided_review_suffix(daylight, intersection_slope)
-            notes = f"{issue_count} slope-face issue(s) to review{intersection_note}." if issue_count else f"No slope-face fallback issues{intersection_note}."
+            notes = f"{issue_count} Side Slope diagnostic(s) to review{intersection_note}." if issue_count else f"No Side Slope fallback diagnostics{intersection_note}."
             if boundary_review_note:
                 notes = f"{notes} {boundary_review_note}"
-            focus = "First fallback issue marker" if issue_count else "Slope Face Surface"
-            if boundary_review_note:
-                focus = "Intersection Slope Face Boundary"
+            if intersection_status == "ready" and base_status == "ready":
+                focus = "Intersection and Corridor Slope Face Surfaces"
+            elif intersection_status == "ready":
+                focus = "Intersection Slope Face Surface"
+            elif base_status == "ready":
+                focus = "Slope Face Surface"
+            else:
+                focus = "Side Slope Result Diagnostic"
         else:
             primary_role = str(list(roles)[-1] if roles else "")
             source = review_by_role.get(primary_role, {})
@@ -6333,19 +6346,15 @@ def focus_corridor_build_guided_review_step(
     if doc is None or step is None:
         raise RuntimeError(f"Guided review step was not found: {step_id}")
     set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
-    for role in list(step[2] or []):
-        set_corridor_build_preview_visibility(doc, role, True)
+    if step[0] != "slope_issues":
+        for role in list(step[2] or []):
+            set_corridor_build_preview_visibility(doc, role, True)
     if step[0] == "slope_issues":
-        issue_markers = _corridor_build_issue_marker_objects(doc)
-        for marker in issue_markers:
-            _set_object_visibility(marker, True)
-        issues = corridor_slope_face_issue_rows(doc)
-        if issues:
-            return show_corridor_slope_face_issue_marker(doc, 0)
-        daylight = _corridor_build_preview_object(doc, "daylight")
-        if daylight is not None:
-            _select_and_fit_object(daylight)
-            return daylight
+        _remove_preview_object(doc, "ReviewIssueSubassemblyKind_side_slope")
+        obj = _focus_corridor_side_slope_result_preview(doc)
+        if obj is not None:
+            return obj
+        raise RuntimeError(_side_slope_review_missing_result_message(doc))
     if step[0] == "drainage_flow":
         return focus_corridor_drainage_flow_review(doc)
     focus_role = str(list(step[2])[-1] if step[2] else "")
@@ -6357,14 +6366,25 @@ def focus_corridor_build_guided_review_step(
 
 
 def focus_corridor_subassembly_kind_review(document=None, kind: str = ""):
-    """Create and focus a 3D highlight for one evaluated Subassembly kind."""
+    """Focus a review result for one evaluated Subassembly kind.
+
+    Lane and Shoulder retain their Applied Section review strips.  Side Slope is
+    a compatibility entry point that now routes to its accepted result surface.
+    """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     kind_text = str(kind or "").strip()
     if doc is None or not kind_text:
         raise RuntimeError("Subassembly kind review target was not found.")
+    if kind_text == "side_slope":
+        set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+        _remove_preview_object(doc, "ReviewIssueSubassemblyKind_side_slope")
+        obj = _focus_corridor_side_slope_result_preview(doc)
+        if obj is None:
+            raise RuntimeError(_side_slope_review_missing_result_message(doc))
+        return obj
     _set_subassembly_kind_review_previews_visibility(doc, False)
-    if kind_text in {"lane", "shoulder", "side_slope"}:
+    if kind_text in {"lane", "shoulder"}:
         obj = _create_subassembly_kind_review_highlight(document=doc, kind=kind_text, visible=True)
     else:
         obj = _subassembly_kind_review_object(doc, kind_text)
@@ -6375,6 +6395,80 @@ def focus_corridor_subassembly_kind_review(document=None, kind: str = ""):
     _set_object_visibility(obj, True)
     _select_and_fit_object(obj)
     return obj
+
+
+def _focus_corridor_side_slope_result_preview(document):
+    """Show accepted Side Slope results, including Cross/T approach roads.
+
+    The Intersection Slope Face Surface owns the control area. The ordinary
+    Slope Face Surface owns the Primary/Secondary approach-road portions that
+    are clipped around it. Both must be visible together for an at-grade
+    intersection review, while the Intersection result remains the primary
+    return value for compatibility with existing callers.
+    """
+
+    intersection = _corridor_build_preview_object(document, "intersection_slope")
+    daylight = _corridor_build_preview_object(document, "daylight")
+    intersection_ready = _corridor_side_slope_result_preview_is_usable(
+        document,
+        "intersection_slope",
+        intersection,
+    )
+    daylight_ready = _corridor_side_slope_result_preview_is_usable(
+        document,
+        "daylight",
+        daylight,
+    )
+    if intersection_ready:
+        visible = [intersection]
+        if daylight_ready:
+            visible.append(daylight)
+        for obj in visible:
+            _set_object_visibility(obj, True)
+        _select_and_fit_objects(visible)
+        return intersection
+    if daylight_ready:
+        _set_object_visibility(daylight, True)
+        _select_and_fit_object(daylight)
+        return daylight
+    return None
+
+
+def _corridor_side_slope_result_preview_is_usable(document, role: str, obj) -> bool:
+    """Return whether a Side Slope preview is an accepted, displayable result."""
+
+    if obj is None:
+        return False
+    if int(getattr(obj, "VertexCount", 0) or 0) <= 0:
+        return False
+    if int(getattr(obj, "TriangleCount", 0) or 0) <= 0:
+        return False
+    diagnostic = _corridor_build_preview_diagnostic_object(document, role)
+    if diagnostic is None:
+        return True
+    status = _normalize_corridor_build_review_status(
+        getattr(diagnostic, "PreviewStatus", "") or "ready",
+        default="ready",
+    )
+    return status not in {"error", "missing", "empty"}
+
+
+def _side_slope_review_missing_result_message(document) -> str:
+    """Return an actionable message without fabricating Side Slope geometry."""
+
+    details = []
+    for role in ("intersection_slope", "daylight"):
+        diagnostic = _corridor_build_preview_diagnostic_object(document, role)
+        if diagnostic is None:
+            continue
+        status = _normalize_corridor_build_review_status(
+            getattr(diagnostic, "PreviewStatus", "") or "missing"
+        )
+        notes = str(getattr(diagnostic, "PreviewDiagnostic", "") or "")
+        details.append(f"{_corridor_build_review_title(role)} status={status}{': ' + notes if notes else ''}")
+    detail_text = " ".join(details)
+    message = "No accepted Side Slope result is available. Build Parametric after the required daylight or Intersection slope result is available."
+    return f"{message} {detail_text}".strip()
 
 
 def _intersection_contract_highlight_style(family: str) -> dict[str, object]:
@@ -6582,13 +6676,6 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
         return None
     object_name = f"ReviewIssueSubassemblyKind_{_safe_output_object_suffix(kind_text)}"
     _remove_preview_object(document, object_name)
-    if kind_text == "side_slope":
-        return _create_side_slope_applied_section_review_highlight(
-            document=document,
-            project=project,
-            object_name=object_name,
-            visible=visible,
-        )
     if kind_text in {"lane", "shoulder"}:
         return _create_subassembly_surface_strip_review_highlight(
             document=document,
@@ -7037,160 +7124,6 @@ def _create_subassembly_surface_strip_review_highlight(
     return obj
 
 
-def _create_side_slope_applied_section_review_highlight(
-    *,
-    document=None,
-    project=None,
-    object_name: str,
-    visible: bool = True,
-):
-    """Create Side Slope review geometry from evaluated Applied Section points."""
-
-    if document is None:
-        return None
-    try:
-        import FreeCAD as AppModule
-        import Part
-    except Exception:
-        return None
-    applied = to_applied_section_set(find_v1_applied_section_set(document))
-    sections = _station_ordered_applied_sections(applied) if applied is not None else []
-    if not sections:
-        return None
-    shapes: list[object] = []
-    section_count = 0
-    side_count = 0
-    point_count = 0
-    degenerate_side_count = 0
-    roundabout_clip_boundary_only = False
-    roundabout_clip_summary: dict[str, object] = {}
-    roundabout_clip_polygons: list[list[tuple[float, float]]] = []
-    try:
-        roundabout_clip_summary = _roundabout_clip_boundary_contract_summary(
-            document,
-            applied_section_set=applied,
-            surface_role="slope_face_surface",
-        )
-    except Exception:
-        roundabout_clip_summary = {}
-    try:
-        roundabout_clip_polygons = _roundabout_clip_boundary_polygons(
-            document,
-            applied_section_set=applied,
-            surface_role="slope_face_surface",
-        )
-    except Exception:
-        roundabout_clip_polygons = []
-
-    for section in sections:
-        section_has_geometry = False
-        for side_label in ("left", "right"):
-            points = _slope_face_applied_section_breakline_points(section, side_label=side_label)
-            if len(points) < 2:
-                continue
-            vectors = [
-                AppModule.Vector(float(x), float(y), float(z) + 0.1)
-                for x, y, z in points
-            ]
-            unique_vectors: list[object] = []
-            for vector in vectors:
-                if unique_vectors and _same_centerline_point(unique_vectors[-1], vector):
-                    continue
-                unique_vectors.append(vector)
-            if len(unique_vectors) < 2:
-                if unique_vectors:
-                    marker_shapes = _point_cross_shapes(
-                        Part,
-                        AppModule,
-                        (
-                            float(getattr(unique_vectors[0], "x", 0.0) or 0.0),
-                            float(getattr(unique_vectors[0], "y", 0.0) or 0.0),
-                            float(getattr(unique_vectors[0], "z", 0.0) or 0.0),
-                        ),
-                        radius=0.35,
-                    )
-                    if marker_shapes:
-                        shapes.extend(marker_shapes)
-                        degenerate_side_count += 1
-                    else:
-                        continue
-                else:
-                    continue
-            else:
-                try:
-                    shapes.append(Part.makePolygon(unique_vectors))
-                except Exception:
-                    continue
-            section_has_geometry = True
-            side_count += 1
-            point_count += len(points)
-        if section_has_geometry:
-            section_count += 1
-    if not shapes:
-        return None
-    try:
-        obj = document.addObject("Part::Feature", object_name)
-    except Exception:
-        return None
-    try:
-        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
-        obj.Label = "Applied Section Highlight - Side Slope"
-    except Exception:
-        return obj
-    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
-    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
-    _set_preview_property(obj, "IssueKind", "subassembly_kind")
-    _set_preview_property(obj, "SubassemblyKind", "side_slope")
-    _set_preview_property(obj, "SourceMode", "applied_section_point_rows")
-    _set_preview_property(obj, "DisplayMode", "section_breaklines")
-    _set_preview_string_list_property(obj, "SurfaceRoles", ["side_slope_surface", "bench_surface", "daylight_marker"])
-    _set_preview_float_property(obj, "SectionCount", float(section_count))
-    _set_preview_float_property(obj, "SideCount", float(side_count))
-    _set_preview_float_property(obj, "PointCount", float(point_count))
-    _set_preview_float_property(obj, "DegenerateSideCount", float(degenerate_side_count))
-    reported_boundary_role = str(roundabout_clip_summary.get("boundary_role", "") or "")
-    actual_boundary_roles = ",".join(sorted(_roundabout_actual_clip_boundary_roles_for_surface("slope_face_surface")))
-    _set_preview_property(obj, "RoundaboutClipBoundaryRole", reported_boundary_role)
-    _set_preview_property(obj, "RoundaboutReportedBoundaryRole", reported_boundary_role)
-    _set_preview_property(obj, "RoundaboutActualClipBoundaryRole", actual_boundary_roles)
-    _set_preview_property(
-        obj,
-        "RoundaboutActualClipBoundaryRoles",
-        actual_boundary_roles,
-    )
-    _set_preview_property(obj, "RoundaboutReviewClipMode", "source_breaklines_with_actual_boundary_metadata")
-    _set_preview_property(obj, "RoundaboutClipBoundaryStatus", str(roundabout_clip_summary.get("status", "") or ""))
-    _set_preview_property(
-        obj,
-        "RoundaboutClipFallbackReason",
-        "" if roundabout_clip_polygons else ("roundabout_clip_boundary_unavailable" if roundabout_clip_summary else ""),
-    )
-    _set_preview_float_property(obj, "RoundaboutClipBoundaryLoopCount", float(roundabout_clip_summary.get("loop_count", 0) or 0))
-    _set_preview_float_property(obj, "SkippedRoundaboutSectionCount", 0.0)
-    _set_preview_float_property(obj, "SkippedRoundaboutSideCount", 0.0)
-    _set_preview_float_property(obj, "RoundaboutClipBoundaryOnly", 1.0 if roundabout_clip_boundary_only else 0.0)
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is not None:
-            color = _subassembly_kind_review_color("side_slope")
-            vobj.ShapeColor = color
-            vobj.LineColor = color
-            vobj.PointColor = color
-            vobj.Transparency = 45
-            vobj.LineWidth = 6.0
-            vobj.PointSize = 8.0
-            vobj.Visibility = bool(visible)
-    except Exception:
-        pass
-    try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    return obj
-
-
 def _subassembly_kind_review_continuity_scope(section) -> str:
     """Return the source scope where adjacent Subassembly review links may be stitched."""
 
@@ -7247,6 +7180,8 @@ def show_corridor_slope_face_issue_marker(document=None, row_index: int = 0):
     if row_index < 0 or row_index >= len(rows):
         raise IndexError("Slope Face issue row index is out of range.")
     row = rows[row_index]
+    if str(row.get("review_status", "") or "") not in {"warning", "error"}:
+        raise RuntimeError("Side Slope diagnostic marker is available only for warning or error results.")
     object_name = str(row.get("marker_object", "") or "ReviewIssueSlopeFaceFallbackMarkers")
     obj = doc.getObject(object_name) if doc is not None and object_name else None
     if obj is None:
@@ -24800,6 +24735,17 @@ def _parse_slope_face_issue_row_text(text: str) -> dict[str, str]:
             continue
         row[key] = _unescape_issue_row_value(value)
     return row
+
+
+def _slope_face_issue_review_status(row: dict[str, str]) -> str:
+    """Normalize a typed Side Slope diagnostic to the review status vocabulary."""
+
+    status = str(row.get("status", "") or "").strip().lower()
+    if status.startswith("error"):
+        return "error"
+    if status.startswith(("warning", "warn", "fallback")):
+        return "warning"
+    return "warning" if status else "missing"
 
 
 def _parse_slope_face_issue_summary_text(text: str) -> list[dict[str, str]]:

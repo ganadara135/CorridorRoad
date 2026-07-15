@@ -1,6 +1,6 @@
 # V1 Supported Domain Status
 
-Status date: 2026-07-13
+Status date: 2026-07-14
 
 This is the single current-scope index for Parametric Road v1.
 
@@ -70,7 +70,11 @@ The following precedence prevents historical plans from being read as current co
 
 Current active plan:
 
-- `V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md`, through Phase 5 closure
+- `V1_SIDE_SLOPE_REVIEW_UX_PLAN.md`, result-backed ordinary-road and Intersection Side Slope review
+
+Completed architecture record:
+
+- `V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md`, Phase 5 closure and accepted Build Parametric performance maintenance
 
 Current operational release status:
 
