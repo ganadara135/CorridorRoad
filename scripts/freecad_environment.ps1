@@ -1,5 +1,65 @@
 Set-StrictMode -Version Latest
 
+function Get-CorridorRoadWorkbenchCandidates {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
+
+    $resolvedRepositoryRoot = [System.IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\', '/')
+    $modRoot = Split-Path -Parent $resolvedRepositoryRoot
+    if (-not (Test-Path -LiteralPath $modRoot -PathType Container)) {
+        return @()
+    }
+
+    $candidates = @()
+    foreach ($directory in Get-ChildItem -LiteralPath $modRoot -Directory -ErrorAction SilentlyContinue) {
+        $normalizedName = ($directory.Name.ToLowerInvariant() -replace '[^a-z0-9]', '')
+        if ($normalizedName -ne 'corridorroad') {
+            continue
+        }
+        $entryPoint = Join-Path $directory.FullName 'freecad\Corridor_Road\Init.py'
+        if (Test-Path -LiteralPath $entryPoint -PathType Leaf) {
+            $candidates += $directory.FullName.TrimEnd('\', '/')
+        }
+    }
+    return @($candidates | Sort-Object -Unique)
+}
+
+function Assert-CorridorRoadWorkbenchLayout {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
+
+    $resolvedRepositoryRoot = [System.IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\', '/')
+    $candidates = @(Get-CorridorRoadWorkbenchCandidates -RepositoryRoot $resolvedRepositoryRoot)
+    $unexpected = @(
+        $candidates | Where-Object {
+            -not [string]::Equals(
+                [System.IO.Path]::GetFullPath($_).TrimEnd('\', '/'),
+                $resolvedRepositoryRoot,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        }
+    )
+
+    if ($unexpected.Count -gt 0) {
+        $candidateRows = ($candidates | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
+        throw @"
+Duplicate Parametric Road workbench installations were found under the active Mod directory.
+Expected repository:
+  - $resolvedRepositoryRoot
+Detected candidates:
+$candidateRows
+Rename, move, or remove the unexpected installation before running tests. No directory was changed automatically.
+"@
+    }
+
+    if ($candidates.Count -eq 0) {
+        throw "Parametric Road workbench entry point was not found under the active Mod directory: $(Split-Path -Parent $resolvedRepositoryRoot)"
+    }
+
+    Write-Host "[CorridorRoad] Workbench layout : single installation"
+    Write-Host "[CorridorRoad] Workbench root   : $resolvedRepositoryRoot"
+}
+
 function Resolve-FreeCADBin {
     [CmdletBinding()]
     param([string]$ExplicitPath = "")

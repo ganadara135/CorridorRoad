@@ -52,6 +52,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_build_review_rows,
     corridor_shared_breakline_audit_rows,
     corridor_build_visibility_groups,
+    corridor_subassembly_kind_guided_review_rows,
     create_corridor_daylight_surface_preview,
     create_corridor_design_surface_preview,
     create_corridor_intersection_surface_preview,
@@ -2363,7 +2364,7 @@ def test_roundabout_applied_sections_show_all_preview_is_not_clipping_source() -
         App.closeDocument(doc.Name)
 
 
-def test_roundabout_side_slope_guided_review_clips_to_slope_handoff_boundary() -> None:
+def test_roundabout_side_slope_is_not_an_applied_section_guided_review_row() -> None:
     doc = App.newDocument("CRV1RoundaboutSideSlopeGuidedReviewClip")
     try:
         create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
@@ -2371,24 +2372,10 @@ def test_roundabout_side_slope_guided_review_clips_to_slope_handoff_boundary() -
         applied = build_document_applied_section_set(doc, project=project)
         apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
 
-        side_slope_preview = focus_corridor_build_guided_review_step(doc, "subassembly_kind:side_slope")
+        rows = corridor_subassembly_kind_guided_review_rows(doc)
 
-        assert side_slope_preview is not None
-        assert side_slope_preview.Label == "Applied Section Highlight - Side Slope"
-        assert side_slope_preview.DisplayMode == "section_breaklines"
-        assert side_slope_preview.RoundaboutClipBoundaryRole == "roundabout_slope_handoff_boundary"
-        assert side_slope_preview.RoundaboutReportedBoundaryRole == "roundabout_slope_handoff_boundary"
-        assert side_slope_preview.RoundaboutActualClipBoundaryRole == "roundabout_outer_ownership_boundary"
-        assert side_slope_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
-        assert side_slope_preview.RoundaboutReviewClipMode == "source_breaklines_with_actual_boundary_metadata"
-        assert side_slope_preview.RoundaboutClipBoundaryStatus == "ready"
-        assert side_slope_preview.RoundaboutClipFallbackReason == ""
-        assert int(side_slope_preview.RoundaboutClipBoundaryLoopCount) > 0
-        assert int(side_slope_preview.SideCount) > 0
-        assert int(side_slope_preview.DegenerateSideCount) > 0
-        assert int(side_slope_preview.SkippedRoundaboutSectionCount) == 0
-        assert int(side_slope_preview.SkippedRoundaboutSideCount) == 0
-        assert int(side_slope_preview.RoundaboutClipBoundaryOnly) == 0
+        assert all(str(row.get("step_id", "")) != "subassembly_kind:side_slope" for row in rows)
+        assert doc.getObject("ReviewIssueSubassemblyKind_side_slope") is None
     finally:
         App.closeDocument(doc.Name)
 

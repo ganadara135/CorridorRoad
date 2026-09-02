@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-import math
-
 try:
     import FreeCAD as App
     import FreeCADGui as Gui
 except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
     Gui = None
-try:
-    import Part
-except Exception:  # pragma: no cover - Part is not available in plain Python.
-    Part = None
-
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
@@ -25,6 +18,9 @@ from ..objects.obj_stationing import (
 )
 from .cmd_generate_stations import generate_v1_stations
 from .selection_context import selected_alignment_profile_target
+from ..ui.presentation.station_highlight_service import show_station_highlight, station_highlight_shape
+
+__all__ = ["show_station_highlight", "station_highlight_shape"]
 
 
 def stationing_review_summary_lines(stationing) -> list[str]:
@@ -83,78 +79,6 @@ def stationing_table_rows(stationing) -> list[dict[str, object]]:
             }
         )
     return rows
-
-
-def station_highlight_shape(row: dict[str, object], *, radius: float = 5.0):
-    """Build a 3D marker shape for one station table row."""
-
-    if App is None or Part is None:
-        return None
-    x = _safe_float(row.get("x", 0.0), 0.0)
-    y = _safe_float(row.get("y", 0.0), 0.0)
-    tangent = _safe_float(row.get("tangent", 0.0), 0.0)
-    marker_radius = max(float(radius), 0.5)
-    center = App.Vector(x, y, 0.0)
-    tangent_rad = math.radians(tangent)
-    tx = math.cos(tangent_rad)
-    ty = math.sin(tangent_rad)
-    nx = -ty
-    ny = tx
-    edges = [
-        Part.makeCircle(marker_radius, center, App.Vector(0.0, 0.0, 1.0)),
-        Part.makeLine(
-            App.Vector(x - tx * marker_radius, y - ty * marker_radius, 0.0),
-            App.Vector(x + tx * marker_radius, y + ty * marker_radius, 0.0),
-        ),
-        Part.makeLine(
-            App.Vector(x - nx * marker_radius, y - ny * marker_radius, 0.0),
-            App.Vector(x + nx * marker_radius, y + ny * marker_radius, 0.0),
-        ),
-    ]
-    return Part.Compound(edges)
-
-
-def show_station_highlight(document, row: dict[str, object], *, radius: float = 5.0):
-    """Create or update the visible 3D marker for a selected station row."""
-
-    if document is None:
-        raise RuntimeError("No active document is available for station highlight.")
-    shape = station_highlight_shape(row, radius=radius)
-    if shape is None:
-        return None
-    obj = _find_station_highlight(document)
-    if obj is None:
-        try:
-            obj = document.addObject("Part::Feature", "V1StationHighlight")
-        except Exception:
-            obj = document.addObject("App::FeaturePython", "V1StationHighlight")
-        try:
-            obj.addProperty("App::PropertyString", "V1ObjectType", "CorridorRoad", "v1 object type")
-            obj.V1ObjectType = "V1StationHighlight"
-        except Exception:
-            pass
-    label = str(row.get("label", "") or "Station")
-    station = _safe_float(row.get("station", 0.0), 0.0)
-    obj.Label = f"Station Highlight - {label}"
-    try:
-        obj.Shape = shape
-    except Exception:
-        pass
-    try:
-        obj.addProperty("App::PropertyFloat", "Station", "Stations", "highlighted station")
-    except Exception:
-        pass
-    try:
-        obj.Station = float(station)
-    except Exception:
-        pass
-    _route_station_highlight_to_tree(document, obj)
-    _style_station_highlight(obj)
-    try:
-        document.recompute()
-    except Exception:
-        pass
-    return obj
 
 
 class V1StationingReviewTaskPanel:
@@ -425,43 +349,6 @@ def _safe_float(value, fallback: float) -> float:
         return float(value)
     except Exception:
         return float(fallback)
-
-
-def _find_station_highlight(document):
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if str(getattr(obj, "V1ObjectType", "") or "") == "V1StationHighlight":
-            return obj
-        if str(getattr(obj, "Name", "") or "").startswith("V1StationHighlight"):
-            return obj
-    return None
-
-
-def _style_station_highlight(obj) -> None:
-    vobj = getattr(obj, "ViewObject", None)
-    if vobj is None:
-        return
-    try:
-        vobj.Visibility = True
-        vobj.DisplayMode = "Wireframe"
-        vobj.LineColor = (1.0, 0.05, 0.02)
-        vobj.LineWidth = 6.0
-        vobj.PointColor = (1.0, 0.05, 0.02)
-        vobj.PointSize = 10.0
-    except Exception:
-        pass
-
-
-def _route_station_highlight_to_tree(document, obj) -> None:
-    try:
-        from freecad.Corridor_Road.objects.obj_project import find_project, route_to_v1_tree
-
-        project = find_project(document)
-        if project is not None:
-            route_to_v1_tree(project, obj)
-    except Exception:
-        pass
 
 
 def _show_message(parent, title: str, message: str) -> None:

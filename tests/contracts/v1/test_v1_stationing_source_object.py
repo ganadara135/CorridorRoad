@@ -1,9 +1,13 @@
+import tempfile
+from pathlib import Path
+
 import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     V1_TREE_STATIONS,
     ensure_project_tree,
+    find_project,
 )
 from freecad.Corridor_Road.v1.commands.cmd_generate_stations import (
     CmdV1GenerateStations,
@@ -152,6 +156,48 @@ def test_generate_v1_stations_routes_to_v1_station_folder() -> None:
         assert stationing.Interval == 45.0
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_v1_stationing_persists_source_rows_and_tree_routing_after_reopen() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        stationing = generate_v1_stations(
+            document=doc,
+            project=project,
+            alignment=alignment,
+            interval=30.0,
+        )
+        stationing_name = stationing.Name
+        expected_values = list(stationing.StationValues)
+        expected_signature = str(stationing.SourceGeometrySignature)
+
+        with tempfile.TemporaryDirectory(prefix="cr_v1_stationing_reload_") as temp_dir:
+            path = Path(temp_dir) / "stationing_source_reload.FCStd"
+            doc.saveAs(str(path))
+            App.closeDocument(doc.Name)
+            doc = None
+
+            reopened = App.openDocument(str(path))
+            try:
+                restored = find_v1_stationing(reopened)
+                restored_project = find_project(reopened)
+                tree = ensure_project_tree(restored_project, include_references=False)
+
+                assert restored is not None
+                assert restored.Name == stationing_name
+                assert restored.V1ObjectType == "V1Stationing"
+                assert restored.Interval == 30.0
+                assert list(restored.StationValues) == expected_values
+                assert str(restored.SourceGeometrySignature) == expected_signature
+                assert restored.Name in _group_names(tree[V1_TREE_STATIONS])
+                assert getattr(restored, "Shape", None) is not None
+                assert not restored.Shape.isNull()
+            finally:
+                App.closeDocument(reopened.Name)
+    finally:
+        if doc is not None:
+            App.closeDocument(doc.Name)
 
 
 def test_generate_v1_stations_includes_transition_curve_samples_and_review_rows() -> None:

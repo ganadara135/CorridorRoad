@@ -23,9 +23,47 @@ from .alignment_curve_preview import (
 )
 from .corridor_model import CorridorModel
 from .centerline3d import Centerline3DPointRow, Centerline3DResult
+from .centerline3d_arc_fit import Centerline3DArcFitResult
 from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from .earthwork_balance_model import EarthworkBalanceModel
 from .intersection_boundary_segment import IntersectionBoundarySegmentResult, IntersectionBoundarySegmentRow
+from .intersection_surface_patch_build import IntersectionSurfacePatchBuildResult
+from .intersection_patch_input import (
+    IntersectionPatchInputPreparationResult,
+    IntersectionPatchSuperelevationContext,
+)
+from .intersection_patch_grading import IntersectionPatchGradingResult
+from .intersection_patch_boundary_selection import (
+    IntersectionPatchBoundarySelectionResult,
+)
+from .intersection_patch_triangulation import (
+    IntersectionPatchTriangulationResult,
+)
+from .intersection_patch_shape_quality import (
+    IntersectionPatchShapeQualityResult,
+)
+from .intersection_patch_drainage_review import (
+    IntersectionPatchDrainageReviewResult,
+)
+from .intersection_patch_boundary_context import (
+    IntersectionPatchBoundaryContextResult,
+)
+from .intersection_patch_constraint_build import (
+    IntersectionPatchConstraintBuildResult,
+)
+from .intersection_patch_tin_assembly import (
+    IntersectionPatchTinAssemblyResult,
+)
+from .intersection_patch_pipeline import IntersectionPatchPipelineResult
+from .intersection_patch_preparation_pipeline import (
+    IntersectionPatchPreparationPipelineResult,
+)
+from .intersection_boundary_loop_evaluation_chain import (
+    IntersectionBoundaryLoopEvaluationChainResult,
+)
+from .intersection_shared_breakline_contribution import (
+    IntersectionSharedBreaklineContributionResult,
+)
 from .intersection_boundary_loop import (
     IntersectionBoundaryLoopResult,
     IntersectionBoundaryLoopRow,
@@ -78,8 +116,15 @@ from .profile_curve_preview import (
 )
 from .solid_edge_network import SolidEdgeNetwork, SolidFaceRow, SolidTopologyEdgeRow
 from .shared_breakline import SharedBreaklinePointRow, SharedBreaklineResult, SharedBreaklineRow
+from .shared_breakline_audit import (
+    SharedBreaklineAdjacencyResult,
+    SharedBreaklineAuditResult,
+)
 from .surface_model import SurfaceModel, SurfaceSpanRow
+from .subassembly_bench_profile import BenchProfileSegment, SubassemblyBenchProfileResult
 from .tin_surface import TINSurface
+from .incremental_rebuild import IncrementalBuildDecision, IncrementalBuildExecution, IncrementalStageRecord
+from .output_traceability import OutputTraceabilityResult
 
 __all__ = [
     "AppliedSection",
@@ -97,11 +142,27 @@ __all__ = [
     "AlignmentCurvePreviewResult",
     "Centerline3DPointRow",
     "Centerline3DResult",
+    "Centerline3DArcFitResult",
     "CorridorModel",
     "DrainagePipelineResult",
     "DrainagePipelineSegment",
     "EarthworkBalanceModel",
     "IntersectionBoundarySegmentResult",
+    "IntersectionSurfacePatchBuildResult",
+    "IntersectionPatchInputPreparationResult",
+    "IntersectionPatchSuperelevationContext",
+    "IntersectionPatchGradingResult",
+    "IntersectionPatchBoundarySelectionResult",
+    "IntersectionPatchTriangulationResult",
+    "IntersectionPatchShapeQualityResult",
+    "IntersectionPatchDrainageReviewResult",
+    "IntersectionPatchBoundaryContextResult",
+    "IntersectionPatchConstraintBuildResult",
+    "IntersectionPatchTinAssemblyResult",
+    "IntersectionPatchPipelineResult",
+    "IntersectionPatchPreparationPipelineResult",
+    "IntersectionBoundaryLoopEvaluationChainResult",
+    "IntersectionSharedBreaklineContributionResult",
     "IntersectionBoundarySegmentRow",
     "IntersectionBoundaryLoopResult",
     "IntersectionBoundaryLoopRow",
@@ -157,12 +218,20 @@ __all__ = [
     "SolidEdgeNetwork",
     "SolidFaceRow",
     "SharedBreaklinePointRow",
+    "SharedBreaklineAdjacencyResult",
+    "SharedBreaklineAuditResult",
     "SharedBreaklineResult",
     "SharedBreaklineRow",
     "SurfaceModel",
     "SurfaceSpanRow",
+    "BenchProfileSegment",
+    "SubassemblyBenchProfileResult",
     "SolidTopologyEdgeRow",
     "SolidProfileEdge",
     "SolidProfileNode",
     "TINSurface",
+    "IncrementalBuildDecision",
+    "IncrementalBuildExecution",
+    "IncrementalStageRecord",
+    "OutputTraceabilityResult",
 ]

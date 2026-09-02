@@ -17,6 +17,7 @@ from ...objects.obj_project import (
 )
 from ...objects.project_links import link_project
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
+from ..objects.project_document_adapter import ProjectDocumentAdapter
 from ..objects.obj_stationing import create_v1_stationing, find_v1_stationing
 from .cmd_create_alignment import create_v1_sample_alignment
 from .cmd_review_plan_profile import resolve_station_interval
@@ -38,44 +39,41 @@ def generate_v1_stations(
     if doc is None:
         raise RuntimeError("No active document.")
 
-    prj = project or find_project(doc)
-    if prj is None:
-        try:
-            prj = doc.addObject("App::DocumentObjectGroupPython", "CorridorRoadProject")
-        except Exception:
-            prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
-        CorridorRoadProject(prj)
-        prj.Label = "Parametric Road Project"
+    adapter = ProjectDocumentAdapter(doc)
+    with adapter.transaction("Generate v1 stations", recompute=True):
+        prj = project or find_project(doc)
+        if prj is None:
+            prj = adapter.create_object(
+                "App::DocumentObjectGroupPython",
+                "CorridorRoadProject",
+                fallback_type_id="App::FeaturePython",
+            )
+            CorridorRoadProject(prj)
+            adapter.set_value(prj, "Label", "Parametric Road Project")
 
-    ensure_project_properties(prj)
-    ensure_project_tree(prj, include_references=False)
-    alignment_obj = alignment or find_v1_alignment(doc)
-    if alignment_obj is None:
-        alignment_obj = create_v1_sample_alignment(document=doc, project=prj)
-    previous_stationing = find_v1_stationing(doc)
-    stale_note = _previous_stationing_stale_note(previous_stationing, alignment_obj)
+        ensure_project_properties(prj)
+        ensure_project_tree(prj, include_references=False)
+        alignment_obj = alignment or find_v1_alignment(doc)
+        if alignment_obj is None:
+            alignment_obj = create_v1_sample_alignment(document=doc, project=prj)
+        previous_stationing = find_v1_stationing(doc)
+        stale_note = _previous_stationing_stale_note(previous_stationing, alignment_obj)
 
-    stationing = create_v1_stationing(
-        doc,
-        project=prj,
-        alignment=alignment_obj,
-        interval=interval,
-    )
-    if stale_note:
-        try:
-            stationing.Notes = f"{stationing.Notes} | {stale_note}"
-        except Exception:
-            pass
-    link_project(
-        prj,
-        links={"Stationing": stationing},
-        links_if_empty={"Alignment": alignment_obj},
-        adopt_extra=[alignment_obj, stationing],
-    )
-    try:
-        doc.recompute()
-    except Exception:
-        pass
+        stationing = create_v1_stationing(
+            doc,
+            project=prj,
+            alignment=alignment_obj,
+            interval=interval,
+            document_adapter=adapter,
+        )
+        if stale_note:
+            adapter.set_value(stationing, "Notes", f"{stationing.Notes} | {stale_note}")
+        link_project(
+            prj,
+            links={"Stationing": stationing},
+            links_if_empty={"Alignment": alignment_obj},
+            adopt_extra=[alignment_obj, stationing],
+        )
     return stationing
 
 

@@ -39,7 +39,7 @@ Parametric Road v1 provides a staged road corridor workflow:
 10. Generate Applied Sections.
 11. Build Corridor preview surfaces.
 12. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
-13. Prepare Watertight Solids, structure output, and exchange handoff data where available.
+13. Prepare structure output and exchange handoff data; existing Watertight Solid behavior is compatibility-only while development is paused.
 
 The workbench is built around a v1 source -> evaluation -> result -> output -> presentation structure.
 
@@ -111,11 +111,11 @@ Important v1 references:
 - `Import LandXML`
 - `Structure Output`
 - `AI Assist`
-- `Watertight Solids`
+- `Watertight Solids` (paused compatibility surface)
 
 Current toolbar order is organized around the v1 workflow:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline/Superelevation -> SubAssembly Designer/Assembly/Regions/Intersection/Structures -> Drainage -> Applied Sections -> Build Parametric -> Review -> Outputs/Import/Structure Output -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline/Superelevation -> SubAssembly Designer/Assembly/Regions/Intersection/Structures -> Drainage -> Applied Sections -> Build Parametric -> Review -> Outputs/Import/Structure Output -> AI Assist`
 
 ## Current V1 Areas
 
@@ -139,13 +139,13 @@ Current toolbar order is organized around the v1 workflow:
 - Earthwork Viewer and v1-native earthwork report path
 - Outputs & Exchange entry point
 - AI Assist entry point
-- Watertight Solids final-stage panel for selected road, Subassembly, drainage, and structure solid targets
+- Existing Watertight Solids panel retained for compatibility; development is paused
 
 ## In Progress
 
 - Advanced hydraulic analysis and automatic pipe sizing are future work.
 - Complete drawing-sheet production and full exchange output coverage remain incremental.
-- Watertight Solid composition is evolving from independent validated targets toward simulation-ready packages.
+- Watertight Solid development is paused; existing compatibility behavior is preserved without feature expansion.
 
 ## Install And Run
 
@@ -153,9 +153,10 @@ Current toolbar order is organized around the v1 workflow:
 2. Restart FreeCAD.
 3. Select the `Parametric Road` workbench.
 
-Recommended FreeCAD version:
+FreeCAD version policy:
 
-- FreeCAD `1.0.x`
+- minimum package compatibility: FreeCAD `1.0.3`
+- recommended and validated: FreeCAD `1.1.1`
 - Python `3.10+`
 
 ## Release And Versioning Policy

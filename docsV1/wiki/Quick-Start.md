@@ -48,7 +48,7 @@ Use this order:
 17. Review
 18. Outputs
 19. AI Assist
-20. Watertight Solids
+20. Watertight Solids (optional compatibility check; development paused)
 
 Drainage opens a source editor with Elements, Policies, and Flow Routes. It is placed after Region and Structures so Drainage Elements can reference Region ownership and Structure connection points before downstream corridor evaluation.
 
@@ -79,7 +79,7 @@ For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Al
 17. Open Cross Section Viewer.
 18. Open Drainage Review or show the Flow Network if Structure-backed drainage is present.
 19. Open Earthwork Viewer.
-20. Open Watertight Solids after Build Corridor when solid targets are needed.
+20. Optionally open Watertight Solids only to verify existing compatibility behavior after Build Corridor.
 
 ## 4. What To Check
 
@@ -95,4 +95,4 @@ For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Al
 - Review panels open without traceback errors.
 - Drainage opens the source editor and can store a `V1DrainageModel`.
 - Structure-backed Drainage Flow Routes can resolve to connection-point based pipe previews.
-- Watertight Solids remains gated until Build Corridor prerequisites are ready.
+- Watertight Solids remains gated and compatibility-only; do not treat it as an active development stage.

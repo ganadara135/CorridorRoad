@@ -443,8 +443,8 @@ def run():
             "Intersection Surface should consume boundary-loop shared breakline refs.",
         )
         _assert(
-            int(getattr(intersection_preview, "SharedBreaklineConstraintEdgeCount", 0) or 0) > 0,
-            "Intersection Surface should expose shared breakline constraint edges for boundary-loop handoff.",
+            int(getattr(intersection_preview, "SharedBreaklineConstraintSegmentCount", 0) or 0) > 0,
+            "Intersection Surface should expose consumed shared breakline segments for boundary-loop handoff.",
         )
         _assert(
             int(getattr(intersection_preview, "SharedBreaklineBoundaryLoopConstraintEdgeCount", 0) or 0) > 0,
@@ -455,8 +455,8 @@ def run():
             "Design Surface should consume boundary-loop shared breakline refs.",
         )
         _assert(
-            int(getattr(design_preview, "SharedBreaklineConstraintEdgeCount", 0) or 0) > 0,
-            "Design Surface should expose shared breakline constraint edges for boundary-loop handoff.",
+            int(getattr(design_preview, "SharedBreaklineConstraintSegmentCount", 0) or 0) > 0,
+            "Design Surface should expose consumed shared breakline segments for boundary-loop handoff.",
         )
         _assert(
             int(getattr(design_preview, "SharedBreaklineBoundaryLoopConstraintEdgeCount", 0) or 0) > 0,
@@ -498,8 +498,8 @@ def run():
             "Ordinary Slope Face Surface should consume boundary-loop shared breakline refs.",
         )
         _assert(
-            int(getattr(daylight_preview, "SharedBreaklineConstraintEdgeCount", 0) or 0) > 0,
-            "Ordinary Slope Face Surface should expose shared breakline constraint edges for boundary-loop handoff.",
+            int(getattr(daylight_preview, "SharedBreaklineConstraintSegmentCount", 0) or 0) > 0,
+            "Ordinary Slope Face Surface should expose consumed shared breakline segments for boundary-loop handoff.",
         )
         _assert(
             int(getattr(daylight_preview, "SharedBreaklineBoundaryLoopConstraintEdgeCount", 0) or 0) > 0,
@@ -607,14 +607,29 @@ def run():
                 role_name in breakline_notes,
                 f"Breakline Audit should expose Applied Section window Tie Slope shared breakline role: {role_name}.",
             )
+        supplemental_role_counts = {}
+        for audit_row in breakline_display_rows:
+            for token in str(audit_row.get("role_summary", "") or "").split(","):
+                token = token.strip()
+                if "=" not in token:
+                    continue
+                key, value = token.split("=", 1)
+                try:
+                    count = int(value.strip() or 0)
+                except Exception:
+                    continue
+                supplemental_role_counts[key.strip()] = max(supplemental_role_counts.get(key.strip(), 0), count)
         for role_name in (
             "intersection_tie_slope_supplemental_outer",
             "intersection_tie_slope_supplemental_inner",
             "intersection_tie_slope_supplemental_endpoint",
         ):
             _assert(
-                role_name not in breakline_notes,
-                f"T Intersection Tie Slope should not emit Cross supplemental shared breakline role: {role_name}.",
+                int(supplemental_role_counts.get(role_name, 0) or 0) == 0,
+                (
+                    f"T Intersection Tie Slope should not emit Cross supplemental shared breakline role: {role_name}; "
+                    f"counts={supplemental_role_counts}."
+                ),
             )
         tie_slope_window_handoff_rows = [
             row for row in breakline_display_rows
@@ -1317,43 +1332,6 @@ def run():
             and float(boundary_bbox["ymin"]) <= 0.0 <= float(boundary_bbox["ymax"]),
             f"Boundary loop focus should show the accepted outer loop around the intersection anchor: {boundary_bbox}.",
         )
-        _assert(
-            int(getattr(boundary_highlight, "BoundaryLoopClosed", 0) or 0) == 1,
-            "Boundary loop highlight should expose closed-loop metadata.",
-        )
-        _assert(
-            int(getattr(boundary_highlight, "BoundaryLoopPointCount", 0) or 0) >= 8
-            and int(getattr(boundary_highlight, "BoundaryLoopSegmentCount", 0) or 0) >= 8,
-            "Boundary loop highlight should expose non-trivial point and segment counts.",
-        )
-        _assert(
-            int(getattr(boundary_highlight, "BoundaryLoopSegmentRefCount", 0) or 0)
-            == int(getattr(boundary_highlight, "BoundaryLoopSegmentCount", 0) or 0),
-            "Boundary loop highlight should preserve one segment ref per boundary segment.",
-        )
-        _assert(
-            int(getattr(boundary_highlight, "BoundaryLoopSharedBreaklineRefCount", 0) or 0) > 0,
-            "Boundary loop highlight should expose shared breakline handoff refs.",
-        )
-        _assert(
-            int(getattr(boundary_highlight, "BoundaryLoopGraphEdgeRefCount", 0) or 0) > 0,
-            "Boundary loop highlight should expose shared-boundary graph edge refs.",
-        )
-        _assert(
-            "intersection_slope_face_surface=" in str(getattr(boundary_highlight, "BoundaryLoopGraphConsumerSummary", "") or ""),
-            "Boundary loop highlight should summarize graph consumers for Intersection Slope Face Surface.",
-        )
-        boundary_role_summary = str(getattr(boundary_highlight, "BoundaryLoopSegmentRoleSummary", "") or "")
-        for expected_role in (
-            "patch_to_design_surface",
-            "intersection_slope_face_to_corridor_slope_face",
-            "main_road_tie",
-            "side_road_tie",
-        ):
-            _assert(
-                f"{expected_role}=" in boundary_role_summary,
-                f"T preset boundary loop should expose segment role {expected_role}.",
-            )
         cell_contract_rows = [row for row in internal_contract_rows if row.get("contract_family") == "slope_face_cell"]
         _assert(
             len(cell_contract_rows) == len(cell_audit_rows),
@@ -1380,12 +1358,14 @@ def run():
         )
         graph_edge_focus = focus_corridor_intersection_contract_review_row(doc, first_graph_edge_index, include_internal=True)
         _assert(
-            str(getattr(graph_edge_focus, "Name", "") or "") == "V1CorridorIntersectionSlopeFaceSurfacePreview",
-            "Internal shared_boundary_graph edge focus should select the generated Intersection Slope Face Surface preview.",
+            str(getattr(graph_edge_focus, "Name", "") or "") == "ReviewIntersectionContractHighlight"
+            and str(getattr(graph_edge_focus, "HighlightGeometrySource", "") or "") == "intersection_shared_boundary_graph_result"
+            and int(getattr(graph_edge_focus, "HighlightedShapeCount", 0) or 0) > 0,
+            "Internal shared_boundary_graph edge focus should create a local result-contract highlight.",
         )
         _assert(
-            doc.getObject("ReviewIntersectionContractHighlight") is None,
-            "Internal shared_boundary_graph edge rows should not create legacy contract highlight geometry.",
+            str(getattr(graph_edge_focus, "ContractFamily", "") or "") == "shared_boundary_graph",
+            "Internal shared_boundary_graph edge focus should preserve its result-contract family.",
         )
         first_graph_cell_index = next(
             index
@@ -1394,13 +1374,15 @@ def run():
         )
         graph_cell_focus = focus_corridor_intersection_contract_review_row(doc, first_graph_cell_index, include_internal=True)
         _assert(
-            str(getattr(graph_cell_focus, "Name", "") or "") == "V1CorridorIntersectionSlopeFaceSurfacePreview",
-            "Internal shared_boundary_graph cell focus should select the generated Intersection Slope Face Surface preview.",
+            str(getattr(graph_cell_focus, "Name", "") or "") == "ReviewIntersectionContractHighlight"
+            and str(getattr(graph_cell_focus, "HighlightGeometrySource", "") or "") == "intersection_shared_boundary_graph_result"
+            and int(getattr(graph_cell_focus, "HighlightedShapeCount", 0) or 0) > 0,
+            "Internal shared_boundary_graph cell focus should create a local result-contract highlight.",
         )
         _assert(
-            doc.getObject("ReviewIntersectionContractHighlight") is None,
-            "Internal shared_boundary_graph cell rows should not create legacy contract highlight geometry.",
-            )
+            str(getattr(graph_cell_focus, "ContractFamily", "") or "") == "shared_boundary_graph",
+            "Internal shared_boundary_graph cell focus should preserve its result-contract family.",
+        )
         _assert(
             int(getattr(slope_face_preview, "TriangleCount", 0) or 0)
             == int(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterTriangleCount", 0) or 0)

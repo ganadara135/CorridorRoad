@@ -1746,6 +1746,36 @@ def test_corridor_guided_review_reports_intersection_surface_quality_diagnostics
         App.closeDocument(doc.Name)
 
 
+def test_build_corridor_panel_defers_inactive_review_tabs() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_sections_with_region_boundary(),
+        )
+
+        panel = V1BuildCorridorTaskPanel(document=doc)
+
+        assert panel._loaded_review_tabs == {"guided"}
+        assert panel._review_table.rowCount() == 0
+        assert panel._intersection_contract_table.rowCount() == 0
+        assert panel._drainage_table.rowCount() == 0
+
+        panel._tabs.setCurrentIndex(1)
+
+        assert "results" in panel._loaded_review_tabs
+        assert panel._review_table.rowCount() > 0
+
+        panel._tabs.setCurrentIndex(3)
+
+        assert "intersections" in panel._loaded_review_tabs
+        assert panel._intersection_contract_table.rowCount() > 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_build_review_reports_intersection_tie_in_continuity_audit() -> None:
     doc, project = _new_project_doc()
     try:
@@ -10705,6 +10735,7 @@ def test_corridor_preview_visibility_helpers_target_roles_and_markers() -> None:
                 FakeObject("V1CorridorIntersectionExclusionZonePreview"),
                 FakeObject("V1CorridorSubgradeSurfacePreview"),
                 FakeObject("V1CorridorDaylightSurfacePreview"),
+                FakeObject("V1CorridorIntersectionSlopeFaceSurfacePreview"),
                 FakeObject("V1CorridorRegionSurface_region_rural"),
                 FakeObject("ReviewIssueSlopeFaceIssue001L"),
                 FakeObject("ReviewIssueDrainageStation001"),
@@ -10866,6 +10897,7 @@ def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
                 FakeObject("V1CorridorIntersectionExclusionZonePreview"),
                 FakeObject("V1CorridorSubgradeSurfacePreview"),
                 FakeObject("V1CorridorDaylightSurfacePreview"),
+                FakeObject("V1CorridorIntersectionSlopeFaceSurfacePreview"),
                 FakeObject("V1CorridorRegionSurface_region_rural"),
                 FakeObject("ReviewIssueSlopeFaceIssue001L"),
                 FakeObject("ReviewIssueSlopeFaceIssue002R"),
@@ -10892,10 +10924,11 @@ def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
     steps = corridor_build_guided_review_steps(doc)
     assert [step["step_id"] for step in steps] == ["centerline", "design", "intersections", "slope_issues", "drainage", "drainage_flow"]
     assert "supplemental_sections" not in {step["step_id"] for step in steps}
+    assert steps[3]["title"] == "5. Side Slope"
     assert steps[4]["title"] == "6. Drainage Surface"
     assert steps[5]["title"] == "7. Drainage Flow"
     assert steps[3]["status"] == "warning"
-    assert steps[3]["focus"] == "First fallback issue marker"
+    assert steps[3]["focus"] == "Intersection and Corridor Slope Face Surfaces"
 
     focused = focus_corridor_build_guided_review_step(doc, "design")
     assert focused.Name == "V1CorridorDesignSurfacePreview"
@@ -10915,10 +10948,11 @@ def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
     assert doc.getObject("V1CorridorDaylightSurfacePreview").ViewObject.Visibility is False
 
     focused = focus_corridor_build_guided_review_step(doc, "slope_issues")
-    assert focused.Name == "ReviewIssueSlopeFaceIssue001L"
+    assert focused.Name == "V1CorridorIntersectionSlopeFaceSurfacePreview"
     assert doc.getObject("V1CorridorDaylightSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview").ViewObject.Visibility is True
     assert doc.getObject("V1CorridorRegionSurface_region_rural").ViewObject.Visibility is False
-    assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is True
+    assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is False
 
     focused = focus_corridor_slope_face_issue(doc, 1)
     assert focused.Name == "ReviewIssueSlopeFaceIssue002R"
@@ -11566,15 +11600,36 @@ def test_subassembly_kind_review_strips_skip_intersection_owned_sections() -> No
         App.closeDocument(doc.Name)
 
 
-def test_side_slope_guided_focus_falls_back_to_slope_face_surface_when_highlight_missing() -> None:
+def test_side_slope_compatibility_focus_uses_accepted_slope_face_surface() -> None:
     doc, _project = _new_project_doc()
     try:
         slope_preview = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
         slope_preview.Label = "Slope Face Surface - corridor:main"
+        build_corridor_command._set_preview_integer_property(slope_preview, "VertexCount", 4)
+        build_corridor_command._set_preview_integer_property(slope_preview, "TriangleCount", 2)
 
         focused = build_corridor_command.focus_corridor_subassembly_kind_review(doc, "side_slope")
 
         assert focused is slope_preview
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_side_slope_guided_review_prioritizes_intersection_result_and_removes_stale_marker() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        daylight = doc.addObject("Part::Feature", "V1CorridorDaylightSurfacePreview")
+        intersection = doc.addObject("Part::Feature", "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        stale_marker = doc.addObject("Part::Feature", "ReviewIssueSubassemblyKind_side_slope")
+        stale_marker_name = stale_marker.Name
+        for obj in (daylight, intersection):
+            build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
+            build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
+
+        focused = focus_corridor_build_guided_review_step(doc, "slope_issues")
+
+        assert focused is intersection
+        assert doc.getObject(stale_marker_name) is None
     finally:
         App.closeDocument(doc.Name)
 

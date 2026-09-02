@@ -159,6 +159,8 @@ Check:
 
 ## Watertight Solids Are Disabled Or Empty
 
+Watertight Solid development is paused. The guidance below preserves existing compatibility behavior only; it does not describe an active feature-expansion path.
+
 Check:
 
 - Applied Sections were generated

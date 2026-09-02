@@ -61,7 +61,7 @@ from ...services.evaluation.superelevation_service import (
     SuperelevationService,
     SuperelevationStationResult,
 )
-from ...services.evaluation.subassembly_bench_row_parser import bench_rows_to_dicts, parse_bench_rows
+from ...services.evaluation.subassembly_bench_profile_service import SubassemblyBenchProfileService
 from ...services.evaluation.subassembly_expression_service import SubassemblyExpressionService
 from ...services.evaluation.station_context_resolver import StationContextResolver
 from ...services.evaluation.tin_sampling_service import TinSamplingService
@@ -3099,59 +3099,8 @@ def _bench_profile_segments_with_diagnostics(
     *,
     total_width: float | None = None,
 ) -> tuple[list[dict[str, object]], list[DiagnosticMessage]]:
-    params = dict(getattr(row, "parameters", {}) or {})
-    parse_result = parse_bench_rows(
-        params.get("bench_rows", []),
-        source_id=f"{_subassembly_id(row, fallback='side_slope')}:bench_rows",
-    )
-    remaining = max(
-        float(total_width if total_width is not None else getattr(row, "width", 0.0) or 0.0),
-        0.0,
-    )
-    current_slope = float(getattr(row, "slope", 0.0) or 0.0)
-    rows = bench_rows_to_dicts(parse_result.rows)
-    if not rows:
-        if remaining <= 1.0e-9:
-            return [], list(parse_result.diagnostic_rows)
-        return [{"kind": "side_slope", "width": remaining, "slope": current_slope}], list(parse_result.diagnostic_rows)
-    repeat = _truthy(params.get("repeat_first_bench_to_daylight"))
-    source_rows = [rows[0]] if repeat else rows
-    segments: list[dict[str, object]] = []
-
-    def append_row(row: dict[str, object]) -> bool:
-        nonlocal remaining, current_slope
-        if remaining <= 1.0e-9:
-            return False
-        before = remaining
-        drop = max(float(row.get("drop", 0.0) or 0.0), 0.0)
-        pre_width = 0.0
-        if drop > 1.0e-9 and abs(current_slope) > 1.0e-9:
-            pre_width = min(remaining, drop / abs(current_slope))
-        if pre_width > 1.0e-9:
-            segments.append({"kind": "side_slope", "width": pre_width, "slope": current_slope})
-            remaining = max(remaining - pre_width, 0.0)
-        bench_width = min(max(float(row.get("width", 0.0) or 0.0), 0.0), remaining)
-        if bench_width > 1.0e-9:
-            segments.append({"kind": "bench", "width": bench_width, "slope": float(row.get("slope", 0.0) or 0.0)})
-            remaining = max(remaining - bench_width, 0.0)
-        next_slope = float(row.get("post_slope", current_slope) or current_slope)
-        current_slope = next_slope
-        return abs(before - remaining) > 1.0e-9
-
-    if repeat and source_rows:
-        guard = 0
-        while remaining > 1.0e-9 and guard < 512:
-            guard += 1
-            if not append_row(source_rows[0]):
-                break
-    else:
-        for row in source_rows:
-            if remaining <= 1.0e-9:
-                break
-            append_row(row)
-    if remaining > 1.0e-9:
-        segments.append({"kind": "side_slope", "width": remaining, "slope": current_slope})
-    return segments, list(parse_result.diagnostic_rows)
+    result = SubassemblyBenchProfileService().evaluate(row, total_width=total_width)
+    return result.to_dict_rows(), list(result.diagnostic_rows)
 
 
 def _clip_bench_segments_to_terrain(

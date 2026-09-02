@@ -19,6 +19,11 @@ from ..models.source.subassembly_definition_model import (
     SubassemblyShapeRow,
     SubassemblyTargetRow,
 )
+from .persistence_payload_adapter import (
+    ensure_model_payload_properties,
+    read_model_payload,
+    write_model_payload,
+)
 
 
 class V1SubassemblyLibraryObject:
@@ -72,6 +77,7 @@ def ensure_v1_subassembly_library_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "DefinitionNames", "Subassembly Definitions", "definition names")
     _add_property(obj, "App::PropertyStringList", "DefinitionKinds", "Subassembly Definitions", "definition kinds")
     _add_property(obj, "App::PropertyStringList", "DefinitionRows", "Subassembly Definitions", "definition rows as JSON")
+    ensure_model_payload_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1SubassemblyLibrary"
@@ -150,6 +156,13 @@ def update_v1_subassembly_library_object(
     obj.DefinitionNames = [str(row.name) for row in definitions]
     obj.DefinitionKinds = [str(row.kind) for row in definitions]
     obj.DefinitionRows = [_json_row(row) for row in definitions]
+    write_model_payload(
+        obj,
+        library_model,
+        model_type="SubassemblyLibrary",
+        row_fields=("definition_rows",),
+        required_refs=("project_id", "library_id"),
+    )
     try:
         obj.touch()
     except Exception:
@@ -163,6 +176,13 @@ def to_subassembly_library(obj) -> SubassemblyLibrary | None:
     if not _is_v1_subassembly_library(obj):
         return None
     ensure_v1_subassembly_library_properties(obj)
+    payload_result = read_model_payload(
+        obj,
+        expected_model_type="SubassemblyLibrary",
+        model_class=SubassemblyLibrary,
+    )
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     definitions = [_definition_from_json_row(row) for row in _json_rows(getattr(obj, "DefinitionRows", []) or [])]
     return SubassemblyLibrary(
         schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),

@@ -154,11 +154,6 @@ def build_v1_document_earthwork_report(
         current_station=focus_station,
     )
 
-    navigation_rows = _build_navigation_station_rows(
-        station_values,
-        current_station=focus_station,
-    )
-
     return {
         "corridor": result.corridor,
         "applied_section_set": result.applied_section_set,
@@ -257,6 +252,10 @@ def build_legacy_document_earthwork_report(
                     str(row.get("label", "") or f"STA {adapter._safe_float(row.get('station', 0.0), 0.0):.3f}"),
                 )
             )
+    navigation_rows = _build_navigation_station_rows(
+        station_values,
+        current_station=focus_station,
+    )
 
     return {
         "corridor": bundle.corridor,

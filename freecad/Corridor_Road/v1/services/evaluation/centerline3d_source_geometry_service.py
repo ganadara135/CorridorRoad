@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from ...models.source.alignment_model import AlignmentModel
 from ...models.source.profile_model import ProfileModel
+from ...models.result.centerline3d_arc_fit import Centerline3DArcFitResult
 from .alignment_evaluation_service import AlignmentEvaluationService
 from .profile_evaluation_service import ProfileEvaluationService
 
@@ -90,6 +91,66 @@ class Centerline3DSourceGeometryService:
             status="ok",
             diagnostic_rows=diagnostics,
         )
+
+    def evaluate_horizontal_point(
+        self,
+        alignment: AlignmentModel | None,
+        station: float,
+        *,
+        arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
+        arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
+    ) -> tuple[float, float] | None:
+        """Evaluate one horizontal point directly from Alignment source geometry."""
+
+        if alignment is None:
+            return None
+        return _horizontal_source_point(
+            alignment,
+            self.alignment_service,
+            station,
+            arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
+            arc_fit_relative_tolerance=arc_fit_relative_tolerance,
+        )
+
+    @staticmethod
+    def evaluate_plan_arc_fit(
+        points: list[tuple[float, float]],
+        *,
+        arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
+        arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
+    ) -> Centerline3DArcFitResult:
+        """Return a typed arc-fit result for plan source points."""
+
+        quality = _arc_fit_quality_from_points(
+            points,
+            arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
+            arc_fit_relative_tolerance=arc_fit_relative_tolerance,
+        )
+        return Centerline3DArcFitResult(
+            accepted=bool(quality.get("accepted", False)),
+            arc=quality.get("arc"),
+            radial_error=float(quality.get("radial_error", 0.0) or 0.0),
+            tolerance=float(quality.get("tolerance", 0.0) or 0.0),
+        )
+
+    @staticmethod
+    def plan_points_from_geometry_payload(payload: object) -> list[tuple[float, float]]:
+        """Normalize paired XY source values from an Alignment geometry payload."""
+
+        if not isinstance(payload, dict):
+            return []
+        return list(
+            zip(
+                _numeric_source_values(payload.get("x_values", [])),
+                _numeric_source_values(payload.get("y_values", [])),
+            )
+        )
+
+    @staticmethod
+    def normalize_arc_fit_tolerances(absolute: float, relative: float) -> tuple[float, float]:
+        """Normalize user-provided arc-fit tolerances."""
+
+        return _normalized_arc_fit_tolerances(absolute, relative)
 
 
 def _blocked_result(station: float, code: str, message: str) -> Centerline3DSourceStationResult:

@@ -25,6 +25,54 @@ from ..models.result.applied_section import (
     AppliedSectionSubassemblyShape,
 )
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
+from .persistence_payload_adapter import (
+    ensure_incremental_result_properties,
+    ensure_model_payload_properties,
+    make_incremental_record,
+    read_model_payload,
+    write_incremental_record,
+    write_model_payload,
+)
+
+
+# Applied Sections can be large because each evaluated station carries point,
+# subassembly, diagnostic, and context rows.  Review consumers commonly ask for
+# the same accepted result several times during one UI interaction.  Cache only
+# payload-backed results and key them by the persisted identity so a write or a
+# source/result fingerprint change naturally invalidates the entry.
+_APPLIED_SECTION_SET_PAYLOAD_CACHE: dict[
+    int, tuple[tuple[str, str, str], AppliedSectionSet]
+] = {}
+_APPLIED_SECTION_SET_PAYLOAD_CACHE_LIMIT = 16
+
+
+def _applied_section_set_payload_cache_key(obj) -> tuple[str, str, str] | None:
+    payload_schema = str(getattr(obj, "PayloadSchemaVersion", "") or "")
+    checksum = str(getattr(obj, "ModelPayloadChecksum", "") or "")
+    fingerprint = str(getattr(obj, "SourceFingerprint", "") or "")
+    if not checksum:
+        return None
+    return payload_schema, checksum, fingerprint
+
+
+def clear_applied_section_set_payload_cache(obj=None) -> None:
+    """Discard cached payload restoration for one result object or all objects."""
+
+    if obj is None:
+        _APPLIED_SECTION_SET_PAYLOAD_CACHE.clear()
+        return
+    _APPLIED_SECTION_SET_PAYLOAD_CACHE.pop(id(obj), None)
+
+
+def _cache_applied_section_set_payload(
+    obj,
+    cache_key: tuple[str, str, str],
+    model: AppliedSectionSet,
+) -> None:
+    _APPLIED_SECTION_SET_PAYLOAD_CACHE[id(obj)] = (cache_key, model)
+    while len(_APPLIED_SECTION_SET_PAYLOAD_CACHE) > _APPLIED_SECTION_SET_PAYLOAD_CACHE_LIMIT:
+        oldest_object_id = next(iter(_APPLIED_SECTION_SET_PAYLOAD_CACHE))
+        _APPLIED_SECTION_SET_PAYLOAD_CACHE.pop(oldest_object_id, None)
 
 
 class V1AppliedSectionSetObject:
@@ -159,6 +207,8 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
     _add_property(obj, "App::PropertyString", "ReviewShapeStatus", "Review", "full review shape build status")
     _add_property(obj, "App::PropertyInteger", "ReviewShapeStationCount", "Review", "station count used by the full review shape")
+    ensure_model_payload_properties(obj, add_property=_add_property)
+    ensure_incremental_result_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1AppliedSectionSet"
@@ -225,6 +275,7 @@ def create_or_update_v1_applied_section_set_object(
 def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectionSet, *, label: str = "Applied Sections"):
     """Write AppliedSectionSet result summaries into a FreeCAD object."""
 
+    clear_applied_section_set_payload_cache(obj)
     ensure_v1_applied_section_set_properties(obj)
     station_rows = list(getattr(applied_section_set, "station_rows", []) or [])
     sections = list(getattr(applied_section_set, "sections", []) or [])
@@ -295,6 +346,21 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.DiagnosticRows = _diagnostic_rows(sections)
     _set_applied_section_diagnostic_summary(obj, station_rows, sections)
     obj.SourceRefs = [str(ref) for ref in list(getattr(applied_section_set, "source_refs", []) or []) if str(ref)]
+    result_fingerprint = write_model_payload(
+        obj,
+        applied_section_set,
+        model_type="AppliedSectionSet",
+        row_fields=("station_rows", "sections"),
+        required_refs=("project_id", "applied_section_set_id"),
+    )
+    write_incremental_record(
+        obj,
+        make_incremental_record(
+            stage_name="applied_sections",
+            result_fingerprint=result_fingerprint,
+            consumed_source_refs=getattr(applied_section_set, "source_refs", ()),
+        ),
+    )
     obj.ReviewShapeStatus = "not_built"
     obj.ReviewShapeStationCount = 0
     _set_empty_applied_section_set_shape(obj)
@@ -467,6 +533,18 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     if not _is_v1_applied_section_set(obj):
         return None
     ensure_v1_applied_section_set_properties(obj)
+    payload_cache_key = _applied_section_set_payload_cache_key(obj)
+    cached = _APPLIED_SECTION_SET_PAYLOAD_CACHE.get(id(obj))
+    if cached is not None and cached[0] == payload_cache_key:
+        return cached[1]
+    payload_result = read_model_payload(obj, expected_model_type="AppliedSectionSet", model_class=AppliedSectionSet)
+    if payload_result is not None:
+        model = payload_result.model if payload_result.accepted else None
+        if model is not None and payload_cache_key is not None:
+            _cache_applied_section_set_payload(obj, payload_cache_key, model)
+        elif cached is not None:
+            clear_applied_section_set_payload_cache(obj)
+        return model
     station_values = _float_list(getattr(obj, "StationValues", []) or [])
     section_ids = list(getattr(obj, "AppliedSectionIds", []) or [])
     station_rows: list[AppliedSectionStationRow] = []

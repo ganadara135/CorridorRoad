@@ -11,6 +11,7 @@ from ...models.output.cross_section_drawing import (
 )
 from ...models.result.applied_section import AppliedSection
 from ...models.result.applied_section_set import AppliedSectionSet
+from ...common.diagnostics import DiagnosticMessage
 
 
 _FG_SUBASSEMBLY_KINDS = {
@@ -44,14 +45,22 @@ class CrossSectionDrawingMapper:
                 drawing_id=f"{getattr(applied_section_set, 'applied_section_set_id', '')}:empty-drawing",
                 station=float(station or 0.0),
                 station_label=f"STA {float(station or 0.0):.3f}",
-                source_refs=[str(getattr(applied_section_set, "applied_section_set_id", "") or "")],
-                result_refs=[],
+                source_refs=list(getattr(applied_section_set, "source_refs", []) or []),
+                result_refs=[str(getattr(applied_section_set, "applied_section_set_id", "") or "")],
                 summary_rows=[
                     CrossSectionDrawingSummaryRow(
                         summary_id="cross-section-drawing:missing-section",
                         kind="missing_section",
                         label="Section",
                         value="No AppliedSection station was available.",
+                    )
+                ],
+                diagnostic_rows=[
+                    DiagnosticMessage(
+                        severity="error",
+                        kind="cross_section_applied_section_missing",
+                        message="No Applied Section result is available for the requested station.",
+                        notes="Build Applied Sections from accepted source contracts before opening this output.",
                     )
                 ],
             )

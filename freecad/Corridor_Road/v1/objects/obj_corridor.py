@@ -8,6 +8,14 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     App = None
 
 from ..models.result.corridor_model import CorridorModel, CorridorSamplingPolicy, CorridorStationRow
+from .persistence_payload_adapter import (
+    ensure_incremental_result_properties,
+    ensure_model_payload_properties,
+    make_incremental_record,
+    read_model_payload,
+    write_incremental_record,
+    write_model_payload,
+)
 
 
 class V1CorridorModelObject:
@@ -67,6 +75,8 @@ def ensure_v1_corridor_model_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "StationKinds", "Stations", "station kinds")
     _add_property(obj, "App::PropertyStringList", "StationSourceReasons", "Stations", "station source reasons")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
+    ensure_model_payload_properties(obj, add_property=_add_property)
+    ensure_incremental_result_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1CorridorModel"
@@ -143,6 +153,22 @@ def update_v1_corridor_model_object(obj, corridor_model: CorridorModel, *, label
     obj.StationKinds = [str(row.kind) for row in rows]
     obj.StationSourceReasons = [str(row.source_reason) for row in rows]
     obj.SourceRefs = [str(ref) for ref in list(getattr(corridor_model, "source_refs", []) or []) if str(ref)]
+    result_fingerprint = write_model_payload(
+        obj,
+        corridor_model,
+        model_type="CorridorModel",
+        row_fields=("station_rows", "surface_build_refs", "solid_build_refs"),
+        required_refs=("project_id", "corridor_id"),
+    )
+    write_incremental_record(
+        obj,
+        make_incremental_record(
+            stage_name="corridor_model",
+            result_fingerprint=result_fingerprint,
+            consumed_source_refs=getattr(corridor_model, "source_refs", ()),
+            consumed_result_refs=(getattr(corridor_model, "applied_section_set_ref", ""),),
+        ),
+    )
     try:
         obj.touch()
     except Exception:
@@ -156,6 +182,9 @@ def to_corridor_model(obj) -> CorridorModel | None:
     if not _is_v1_corridor_model(obj):
         return None
     ensure_v1_corridor_model_properties(obj)
+    payload_result = read_model_payload(obj, expected_model_type="CorridorModel", model_class=CorridorModel)
+    if payload_result is not None:
+        return payload_result.model if payload_result.accepted else None
     stations = _float_list(getattr(obj, "StationValues", []) or [])
     rows = [
         CorridorStationRow(
