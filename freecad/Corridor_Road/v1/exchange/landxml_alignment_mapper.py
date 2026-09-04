@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from ..models.source.alignment_model import AlignmentElement, AlignmentModel
 from .landxml_import_contracts import LandXMLAlignmentCandidate, LandXMLAlignmentElementCandidate
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 def alignment_model_from_landxml_candidate(
@@ -81,9 +82,7 @@ def create_or_update_alignment_from_landxml_candidate(
 
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     try:

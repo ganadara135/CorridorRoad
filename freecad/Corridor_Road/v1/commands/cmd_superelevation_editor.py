@@ -21,8 +21,8 @@ from ...objects.obj_project import (
     ensure_project_properties,
     ensure_project_tree,
     find_project,
-    route_to_v1_tree,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 from ..models.source.superelevation_model import (
     CrossfallControlRow,
     RunoffTransitionRow,
@@ -200,7 +200,7 @@ def show_v1_superelevation_review_object(
     _set_review_float(obj, "BarWidth", float(bar_width))
     _style_superelevation_review_object(obj)
     try:
-        route_to_v1_tree(find_project(doc), obj)
+        route_object_to_project_tree(find_project(doc), obj)
     except Exception:
         pass
     try:

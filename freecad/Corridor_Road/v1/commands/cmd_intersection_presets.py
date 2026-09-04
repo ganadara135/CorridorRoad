@@ -33,6 +33,7 @@ from .cmd_intersection_editor import (
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
 from ..objects.obj_intersection import create_or_update_v1_intersection_model_object
 from ..objects.obj_superelevation import create_or_update_v1_superelevation_source_object
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 INTERSECTION_PRESETS_COMMAND_ID = "CorridorRoad_V1IntersectionPresets"
@@ -1486,15 +1487,11 @@ def _route_intersection_preset_objects(document, *, project=None) -> None:
         project = find_project(document)
     if project is None:
         return
-    try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-    except Exception:
-        return
     for obj in list(getattr(document, "Objects", []) or []):
         if not _is_intersection_preset_tree_object(obj):
             continue
         try:
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
 

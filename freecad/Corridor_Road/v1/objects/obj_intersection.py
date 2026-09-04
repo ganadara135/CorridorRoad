@@ -25,6 +25,7 @@ from ..models.source.intersection_model import (
     IntersectionRow,
     IntersectionSlopeFacePolicyRow,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 class V1IntersectionModelObject:
@@ -171,9 +172,7 @@ def create_or_update_v1_intersection_model_object(
 
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

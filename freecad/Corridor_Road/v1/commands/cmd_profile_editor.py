@@ -59,6 +59,7 @@ from ..services.evaluation import (  # noqa: F401 - runtime-injected UI collabor
 from ..ui.common import run_legacy_command  # noqa: F401 - runtime-injected UI collaborator
 from ..ui.common.styles import apply_clickable_tab_style  # noqa: F401 - runtime-injected UI collaborator
 from .selection_context import selected_alignment_profile_target
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 PROFILE_PRESET_ROWS = {
@@ -357,12 +358,10 @@ def show_profile_preview_object(
         _set_preview_string_property(obj, "ExistingGroundStatus", str(preview.get("eg_status", "") or "unavailable"))
     _update_profile_sheet_labels(document, preview)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
         project = find_project(document)
         if project is not None:
             for obj in (frame_obj, grid_obj, fg_obj, eg_obj):
-                route_to_v1_tree(project, obj)
+                route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return fg_obj

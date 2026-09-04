@@ -8,6 +8,23 @@ from typing import Callable, Iterator
 from ...objects.obj_project import find_project, route_to_v1_tree
 
 
+def route_object_to_project_tree(project, obj):
+    """Route an object through the canonical v1 project-tree policy.
+
+    Module-level entry point for call sites that already hold the project object
+    and do not need a full adapter instance. v1 modules use this instead of
+    importing the legacy project module directly, so tree routing has one v1
+    owner even while the implementation still lives in the legacy project
+    object for document compatibility.
+
+    This is a pass-through. Argument handling, None behavior, and the return
+    value are exactly those of the legacy function; the adapter method below
+    keeps its own project resolution and guards.
+    """
+
+    return route_to_v1_tree(project, obj)
+
+
 class ProjectDocumentAdapter:
     """Centralize v1 document lookup, persistence, routing, and write boundaries."""
 

@@ -279,10 +279,16 @@ def test_legacy_tree_routing_is_limited_to_adapter_and_recorded_object_compatibi
         "objects/obj_surface_transition.py",
         "objects/obj_watertight_solid.py",
     }
-    allowed = compatibility_paths | {"objects/project_document_adapter.py"}
+    # The per-object compatibility paths listed above were migrated to
+    # project_document_adapter.route_object_to_project_tree. The adapter is now
+    # the single v1 owner of tree routing, so the recorded exception list is
+    # empty and the guard covers every v1 package rather than objects alone.
+    assert compatibility_paths, "keep the migrated path record for review history"
+    allowed = {"objects/project_document_adapter.py"}
     actual = {
         ref.path
-        for ref in _imports("objects")
+        for package in ("models", "services", "objects", "ui", "commands", "exchange", "common")
+        for ref in _imports(package)
         if all(
             (
                 ref.module in {"freecad.Corridor_Road.objects.obj_project", "objects.obj_project"},
@@ -291,6 +297,7 @@ def test_legacy_tree_routing_is_limited_to_adapter_and_recorded_object_compatibi
         )
     }
     assert actual == allowed, (
-        "Direct legacy tree routing changed. New persistence must use ProjectDocumentAdapter; "
-        f"migrated compatibility paths must be removed deliberately.\nactual={sorted(actual)!r}"
+        "Direct legacy tree routing changed. v1 modules must call "
+        "route_object_to_project_tree or ProjectDocumentAdapter instead of importing "
+        f"route_to_v1_tree from the legacy project object.\nactual={sorted(actual)!r}"
     )

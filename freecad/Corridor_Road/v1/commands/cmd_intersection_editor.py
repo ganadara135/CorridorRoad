@@ -46,7 +46,8 @@ from ..objects.obj_stationing import create_v1_stationing
 from ..models.source.region_model import RegionModel, RegionRow
 from ..services.evaluation.intersection_alignment_detection_service import AlignmentIntersectionDetectionService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
-from ...objects.obj_project import find_project, route_to_v1_tree
+from ...objects.obj_project import find_project
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 INTERSECTION_COMMAND_ID = "CorridorRoad_V1EditIntersections"
@@ -599,7 +600,7 @@ def show_intersection_review_overlay(
     try:
         prj = project or find_project(document)
         if prj is not None:
-            route_to_v1_tree(prj, obj)
+            route_object_to_project_tree(prj, obj)
     except Exception:
         pass
     try:
@@ -2517,7 +2518,7 @@ def _create_alignment_source_from_points(document, *, label: str, alignment_id: 
         pass
     if project is not None:
         try:
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

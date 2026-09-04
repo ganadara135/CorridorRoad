@@ -32,6 +32,7 @@ from ..services.evaluation.alignment_evaluation_service import AlignmentEvaluati
 from ..services.mapping.drainage_review_mapper import DrainageReviewMapper
 from ..services.mapping.drainage_pipeline_geometry_mapper import build_drainage_pipeline_geometry_rows
 from ..ui.common.styles import apply_clickable_tab_style  # noqa: F401 - runtime-injected UI collaborator
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 class CmdV1DrainageReview:
@@ -129,9 +130,7 @@ def show_drainage_pipeline_candidate_preview_object(document=None, row_index: in
     _set_preview_string_property(obj, "CoordinateMode", str(coordinate_frame.get("coordinate_mode", "") or "station_offset_fallback"))
     _style_pipeline_candidate_preview(obj, status=status)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(doc), obj)
+        route_object_to_project_tree(find_project(doc), obj)
     except Exception:
         pass
     try:
@@ -174,9 +173,7 @@ def show_drainage_flow_route_issue_preview_object(document=None, row_index: int 
     _set_preview_string_property(obj, "CoordinateMode", str(coordinate_frame.get("coordinate_mode", "") or "station_offset_fallback"))
     _style_flow_route_issue_preview(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(doc), obj)
+        route_object_to_project_tree(find_project(doc), obj)
     except Exception:
         pass
     try:
@@ -216,9 +213,7 @@ def show_drainage_pipeline_segment_preview_object(document=None, row_index: int 
     _set_preview_string_property(obj, "CoordinateMode", str(getattr(geometry_row, "coordinate_mode", "") or "station_offset_fallback"))
     _style_pipeline_segment_preview(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(doc), obj)
+        route_object_to_project_tree(find_project(doc), obj)
     except Exception:
         pass
     try:
@@ -258,9 +253,7 @@ def show_drainage_pipeline_network_preview_object(document=None, row_index: int 
     _set_preview_string_property(obj, "FuseMode", _note_value(str(getattr(row, "notes", "") or ""), "fuse_mode"))
     _style_pipeline_network_preview(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(doc), obj)
+        route_object_to_project_tree(find_project(doc), obj)
     except Exception:
         pass
     try:
@@ -321,9 +314,7 @@ def show_drainage_pipeline_networks_preview_object(document=None, output=None):
     _set_preview_string_property(obj, "CoordinateMode", ",".join(_unique_text_values(coordinate_modes)))
     _style_pipeline_network_preview(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(doc), obj)
+        route_object_to_project_tree(find_project(doc), obj)
     except Exception:
         pass
     try:
@@ -481,9 +472,7 @@ def _create_pipeline_geometry_preview_objects(document, geometry_rows: list[obje
         _set_preview_string_property(obj, "CoordinateMode", str(getattr(row, "coordinate_mode", "") or ""))
         _style_pipeline_segment_preview(obj)
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(find_project(document), obj)
+            route_object_to_project_tree(find_project(document), obj)
         except Exception:
             pass
         objects.append(obj)
@@ -543,9 +532,7 @@ def _create_pipeline_connection_point_preview_objects(document, output, geometry
         _set_preview_string_property(obj, "FlowRouteRef", str(spec.get("flow_route_ref", "") or ""))
         _style_pipeline_connection_point_preview(obj, role)
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(find_project(document), obj)
+            route_object_to_project_tree(find_project(document), obj)
         except Exception:
             pass
         objects.append(obj)

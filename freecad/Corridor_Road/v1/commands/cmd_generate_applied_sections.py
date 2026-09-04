@@ -54,6 +54,7 @@ from ..services.builders.corridor_surface_geometry_service import (
 )
 from ..services.evaluation import Centerline3DFrameService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 APPLIED_SECTION_REVIEW_ROW_COLORS = {
@@ -583,9 +584,7 @@ def show_applied_section_preview_object(document, applied_section_set, row_index
     _style_applied_section_preview_object(obj)
     _remove_applied_section_station_marker_object(document)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     try:
@@ -636,9 +635,7 @@ def show_all_applied_sections_preview_object(document, applied_section_set):
     _style_applied_section_preview_object(obj)
     _remove_applied_section_station_marker_object(document)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     try:

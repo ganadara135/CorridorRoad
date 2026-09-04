@@ -1,7 +1,20 @@
 param(
-    [ValidateSet("Compile", "Lint", "Architecture", "Fast", "Contracts", "Smokes", "Full")]
+    [ValidateSet("Compile", "Lint", "Architecture", "Fast", "Contracts", "ContractsFull", "Smokes", "Full")]
     [string]$Tier = "Full",
     [string]$FreeCADBin = ""
+)
+
+# Four contract modules account for roughly three quarters of the full contract
+# run. Measured on 2026-09-02: the complete suite is 1462 tests in 390s, and the
+# 60 slowest tests alone consume 286s, of which these modules contribute 267s.
+# The Contracts tier skips them so it stays usable as a routine gate; the
+# ContractsFull tier runs everything and is the release-facing level.
+# See docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md section 5.1.
+$HeavyContractModules = @(
+    "tests/contracts/v1/test_intersection_command.py",
+    "tests/contracts/v1/test_build_corridor_command.py",
+    "tests/contracts/v1/test_drainage_editor_command.py",
+    "tests/contracts/v1/test_tin_review_command.py"
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,7 +52,18 @@ function Invoke-LintValidation {
 }
 
 function Invoke-ContractValidation {
-    Invoke-CheckedCommand -Label "v1 contract tests" -Command {
+    $ignoreArguments = @()
+    foreach ($module in $HeavyContractModules) {
+        $ignoreArguments += "--ignore=$module"
+    }
+    Write-Host "    skipping long-running modules: $($HeavyContractModules -join ', ')"
+    Invoke-CheckedCommand -Label "v1 contract tests (fast subset)" -Command {
+        & $pythonPath scripts/run_pytest_with_qt.py -q tests/contracts/v1 @ignoreArguments
+    }
+}
+
+function Invoke-FullContractValidation {
+    Invoke-CheckedCommand -Label "v1 contract tests (complete)" -Command {
         & $pythonPath scripts/run_pytest_with_qt.py -q tests/contracts/v1
     }
 }
@@ -143,12 +167,13 @@ switch ($Tier) {
     "Architecture" { Invoke-ArchitectureValidation }
     "Fast" { Invoke-FastValidation }
     "Contracts" { Invoke-ContractValidation }
+    "ContractsFull" { Invoke-FullContractValidation }
     "Smokes" { Invoke-SmokeValidation }
     "Full" {
         Invoke-CompileValidation
         Invoke-LintValidation
         Invoke-ArchitectureValidation
-        Invoke-ContractValidation
+        Invoke-FullContractValidation
         Invoke-SmokeValidation
     }
 }

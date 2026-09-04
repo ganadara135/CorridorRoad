@@ -22,6 +22,7 @@ from .obj_alignment import (
     to_alignment_model,
 )
 from ..services.evaluation import AlignmentEvaluationService, ProfileEvaluationService
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 class V1ProfileObject:
@@ -169,9 +170,7 @@ def create_sample_v1_profile(
 
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

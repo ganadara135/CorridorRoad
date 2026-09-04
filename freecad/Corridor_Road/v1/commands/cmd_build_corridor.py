@@ -238,6 +238,7 @@ from ..ui.viewers.build_corridor_view import (
     V1BuildCorridorTaskPanel,
     configure_build_corridor_task_panel_runtime,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 IntersectionTieInEdgeRow = _intersection_tie_in_edge_models.IntersectionTieInEdgeRow
 
@@ -4381,9 +4382,7 @@ def _create_intersection_contract_review_highlight(*, document=None, row: dict[s
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     try:
@@ -6854,9 +6853,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -7116,9 +7113,7 @@ def _create_subassembly_surface_strip_review_highlight(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -7616,9 +7611,7 @@ def create_corridor_centerline_3d_preview(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(doc), obj)
+        route_object_to_project_tree(project or find_project(doc), obj)
     except Exception:
         pass
     return obj
@@ -8064,9 +8057,7 @@ def create_or_update_corridor_supplemental_frame_markers(
         pass
     _set_object_visibility(obj, bool(visible))
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(doc), obj)
+        route_object_to_project_tree(project or find_project(doc), obj)
     except Exception:
         pass
     return obj
@@ -8270,9 +8261,7 @@ def create_corridor_design_surface_preview(
             surface_role="design_surface",
         )
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(doc), preview_obj)
+            route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
     return preview_obj
@@ -9009,9 +8998,7 @@ def create_corridor_intersection_surface_preview(
         _attach_intersection_manual_qa_capture_metadata(preview_obj)
         _set_preview_property(preview_obj, "IntersectionReviewSummary", _intersection_surface_review_notes(preview_obj))
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(doc), preview_obj)
+            route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
     return preview_obj
@@ -10451,9 +10438,7 @@ def create_corridor_subgrade_surface_preview(
             surface_role="subgrade_surface",
         )
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(doc), preview_obj)
+            route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
     return preview_obj
@@ -10679,9 +10664,7 @@ def create_corridor_daylight_surface_preview(
             surface_role="slope_face_surface",
         )
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(doc), preview_obj)
+            route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
         _create_intersection_slope_face_overlap_preview(
@@ -10810,9 +10793,7 @@ def create_corridor_drainage_surface_preview(
             preview_result=result,
         )
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(doc), preview_obj)
+            route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
     return preview_obj
@@ -10856,9 +10837,7 @@ def create_corridor_surface_transition_span_markers(
     _set_preview_string_list_property(obj, "TransitionSampleCounts", metadata["sample_counts"])
     _set_preview_integer_property(obj, "TransitionSpanCount", len(refs))
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(doc), obj)
+        route_object_to_project_tree(project or find_project(doc), obj)
     except Exception:
         pass
     return obj
@@ -12591,9 +12570,7 @@ def _create_or_update_region_surface_preview_object(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     _style_region_preview_object(obj, selected=False)
@@ -15542,9 +15519,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -15836,9 +15811,7 @@ def _create_drainage_review_marker(*, document=None, row: dict[str, object] | No
         _set_preview_float_property(obj, "SuggestedInletY", point[1])
         _set_preview_float_property(obj, "SuggestedInletZ", point[2])
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -16562,9 +16535,7 @@ def _create_corridor_intersection_tie_in_edge_preview(document, tie_in_result: I
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -16655,9 +16626,7 @@ def _create_corridor_intersection_boundary_segment_preview(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -16725,9 +16694,7 @@ def _create_corridor_intersection_exclusion_zone_preview(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -17117,9 +17084,7 @@ def _create_corridor_intersection_slope_face_surface_preview(
         )
     _attach_intersection_slope_face_owner_fill_readiness_metadata(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -17269,9 +17234,7 @@ def _create_corridor_intersection_tie_slope_surface_preview(
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -17424,9 +17387,7 @@ def _create_corridor_roundabout_entry_exit_connector_surface_preview(
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -17565,9 +17526,7 @@ def _create_corridor_roundabout_apron_surface_preview(
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -17735,9 +17694,7 @@ def _create_corridor_roundabout_subgrade_surface_preview(
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -17920,9 +17877,7 @@ def _create_corridor_roundabout_slope_face_surface_preview(
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -19071,9 +19026,7 @@ def _create_intersection_slope_face_overlap_preview(
         except Exception:
             pass
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(document), obj)
+            route_object_to_project_tree(project or find_project(document), obj)
         except Exception:
             pass
     return obj
@@ -21168,9 +21121,7 @@ def _create_intersection_shared_boundary_graph_highlight(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     try:
@@ -21254,9 +21205,7 @@ def _create_shared_breakline_highlight(
     except Exception:
         pass
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(find_project(document), obj)
+        route_object_to_project_tree(find_project(document), obj)
     except Exception:
         pass
     try:
@@ -23846,9 +23795,7 @@ def _record_corridor_build_preview_diagnostic(
         _set_preview_property(obj, "PreviewStatus", str(status or "missing"))
         _set_preview_property(obj, "PreviewDiagnostic", str(notes or "Surface preview was not created."))
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(document), obj)
+            route_object_to_project_tree(project or find_project(document), obj)
         except Exception:
             pass
         return obj
@@ -24404,9 +24351,7 @@ def _create_slope_face_diagnostic_markers(
             _set_object_visibility(obj, bool(show_daylight_contact_markers))
             created.append(obj)
             try:
-                from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-                route_to_v1_tree(project or find_project(document), obj)
+                route_object_to_project_tree(project or find_project(document), obj)
             except Exception:
                 pass
     created.extend(
@@ -24506,9 +24451,7 @@ def _create_slope_face_individual_issue_markers(
         _set_object_visibility(obj, bool(visible))
         created.append(obj)
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(document), obj)
+            route_object_to_project_tree(project or find_project(document), obj)
         except Exception:
             pass
     return created

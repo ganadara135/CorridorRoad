@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from ..models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 class V1SurfaceTransitionModelObject:
@@ -123,9 +124,7 @@ def create_or_update_v1_surface_transition_model_object(
 
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

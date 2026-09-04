@@ -50,10 +50,11 @@ powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier 
 powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Architecture
 powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Fast
 powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Contracts
+powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier ContractsFull
 powershell -ExecutionPolicy Bypass -File scripts/run_local_validation.ps1 -Tier Smokes
 ```
 
-`Architecture` checks the v1 package dependency rules without importing FreeCAD modules. `Fast` runs Compile, Architecture, and a focused set of service and command contracts intended for frequent local use.
+`Architecture` checks the v1 package dependency rules without importing FreeCAD modules. `Fast` runs Compile, Architecture, and a focused set of service and command contracts intended for frequent local use. `Contracts` runs the contract suite without the four long-running modules (`test_intersection_command.py`, `test_build_corridor_command.py`, `test_drainage_editor_command.py`, `test_tin_review_command.py`), which hold roughly three quarters of the total run time; `ContractsFull` runs every contract test and is the level `Full` uses.
 
 Run the complete local sequence:
 

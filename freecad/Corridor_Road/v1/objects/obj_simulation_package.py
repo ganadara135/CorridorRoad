@@ -11,6 +11,7 @@ from ..models.output.simulation_package_output import (
     SimulationPackageOutput,
     SimulationPackageSolidRow,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 class V1SimulationPackageOutputObject:
@@ -178,9 +179,7 @@ def create_or_update_v1_simulation_package_output_object(
     update_v1_simulation_package_output_object(obj, simulation_package_output, label=label)
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

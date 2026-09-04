@@ -33,6 +33,7 @@ from .persistence_payload_adapter import (
     write_incremental_record,
     write_model_payload,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 # Applied Sections can be large because each evaluated station carries point,
@@ -264,9 +265,7 @@ def create_or_update_v1_applied_section_set_object(
 
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

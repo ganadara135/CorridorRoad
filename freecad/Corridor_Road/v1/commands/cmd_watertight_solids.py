@@ -65,6 +65,7 @@ from ..services.mapping import (
     WatertightSolidOutputMappingRequest,
     WatertightSolidPartMapper,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 WATERTIGHT_SOLIDS_COMMAND_ID = "CorridorRoad_V1WatertightSolids"
@@ -339,15 +340,11 @@ def _route_existing_watertight_solid_outputs_to_tree(document=None) -> int:
     project = find_project(doc)
     if project is None:
         return 0
-    try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-    except Exception:
-        return 0
     routed = 0
     for obj in list(getattr(doc, "Objects", []) or []):
         if _is_watertight_output_object(obj):
             try:
-                if route_to_v1_tree(project, obj) is not None:
+                if route_object_to_project_tree(project, obj) is not None:
                     routed += 1
             except Exception:
                 pass
@@ -4464,9 +4461,7 @@ def _create_or_update_intersection_trim_preview_object(document, *, tolerance: f
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -4562,9 +4557,7 @@ def _create_or_update_intersection_trim_application_preview_object(document, *, 
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -4650,9 +4643,7 @@ def _create_or_update_intersection_trim_application_output_object(document, *, t
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -4713,9 +4704,7 @@ def _create_or_update_intersection_trim_closure_surface_preview_object(document,
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -4777,9 +4766,7 @@ def _create_or_update_intersection_trim_closure_surface_output_object(document, 
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -4845,9 +4832,7 @@ def _create_or_update_intersection_trim_closure_cell_output_object(document, *, 
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -4943,9 +4928,7 @@ def _create_or_update_intersection_trim_shell_candidate_output_object(document, 
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -5047,9 +5030,7 @@ def _create_or_update_intersection_trim_fuse_candidate_output_object(document, *
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -5136,9 +5117,7 @@ def _create_or_update_intersection_trim_shell_reconstruction_output_object(docum
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj
@@ -5216,9 +5195,7 @@ def _create_or_update_intersection_trim_solid_reconstruction_output_object(docum
     try:
         project = find_project(document)
         if project is not None:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
     return obj

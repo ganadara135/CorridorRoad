@@ -32,6 +32,7 @@ from .cmd_review_tin import (
     _tin_surface_from_object,
     resolve_document_tin_max_triangles,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 def apply_tin_editor_operations(
@@ -685,12 +686,12 @@ def _route_preview_to_tree(document, mesh_preview) -> None:
     if not object_name:
         return
     try:
-        from freecad.Corridor_Road.objects.obj_project import find_project, route_to_v1_tree
+        from freecad.Corridor_Road.objects.obj_project import find_project
 
         project = find_project(document)
         obj = document.getObject(object_name)
         if project is not None and obj is not None:
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
     except Exception:
         pass
 
@@ -699,15 +700,15 @@ def _route_edit_records_to_tree(document, edit_result) -> dict[str, str]:
     if document is None or edit_result is None:
         return {}
     try:
-        from freecad.Corridor_Road.objects.obj_project import find_project, route_to_v1_tree
+        from freecad.Corridor_Road.objects.obj_project import find_project
 
         project = find_project(document)
         if project is None:
             return {}
         result_record = _ensure_edited_result_record(document, edit_result)
         diagnostics_record = _ensure_edit_diagnostics_record(document, edit_result)
-        route_to_v1_tree(project, result_record)
-        route_to_v1_tree(project, diagnostics_record)
+        route_object_to_project_tree(project, result_record)
+        route_object_to_project_tree(project, diagnostics_record)
         return {
             "edited_result": str(getattr(result_record, "Name", "") or ""),
             "edit_diagnostics": str(getattr(diagnostics_record, "Name", "") or ""),

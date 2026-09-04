@@ -10,6 +10,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 from ..models.source.region_model import RegionModel, RegionRow
 from ..services.evaluation.region_resolution_service import RegionValidationService
 from .persistence_payload_adapter import ensure_model_payload_properties, read_model_payload, write_model_payload
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 class V1RegionModelObject:
@@ -128,9 +129,7 @@ def create_or_update_v1_region_model_object(
 
     if project is not None:
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project, obj)
+            route_object_to_project_tree(project, obj)
         except Exception:
             pass
     return obj

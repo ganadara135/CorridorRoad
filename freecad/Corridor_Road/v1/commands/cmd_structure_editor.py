@@ -48,6 +48,7 @@ from ..ui.editors.structure_editor import (
     V1StructureEditorTaskPanel,
     configure_structure_editor_task_panel_runtime,
 )
+from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
 STRUCTURE_GEOMETRY_SPEC_REF_ROLE = QtCore.Qt.UserRole
@@ -512,9 +513,7 @@ def show_v1_structure_preview_object(document, structure_model: StructureModel, 
     _set_preview_string_list_property(obj, "LinkedPreviewObjects", [row.Name for row in row_preview_objects])
     _style_structure_preview_object(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     try:
@@ -553,9 +552,7 @@ def _create_structure_row_preview_objects(
         _set_preview_string_property(obj, "PreviewPathSource", str(path.get("source", "") or ""))
         _style_structure_preview_object(obj)
         try:
-            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-            route_to_v1_tree(project or find_project(document), obj)
+            route_object_to_project_tree(project or find_project(document), obj)
         except Exception:
             pass
         objects.append(obj)
@@ -606,9 +603,7 @@ def show_v1_structure_connection_points_preview_object(
     )
     _style_connection_point_preview_object(obj)
     try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
+        route_object_to_project_tree(project or find_project(document), obj)
     except Exception:
         pass
     try:

@@ -21,6 +21,8 @@ Baseline document:
 
 - [V1_MASTER_PLAN.md](./V1_MASTER_PLAN.md)
 - [V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md](./V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md) - active repository-wide architecture and stabilization plan; Ramp removed from active scope and Watertight Solid development paused
+- [V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md](./V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md) - draft follow-up execution plan sequencing the measured residue of Workstreams A, B, C, and F; not yet identified as active by V1_SUPPORTED_DOMAIN_STATUS.md
+- [V1_ARCHITECTURE_DEBT_M1_MANUAL_QA.md](./V1_ARCHITECTURE_DEBT_M1_MANUAL_QA.md) - GUI tree-routing, save/reopen, and legacy-document checks for the M1 project-tree routing migration
 - [V1_SUPPORTED_DOMAIN_STATUS.md](./V1_SUPPORTED_DOMAIN_STATUS.md) - single current-scope, ownership, runtime, and document-classification index
 - [V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md](./V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md) - final FreeCAD 1.1.1 supported-domain acceptance checklist
 - [V1_PERSISTENCE_SCHEMA_INVENTORY.md](./V1_PERSISTENCE_SCHEMA_INVENTORY.md) - active typed-payload, migration, compatibility, and incremental-result persistence baseline
