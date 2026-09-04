@@ -85,6 +85,7 @@ Special classifications:
 - `V1_RAMP_MODEL.md` and Ramp-related plan content are historical compatibility references only.
 - `V1_WATERTIGHT_SOLID_*.md` documents preserve existing compatibility behavior but are not active development plans while the pause is in effect.
 - `docsV0/` is archived legacy reference only.
+- `V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` records which legacy `commands` modules are still registered, which are stable-id bridges to v1 engines, and which are retirement candidates. It is an inventory record: no command is retired and the retirement decision itself remains open.
 
 ## Phase 5 Manual QA
 

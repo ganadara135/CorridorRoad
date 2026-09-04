@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, and M2 complete and validated; M8 added from the M0 measurement; M3 through M7 not started
+Status: M0, M1, M2, and M7 complete; M8 added from the M0 measurement; M3 through M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -529,6 +529,24 @@ Validation run:
 Known limitation, deliberately not addressed:
 
 - In the failure path the object still does not receive `CRRecordKind`, so it is not routed into the project tree and remains at the document root. Fixing that would change tree placement behavior, which would invalidate the M1 tree-routing manual QA completed the same day. It belongs in a separate slice.
+
+### M7 completed on 2026-09-05
+
+Output is `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md`. No code was removed, and no command, id, toolbar entry, or menu changed.
+
+The inventory changed the shape of the question. `init_gui.Initialize` imports 13 legacy command modules, but they are not one population:
+
+- 4 of them are stable-command-id bridges that call a v1 entry point and hold no behavior of their own: `cmd_generate_corridor` calls `run_v1_build_corridor_command`, and `cmd_view_cross_section`, `cmd_review_plan_profile`, and `cmd_generate_cut_fill_calc` do the same for their v1 engines. Together they are 260 lines. They are the compatibility mechanism, not the debt, and retiring them would change user-visible command ids that `AGENTS.md` requires to stay stable.
+- 3 are surfaced and have no v1 successor at all: `cmd_project_setup`, `cmd_outputs_exchange`, `cmd_ai_assist`. `cmd_project_setup` is the notable one, because Project Setup is stage 1 of the v1 workflow and is still driven by the v0 task panel `ui/task_project_setup`.
+- 6 are registered but not surfaced in the toolbar or menus, and each already has a surfaced v1 successor. These 316 lines are the only real retirement candidates.
+
+The decisive compatibility finding is that retirement carries no document risk. No module in `commands` or `v1/commands` assigns `.Proxy`, and all 15 modules in `virtual_paths._PROXY_OBJECT_MODULES` are `obj_*` modules in the legacy `objects` package. Removing a legacy command from the toolbar, a menu, or `init_gui.Initialize` cannot break FCStd restoration. The only cost is to macros, custom toolbars, and user familiarity, which moves open decision 4 from a compatibility question to a user-experience one.
+
+`objects/obj_section_set.py` (5,569 lines), `objects/obj_corridor.py` (2,974 lines), and `objects/obj_project.py` (2,747 lines) are declared frozen read-and-restore compatibility surfaces. `obj_project.py` is frozen but not dormant: 23 v1 modules import it, and the v1 routing entry point added in M1 delegates into it.
+
+The record is indexed in `docsV1/README.md` and referenced from the special classifications list in `docsV1/V1_SUPPORTED_DOMAIN_STATUS.md`. It is registered there as an inventory record, not as a scope decision, because the retirement decision itself is still open.
+
+Validation level: none. Documentation only, as specified.
 
 ## 11. Open Decisions
 
