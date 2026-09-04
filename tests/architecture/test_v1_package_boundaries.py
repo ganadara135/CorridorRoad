@@ -118,6 +118,44 @@ def test_commands_do_not_add_private_service_imports() -> None:
     )
 
 
+def test_build_corridor_preview_shape_failures_are_marked() -> None:
+    """A failed preview Shape assignment must not return an unmarked object.
+
+    These handlers guard `obj.Shape = ...` and then return the object. Without a
+    marker the caller receives a document object that has no Shape and never
+    reached its record-kind tagging, which is indistinguishable from a
+    successful empty preview.
+    """
+
+    command_path = V1_ROOT / "commands" / "cmd_build_corridor.py"
+    source = command_path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(command_path))
+    source_lines = source.splitlines()
+
+    unmarked: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        guarded = "\n".join(
+            source_lines[node.body[0].lineno - 1: node.body[-1].end_lineno]
+        )
+        if "obj.Shape =" not in guarded:
+            continue
+        for handler in node.handlers:
+            for statement in ast.walk(handler):
+                if not isinstance(statement, ast.Return):
+                    continue
+                returned = statement.value
+                if isinstance(returned, ast.Name) and returned.id == "obj":
+                    unmarked.append(statement.lineno)
+
+    assert not unmarked, (
+        "Preview shape failure returns an unmarked object at lines "
+        f"{sorted(unmarked)}. Return _mark_preview_shape_failure(obj, ...) instead "
+        "so the fallback is visible on the document."
+    )
+
+
 def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
     command_path = V1_ROOT / "commands" / "cmd_build_corridor.py"
     command_tree = ast.parse(

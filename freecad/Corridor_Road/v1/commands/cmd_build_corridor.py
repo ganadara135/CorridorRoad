@@ -4354,8 +4354,8 @@ def _create_intersection_contract_review_highlight(*, document=None, row: dict[s
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Intersection Contract Highlight"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_intersection_contract_review_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_intersection_contract_review_highlight")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "intersection_contract")
@@ -6689,6 +6689,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     link_count = 0
     shape_count = 0
     surface_patch_count = 0
+    skipped_link_count = 0
     surface_roles: list[str] = []
     preset_refs: list[str] = []
     preset_statuses: list[str] = []
@@ -6783,7 +6784,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
                 if role:
                     surface_roles.append(role)
             except Exception:
-                pass
+                skipped_link_count += 1
         for shape_row in list(getattr(section, "subassembly_shape_rows", []) or []):
             if str(getattr(shape_row, "subassembly_ref", "") or "").strip() not in target_refs:
                 continue
@@ -6811,7 +6812,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
                 section_has_geometry = True
                 shape_count += 1
             except Exception:
-                pass
+                skipped_link_count += 1
         if section_has_geometry:
             section_count += 1
         previous_link_segments_by_scope[continuity_scope] = current_link_segments
@@ -6824,8 +6825,8 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = f"Subassembly Highlight - {_subassembly_kind_display_name(kind_text)}"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_subassembly_kind_review_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "subassembly_kind")
@@ -6837,6 +6838,7 @@ def _create_subassembly_kind_review_highlight(*, document=None, project=None, ki
     _set_preview_float_property(obj, "LinkCount", float(link_count))
     _set_preview_float_property(obj, "ShapeCount", float(shape_count))
     _set_preview_float_property(obj, "SurfacePatchCount", float(surface_patch_count))
+    _set_preview_float_property(obj, "SkippedLinkCount", float(skipped_link_count))
     _set_preview_float_property(obj, "ContinuityScopeCount", float(len(previous_link_segments_by_scope)))
     _set_preview_string_list_property(obj, "SurfaceRoles", _unique_text_values(surface_roles))
     try:
@@ -7060,8 +7062,8 @@ def _create_subassembly_surface_strip_review_highlight(
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = f"Applied Section Highlight - {_subassembly_kind_display_name(kind_text)}"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_subassembly_surface_strip_review_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "subassembly_kind")
@@ -7570,8 +7572,8 @@ def create_corridor_centerline_3d_preview(
     try:
         obj.Shape = shape
         obj.Label = "Corridor 3D Centerline"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_corridor_centerline_3d_preview", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_centerline_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorCenterlinePreview")
     _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
@@ -8035,8 +8037,8 @@ def create_or_update_corridor_supplemental_frame_markers(
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Corridor Supplemental Frame Markers"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_or_update_corridor_supplemental_frame_markers", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_supplemental_frame_markers")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorSupplementalFrameMarkers")
     _set_preview_property(obj, "AppliedSectionSetId", str(getattr(applied, "applied_section_set_id", "") or ""))
@@ -15453,6 +15455,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     connection_point_refs: list[str] = []
     pipe_segment_count = 0
     station_span_count = 0
+    skipped_segment_count = 0
     for row in list(rows or []):
         route_ref = str(row.get("flow_route_id", "") or "")
         if route_ref:
@@ -15473,7 +15476,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
                         shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
                         pipe_segment_count += 1
                     except Exception:
-                        pass
+                        skipped_segment_count += 1
             continue
         start, end = _drainage_flow_row_station_range(row)
         if start is None or end is None:
@@ -15484,7 +15487,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
                 shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
                 station_span_count += 1
             except Exception:
-                pass
+                skipped_segment_count += 1
     if not shapes:
         return None
     obj = document.getObject("ReviewIssueDrainageFlowRoutes")
@@ -15493,8 +15496,8 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     try:
         obj.Shape = Part.makeCompound(shapes)
         obj.Label = "Drainage Flow Highlight"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_drainage_flow_review_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "drainage_flow")
@@ -15506,6 +15509,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     _set_preview_integer_property(obj, "MarkerCount", len(shapes))
     _set_preview_integer_property(obj, "PipeSegmentCount", pipe_segment_count)
     _set_preview_integer_property(obj, "StationSpanCount", station_span_count)
+    _set_preview_integer_property(obj, "SkippedSegmentCount", skipped_segment_count)
     try:
         vobj = getattr(obj, "ViewObject", None)
         if vobj is not None:
@@ -15878,8 +15882,8 @@ def _create_drainage_review_highlight_compound(
     try:
         obj.Shape = Part.makeCompound(shapes)
         obj.Label = label
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_drainage_review_highlight_compound", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "drainage_diagnostic")
@@ -15926,8 +15930,8 @@ def _create_drainage_review_point_marker(
     try:
         obj.Shape = Part.makeCompound(shapes)
         obj.Label = label
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_drainage_review_point_marker", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "intersection_suggested_inlet" if suggested_inlet else "drainage_diagnostic")
@@ -15953,6 +15957,10 @@ def _point_sphere_marker_shapes(Part, AppModule, point: tuple[float, float, floa
     r = max(float(radius or 0.0), 0.05)
     center = AppModule.Vector(float(x), float(y), float(z) + r)
     shapes = []
+    # Silence is the fallback mechanism here, not a hidden failure. A marker is
+    # built as sphere plus stem, and degrades to a cross and then to a single
+    # vertex below. The caller always receives at least one shape, so a skipped
+    # primitive changes marker style only and loses no review information.
     try:
         shapes.append(Part.makeSphere(r, center))
     except Exception:
@@ -15991,6 +15999,9 @@ def _point_cross_shapes(Part, AppModule, point: tuple[float, float, float], *, r
         (AppModule.Vector(float(x), float(y), float(z) - r), AppModule.Vector(float(x), float(y), float(z) + r)),
     ]
     shapes = []
+    # Last stage of the marker fallback chain described in
+    # _point_sphere_marker_shapes. A dropped axis line degrades the cross, and
+    # the vertex below is the final fallback, so silence is intended here.
     for start, end in vectors:
         try:
             shapes.append(Part.makeLine(start, end))
@@ -16511,8 +16522,8 @@ def _create_corridor_intersection_tie_in_edge_preview(document, tie_in_result: I
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Intersection Tie-in Edges"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_corridor_intersection_tie_in_edge_preview", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_tie_in_edge_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionTieInEdgePreview")
     _set_preview_property(obj, "IntersectionId", str(getattr(tie_in_result, "intersection_id", "") or ""))
@@ -16600,8 +16611,8 @@ def _create_corridor_intersection_boundary_segment_preview(
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Intersection Boundary Segments"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_corridor_intersection_boundary_segment_preview", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_boundary_segment_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionBoundarySegmentPreview")
     _set_preview_property(obj, "IntersectionId", str(getattr(boundary_result, "intersection_id", "") or ""))
@@ -16670,8 +16681,8 @@ def _create_corridor_intersection_exclusion_zone_preview(
     try:
         obj.Shape = Part.makePolygon(vectors)
         obj.Label = "Intersection Exclusion Zone"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_corridor_intersection_exclusion_zone_preview", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_exclusion_zone_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionExclusionZonePreview")
     _set_preview_property(obj, "IntersectionId", str(getattr(patch_boundary_result, "intersection_id", "") or ""))
@@ -19005,8 +19016,8 @@ def _create_intersection_slope_face_overlap_preview(
         try:
             obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
             obj.Label = "Intersection / Slope Face Overlap Lines"
-        except Exception:
-            return obj
+        except Exception as error:
+            return _mark_preview_shape_failure(obj, preview_kind="create_intersection_slope_face_overlap_preview", error=error)
         _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_slope_face_overlap_line_preview")
         _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionSlopeFaceOverlapPreview")
         _set_preview_property(obj, "OverlapKind", "intersection_surface_vs_corridor_slope_face")
@@ -21019,8 +21030,8 @@ def _create_intersection_exclusion_near_boundary_highlight(
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Intersection Exclusion Near-Boundary Kept Highlight"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_intersection_exclusion_near_boundary_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_intersection_exclusion_near_boundary_kept_highlight")
     _set_preview_property(obj, "V1ObjectType", "ReviewDiagnostic")
     _set_preview_property(obj, "DiagnosticKind", "intersection_exclusion_near_boundary_kept_highlight")
@@ -21091,8 +21102,8 @@ def _create_intersection_shared_boundary_graph_highlight(
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Intersection Shared Boundary Graph Internal Seam Highlight" if kind == "internal_seam" else "Intersection Shared Boundary Graph Highlight"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_intersection_shared_boundary_graph_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_intersection_shared_boundary_graph_highlight")
     _set_preview_property(obj, "V1ObjectType", "ReviewDiagnostic")
     _set_preview_property(obj, "DiagnosticKind", "intersection_shared_boundary_graph_internal_seam_highlight" if kind == "internal_seam" else "intersection_shared_boundary_graph_highlight")
@@ -21172,8 +21183,8 @@ def _create_shared_breakline_highlight(
     try:
         obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
         obj.Label = "Shared Breakline Highlight"
-    except Exception:
-        return obj
+    except Exception as error:
+        return _mark_preview_shape_failure(obj, preview_kind="create_shared_breakline_highlight", error=error)
     _set_preview_property(obj, "CRRecordKind", "v1_shared_breakline_highlight")
     _set_preview_property(obj, "V1ObjectType", "ReviewDiagnostic")
     _set_preview_property(obj, "DiagnosticKind", "shared_breakline_highlight")
@@ -23736,6 +23747,26 @@ def _normalize_corridor_build_review_status(status: str, *, default: str = "miss
     if value in CORRIDOR_BUILD_REVIEW_STATUS_VALUES:
         return value
     return str(default or "missing")
+
+
+def _mark_preview_shape_failure(obj, *, preview_kind: str, error: BaseException):
+    """Tag a preview object whose Shape assignment failed, then return it.
+
+    A preview failure must not abort a Build Parametric run, so the object is
+    still returned to the caller. Without a marker the caller receives an object
+    that has no Shape and never reached its record-kind tagging, which is
+    indistinguishable from a successful empty preview. These two properties make
+    the fallback visible and traceable in the document rather than only in the
+    console.
+    """
+
+    _set_preview_property(obj, "PreviewShapeStatus", "shape_build_failed")
+    _set_preview_property(
+        obj,
+        "PreviewShapeDiagnostic",
+        f"{preview_kind}: {type(error).__name__}: {str(error)[:200]}",
+    )
+    return obj
 
 
 def _set_preview_property(obj, name: str, value: str) -> None:

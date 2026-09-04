@@ -1,8 +1,8 @@
 # Parametric Road V1 Architecture Debt Execution Plan
 
 Date: 2026-09-04
-Branch: `v1-0503`
-Status: M0 and M1 complete and validated; M8 added from the M0 measurement; M2 through M7 not started
+Branch: `ganada_0902`
+Status: M0, M1, and M2 complete and validated; M8 added from the M0 measurement; M3 through M7 not started
 Depends on:
 
 - `AGENTS.md`
@@ -478,6 +478,57 @@ M1 validation actually run:
 - levels 6 and 7 manual: executed by the maintainer in the FreeCAD GUI on 2026-09-04 against FreeCAD 1.1.3 and reported as passing for every part, including the 24-step tree routing walkthrough, the two behavioral change points, save and reopen, legacy document compatibility, and preview visibility. Recorded in `docsV1/V1_ARCHITECTURE_DEBT_M1_MANUAL_QA.md`.
 
 M1 is complete. All seven validation levels applicable to it have run.
+
+### M2 completed on 2026-09-04
+
+The milestone premise in section 5.3 was largely wrong and is corrected here.
+
+Classification of the 101 silent handlers in `cmd_build_corridor.py`:
+
+| Count | What the guarded block does |
+| --- | --- |
+| 41 | progress callbacks, tree routing, and other orchestration |
+| 30 | `ViewObject` and display property access |
+| 14 | document writes such as `recompute` and `addObject` |
+| 8 | geometry construction |
+| 7 | payload parsing and service calls |
+| 1 | import availability |
+
+Only 8 of 101 touch geometry at all. The wider measurement explains why: the services layer, where geometry now lives after Workstream C, has 11 silent handlers in total and **none** of them are geometry-bearing. Across all of v1, only 27 silent handlers guard geometry, and they sit in commands and objects rather than in services. The extraction performed under Workstream C did its job, and the aggregate count of 1,278 silent handlers was a poor proxy for hidden engineering failure.
+
+Of the 8 geometry-bearing handlers in the command module, 4 are the deliberate marker fallback chain in `_point_sphere_marker_shapes` and `_point_cross_shapes`, which degrades a marker from sphere to cross to vertex. Silence there is the mechanism, not a defect, and each is now commented with that reason.
+
+The real defect was a different pattern that the milestone text did not anticipate:
+
+```python
+try:
+    obj.Shape = Part.makeCompound(shapes)
+    obj.Label = "..."
+except Exception:
+    return obj
+```
+
+Fifteen preview-creation functions used it. On failure the caller receives a document object with no `Shape` that also never reached its `_set_preview_property(obj, "CRRecordKind", ...)` tagging, which is indistinguishable from a successful empty preview. This is exactly the acceptance criterion "no induced geometry failure produces a successful empty result".
+
+Changes made:
+
+- Added `_mark_preview_shape_failure(obj, *, preview_kind, error)`. It sets `PreviewShapeStatus` to `shape_build_failed` and `PreviewShapeDiagnostic` to a bounded `kind: ExceptionType: message` string, then returns the object. A preview failure still does not abort a build.
+- Converted all 15 sites to return through it, naming the owning preview function as `preview_kind`.
+- `_create_drainage_flow_review_highlight` and `_create_subassembly_kind_review_highlight` silently dropped individual highlight segments. They now count them and publish `SkippedSegmentCount` and `SkippedLinkCount` next to the existing `PipeSegmentCount`, `StationSpanCount`, and `SurfacePatchCount` properties, so partial output is visible.
+- Added `tests/contracts/v1/test_build_corridor_preview_diagnostics.py` with 4 tests, including one asserting that a failure to write properties does not turn a preview failure into a louder failure.
+- Added `test_build_corridor_preview_shape_failures_are_marked` to the architecture suite as a ratchet, so a new handler that returns a bare `obj` after a shape assignment fails the build.
+
+Validation run:
+
+- level 1 compile: passes.
+- level 2 architecture: 9 tests pass, up from 8.
+- level 3 contracts: `-Tier Fast` passes with 312 tests. The complete suite was run before and after the change and the failing set is identical: 131 failed both times with the same test identifiers, while passing tests rose from 1,331 to 1,335 as the new contract module was added. M2 introduced no contract regression.
+- level 5 smoke: `tests/regression/run_short_term_smokes.ps1` rerun after the change. 26 smoke scripts, exit code 0, no failure or traceback output.
+- level 7 manual GUI: executed by the maintainer on 2026-09-04 and reported as passing. Build Parametric completed normally, the new `SkippedSegmentCount` and `SkippedLinkCount` counters reported no dropped highlight items, and no preview object carried `PreviewShapeStatus` or `PreviewShapeDiagnostic`. The absence of those two properties is the substantive result: it confirms that no preview shape assignment was failing silently in this document before the change.
+
+Known limitation, deliberately not addressed:
+
+- In the failure path the object still does not receive `CRRecordKind`, so it is not routed into the project tree and remains at the document root. Fixing that would change tree placement behavior, which would invalidate the M1 tree-routing manual QA completed the same day. It belongs in a separate slice.
 
 ## 11. Open Decisions
 
