@@ -778,7 +778,7 @@ class AppliedSectionService:
                     ),
                 )
             )
-        return rows
+        return _rows_with_derived_bench_rows(rows)
 
     @staticmethod
     def _surface_widths(
@@ -3092,6 +3092,61 @@ def _oriented_bench_points(
 def _bench_profile_segments(row, *, total_width: float | None = None) -> list[dict[str, object]]:
     segments, _diagnostics = _bench_profile_segments_with_diagnostics(row, total_width=total_width)
     return segments
+
+
+def _rows_with_derived_bench_rows(
+    rows: list[AppliedSectionSubassemblyRow],
+) -> list[AppliedSectionSubassemblyRow]:
+    """Expand bench intent stored on side_slope parameters into derived rows.
+
+    Assembly presets store bench intent on the side_slope Subassembly
+    parameters rather than as authored bench rows, so a resolved section would
+    otherwise never list a bench even though the geometry contains one. The
+    segments come from SubassemblyBenchProfileService, the same service that
+    produces the bench_surface points, so the rows and the geometry cannot
+    disagree.
+
+    Authored rows are preserved and each derived row is appended directly after
+    the row it came from. A derived row carries source_instance_ref back to its
+    authored owner and no definition or preset ref, so preset diagnostics skip
+    it and the point, link, and shape resolvers, which look rows up by id, see
+    no new referenced subassembly.
+    """
+
+    output: list[AppliedSectionSubassemblyRow] = []
+    for row in list(rows or []):
+        output.append(row)
+        parameters = dict(getattr(row, "parameters", {}) or {})
+        if not parameters.get("bench_rows"):
+            continue
+        authored_id = str(getattr(row, "subassembly_id", "") or "")
+        segments = SubassemblyBenchProfileService().evaluate(row).to_dict_rows()
+        bench_index = 0
+        for segment in segments:
+            if str(segment.get("kind", "") or "") != "bench":
+                continue
+            bench_index += 1
+            output.append(
+                AppliedSectionSubassemblyRow(
+                    subassembly_id=f"{authored_id}:bench:{bench_index}",
+                    kind="bench",
+                    source_template_id=str(getattr(row, "source_template_id", "") or ""),
+                    source_instance_ref=authored_id,
+                    region_id=str(getattr(row, "region_id", "") or ""),
+                    side=str(getattr(row, "side", "") or "center"),
+                    width=max(float(segment.get("width", 0.0) or 0.0), 0.0),
+                    slope=float(segment.get("slope", 0.0) or 0.0),
+                    material=str(getattr(row, "material", "") or ""),
+                    override_ids=list(getattr(row, "override_ids", []) or []),
+                    structure_ids=list(getattr(row, "structure_ids", []) or []),
+                    drainage_refs=list(getattr(row, "drainage_refs", []) or []),
+                    parameters={
+                        "derived_from": authored_id,
+                        "bench_segment_index": bench_index,
+                    },
+                )
+            )
+    return output
 
 
 def _bench_profile_segments_with_diagnostics(

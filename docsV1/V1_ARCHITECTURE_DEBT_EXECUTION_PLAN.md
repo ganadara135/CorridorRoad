@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, and M7 complete; M8 added from the M0 measurement; M3 through M6 not started
+Status: M0, M1, M2, and M7 complete; M8 in progress with two families resolved; M3 through M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -547,6 +547,54 @@ The decisive compatibility finding is that retirement carries no document risk. 
 The record is indexed in `docsV1/README.md` and referenced from the special classifications list in `docsV1/V1_SUPPORTED_DOMAIN_STATUS.md`. It is registered there as an inventory record, not as a scope decision, because the retirement decision itself is still open.
 
 Validation level: none. Documentation only, as specified.
+
+### M8 first pass on 2026-09-05
+
+Two failure families were decided by the maintainer and applied. A third group was deleted as obsolete.
+
+**Family 1: supplemental sampling.** Investigation showed the five failures were not one change but two.
+
+The panel checkbox was deliberately removed when supplemental density moved to the Applied Sections stage, which the Build Parametric panel now states in its own visible text and which `_use_supplemental_sampling` encodes by returning False unconditionally. The maintainer confirmed the removal is correct. `test_build_corridor_panel_has_supplemental_sampling_checked_by_default` was rewritten as `test_build_corridor_panel_delegates_supplemental_sampling_to_applied_sections`, a guard for the new contract rather than a deletion.
+
+Separately, `corridor_surface_geometry_service` did not lose supplemental sampling at all: it still implements it, but `ff3a74c "Add Curve guide in Alignment, Profile"` narrowed the rule so a span is densified only when the tangent delta exceeds `SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG` or the chord deviation exceeds `SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD`. Uniform spacing alone no longer densifies. The four failing service tests supplied straight two-station spans and expected spacing-driven densification. The maintainer confirmed the curve-driven rule is correct, and the four tests were rewritten against measured behavior while keeping each test's original subject: mismatched side slope row preservation, ditch row preservation, and drainage source tag preservation.
+
+Measured reference values, straight versus curved span with the same geometry:
+
+| Span | station_count | daylight vertices | supplemental vertices |
+| --- | --- | --- | --- |
+| tangent 0 to 0 | 2 | 2 | 0 |
+| tangent 0 to 25 | 5 | 8 | 24 |
+
+Rewriting all four against the straight case would have left supplemental sampling, a live feature with 51 code references, without any test. `test_corridor_surface_geometry_service_densifies_a_curved_daylight_span` was added to keep that coverage, and the straight-span test names it.
+
+Three stale assumptions in those tests were only found by measuring rather than reasoning: vertex notes carry a `role=` prefix, so the existing `daylight_marker` filter had already been matching nothing; the `drainage_source_missing_point_count` quality row no longer exists; and the ditch scenario reports `section_point_count` 4 rather than 2.
+
+**Family 2: benched slope.** The maintainer decided that derived bench segments must be expanded into `AppliedSection.subassembly_rows`, so this was a code gap rather than a stale test.
+
+The investigation first cleared the recent refactoring of suspicion. `_build_subassembly_rows` is byte-identical at the `1.0.9` release and at HEAD, neither version ever emitted a bench row, and `SubassemblyBenchProfileService` returns a bench segment correctly for the preset parameters. The test could not have passed at the release either; the complete suite had never been run to completion, so nobody saw it.
+
+`_rows_with_derived_bench_rows` now expands bench intent stored on side_slope parameters into derived rows. Segments come from the same service that produces the `bench_surface` points, so rows and geometry cannot disagree. Authored rows are preserved, each derived row carries `source_instance_ref` back to its owner, and derived rows carry no definition or preset ref so preset diagnostics skip them and the point, link, and shape resolvers, which look rows up by id, see no new referenced subassembly.
+
+One consequential test changed as a result: `test_applied_section_service_evaluates_side_slope_bench_rows` asserted an exact row-kind list and now expects `["lane", "side_slope", "bench"]`, plus the derived row's traceability.
+
+**Obsolete tests deleted.** 26 failing tests referenced 13 private functions of `cmd_build_corridor` that no longer exist, having been extracted into services under Workstream C. 17 were in `test_build_corridor_command.py` and 9 in `test_intersection_shared_boundary_graph_builder.py`, which kept its other 22 tests. The extracted behavior is covered by 35 service contract tests across seven modules, all passing, so the deletion removed dead references rather than coverage. No new lint finding resulted; the two F841 warnings in the touched file are present at the same lines at HEAD.
+
+Not deleted, and why:
+
+- Watertight Solid failures stay. `AGENTS.md` lists keeping existing tests operational as allowed work during the pause, so deleting them would contradict the project's own policy and discard the record needed when development resumes. Marking them skipped with a recorded reason is the better instrument if the noise needs to go.
+- The value-mismatch failures stay. They assert different values for behavior that still exists, and as the two families above showed, such a test can be either a stale expectation or a real regression. Deleting them without deciding which would hide a regression permanently.
+
+Validation:
+
+- level 1 compile: passes.
+- level 2 architecture: 9 tests pass.
+- level 3 contracts: `-Tier Fast` passes with 312 tests. The complete suite moved from 131 failed and 1,336 passed to 125 failed and 1,342 passed with no new failure. Removing the 26 obsolete tests then brought it to 99 failed and 1,342 passed, again with no new failure.
+
+### Repository note: mixed line endings
+
+Several tracked files store mixed line endings in the blob itself. `test_build_corridor_command.py`, for example, holds 4,755 CRLF lines out of 11,833. Any edit that rewrites a whole file normalizes it to one ending and produces thousands of spurious changed lines, and `git add` does not clean that up. It happened twice during this plan, in M1 and again in M8, with different tools each time.
+
+Before committing a large edit, check `git diff --numstat` against the expected edit size. If it is inflated, realign the file to the HEAD blob and restore each line's original ending rather than accepting the churn, which otherwise buries the real change and makes later archaeology on these files much harder. M4 through M6 all involve large mechanical edits to exactly these files, so expect this every time.
 
 ## 11. Open Decisions
 

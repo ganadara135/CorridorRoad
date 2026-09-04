@@ -759,7 +759,11 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
     )
 
     assert result.daylight_right_width == 8.0
-    assert [row.kind for row in result.subassembly_rows] == ["lane", "side_slope"]
+    # The side slope carries bench intent, so the resolved section lists the
+    # authored rows plus the derived bench segment.
+    assert [row.kind for row in result.subassembly_rows] == ["lane", "side_slope", "bench"]
+    derived_bench = next(row for row in result.subassembly_rows if row.kind == "bench")
+    assert derived_bench.source_instance_ref == "side-slope-right"
     assert [round(row.width, 2) for row in result.subassembly_rows if row.subassembly_id == "side-slope-right"] == [8.0]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
     assert [point.point_role for point in bench_points] == [
@@ -3766,7 +3770,7 @@ def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_po
     assert any("subassembly_ref=ditch:right" in vertex.notes and "drainage_ref=drainage:right" in vertex.notes for vertex in result.vertex_rows)
 
 
-def test_corridor_surface_geometry_service_preserves_drainage_source_tags_on_supplemental_samples() -> None:
+def test_corridor_surface_geometry_service_preserves_drainage_source_tags() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -3824,12 +3828,14 @@ def test_corridor_surface_geometry_service_preserves_drainage_source_tags_on_sup
     )
 
     quality = {row.kind: row.value for row in result.quality_rows}
-    supplemental_vertices = [vertex for vertex in result.vertex_rows if "supplemental" in vertex.source_point_ref]
-    assert supplemental_vertices
+    # The drainage source tag must survive onto every vertex the surface keeps.
+    # The span is straight, so there are no supplemental samples to tag and the
+    # check applies to the supplied ditch vertices instead.
+    drainage_vertices = [vertex for vertex in result.vertex_rows if "drainage_ref=" in vertex.notes]
+    assert drainage_vertices
     assert set(result.source_refs) >= {"drainage:right"}
     assert quality["drainage_ref_count"] == 1
-    assert quality["drainage_source_missing_point_count"] == 0
-    assert all("drainage_ref=drainage:right" in vertex.notes for vertex in supplemental_vertices)
+    assert all("drainage_ref=drainage:right" in vertex.notes for vertex in drainage_vertices)
 
 
 def test_corridor_surface_geometry_service_builds_daylight_surface_from_side_slopes() -> None:
@@ -4340,7 +4346,17 @@ def test_corridor_surface_geometry_service_keeps_bench_when_adjacent_station_has
     assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0
 
 
-def test_corridor_surface_geometry_service_uses_supplemental_sampling_between_daylight_contacts() -> None:
+def test_corridor_surface_geometry_service_does_not_densify_a_straight_daylight_span() -> None:
+    """A straight span is consumed as supplied, with no invented samples.
+
+    Supplemental sampling is curve driven: it densifies a span only when the
+    tangent delta exceeds SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG or the
+    chord deviation exceeds SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD.
+    Uniform spacing alone no longer densifies, because extra stations on a
+    straight span add no geometric information. The curved case is covered by
+    test_corridor_surface_geometry_service_densifies_a_curved_daylight_span.
+    """
+
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -4412,15 +4428,110 @@ def test_corridor_surface_geometry_service_uses_supplemental_sampling_between_da
         )
     )
 
-    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "role=daylight_marker"]
+    quality = {row.kind: row.value for row in result.quality_rows}
+    # Both frames carry the same tangent direction, so the span is straight and
+    # supplemental sampling declines it. The surface is built from exactly the
+    # two supplied daylight contacts, with no interpolated contact between them.
+    assert len(daylight_vertices) == 2
+    assert quality["daylight_marker_count"] == 2
+    assert sorted(round(vertex.z, 6) for vertex in daylight_vertices) == [10.0, 12.0]
+    assert result.triangle_rows
+    assert not [vertex for vertex in result.vertex_rows if "supplemental" in vertex.source_point_ref]
+
+
+def test_corridor_surface_geometry_service_densifies_a_curved_daylight_span() -> None:
+    """A curved span is densified, so the daylight contact follows the curve.
+
+    This is the same geometry as the straight-span case above, except that the
+    two frames differ in tangent direction by more than
+    SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG. It keeps coverage on
+    supplemental sampling itself, which the curve-driven rule narrowed rather
+    than removed.
+    """
+
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-curved-contact",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-curved-contact",
+        corridor_id="cor-bench-curved-contact",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-20", 20.0, "sec-20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 0.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 0.0, -9.0, 10.0, "daylight_marker", -9.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-20",
+                frame=AppliedSectionFrame(20.0, 20.0, 0.0, 10.0, 25.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 20.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 20.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 20.0, -9.0, 12.0, "daylight_marker", -9.0),
+                ],
+            ),
+        ],
+    )
+    existing_ground = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="tin:eg-curved-contact",
+        vertex_rows=[
+            TINVertex("eg-0", -5.0, -20.0, 10.0),
+            TINVertex("eg-1", 25.0, -20.0, 13.0),
+            TINVertex("eg-2", 25.0, 5.0, 13.0),
+            TINVertex("eg-3", -5.0, 5.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("eg-t0", "eg-0", "eg-1", "eg-2"),
+            TINTriangle("eg-t1", "eg-0", "eg-2", "eg-3"),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench-curved-contact:daylight",
+            existing_ground_surface=existing_ground,
+            supplemental_sampling_enabled=True,
+            supplemental_sampling_max_spacing=5.0,
+        )
+    )
+
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "role=daylight_marker"]
     quality = {row.kind: row.value for row in result.quality_rows}
     assert len(daylight_vertices) > 2
-    assert len(result.triangle_rows) > 4
-    assert any(10.0 < vertex.z < 13.0 for vertex in daylight_vertices)
     assert quality["daylight_marker_count"] > 2
+    assert quality["station_count"] > 2
+    assert any(10.0 < vertex.z < 12.0 for vertex in daylight_vertices)
+    assert [vertex for vertex in result.vertex_rows if "supplemental" in vertex.source_point_ref]
 
 
-def test_corridor_surface_geometry_service_supplemental_sampling_keeps_mismatched_side_slope_rows() -> None:
+def test_corridor_surface_geometry_service_keeps_mismatched_side_slope_rows() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -4478,14 +4589,17 @@ def test_corridor_surface_geometry_service_supplemental_sampling_keeps_mismatche
 
     quality = {row.kind: row.value for row in result.quality_rows}
     provenance = {row.source_kind for row in result.provenance_rows}
-    assert quality["station_count"] > 2
-    assert quality["daylight_marker_count"] > 2
+    # The span is straight, so no supplemental stations are added. What this
+    # test is really about survives unchanged: the wider side slope row of the
+    # first section is kept rather than trimmed to match the second.
+    assert quality["station_count"] == 2
+    assert quality["daylight_marker_count"] == 2
     assert min(vertex.y for vertex in result.vertex_rows) <= -17.999999
     assert "applied_section_side_slope_points" in provenance
-    assert not any("supplemental" in vertex.source_point_ref and vertex.notes == "" for vertex in result.vertex_rows)
+    assert not [vertex for vertex in result.vertex_rows if "supplemental" in vertex.source_point_ref]
 
 
-def test_corridor_surface_geometry_service_supplemental_sampling_preserves_ditch_rows() -> None:
+def test_corridor_surface_geometry_service_preserves_ditch_rows() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -4550,10 +4664,12 @@ def test_corridor_surface_geometry_service_supplemental_sampling_preserves_ditch
     )
 
     quality = {row.kind: row.value for row in result.quality_rows}
+    # Ditch row preservation is the subject here and is unchanged. The span is
+    # straight, so the drainage surface is built from the supplied stations only.
     assert result.surface_kind == "drainage_surface"
-    assert quality["station_count"] > 2
-    assert quality["section_point_count"] == 2
-    assert any("supplemental" in vertex.source_point_ref for vertex in result.vertex_rows)
+    assert quality["station_count"] == 2
+    assert quality["section_point_count"] == 4
+    assert not [vertex for vertex in result.vertex_rows if "supplemental" in vertex.source_point_ref]
 
 
 def test_corridor_surface_geometry_service_uses_shared_station_breaks_across_adjacent_daylight_spans() -> None:
