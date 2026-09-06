@@ -615,6 +615,22 @@ Several tracked files store mixed line endings in the blob itself. `test_build_c
 
 Before committing a large edit, check `git diff --numstat` against the expected edit size. If it is inflated, realign the file to the HEAD blob and restore each line's original ending rather than accepting the churn, which otherwise buries the real change and makes later archaeology on these files much harder. M4 through M6 all involve large mechanical edits to exactly these files, so expect this every time.
 
+### Intersection aggregate-status cluster, 2026-09-05
+
+Eight failing tests asserted an aggregate status equal to `warning` and got `error`. None of them is about the aggregate; each checks the source status of one row family. Probing showed every row-level assertion already passed, and the aggregate turned error only because `281c0b0 "Done Cross Intersection"` added corner-graph completeness validation that these deliberately minimal fixtures do not satisfy. Four carry `error:intersection_corner_graph_leg_count_insufficient` from a fixture declaring a `t_intersection` with one leg; three carry missing curb-return policy, radius, or arc points.
+
+Those errors are correct, and this needed no product decision: a T intersection with one leg and a curb return with no radius cannot be built. Each aggregate assertion was replaced by one stating that no error comes from the family under test, which still fails if an unrelated new error appears. Five tests passed as a result.
+
+Three then failed on deeper assertions the aggregate check had masked. The maintainer decided to remove them. The observations are recorded here because the tests no longer carry them:
+
+| Removed test | Observed |
+| --- | --- |
+| `test_intersection_surface_zone_evaluation_warns_when_slope_zone_lacks_pavement_or_curb_tie_edges` | `slope_zone_count` 0, expected 3; `zone_rows` empty |
+| `test_intersection_drainage_hint_evaluation_warns_without_drainage_policy` | `hint_row_count` 0, expected 6; `hint_rows` empty |
+| `test_corridor_intersection_contract_review_rows_expose_source_status_warnings` | a contract row reports an `output_path` other than `contract_consumed` |
+
+The first two share one open question that is now untested: whether surface zone and drainage hint evaluation should produce no rows at all when the corner graph is invalid. Both fixtures fail corner-graph validation with missing curb-return policy, radius, and arc points, and both evaluations return a completely empty result rather than rows carrying a warning. Both test names say "warns when ... lacks" and "warns without ...", so the original intent was rows plus a warning. If a later design promoted the corner graph to a precondition, the current behavior is right and the fixtures were simply incomplete. That was not established, and no test now covers either path.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

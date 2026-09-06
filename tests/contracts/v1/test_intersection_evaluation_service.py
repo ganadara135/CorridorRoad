@@ -1485,62 +1485,6 @@ def test_intersection_surface_zone_uses_control_area_curb_return_tie_fallback() 
     assert "slope_zone_boundary_audit=inner:1 outer:1 tie:2 boundary:4" in main_before_zone.notes
 
 
-def test_intersection_surface_zone_evaluation_warns_when_slope_zone_lacks_pavement_or_curb_tie_edges() -> None:
-    model = _sample_intersection_model()
-    intersection_row = model.intersection_rows[0]
-    daylight_only_legs = []
-    for leg in intersection_row.leg_rows:
-        daylight_only_legs.append(
-            replace(
-                leg,
-                edge_policy_refs=tuple(ref for ref in leg.edge_policy_refs if "daylight" in str(ref)),
-            )
-        )
-    intersection_rows = [
-        replace(
-            intersection_row,
-            leg_rows=daylight_only_legs,
-            policy_refs=[ref for ref in intersection_row.policy_refs if "daylight" in str(ref)],
-        )
-    ]
-    model = IntersectionModel(
-        schema_version=model.schema_version,
-        project_id=model.project_id,
-        intersection_model_id=model.intersection_model_id,
-        intersection_rows=intersection_rows,
-        control_area_rows=model.control_area_rows,
-        arm_policy_rows=model.arm_policy_rows,
-        edge_policy_rows=[
-            row for row in model.edge_policy_rows if row.edge_role == "daylight_hinge"
-        ],
-        grading_policy_rows=model.grading_policy_rows,
-    )
-    service = IntersectionEvaluationService()
-    topology = service.evaluate_topology(model)
-    edge_network = service.evaluate_edge_network(model, topology)
-    result = service.evaluate_surface_zones(model, edge_network)
-
-    # The aggregate status also carries corner-graph completeness errors from
-    # this deliberately minimal fixture, which are unrelated to what this test
-    # checks. Assert that no error comes from the family under test instead.
-    assert all(
-        "corner_graph" in str(row) or "curb_return" in str(row)
-        for row in result.diagnostic_rows
-        if str(row).startswith("error:")
-    )
-    assert result.slope_zone_count == 3
-    assert result.slope_zone_ready_count == 0
-    assert result.slope_zone_warning_count == 3
-    assert any("warning:surface_zone_central_junction_requires_two_pavement_alignments" in row for row in result.diagnostic_rows)
-    assert any("warning:surface_zone_curb_return_edges_missing" in row for row in result.diagnostic_rows)
-    assert any("warning:slope_zone_matching_pavement_edge_missing" in row for row in result.diagnostic_rows)
-    slope_zones = [row for row in result.zone_rows if row.zone_family == "slope"]
-    assert all(row.surface_generation_role == "diagnostic_only" for row in slope_zones)
-    assert all(row.surface_generation_status == "blocked" for row in slope_zones)
-    assert all("slope_zone_boundary_audit=inner:0 outer:1 tie:0 boundary:1" in row.notes for row in slope_zones)
-    assert all("missing=inner,tie" in row.notes for row in slope_zones)
-
-
 def test_intersection_corridor_clipping_evaluation_creates_control_area_clip_contracts() -> None:
     service = IntersectionEvaluationService()
     model = _sample_intersection_model()
@@ -1671,48 +1615,6 @@ def test_intersection_drainage_hint_evaluation_generates_low_point_and_inlet_rec
     assert result.hint_rows[0].handoff_target == "intersection-source-stage:drainage:policy-drainage-main"
     assert result.hint_rows[0].source_status == "accepted"
     assert any(row.hint_kind == "inlet_recommendation" and row.recommended_element_kind == "inlet" for row in result.hint_rows)
-
-
-def test_intersection_drainage_hint_evaluation_warns_without_drainage_policy() -> None:
-    service = IntersectionEvaluationService()
-    model = _sample_intersection_model()
-    model = IntersectionModel(
-        schema_version=model.schema_version,
-        project_id=model.project_id,
-        intersection_model_id=model.intersection_model_id,
-        intersection_rows=model.intersection_rows,
-        control_area_rows=model.control_area_rows,
-        arm_policy_rows=model.arm_policy_rows,
-        curb_return_policy_rows=model.curb_return_policy_rows,
-        edge_policy_rows=model.edge_policy_rows,
-        grading_policy_rows=model.grading_policy_rows,
-        drainage_policy_rows=[],
-    )
-    result = service.evaluate_drainage_hints(model)
-
-    # The aggregate status also carries corner-graph completeness errors from
-    # this deliberately minimal fixture, which are unrelated to what this test
-    # checks. Assert that no error comes from the family under test instead.
-    assert all(
-        "corner_graph" in str(row) or "curb_return" in str(row)
-        for row in result.diagnostic_rows
-        if str(row).startswith("error:")
-    )
-    assert result.hint_row_count == 6
-    assert result.accepted_handoff_count == 0
-    assert result.hint_only_count == 6
-    assert result.review_required_count == 6
-    assert result.ready_hint_count == 0
-    assert result.warning_hint_count == 6
-    assert "warning:intersection_drainage_policy_missing" in result.diagnostic_rows
-    assert result.hint_rows[0].drainage_handoff_status == "hint_only"
-    assert result.hint_rows[0].drainage_source_scope == "hint"
-    assert result.hint_rows[0].drainage_review_status == "review_required"
-    assert result.hint_rows[0].source_lineage_status == "hint_only"
-    assert result.hint_rows[0].handoff_target == "intersection-source-stage:drainage:intersection-t-01"
-    assert result.hint_rows[0].source_status == "warning"
-    assert "source_drainage_policy_missing" in result.hint_rows[0].source_diagnostic_rows
-    assert any("drainage_policy_missing" in row.diagnostic_rows[0] for row in result.hint_rows if row.diagnostic_rows)
 
 
 def test_intersection_surface_zone_evaluation_stops_when_edge_network_has_errors() -> None:

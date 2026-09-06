@@ -1383,66 +1383,6 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
         App.closeDocument(doc.Name)
 
 
-def test_corridor_intersection_contract_review_rows_expose_source_status_warnings() -> None:
-    doc, project = _new_project_doc()
-    try:
-        create_or_update_v1_intersection_model_object(
-            doc,
-            project=project,
-            intersection_model=IntersectionModel(
-                schema_version=1,
-                project_id="proj-1",
-                intersection_model_id="intersections:source-status",
-                intersection_rows=[
-                    IntersectionRow(
-                        intersection_id="intersection:source-status",
-                        intersection_kind="t_intersection",
-                        primary_alignment_ref="alignment:primary",
-                        secondary_alignment_refs=["alignment:side"],
-                        control_region_refs=["region:primary-intersection"],
-                        leg_rows=[
-                            IntersectionLegRow(
-                                leg_id="leg:primary",
-                                intersection_id="intersection:source-status",
-                                leg_role="primary_through",
-                                alignment_ref="alignment:primary",
-                                approach_station_start=0.0,
-                                approach_station_end=20.0,
-                                edge_policy_refs=["edge-policy:intersection:source-status:missing"],
-                            )
-                        ],
-                    )
-                ],
-                control_area_rows=[
-                    IntersectionControlArea(
-                        control_area_id="control-area:source-status:primary",
-                        intersection_id="intersection:source-status",
-                        alignment_ref="alignment:primary",
-                        station_ranges=[(0.0, 20.0)],
-                        control_region_refs=["region:primary-intersection"],
-                    )
-                ],
-            ),
-        )
-
-        rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
-        summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
-        warning_rows = [row for row in rows if row.get("source_status") == "warning"]
-
-        # The aggregate status also reflects unrelated contract rows, here a topology
-        # row in error. What this test is about is the exposure of source warnings,
-        # which the assertions below cover directly.
-        assert summary["source_warning_count"] > 0
-        assert "source status=" in summary["notes"]
-        assert "warning=" in summary["notes"]
-        assert "source warnings=" in summary["notes"]
-        assert warning_rows
-        assert all(row["output_path"] == "contract_consumed" for row in warning_rows)
-        assert any("source_leg_profile_ref_missing" in str(row.get("source_diagnostics", "")) for row in warning_rows)
-    finally:
-        App.closeDocument(doc.Name)
-
-
 def test_corridor_intersection_contract_review_rows_carry_slope_loop_source_lineage_warnings() -> None:
     doc, project = _new_project_doc()
     try:
