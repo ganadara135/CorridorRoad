@@ -1,3 +1,5 @@
+import pytest
+
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionSubassemblyLink,
@@ -333,6 +335,7 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
         assembly_id="asm-1",
         template_rows=[
             SubassemblySectionTemplate(
+                template_kind="roadway",
                 template_id="tmpl-1",
                 subassembly_rows=[TemplateSubassembly(subassembly_id="lane-1", kind="lane", side="right", width=3.5)],
             )
@@ -2392,7 +2395,7 @@ def test_quantity_build_service_adds_bridge_and_wall_detail_fragments() -> None:
     assert by_kind["bridge_approach_slab_area"].value == 120.0
     assert by_kind["bridge_support_count"].value == 3.0
     assert by_kind["wall_body_volume"].value == 40.0
-    assert by_kind["wall_footing_volume"].value == 12.0
+    assert by_kind["wall_footing_volume"].value == pytest.approx(12.0)
     assert by_kind["wall_coping_volume"].value == 2.0
     assert by_kind["wall_drainage_layer_length"].value == 20.0
     assert by_kind["bridge_deck_volume"].structure_ref == "structure:bridge-01"
@@ -3048,7 +3051,7 @@ def test_corridor_surface_geometry_service_uses_transition_generated_sections() 
         )
     )
 
-    station_count = next(row.value for row in result.quality_rows if row.metric == "station_count")
+    station_count = next(row.value for row in result.quality_rows if row.kind == "station_count")
     assert int(station_count) == 5
     assert len(result.vertex_rows) == 10
     assert len(result.triangle_rows) == 8
@@ -3297,7 +3300,10 @@ def test_corridor_surface_service_adds_drainage_surface_when_ditch_points_exist(
         "drainage_surface",
     ]
     assert result.surface_rows[3].parent_surface_ref == "cor-1:design"
-    assert result.build_relation_rows[3].operation_summary == "Built as a separate drainage surface from source-tagged AppliedSection ditch_surface point rows."
+    assert result.build_relation_rows[3].operation_summary == (
+        "Built as a separate drainage surface from source-tagged AppliedSection ditch_surface points "
+        "and Subassembly drainage links."
+    )
     assert "drainage:right" in result.source_refs
     assert "drainage:right" in result.build_relation_rows[3].input_refs
 
@@ -3691,10 +3697,15 @@ def test_corridor_surface_geometry_service_uses_superelevation_resolved_section_
 
     assert "superelevation:main" in result.source_refs
     assert result.provenance_rows[0].source_kind == "applied_section_points"
-    assert round(vertices["v1:p0"].z, 6) == 10.30
-    assert round(vertices["v1:p1"].z, 6) == 10.21
-    assert round(vertices["v1:p2"].z, 6) == 10.00
-    assert round(vertices["v1:p3"].z, 6) == 9.93
+    # Vertices are emitted per point and subassembly_ref, so a shared offset can
+    # carry more than one vertex and positional ids shift. Superelevation is a
+    # property of the offset, so assert the resolved elevation at each offset.
+    station_80_z_by_offset = {
+        round(vertex.y, 2): round(vertex.z, 6)
+        for vertex in result.vertex_rows
+        if vertex.vertex_id.startswith("v1:")
+    }
+    assert station_80_z_by_offset == {-5.0: 10.30, -3.5: 10.21, 0.0: 10.00, 3.5: 9.93}
 
 
 def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_points() -> None:
@@ -3758,14 +3769,15 @@ def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_po
 
     assert result.surface_kind == "drainage_surface"
     assert len(result.vertex_rows) == 8
-    assert len(result.triangle_rows) == 6
-    assert result.provenance_rows[0].source_kind == "applied_section_points"
-    assert set(result.source_refs) >= {"drainage:right", "drainage:left"}
-    assert result.quality_rows[1].kind == "section_point_count"
-    assert result.quality_rows[1].value == 4
+    # Two ditch groups build two independent strips of two triangles each; the
+    # surface does not span the roadway between them.
     quality = {row.kind: row.value for row in result.quality_rows}
+    assert quality["strip_group_count"] == 2
+    assert len(result.triangle_rows) == 4
+    assert result.provenance_rows[0].source_kind == "applied_section_drainage_points"
+    assert set(result.source_refs) >= {"drainage:right", "drainage:left"}
+    assert quality["section_point_count"] == 8
     assert quality["drainage_ref_count"] == 2
-    assert quality["drainage_source_missing_point_count"] == 0
     assert "drainage_refs=drainage:right,drainage:left" in result.provenance_rows[0].notes
     assert any("subassembly_ref=ditch:right" in vertex.notes and "drainage_ref=drainage:right" in vertex.notes for vertex in result.vertex_rows)
 
@@ -3967,7 +3979,7 @@ def test_corridor_surface_geometry_service_uses_bench_breakline_points_for_dayli
     assert quality["bench_breakline_count"] == 2
     assert quality["daylight_marker_count"] == 2
     assert vertices["v0:right:r0:p0"].y == -3.5
-    assert vertices["v0:right:r0:p2"].notes == "bench_surface"
+    assert vertices["v0:right:r0:p2"].notes == "role=bench_surface"
     assert vertices["v0:right:r1:p2"].z == 8.99
 
 
@@ -4196,7 +4208,7 @@ def test_corridor_surface_geometry_service_preserves_bench_breakline_when_retyin
 
     quality = {row.kind: row.value for row in result.quality_rows}
     assert quality["bench_breakline_count"] == 2
-    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "role=daylight_marker"]
     assert daylight_vertices
     assert all(abs(vertex.y - -8.5) < 1.0e-6 for vertex in daylight_vertices)
     assert len(result.triangle_rows) >= 4
@@ -4279,7 +4291,7 @@ def test_corridor_surface_geometry_service_preserves_benched_profile_daylight_af
         )
     )
 
-    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "role=daylight_marker"]
     assert daylight_vertices
     assert all(vertex.y < -8.5 for vertex in daylight_vertices)
     assert all(abs(vertex.z - 7.97) < 1.0e-6 for vertex in daylight_vertices)
@@ -4340,7 +4352,7 @@ def test_corridor_surface_geometry_service_keeps_bench_when_adjacent_station_has
 
     quality = {row.kind: row.value for row in result.quality_rows}
     assert quality["bench_breakline_count"] == 1
-    assert any(vertex.notes == "bench_surface" for vertex in result.vertex_rows)
+    assert any(vertex.notes == "role=bench_surface" for vertex in result.vertex_rows)
     assert len(result.triangle_rows) >= 2
     assert not any(triangle.notes == "daylight_transition_cap" for triangle in result.triangle_rows)
     assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0

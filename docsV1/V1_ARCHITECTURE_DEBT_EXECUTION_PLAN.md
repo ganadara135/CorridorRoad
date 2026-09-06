@@ -631,6 +631,37 @@ Three then failed on deeper assertions the aggregate check had masked. The maint
 
 The first two share one open question that is now untested: whether surface zone and drainage hint evaluation should produce no rows at all when the corner graph is invalid. Both fixtures fail corner-graph validation with missing curb-return policy, radius, and arc points, and both evaluations return a completely empty result rather than rows carrying a warning. Both test names say "warns when ... lacks" and "warns without ...", so the original intent was rows plus a warning. If a later design promoted the corner graph to a precondition, the current behavior is right and the fixtures were simply incomplete. That was not established, and no test now covers either path.
 
+### Result builder cluster and the first real regression, 2026-09-05
+
+`test_result_builders.py` held 13 failures. Seven were mechanical drift with unchanged meaning and needed no decision: four bench and daylight tests filtered vertex notes without the `role=` prefix, one read `TINQualityRow.metric` where the field is `kind`, one compared an accumulated volume with `==` and failed on `12.000000000000002`, and one constructed `SubassemblySectionTemplate` without the now-required `template_kind`, set to `"roadway"` like every other call site. All seven pass after the fix.
+
+**Ditch flowline elevation was a real regression, not a stale test.** `test_applied_section_service_starts_benched_slope_after_ditch_outer_edge` failed with `18.96 == 8.96`, an offset of exactly the profile elevation. Dumping the section's point rows showed why:
+
+| role | offset | z |
+| --- | --- | --- |
+| `ditch_surface` outer edge | -4.50 | 9.96 |
+| `ditch_flowline` | -4.50 | **19.96** |
+| `side_slope_surface` | -6.50 | 18.96 |
+| `bench_surface` | -7.50 | 18.94 |
+| `daylight_marker` | -8.50 | 18.44 |
+
+`_oriented_ditch_rows` returns absolute elevations (`edge_z + z_delta`), and the `ditch_surface` points use them directly, which is why the edge is correct. The flowline loop received the same rows under the name `z_delta` and computed `base_z + z_delta`, adding the frame elevation a second time. Every bench slope point is chained from the flowline, so the whole benched side slope sat one profile elevation too high. The failure predates this plan: the same `18.96 == 8.96` appears in the M2 baseline run, and the flowline construction dates from `9b718c6`.
+
+The fix removes the second `base_z` and renames the value to `flow_z`, with the helper's variable renamed to match. `_ditch_flowline_rows` and the point roles are otherwise unchanged. `ditch_flowline` is consumed by `drainage_review_mapper.py` and the subassembly definition presets; running the three drainage and applied-section contract modules before and after showed no new failure and one additional pass, `test_drainage_editor_validate_shows_flow_route_summary`, whose flow route summary had been wrong for the same reason.
+
+This is a user-visible change to drainage flowline and benched side slope elevations and needs level 5 smokes and level 7 manual confirmation before it is called complete.
+
+Three more tests in the same module were stale in ways that measurement settled without a product decision:
+
+- `test_corridor_surface_geometry_service_uses_superelevation_resolved_section_points` asserted elevations by positional vertex id (`v1:p2`). Vertices are now emitted per point and `subassembly_ref`, so a shared offset carries two vertices and the ids shift. The resolved elevations at every offset were exactly as expected (10.30, 10.21, 10.00, 9.93), so the test now asserts elevation by offset, which is what superelevation is a property of.
+- `test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_points` expected 6 triangles, `section_point_count` 4, provenance kind `applied_section_points`, a positional `quality_rows[1]`, and a `drainage_source_missing_point_count` row. The drainage surface now builds one strip per ditch group and does not span the roadway between them: `strip_group_count` 2, 4 triangles, `section_point_count` 8, provenance kind `applied_section_drainage_points`, and no missing-point row. The test now asserts those and looks quality rows up by kind.
+- `test_corridor_surface_service_adds_drainage_surface_when_ditch_points_exist` compared an `operation_summary` string that gained the words "and Subassembly drainage links". Wording only.
+
+Two remain and are decisions:
+
+- `test_applied_section_service_orients_bench_side_slope_up_for_cut_context` expects the resolved section to expand a side slope in cut context into derived `side_slope` and `daylight` rows under `side-slope-right:*`, with the slope reoriented upward (`slope == 0.5`) and clipped at the terrain (`width == 4.0`). No release ever emitted those derived rows; the service has no `kind="side_slope"` or `kind="daylight"` row construction at `1.0.9` or now. The point geometry and the `bench_cut_fill_context` diagnostic the test also checks are already correct: the slope rises from 10.0 to meet existing ground at 12.0 over 4.0 of width. The M8 bench decision covered bench segments only; whether the expansion should extend to reoriented side slope and daylight rows is a design question. The bench row this plan added, `side-slope-right:bench:1`, also matches the test's prefix filter, so the test's expected list can no longer be satisfied as written under either answer.
+- `test_quantity_build_service_adds_structure_quantity_fragments` expects `culvert_wall_volume` 27.5 for a two-barrel box culvert and gets 55.0. `_culvert_wall_volume` has multiplied by `barrel_count` since `46fd04a`, the same commit that wrote the fixture with `barrel_count=2` and the expectation of 27.5, so at that time the count did not reach the function and the test passed by accident of plumbing. Now it does. The formula's stated intent is per-barrel wall volume times barrel count; the test's 27.5 was never what the author wrote the formula to produce. Note that `culvert_barrel_volume` (60.0) and `culvert_opening_area` (6.0) are not multiplied by the count, so the multi-barrel semantics of the quantity set are not consistent among themselves, and two adjacent barrels share a wall that the count formula counts twice. Which convention the quantity report should follow is a decision.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

@@ -3978,13 +3978,17 @@ def _ditch_section_points(
                 drainage_ref=drainage_ref,
             )
         )
-    for index, (offset, z_delta, subassembly_ref, side_label, drainage_ref) in enumerate(_ditch_flowline_rows(sorted_rows), start=1):
+    # The ditch rows already carry absolute elevations, which is why the edge
+    # points above use z directly. The flowline is the lowest of those rows and
+    # must not have base_z added a second time; doing so lifted the flowline and
+    # every bench slope point chained from it by the full profile elevation.
+    for index, (offset, flow_z, subassembly_ref, side_label, drainage_ref) in enumerate(_ditch_flowline_rows(sorted_rows), start=1):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:flowline:{side_label}:{index}",
                 x=base_x + normal_x * offset,
                 y=base_y + normal_y * offset,
-                z=base_z + z_delta,
+                z=flow_z,
                 point_role="ditch_flowline",
                 lateral_offset=offset,
                 subassembly_ref=subassembly_ref,
@@ -4015,9 +4019,9 @@ def _ditch_source_rows(
 
 def _ditch_flowline_rows(rows: list[tuple[float, float, str, str, str, str]]) -> list[tuple[float, float, str, str, str]]:
     grouped: dict[tuple[str, str, str], list[tuple[float, float]]] = {}
-    for offset, z_delta, _role, subassembly_ref, side_label, drainage_ref in list(rows or []):
+    for offset, z, _role, subassembly_ref, side_label, drainage_ref in list(rows or []):
         key = (str(subassembly_ref or ""), str(side_label or ""), str(drainage_ref or ""))
-        grouped.setdefault(key, []).append((float(offset), float(z_delta)))
+        grouped.setdefault(key, []).append((float(offset), float(z)))
     output: list[tuple[float, float, str, str, str]] = []
     for subassembly_ref, side_label, drainage_ref in sorted(grouped):
         values = grouped[(subassembly_ref, side_label, drainage_ref)]
