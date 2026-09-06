@@ -670,6 +670,31 @@ Two remain and are decisions:
 
 **Two label and field drifts.** The drainage editor's element table header is `Subassembly`, not `Assembly`, consistent with the SubAssembly Designer naming; the test was updated. `SectionEarthworkAreaService.to_section_quantity_rows` never sets `subassembly_ref`, and area rows describe the whole section rather than one Subassembly, so the test's expectation that the field would carry `section_earthwork_area` misused a reference field; it now asserts the field is empty while `quantity_kind` carries the meaning.
 
+### M3 batch 1 on 2026-09-07: rewire shim-backed assertions to service APIs
+
+Entry: `test_build_corridor_command.py` referenced 72 private functions of `cmd_build_corridor.py`, 22 of them single-`return` delegation shims. One of the 22, `_region_surface_role_uses_intersection_exclusion`, is an inline predicate rather than a delegate and stays in the command. The other 21 were rewired.
+
+Method. Each shim's untruncated return expression was read from the AST, the service target was imported and checked to exist, and each service signature was crossed with every call form the test uses (positional count and keyword names). Seventeen matched directly; the remaining four target `*args, **kwargs` wrappers in `intersection_exclusion_geometry_service` and `shared_breakline_tin_builder_service`, which the shims already call with the same forms, so a rename is equally safe there. A first pass was aborted by that pre-check because a method name had been reconstructed from a truncated listing (`boundary_tin_vertices` where the service has `patch_boundary_vertices`); nothing was written until the mapping was verified against source.
+
+Result. 70 call sites across 21 shims now call the service API directly, with 24 import lines added after the file's last top-level import. `test_build_corridor_command.py` no longer references any of the 21; its private reference count fell from 72 to 51, and the shim-backed count from 22 to 1. Five of the 21 are still referenced from other test modules, `architecture/test_v1_package_boundaries.py::test_build_corridor_phase2_owners_are_outside_the_command_module`, `contracts/v1/test_polygon_boundary_service.py::test_xyz_exterior_hull_preserves_turn_tolerance_and_command_wrappers`, `contracts/v1/test_polygon_topology_service.py::test_build_corridor_polygon_topology_wrappers_match_service`. Those references are deliberate: they check that the command's compatibility wrappers delegate to the geometry and shared-breakline services, so they are M4 material to be retired together with the wrappers they guard, not M3 leftovers. The module's failing set is unchanged at 19 before and after, with no new and no resolved test, which is the expected signature of a behavior-preserving rewire; those 19 are pre-existing M8 items unrelated to the shims. Fast tier passes.
+
+M4 readiness for these 21. Still called inside the command module and therefore not deletable yet: `_intersection_tie_in_strip_polygon` (1), `_intersection_practical_exclusion_polygon_candidate_from_boundary_segments` (1), `_tin_surface_with_shared_breakline_constraint_edges` (7), `_tin_surface_with_shared_breakline_metadata` (11), `_suppress_daylight_triangles_above_intersection_surface` (1), `_suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint` (1), `_suppress_daylight_triangles_inside_intersection_surface_footprint` (1), `_trim_daylight_triangles_above_intersection_surface_by_intersection_lines` (1), `_xy_area_from_xyz_points` (1), `_xy_xyz_polygon_self_crossing` (2). These appear in the architecture ratchet's wrapper limits and must be removed from it in the same change that deletes them: `_intersection_surface_tin_with_shared_breakline_constraint_edges`, `_tin_surface_with_shared_breakline_constraint_edges`.
+
+### M3 batch 2 scope and M4 readiness, measured 2026-09-07
+
+The 51 command-module privates still referenced by `test_build_corridor_command.py` are not one population:
+
+| Count | Kind | Disposition |
+| --- | --- | --- |
+| 2 | thin logic that calls one service (`_build_intersection_slope_face_surface_from_ready_loops`, `_intersection_slope_face_boundary_target_segments`) | M3 batch 2: move the assertion to the service API |
+| 19 | orchestration that creates or reads FreeCAD objects (`_corridor_build_review_row`, `_create_corridor_intersection_slope_face_surface_preview`, `_select_and_fit_objects`, ...) | stays in the command test; this is what the command test is for |
+| 29 | pure logic with no FreeCAD dependency (`_tin_quality_float` 82 uses, `_set_preview_*` 173 uses, `_shared_breakline_recommended_action`, `_intersection_surface_boundary_review` 137 lines, ...) | not M3: these are M5 extraction candidates, review-row and preview-property logic that belongs in `services/mapping` or `ui/presentation`; their tests move when they do |
+| 1 | inline predicate `_region_surface_role_uses_intersection_exclusion` | stays |
+
+So M3 batch 2 is small, and the bulk of the remaining coupling is M5 work rather than M3 work.
+
+M4 readiness for the 21 shims rewired in batch 1. Ten are still called inside `cmd_build_corridor.py` itself (27 call sites; `_tin_surface_with_shared_breakline_metadata` 11, `_tin_surface_with_shared_breakline_constraint_edges` 7, the rest one or two each). Every internal call form matches its service signature, so the internal rewire is a rename like the test rewire was. Deleting the 21 then requires, in the same change: removing the two entries the architecture ratchet keeps in `wrapper_limits` (`_tin_surface_with_shared_breakline_constraint_edges`, `_intersection_surface_tin_with_shared_breakline_constraint_edges`), and retiring the three equivalence tests in `test_polygon_boundary_service.py` and `test_polygon_topology_service.py` that assert the wrappers match the services, which become meaningless once the wrappers are gone.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

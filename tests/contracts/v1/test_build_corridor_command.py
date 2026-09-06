@@ -137,6 +137,30 @@ from freecad.Corridor_Road.v1.models.result.intersection_drainage_hint import (
 )
 from freecad.Corridor_Road.v1.models.result.centerline3d import Centerline3DPointRow, Centerline3DResult
 from dataclasses import replace
+from freecad.Corridor_Road.v1.services.builders import (
+    IntersectionPatchBoundarySelectionService,
+    IntersectionPatchTriangulationService,
+    suppress_daylight_triangles_above_intersection_surface,
+    suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint,
+    suppress_daylight_triangles_inside_intersection_surface_footprint,
+    trim_daylight_triangles_above_intersection_surface_by_intersection_lines,
+)
+from freecad.Corridor_Road.v1.services.builders.intersection_exclusion_geometry_service import (
+    intersection_practical_exclusion_polygon_candidate_from_boundary_segments,
+    intersection_practical_exclusion_polygon_from_boundary_segments,
+    xy_triangle_near_curb_return_arc_protection,
+)
+from freecad.Corridor_Road.v1.services.builders.shared_breakline_tin_builder_service import (
+    intersection_surface_tin_with_shared_breakline_constraint_edges,
+    tin_surface_with_shared_breakline_constraint_edges,
+    tin_surface_with_shared_breakline_metadata,
+)
+from freecad.Corridor_Road.v1.services.evaluation.intersection_patch_grading_service import IntersectionPatchGradingService
+from freecad.Corridor_Road.v1.services.geometry import (
+    xy_polygon_self_intersects,
+    xy_polygon_signed_area,
+    xyz_exterior_convex_hull,
+)
 
 _QAPP = None
 
@@ -2791,7 +2815,7 @@ def test_intersection_slope_loop_suppression_skips_quality_rejected_reference_su
         ],
     )
 
-    suppressed = build_corridor_command._suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+    suppressed = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
         daylight,
         rejected_reference,
     )
@@ -2839,7 +2863,7 @@ def test_intersection_slope_loop_suppression_uses_generated_ready_loop_footprint
         ],
     )
 
-    suppressed = build_corridor_command._suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+    suppressed = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
         daylight,
         reference,
     )
@@ -2894,7 +2918,7 @@ def test_intersection_slope_loop_suppression_uses_intersection_slope_face_footpr
         ],
     )
 
-    suppressed = build_corridor_command._suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+    suppressed = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
         daylight,
         reference,
     )
@@ -3109,7 +3133,7 @@ def test_intersection_patch_boundary_tin_vertices_preserve_elevation_source_note
         )
     ]
 
-    vertices = build_corridor_command._intersection_patch_boundary_tin_vertices(
+    vertices = IntersectionPatchBoundarySelectionService().patch_boundary_vertices(
         result,
         source_vertices=source_vertices,
     )
@@ -3788,7 +3812,7 @@ def test_intersection_practical_exclusion_polygon_uses_curb_return_blend_boundar
         ],
     )
 
-    exclusion = build_corridor_command._intersection_practical_exclusion_polygon_from_boundary_segments(
+    exclusion = intersection_practical_exclusion_polygon_from_boundary_segments(
         boundary_result,
         intersection_model=intersection_model,
     )
@@ -3889,7 +3913,7 @@ def test_intersection_patch_structured_strip_triangulates_curb_returns_without_f
         ],
     )
 
-    result = build_corridor_command._intersection_patch_structured_strip_triangulation(
+    result = IntersectionPatchTriangulationService().structured_strip_triangulation(
         tie_in_result,
         source_vertices=[],
         center=TINVertex("center", 20.0, -4.0, 10.0),
@@ -4003,7 +4027,7 @@ def _assert_curb_return_variant_uses_structured_strip(tie_in_result, intersectio
     assert boundary_result.arc_segment_count == 2
     assert not any(str(row).startswith("intersection_curb_return_radius_invalid") for row in boundary_result.diagnostic_rows)
 
-    result = build_corridor_command._intersection_patch_structured_strip_triangulation(
+    result = IntersectionPatchTriangulationService().structured_strip_triangulation(
         tie_in_result,
         source_vertices=[],
         center=TINVertex("center", 20.0, -4.0, 10.0),
@@ -4058,7 +4082,7 @@ def test_intersection_practical_exclusion_recovers_skewed_outer_loop() -> None:
         tie_in_result,
         intersection_model=intersection_model,
     )
-    triangulation = build_corridor_command._intersection_patch_structured_strip_triangulation(
+    triangulation = IntersectionPatchTriangulationService().structured_strip_triangulation(
         tie_in_result,
         source_vertices=[],
         center=TINVertex("center", 20.0, -4.0, 10.0),
@@ -4067,7 +4091,7 @@ def test_intersection_practical_exclusion_recovers_skewed_outer_loop() -> None:
         intersection_id="intersection:t-01",
     )
 
-    footprint = build_corridor_command._intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
+    footprint = intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
         boundary_result,
         intersection_model=intersection_model,
     )
@@ -4088,7 +4112,7 @@ def test_intersection_practical_exclusion_recovers_skewed_outer_loop() -> None:
     assert "intersection_exclusion_footprint_outer_loop_recovered:exterior_hull" in footprint["diagnostics"]
     assert footprint["edge_blend_face_count"] == 20
     assert footprint["curb_return_arc_count"] == 2
-    assert build_corridor_command._intersection_practical_exclusion_polygon_from_boundary_segments(
+    assert intersection_practical_exclusion_polygon_from_boundary_segments(
         boundary_result,
         intersection_model=intersection_model,
     ) is not None
@@ -4109,17 +4133,17 @@ def test_intersection_exterior_hull_boundary_preserves_curb_return_expansion() -
         row for row in boundary_result.segment_rows
         if row.segment_kind == "tie_in" and row.alignment_ref == "alignment:side"
     ]
-    primary_polygon = build_corridor_command._intersection_tie_in_strip_polygon(primary_rows)
-    side_polygon = build_corridor_command._intersection_tie_in_strip_polygon(side_rows)
+    primary_polygon = IntersectionPatchTriangulationService().tie_in_strip_polygon(primary_rows)
+    side_polygon = IntersectionPatchTriangulationService().tie_in_strip_polygon(side_rows)
     curb_parts = [
         polygon
-        for polygon, _role in build_corridor_command._intersection_curb_return_surface_parts(boundary_result)
+        for polygon, _role in IntersectionPatchTriangulationService().curb_return_surface_parts(boundary_result)
     ]
 
-    hull = build_corridor_command._xy_polygon_exterior_hull_boundary(
+    hull = xyz_exterior_convex_hull(
         [primary_polygon, side_polygon, *curb_parts]
     )
-    strip_only_hull = build_corridor_command._xy_polygon_exterior_hull_boundary(
+    strip_only_hull = xyz_exterior_convex_hull(
         [primary_polygon, side_polygon]
     )
 
@@ -4127,10 +4151,10 @@ def test_intersection_exterior_hull_boundary_preserves_curb_return_expansion() -
     assert side_polygon is not None
     assert len(curb_parts) > 0
     assert len(hull) >= 3
-    assert build_corridor_command._xy_area_from_xyz_points(hull) > 0.0
-    assert build_corridor_command._xy_xyz_polygon_self_crossing(hull) is False
-    assert abs(build_corridor_command._xy_area_from_xyz_points(hull)) > abs(
-        build_corridor_command._xy_area_from_xyz_points(strip_only_hull)
+    assert xy_polygon_signed_area(hull) > 0.0
+    assert xy_polygon_self_intersects(hull) is False
+    assert abs(xy_polygon_signed_area(hull)) > abs(
+        xy_polygon_signed_area(strip_only_hull)
     )
 
 
@@ -4156,14 +4180,14 @@ def test_intersection_tie_in_strip_polygon_normalizes_winding_and_duplicates() -
         ),
     ]
 
-    polygon = build_corridor_command._intersection_tie_in_strip_polygon(rows)
+    polygon = IntersectionPatchTriangulationService().tie_in_strip_polygon(rows)
 
     assert polygon is not None
     assert len(polygon) == 4
-    assert build_corridor_command._xy_area_from_xyz_points(polygon) > 0.0
-    assert build_corridor_command._xy_xyz_polygon_self_crossing(polygon) is False
+    assert xy_polygon_signed_area(polygon) > 0.0
+    assert xy_polygon_self_intersects(polygon) is False
 
-    duplicate = build_corridor_command._normalize_intersection_tie_in_strip_polygon(
+    duplicate = IntersectionPatchTriangulationService().normalize_tie_in_strip_polygon(
         [
             (0.0, 0.0, 0.0),
             (10.0, 0.0, 0.0),
@@ -4176,8 +4200,8 @@ def test_intersection_tie_in_strip_polygon_normalizes_winding_and_duplicates() -
 
     assert duplicate is not None
     assert len(duplicate) == 4
-    assert build_corridor_command._xy_area_from_xyz_points(duplicate) > 0.0
-    assert build_corridor_command._xy_xyz_polygon_self_crossing(duplicate) is False
+    assert xy_polygon_signed_area(duplicate) > 0.0
+    assert xy_polygon_self_intersects(duplicate) is False
 
 
 def test_intersection_tie_in_strip_polygon_rejects_degenerate_near_duplicate_edges() -> None:
@@ -4202,8 +4226,8 @@ def test_intersection_tie_in_strip_polygon_rejects_degenerate_near_duplicate_edg
         ),
     ]
 
-    assert build_corridor_command._intersection_tie_in_strip_polygon(rows) is None
-    assert build_corridor_command._normalize_intersection_tie_in_strip_polygon(
+    assert IntersectionPatchTriangulationService().tie_in_strip_polygon(rows) is None
+    assert IntersectionPatchTriangulationService().normalize_tie_in_strip_polygon(
         [(0.0, 0.0, 0.0), (1.0e-7, 0.0, 0.0), (0.0, 1.0e-7, 0.0)]
     ) is None
 
@@ -4579,12 +4603,12 @@ def test_intersection_ordered_polygon_triangulation_uses_long_edge_policy() -> N
     ]
     center = TINVertex("v:center", 10.0, 2.0, 0.0)
 
-    default_result = build_corridor_command._intersection_patch_ordered_polygon_triangulation(
+    default_result = IntersectionPatchTriangulationService().ordered_polygon_triangulation(
         vertices,
         center,
         intersection_id="intersection:t-01",
     )
-    strict_result = build_corridor_command._intersection_patch_ordered_polygon_triangulation(
+    strict_result = IntersectionPatchTriangulationService().ordered_polygon_triangulation(
         vertices,
         center,
         intersection_id="intersection:t-01",
@@ -4768,7 +4792,7 @@ def test_intersection_exclusion_clips_tin_with_recovered_skewed_footprint() -> N
         tie_in_result,
         intersection_model=intersection_model,
     )
-    footprint = build_corridor_command._intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
+    footprint = intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
         boundary_result,
         intersection_model=intersection_model,
     )
@@ -4959,7 +4983,7 @@ def test_intersection_height_clip_suppresses_only_daylight_triangles_above_inter
         ],
     )
 
-    clipped = build_corridor_command._suppress_daylight_triangles_above_intersection_surface(
+    clipped = suppress_daylight_triangles_above_intersection_surface(
         daylight_surface,
         intersection_surface,
         tolerance=0.05,
@@ -5007,7 +5031,7 @@ def test_intersection_footprint_suppresses_daylight_triangles_inside_intersectio
         ],
     )
 
-    clipped = build_corridor_command._suppress_daylight_triangles_inside_intersection_surface_footprint(
+    clipped = suppress_daylight_triangles_inside_intersection_surface_footprint(
         daylight_surface,
         intersection_surface,
     )
@@ -5101,7 +5125,7 @@ def test_intersection_slope_trim_removes_intersecting_daylight_triangle_above_in
         ],
     )
 
-    trimmed = build_corridor_command._trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
+    trimmed = trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
         daylight_surface,
         intersection_surface,
         tolerance=0.05,
@@ -5205,17 +5229,17 @@ def test_intersection_shared_breakline_contract_is_consumed_by_patch_and_slope_s
             TINTriangle("design-shoulder-edge", "d2", "d4", "d3"),
         ],
     )
-    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    intersection_surface = tin_surface_with_shared_breakline_metadata(
         intersection_surface,
         shared,
         consumer_ref="intersection_surface",
     )
-    slope_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    slope_surface = tin_surface_with_shared_breakline_metadata(
         slope_surface,
         shared,
         consumer_ref="slope_face_surface",
     )
-    design_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    design_surface = tin_surface_with_shared_breakline_metadata(
         design_surface,
         shared,
         consumer_ref="design_surface",
@@ -5576,7 +5600,7 @@ def test_shared_breakline_audit_accepts_subdivided_boundary_chain() -> None:
         ),
         boundary_segment_result=SimpleNamespace(),
     )
-    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    intersection_surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -5627,7 +5651,7 @@ def test_shared_breakline_audit_accepts_polyline_boundary_chain() -> None:
         ),
         boundary_segment_result=SimpleNamespace(),
     )
-    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    intersection_surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -5679,7 +5703,7 @@ def test_shared_breakline_audit_accepts_boundary_coverage_without_exact_endpoint
         ),
         boundary_segment_result=SimpleNamespace(),
     )
-    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    intersection_surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -5729,7 +5753,7 @@ def test_shared_breakline_audit_accepts_internal_tin_edge() -> None:
         ),
         boundary_segment_result=SimpleNamespace(),
     )
-    intersection_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    intersection_surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -5775,7 +5799,7 @@ def test_shared_breakline_audit_prefers_surface_constraint_contract() -> None:
         ),
         boundary_segment_result=SimpleNamespace(),
     )
-    surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -5822,7 +5846,7 @@ def test_shared_breakline_audit_ignores_mesh_edge_direction_when_contract_matche
         ),
         boundary_segment_result=SimpleNamespace(),
     )
-    surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -5891,7 +5915,7 @@ def test_intersection_surface_tin_inserts_missing_shared_breakline_endpoint_vert
         ],
     )
 
-    updated_vertices, updated_triangles, stats = build_corridor_command._intersection_surface_tin_with_shared_breakline_constraint_edges(
+    updated_vertices, updated_triangles, stats = intersection_surface_tin_with_shared_breakline_constraint_edges(
         vertices=[
             TINVertex("near-a", 0.0, 2.0, 10.0),
             TINVertex("near-b", 10.0, 2.0, 10.0),
@@ -5964,12 +5988,12 @@ def test_shared_breakline_constraint_edges_snap_generated_vertices_without_chang
         ],
     )
 
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    constrained = tin_surface_with_shared_breakline_constraint_edges(
         surface,
         shared,
         consumer_ref="intersection_surface",
     )
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    constrained = tin_surface_with_shared_breakline_metadata(
         constrained,
         shared,
         consumer_ref="intersection_surface",
@@ -6056,7 +6080,7 @@ def test_boundary_loop_constraint_edges_expose_role_summary_quality_row() -> Non
         ],
     )
 
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    constrained = tin_surface_with_shared_breakline_constraint_edges(
         surface,
         shared,
         consumer_ref="intersection_surface",
@@ -6116,12 +6140,12 @@ def test_shared_breakline_constraint_edges_apply_to_design_surface_mesh() -> Non
         ],
     )
 
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    constrained = tin_surface_with_shared_breakline_constraint_edges(
         surface,
         shared,
         consumer_ref="design_surface",
     )
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    constrained = tin_surface_with_shared_breakline_metadata(
         constrained,
         shared,
         consumer_ref="design_surface",
@@ -6179,12 +6203,12 @@ def test_shared_breakline_constraint_edges_reuse_existing_coordinate_edge() -> N
         ],
     )
 
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    constrained = tin_surface_with_shared_breakline_constraint_edges(
         surface,
         shared,
         consumer_ref="slope_face_surface",
     )
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    constrained = tin_surface_with_shared_breakline_metadata(
         constrained,
         shared,
         consumer_ref="slope_face_surface",
@@ -6244,12 +6268,12 @@ def test_shared_breakline_constraint_edges_reuse_existing_edge_chain() -> None:
         ],
     )
 
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    constrained = tin_surface_with_shared_breakline_constraint_edges(
         surface,
         shared,
         consumer_ref="slope_face_surface",
     )
-    constrained = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    constrained = tin_surface_with_shared_breakline_metadata(
         constrained,
         shared,
         consumer_ref="slope_face_surface",
@@ -6460,8 +6484,8 @@ def test_corridor_drainage_handoff_breaklines_audit_against_drainage_surface_con
         ],
     )
     shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
-    drainage_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
-        build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    drainage_surface = tin_surface_with_shared_breakline_metadata(
+        tin_surface_with_shared_breakline_constraint_edges(
             TINSurface(schema_version=1, project_id="proj-1", surface_id="surface:drainage"),
             shared,
             consumer_ref="drainage_surface",
@@ -6526,7 +6550,7 @@ def test_corridor_general_shared_breakline_metadata_drives_design_and_slope_audi
         ],
     )
     shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
-    surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
+    surface = tin_surface_with_shared_breakline_metadata(
         TINSurface(
             schema_version=1,
             project_id="proj-1",
@@ -6620,8 +6644,8 @@ def test_corridor_general_shared_breakline_audit_reports_zero_mismatch_for_strai
             sections=sections,
         )
         shared = build_corridor_command.corridor_general_shared_breakline_result(applied)
-        design_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
-            build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+        design_surface = tin_surface_with_shared_breakline_metadata(
+            tin_surface_with_shared_breakline_constraint_edges(
                 TINSurface(schema_version=1, project_id="proj-1", surface_id=f"surface:{case_id}:design"),
                 shared,
                 consumer_ref="design_surface",
@@ -6629,8 +6653,8 @@ def test_corridor_general_shared_breakline_audit_reports_zero_mismatch_for_strai
             shared,
             consumer_ref="design_surface",
         )
-        slope_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
-            build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+        slope_surface = tin_surface_with_shared_breakline_metadata(
+            tin_surface_with_shared_breakline_constraint_edges(
                 TINSurface(schema_version=1, project_id="proj-1", surface_id=f"surface:{case_id}:slope"),
                 shared,
                 consumer_ref="slope_face_surface",
@@ -6743,8 +6767,8 @@ def test_corridor_region_transition_shared_breakline_audit_consumes_design_and_s
         ],
     )
     shared = build_corridor_command.corridor_region_transition_shared_breakline_result(applied)
-    design_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
-        build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    design_surface = tin_surface_with_shared_breakline_metadata(
+        tin_surface_with_shared_breakline_constraint_edges(
             TINSurface(schema_version=1, project_id="proj-1", surface_id="surface:region:design"),
             shared,
             consumer_ref="design_surface",
@@ -6752,8 +6776,8 @@ def test_corridor_region_transition_shared_breakline_audit_consumes_design_and_s
         shared,
         consumer_ref="design_surface",
     )
-    slope_surface = build_corridor_command._tin_surface_with_shared_breakline_metadata(
-        build_corridor_command._tin_surface_with_shared_breakline_constraint_edges(
+    slope_surface = tin_surface_with_shared_breakline_metadata(
+        tin_surface_with_shared_breakline_constraint_edges(
             TINSurface(schema_version=1, project_id="proj-1", surface_id="surface:region:slope"),
             shared,
             consumer_ref="slope_face_surface",
@@ -7753,12 +7777,12 @@ def test_curb_return_arc_daylight_protection_detects_near_corridor_slope_triangl
     near_triangle = [(1.0, 2.0), (2.0, 2.5), (3.0, 2.0)]
     far_triangle = [(20.0, 20.0), (21.0, 20.0), (20.0, 21.0)]
 
-    assert build_corridor_command._xy_triangle_near_curb_return_arc_protection(
+    assert xy_triangle_near_curb_return_arc_protection(
         near_triangle,
         arc,
         max_distance=2.0,
     )
-    assert not build_corridor_command._xy_triangle_near_curb_return_arc_protection(
+    assert not xy_triangle_near_curb_return_arc_protection(
         far_triangle,
         arc,
         max_distance=2.0,
@@ -7855,15 +7879,15 @@ def test_intersection_grading_policy_modes_have_distinct_z_behavior() -> None:
         TINVertex("v:side:left", 5.0, 0.0, 20.0, notes="alignment=alignment:side"),
         TINVertex("v:side:right", -5.0, 0.0, 22.0, notes="alignment=alignment:side"),
     ]
-    flattened = build_corridor_command._apply_intersection_grading_policy(
+    flattened = IntersectionPatchGradingService().apply_vertices(
         vertices,
         IntersectionGradingPolicyRow("grading:flat", "intersection:t-01", mode="flatten_intersection", primary_alignment_ref="alignment:primary"),
     )
-    preserved = build_corridor_command._apply_intersection_grading_policy(
+    preserved = IntersectionPatchGradingService().apply_vertices(
         vertices,
         IntersectionGradingPolicyRow("grading:crown", "intersection:t-01", mode="keep_primary_crown", primary_alignment_ref="alignment:primary"),
     )
-    blended = build_corridor_command._apply_intersection_grading_policy(
+    blended = IntersectionPatchGradingService().apply_vertices(
         vertices,
         IntersectionGradingPolicyRow("grading:blend", "intersection:t-01", mode="blend_primary_side", primary_alignment_ref="alignment:primary"),
     )
@@ -7905,7 +7929,7 @@ def test_intersection_patch_boundary_vertices_use_grading_plane_elevation() -> N
         TINVertex("v:side:left", 5.0, 0.0, 20.0, notes="alignment=alignment:side"),
         TINVertex("v:side:right", -5.0, 0.0, 22.0, notes="alignment=alignment:side"),
     ]
-    plane = build_corridor_command._intersection_grading_plane_for_policy(
+    plane = IntersectionPatchGradingService().grading_plane(
         source_vertices,
         IntersectionGradingPolicyRow("grading:blend", "intersection:t-01", mode="blend_primary_side", primary_alignment_ref="alignment:primary"),
     )
@@ -7919,7 +7943,7 @@ def test_intersection_patch_boundary_vertices_use_grading_plane_elevation() -> N
         ],
     )
 
-    vertices = build_corridor_command._intersection_patch_boundary_tin_vertices(
+    vertices = IntersectionPatchBoundarySelectionService().patch_boundary_vertices(
         patch_boundary,
         source_vertices=source_vertices,
         grading_plane=plane,
