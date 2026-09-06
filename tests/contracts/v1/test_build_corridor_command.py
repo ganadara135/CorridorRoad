@@ -161,6 +161,8 @@ from freecad.Corridor_Road.v1.services.geometry import (
     xy_polygon_signed_area,
     xyz_exterior_convex_hull,
 )
+from freecad.Corridor_Road.v1.services.builders import build_intersection_slope_face_surface_from_ready_loops
+from freecad.Corridor_Road.v1.services.evaluation.intersection_slope_face_boundary_evaluation_service import intersection_slope_face_boundary_target_segments
 
 _QAPP = None
 
@@ -2731,7 +2733,7 @@ def test_intersection_slope_face_surface_records_skinny_fan_loop_quality_rows() 
         ],
     )
 
-    surface = build_corridor_command._build_intersection_slope_face_surface_from_ready_loops(
+    surface = build_intersection_slope_face_surface_from_ready_loops(
         loop_result,
         project_id="proj-1",
     )
@@ -2775,7 +2777,7 @@ def test_intersection_slope_face_surface_rejects_degenerate_fan_loop_with_qualit
         ],
     )
 
-    surface = build_corridor_command._build_intersection_slope_face_surface_from_ready_loops(
+    surface = build_intersection_slope_face_surface_from_ready_loops(
         loop_result,
         project_id="proj-1",
     )
@@ -3621,7 +3623,7 @@ def test_intersection_slope_face_boundary_result_preserves_all_tie_in_sides() ->
         tie_in_result,
         intersection_model=intersection_model,
     )
-    target_segments = build_corridor_command._intersection_slope_face_boundary_target_segments(
+    target_segments = intersection_slope_face_boundary_target_segments(
         boundary_segment_result,
         intersection_model=intersection_model,
         intersection_id="intersection:t-01",
