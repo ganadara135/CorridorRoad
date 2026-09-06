@@ -82,7 +82,9 @@ def test_section_earthwork_area_rows_convert_to_section_quantity_rows() -> None:
     assert rows[0].quantity_kind == "cut_area"
     assert rows[0].value == 10.0
     assert rows[0].unit == "m2"
-    assert rows[0].subassembly_ref == "section_earthwork_area"
+    # Area rows describe the whole section, not one Subassembly, so the
+    # Subassembly reference is left empty; quantity_kind carries the meaning.
+    assert rows[0].subassembly_ref == ""
 
 
 def test_section_earthwork_area_service_requires_design_and_ground_lines() -> None:

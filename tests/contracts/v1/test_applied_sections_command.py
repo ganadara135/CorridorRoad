@@ -71,7 +71,12 @@ def test_build_document_applied_section_set_uses_v1_sources() -> None:
 
         result = build_document_applied_section_set(doc, project=project)
 
-        assert len(result.station_rows) == 5
+        # Applied Sections owns supplemental density, so the set holds the five
+        # source stations plus curve and vertical-curve supplemental rows.
+        source_rows = [row for row in result.station_rows if row.kind == "regular_sample"]
+        assert len(source_rows) == 5
+        assert len(result.station_rows) > len(source_rows)
+        assert {row.kind for row in result.station_rows} >= {"regular_sample", "curve_supplemental", "vertical_curve_supplemental"}
         assert result.sections[0].assembly_id == "assembly:basic-road"
         assert result.sections[0].template_id == "template:basic-road"
         assert result.sections[0].region_id == "region:normal-01"
@@ -346,21 +351,22 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
 
         assert obj == find_v1_applied_section_set(doc)
         assert obj.V1ObjectType == "V1AppliedSectionSet"
-        assert obj.StationCount == 5
-        assert list(obj.TemplateIds) == [
-            "template:basic-road",
-            "template:basic-road",
-            "template:basic-road",
-            "template:basic-road",
-            "template:basic-road",
-        ]
+        # StationCount covers source and supplemental rows; the source count is
+        # exposed separately and stays five.
+        assert int(obj.SourceSectionCount) == 5
+        assert int(obj.StationCount) == int(obj.TotalSectionCount)
+        assert int(obj.StationCount) == int(obj.SourceSectionCount) + int(obj.SupplementalSectionCount)
+        # One template id per station row, supplemental rows included; every row
+        # resolves to the single basic-road template.
+        assert set(obj.TemplateIds) == {"template:basic-road"}
+        assert len(obj.TemplateIds) == int(obj.StationCount)
         assert hasattr(obj, "Shape")
         assert obj.ReviewShapeStatus == "not_built"
         assert int(obj.ReviewShapeStationCount) == 0
         assert obj.Shape.isNull()
         build_v1_applied_section_set_review_shape(obj)
         assert obj.ReviewShapeStatus == "built"
-        assert int(obj.ReviewShapeStationCount) == 5
+        assert int(obj.ReviewShapeStationCount) == int(obj.StationCount)
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         if getattr(obj, "ViewObject", None) is not None:
             assert obj.ViewObject.Visibility is False

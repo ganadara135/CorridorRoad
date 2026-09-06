@@ -9977,7 +9977,10 @@ def test_apply_v1_corridor_model_prefers_shared_centerline3d_result_preview() ->
         assert centerline is not None
         assert centerline.PreviewSource == "centerline3d_source_geometry"
         assert centerline.Centerline3DResultId == "centerline3d:main"
-        assert centerline.DisplayCurveKind == "source_geometry"
+        # The shared Centerline3D result is still the source (PreviewSource and
+        # ConsumedCenterlineSourceMode stay centerline3d_source_geometry); only its
+        # display curve follows the B-spline default set by fad9e6f.
+        assert centerline.DisplayCurveKind == "bspline_display_bspline_smoothed"
         assert centerline.ConsumedAppliedSectionSetId == "sections:main"
         assert centerline.ConsumedCenterline3DResultId == "centerline3d:main"
         assert centerline.ConsumedCenterlineSourceMode == "centerline3d_source_geometry"

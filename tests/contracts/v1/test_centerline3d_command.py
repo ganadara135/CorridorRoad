@@ -46,7 +46,12 @@ def test_centerline3d_display_mode_normalization_supports_three_modes() -> None:
     assert _normalized_display_mode("B-spline") == "bspline"
     assert _normalized_display_mode("Smooth Curve") == "bspline"
     assert _normalized_display_mode("Polyline") == "polyline"
-    assert _normalized_display_mode("") == "source_geometry"
+    # fad9e6f made B-spline the display default; an empty or unknown mode
+    # resolves to it. Source Geometry remains the engineering mode on request.
+    assert _normalized_display_mode("") == "bspline"
+    assert _normalized_display_mode("Source Geometry (Engineering)") == "source_geometry"
+    assert _normalized_display_mode("B-spline (Display)") == "bspline"
+    assert _normalized_display_mode("Polyline (Diagnostic)") == "polyline"
 
 
 def test_centerline3d_result_samples_alignment_profile_stationing() -> None:
@@ -77,7 +82,10 @@ def test_centerline3d_preview_object_routes_under_alignment_profile_centerline_g
         create_sample_v1_profile(doc, project=project, alignment=alignment)
 
         result = build_document_centerline3d_result(doc)
-        preview = show_v1_centerline3d_preview_object(doc, result=result, project=project)
+        # B-spline is the display default since fad9e6f. This test covers the
+        # Source Geometry interval diagnostics, so it requests that mode explicitly;
+        # the default itself is covered by the normalization and panel tests.
+        preview = show_v1_centerline3d_preview_object(doc, result=result, project=project, display_mode="source_geometry")
 
         assert preview.Name == "V1Centerline3DPreview"
         assert str(preview.Label).startswith("3D Centerline")
@@ -511,11 +519,11 @@ def test_centerline3d_panel_buttons_use_apply_before_close_without_refresh() -> 
 
         assert "Refresh" not in button_texts
         assert button_texts[-2:] == ["Apply", "Close"]
-        assert panel._display_mode_combo.currentText() == "Source Geometry"
+        assert panel._display_mode_combo.currentText() == "B-spline (Display)"
         assert [panel._display_mode_combo.itemText(index) for index in range(panel._display_mode_combo.count())] == [
-            "Source Geometry",
-            "B-spline",
-            "Polyline",
+            "B-spline (Display)",
+            "Source Geometry (Engineering)",
+            "Polyline (Diagnostic)",
         ]
         assert panel._arc_fit_abs_tol_spin.value() > 0.0
         assert panel._arc_fit_rel_tol_spin.value() > 0.0

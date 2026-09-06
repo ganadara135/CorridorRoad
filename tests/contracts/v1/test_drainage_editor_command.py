@@ -281,7 +281,7 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         ]
         assert "Region" not in element_headers
         assert panel._element_table.horizontalHeaderItem(2).text() == "Side"
-        assert panel._element_table.horizontalHeaderItem(5).text() == "Assembly"
+        assert panel._element_table.horizontalHeaderItem(5).text() == "Subassembly"
         assert panel._element_table.horizontalHeaderItem(6).text() == "Policy"
         assert panel._element_table.horizontalHeaderItem(7).text() == "Structure Ref"
         assert panel._element_table.columnCount() == 8
