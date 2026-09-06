@@ -228,14 +228,11 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
     wrapper_limits = {
         "_clip_tin_surface_by_intersection_exclusion": 35,
         "_clip_tin_surface_by_roundabout_ownership": 35,
-        "_build_intersection_slope_face_surface_from_ready_loops": 25,
         "_build_roundabout_circulatory_surface_tin": 25,
         "_build_roundabout_apron_surface_tin": 25,
         "_build_roundabout_entry_exit_connector_surface_tin": 25,
         "_build_roundabout_subgrade_surface_tin": 25,
         "_build_roundabout_slope_face_surface_tin": 25,
-        "_tin_surface_with_shared_breakline_constraint_edges": 5,
-        "_intersection_surface_tin_with_shared_breakline_constraint_edges": 5,
         "_tin_rows_with_shared_breakline_constraint_edges": 5,
     }
     for name, maximum_lines in wrapper_limits.items():
@@ -243,6 +240,30 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         assert node.end_lineno - node.lineno + 1 <= maximum_lines, name
 
     removed_implementation_names = {
+        # Deleted by M4 batch 1: delegation wrappers whose callers now use the service APIs.
+        "_apply_intersection_grading_policy",
+        "_intersection_grading_plane_for_policy",
+        "_intersection_curb_return_surface_parts",
+        "_intersection_patch_ordered_polygon_triangulation",
+        "_intersection_patch_structured_strip_triangulation",
+        "_intersection_tie_in_strip_polygon",
+        "_normalize_intersection_tie_in_strip_polygon",
+        "_intersection_patch_boundary_tin_vertices",
+        "_intersection_practical_exclusion_polygon_candidate_from_boundary_segments",
+        "_intersection_practical_exclusion_polygon_from_boundary_segments",
+        "_xy_triangle_near_curb_return_arc_protection",
+        "_intersection_surface_tin_with_shared_breakline_constraint_edges",
+        "_tin_surface_with_shared_breakline_constraint_edges",
+        "_tin_surface_with_shared_breakline_metadata",
+        "_suppress_daylight_triangles_above_intersection_surface",
+        "_suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint",
+        "_suppress_daylight_triangles_inside_intersection_surface_footprint",
+        "_trim_daylight_triangles_above_intersection_surface_by_intersection_lines",
+        "_xy_area_from_xyz_points",
+        "_xy_polygon_exterior_hull_boundary",
+        "_xy_xyz_polygon_self_crossing",
+        "_build_intersection_slope_face_surface_from_ready_loops",
+        "_intersection_slope_face_boundary_target_segments",
         "_append_intersection_upper_slope_face_panel_tin",
         "_append_intersection_slope_face_cell_tin",
         "_append_intersection_slope_face_graph_cell_tin",

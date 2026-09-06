@@ -80,9 +80,7 @@ def test_xyz_exterior_hull_preserves_turn_tolerance_and_command_wrappers() -> No
     hull = xyz_exterior_convex_hull([polygon])
 
     assert (1.0, -0.0000000005, 1.0) not in hull
-    assert cmd_build_corridor._xy_polygon_exterior_hull_boundary([polygon]) == hull
     assert cmd_build_corridor._xyz_tuple((2, 3)) == (2.0, 3.0, 0.0)
-    assert cmd_build_corridor._xy_area_from_xyz_points(hull) == xy_polygon_signed_area(hull)
 
 
 def test_xyz_polygon_union_returns_single_polygon_boundary_ccw() -> None:

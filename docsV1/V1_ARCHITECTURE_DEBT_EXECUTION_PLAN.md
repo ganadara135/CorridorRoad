@@ -701,6 +701,36 @@ How the ratchet enforces `wrapper_limits` settles the mechanics: the loop indexe
 
 `_build_intersection_slope_face_surface_from_ready_loops` and `_intersection_slope_face_boundary_target_segments` are documented compatibility wrappers whose bodies are a docstring and one keyword-for-keyword pass-through to `build_intersection_slope_face_surface_from_ready_loops` (`services.builders`) and `intersection_slope_face_boundary_target_segments` (`services.evaluation.intersection_slope_face_boundary_evaluation_service`). They escaped the batch-1 shim count only because a docstring makes the body two statements. The three test call sites now call the services directly; two imports were added. Private references from the command test are now 49, down from 72 at the M3 entry, and every remaining one is either FreeCAD orchestration that belongs in a command test or pure review/preview logic that moves with M5.
 
+### M4 batch 1 on 2026-09-07: delete the 23 rewired wrappers
+
+Scope: the 21 shims rewired in M3 batch 1 plus the two documented compatibility wrappers from M3 batch 2. Preconditions established before editing: no other product module imports any of the 23 from `cmd_build_corridor`; inside the command module every reference is a direct call or the definition itself, with no callback, table, or string reference; and every internal call form matches the service signature it now targets.
+
+Applied in one atomic pass, each replacement expression taken from the wrapper's own body by AST rather than reconstructed by hand:
+
+- 30 internal call sites across 11 names rewired to the service APIs. The count exceeds the 27 measured for the 21 shims because the two batch-2 wrappers also had internal callers.
+- 23 wrapper definitions deleted, 239 lines. Compile passes and an AST check confirms no remaining reference or definition of any of the 23 in the module.
+- Architecture ratchet: the three `wrapper_limits` entries for deleted functions removed, since the loop indexes them and they must exist; all 23 names added to `removed_implementation_names`, so restoring any of them under its old name now fails the guard. 9 architecture tests pass.
+- `test_polygon_boundary_service.py` and `test_polygon_topology_service.py`: three wrapper-equals-service assertions removed; the tests themselves stay because they also cover other command privates and the service-side assertions beside them cover the deleted lines' behavior. Both modules pass, 15 tests.
+
+Fast tier 312 passed. `test_build_corridor_command.py` failing set unchanged at 19, no new and no resolved test. Diff spot-check: every rewired line is a service call, and every deleted span begins at its `def` and is followed by the next `def`, leaving no orphaned docstring or comment. Because this changes a product file, the complete contract suite and the short-term smokes were run before commit: 54 failed / 1,366 passed / 18 skipped before and after with no new failure, and 26 smoke scripts at exit code 0 with no failure output.
+
+### M4 batch 2 scope, measured 2026-09-07 after batch 1
+
+81 single-`return` call-delegating functions remain in `cmd_build_corridor.py`. A pre-check that resolved each one's callee found that 19 of them are not service shims at all: they wrap builtins such as `str`, `max`, `sorted`, `any`, `all` and `'; '.join`, or other command-local helpers (`_audit_field`, `_join_review_notes`, `_project_id`, `_section_region_id`, ...). Those are legitimate one-line helpers of the command module and stay. The M4 population is the other 62: 41 whose every internal call form matches the service signature (rename), 20 with no caller anywhere (delete), and one, `_point_segment_distance_with_ratio`, whose single internal call passes six positionals to a service that takes keywords and needs its arguments rewritten. Classified by who references them, before that exclusion:
+
+| Count | Referenced by | Disposition |
+| --- | --- | --- |
+| 29 | nothing, anywhere | delete outright; add the names to `removed_implementation_names` |
+| 25 | the command module only | rename the internal callers to the service API, then delete |
+| 27 | tests | see below |
+| 0 | other product modules via `cmd_build_corridor` | none |
+
+The 27 test-referenced shims are not referenced from the command test at all. They are referenced from the service contract tests, `test_xy_geometry_primitives.py`, `test_segment_geometry_service.py`, `test_polygon_boundary_service.py`, `test_polygon_relations_service.py`, `test_polygon_triangulation_service.py`, and `test_convex_polygon_clipping_service.py`, as wrapper-equals-service equivalence assertions, the same pattern as the three assertions trimmed in batch 1. One entry, `_tin_rows_with_shared_breakline_constraint_edges`, is referenced only by the architecture ratchet's last `wrapper_limits` line, not by a behavioral test. The heaviest internal callers are `_xy_distance` and `_xyz_tuple` at 18 sites each and `_xy_polygon_area` at 7.
+
+So batch 2 is the same mechanical cycle as batch 1 with the test-side step being assertion trimming rather than call-site rewiring: verify each internal call form against the service signature, rename internal callers, trim the equivalence assertions, delete, extend the ratchet's removed-names set, and remove the one remaining `wrapper_limits` entry. Test-side handling was enumerated exactly: 26 wrapper-equals-service assertions across six service contract modules. Six of the tests holding them exist only for that comparison, their names say so (`..._wrappers_match_geometry_service`, `..._wrappers_use_geometry_service_results`), and trimming would leave them with no assertion; five of those six test functions are deleted, since the service behavior they compared against is asserted directly elsewhere in the same modules; that was verified for 18 of the 19 compared services. The exception is `triangulate_simple_polygon_points`, asserted only through `test_build_corridor_segment_and_simple_triangulation_wrappers_match_services`, so in that test the wrapper assertion is converted to a direct call of the service with the same expected value rather than removed, and the test is kept under that single assertion. Two tests mix wrapper lines with real service assertions, `test_xyz_exterior_hull_preserves_turn_tolerance_and_command_wrappers` and `test_triangle_relation_handles_touch_disjoint_degenerate_and_touching_cases`, and lose only their wrapper lines. The one argument-form rewrite, `_point_segment_distance_with_ratio`, packs six scalars into three coordinate pairs for `xy_point_segment_distance_with_ratio(point, segment_start, segment_end)`; its single internal caller at the `_intersection_tie_slope_endpoint_pair` area is rewritten to pass the pairs directly.
+
+After it, the shim layer described in section 3.2 is gone and M4 is complete.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

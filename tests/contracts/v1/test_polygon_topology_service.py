@@ -73,7 +73,6 @@ def test_build_corridor_polygon_topology_wrappers_match_service() -> None:
     first = [SimpleNamespace(x=0.0, y=0.0), SimpleNamespace(x=4.0, y=0.0)]
     second = [SimpleNamespace(x=2.0, y=0.0), SimpleNamespace(x=2.0, y=2.0)]
 
-    assert cmd_build_corridor._xy_xyz_polygon_self_crossing(crossing_xyz)
     assert cmd_build_corridor._intersection_patch_boundary_has_self_crossing(
         [SimpleNamespace(x=point[0], y=point[1]) for point in crossing_xyz]
     )

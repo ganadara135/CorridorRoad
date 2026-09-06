@@ -8175,12 +8175,12 @@ def create_corridor_design_surface_preview(
             region_shared_breakline_result,
             intersection_shared_breakline_result,
         )
-        tin_surface = _tin_surface_with_shared_breakline_constraint_edges(
+        tin_surface = tin_surface_with_shared_breakline_constraint_edges(
             tin_surface,
             design_shared_breakline_result,
             consumer_ref="design_surface",
         )
-        tin_surface = _tin_surface_with_shared_breakline_metadata(
+        tin_surface = tin_surface_with_shared_breakline_metadata(
             tin_surface,
             design_shared_breakline_result,
             consumer_ref="design_surface",
@@ -8549,12 +8549,12 @@ def create_corridor_intersection_surface_preview(
             shared_breakline_result,
             intersection_id=str(getattr(prerequisite, "intersection_id", "") or ""),
         )
-        shared_breakline_intersection_surface = _tin_surface_with_shared_breakline_constraint_edges(
+        shared_breakline_intersection_surface = tin_surface_with_shared_breakline_constraint_edges(
             tin_surface,
             shared_breakline_result,
             consumer_ref="intersection_surface",
         )
-        shared_breakline_intersection_surface = _tin_surface_with_shared_breakline_metadata(
+        shared_breakline_intersection_surface = tin_surface_with_shared_breakline_metadata(
             shared_breakline_intersection_surface,
             shared_breakline_result,
             consumer_ref="intersection_surface",
@@ -8890,8 +8890,8 @@ def create_corridor_intersection_surface_preview(
                     consumer_ref="intersection_slope_face_surface",
                     audit=shared_breakline_audit(
                         shared_breakline_result,
-                        {"intersection_slope_face_surface": _tin_surface_with_shared_breakline_metadata(
-                            _build_intersection_slope_face_surface_from_ready_loops(
+                        {"intersection_slope_face_surface": tin_surface_with_shared_breakline_metadata(
+                            build_intersection_slope_face_surface_from_ready_loops(
                                 slope_loop_result,
                                 project_id=_project_id(project or find_project(doc)),
                                 boundary_result=slope_face_boundary_result,
@@ -10520,11 +10520,11 @@ def create_corridor_daylight_surface_preview(
             surface_model=surface_model,
             applied_section_set=applied_section_set,
         )
-        tin_surface = _suppress_daylight_triangles_inside_intersection_surface_footprint(
+        tin_surface = suppress_daylight_triangles_inside_intersection_surface_footprint(
             tin_surface,
             intersection_tin_surface,
         )
-        tin_surface = _suppress_daylight_triangles_above_intersection_surface(
+        tin_surface = suppress_daylight_triangles_above_intersection_surface(
             tin_surface,
             intersection_tin_surface,
             tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
@@ -10533,7 +10533,7 @@ def create_corridor_daylight_surface_preview(
             doc,
             project=project or find_project(doc),
         )
-        tin_surface = _suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+        tin_surface = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
             tin_surface,
             intersection_slope_face_surface,
         )
@@ -10542,7 +10542,7 @@ def create_corridor_daylight_surface_preview(
             intersection_tin_surface,
             z_offset=0.08,
         )
-        tin_surface = _trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
+        tin_surface = trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
             tin_surface,
             intersection_tin_surface,
             tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
@@ -10575,12 +10575,12 @@ def create_corridor_daylight_surface_preview(
             region_shared_breakline_result,
             intersection_shared_breakline_result,
         )
-        tin_surface = _tin_surface_with_shared_breakline_constraint_edges(
+        tin_surface = tin_surface_with_shared_breakline_constraint_edges(
             tin_surface,
             shared_breakline_result,
             consumer_ref="slope_face_surface",
         )
-        tin_surface = _tin_surface_with_shared_breakline_metadata(
+        tin_surface = tin_surface_with_shared_breakline_metadata(
             tin_surface,
             shared_breakline_result,
             consumer_ref="slope_face_surface",
@@ -13438,21 +13438,6 @@ def corridor_intersection_slope_face_boundary_result(
     )
 
 
-def _intersection_slope_face_boundary_target_segments(
-    boundary_result,
-    *,
-    intersection_model=None,
-    intersection_id: str = "",
-):
-    """Compatibility wrapper for the typed slope-face boundary service."""
-
-    return intersection_slope_face_boundary_target_segments(
-        boundary_result,
-        intersection_model=intersection_model,
-        intersection_id=intersection_id,
-    )
-
-
 def corridor_intersection_tie_slope_result(
     applied_section_set,
     *,
@@ -13500,7 +13485,7 @@ def _intersection_tie_slope_unsafe_loop_diagnostics(
     polygon = list(points[:-1])
     if len(polygon) < 4:
         diagnostics.append("intersection_tie_slope_loop_too_few_unique_points")
-    if len(polygon) >= 4 and _xy_xyz_polygon_self_crossing(polygon):
+    if len(polygon) >= 4 and xy_polygon_self_intersects(polygon):
         diagnostics.append("intersection_tie_slope_loop_self_crossing")
 
     area = abs(float(loop_area_xy or 0.0))
@@ -14990,21 +14975,6 @@ def _intersection_tie_slope_endpoint_pair(
     return (_xyz_tuple(points[0]), _xyz_tuple(points[-1]))
 
 
-def _intersection_tie_in_strip_polygon(rows: list[IntersectionBoundarySegmentRow]) -> list[tuple[float, float, float]] | None:
-    return IntersectionPatchTriangulationService().tie_in_strip_polygon(rows)
-
-
-def _normalize_intersection_tie_in_strip_polygon(
-    points: list[tuple[float, float, float]],
-    *,
-    tolerance: float = 1.0e-6,
-) -> list[tuple[float, float, float]] | None:
-    return IntersectionPatchTriangulationService().normalize_tie_in_strip_polygon(
-        points,
-        tolerance=tolerance,
-    )
-
-
 def _xy_polygon_union_outer_boundary(
     polygons: list[list[tuple[float, float, float]]],
 ) -> list[tuple[float, float, float]]:
@@ -15015,12 +14985,6 @@ def _ordered_outer_boundary_from_segments(
     segments: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
 ) -> list[tuple[float, float, float]]:
     return xyz_ordered_outer_boundary_from_segments(segments)
-
-
-def _xy_polygon_exterior_hull_boundary(
-    polygons: list[list[tuple[float, float, float]]],
-) -> list[tuple[float, float, float]]:
-    return xyz_exterior_convex_hull(polygons)
 
 
 def _xy_key(point: tuple[float, float, float]) -> tuple[float, float]:
@@ -15050,14 +15014,6 @@ def _xy_point_in_polygon_strict(point: tuple[float, float], polygon: list[tuple[
 
 def _xyz_closed_edges(points: list[tuple[float, float, float]]) -> list[tuple[tuple[float, float, float], tuple[float, float, float]]]:
     return [(points[index], points[(index + 1) % len(points)]) for index in range(len(points))]
-
-
-def _xy_area_from_xyz_points(points: list[tuple[float, float, float]]) -> float:
-    return xy_polygon_signed_area(points)
-
-
-def _xy_xyz_polygon_self_crossing(points: list[tuple[float, float, float]]) -> bool:
-    return xy_polygon_self_intersects(points)
 
 
 def _xyz_tuple(point) -> tuple[float, float, float]:
@@ -16725,7 +16681,7 @@ def _create_corridor_intersection_slope_face_surface_preview(
 
     if document is None or loop_result is None:
         return None
-    surface = _build_intersection_slope_face_surface_from_ready_loops(
+    surface = build_intersection_slope_face_surface_from_ready_loops(
         loop_result,
         project_id=_project_id(project or find_project(document)),
         boundary_result=boundary_result,
@@ -17236,7 +17192,7 @@ def _create_corridor_intersection_tie_slope_surface_preview(
             consumer_ref="intersection_tie_slope",
             audit=shared_breakline_audit(
                 shared_breakline_result,
-                {"intersection_tie_slope": _tin_surface_with_shared_breakline_metadata(
+                {"intersection_tie_slope": tin_surface_with_shared_breakline_metadata(
                     surface,
                     shared_breakline_result,
                     consumer_ref="intersection_tie_slope",
@@ -17297,7 +17253,7 @@ def _create_corridor_roundabout_entry_exit_connector_surface_preview(
         )
         return None
     if shared_breakline_result is not None:
-        surface = _tin_surface_with_shared_breakline_constraint_edges(
+        surface = tin_surface_with_shared_breakline_constraint_edges(
             surface,
             shared_breakline_result,
             consumer_ref="roundabout_entry_exit_connector",
@@ -17389,7 +17345,7 @@ def _create_corridor_roundabout_entry_exit_connector_surface_preview(
             consumer_ref="roundabout_entry_exit_connector",
             audit=shared_breakline_audit(
                 shared_breakline_result,
-                {"roundabout_entry_exit_connector": _tin_surface_with_shared_breakline_metadata(
+                {"roundabout_entry_exit_connector": tin_surface_with_shared_breakline_metadata(
                     surface,
                     shared_breakline_result,
                     consumer_ref="roundabout_entry_exit_connector",
@@ -17450,7 +17406,7 @@ def _create_corridor_roundabout_apron_surface_preview(
         )
         return None
     if shared_breakline_result is not None:
-        surface = _tin_surface_with_shared_breakline_constraint_edges(
+        surface = tin_surface_with_shared_breakline_constraint_edges(
             surface,
             shared_breakline_result,
             consumer_ref="roundabout_apron_surface",
@@ -17528,7 +17484,7 @@ def _create_corridor_roundabout_apron_surface_preview(
             consumer_ref="roundabout_apron_surface",
             audit=shared_breakline_audit(
                 shared_breakline_result,
-                {"roundabout_apron_surface": _tin_surface_with_shared_breakline_metadata(
+                {"roundabout_apron_surface": tin_surface_with_shared_breakline_metadata(
                     surface,
                     shared_breakline_result,
                     consumer_ref="roundabout_apron_surface",
@@ -17589,7 +17545,7 @@ def _create_corridor_roundabout_subgrade_surface_preview(
         )
         return None
     if shared_breakline_result is not None:
-        surface = _tin_surface_with_shared_breakline_constraint_edges(
+        surface = tin_surface_with_shared_breakline_constraint_edges(
             surface,
             shared_breakline_result,
             consumer_ref="roundabout_subgrade_surface",
@@ -17696,7 +17652,7 @@ def _create_corridor_roundabout_subgrade_surface_preview(
             consumer_ref="roundabout_subgrade_surface",
             audit=shared_breakline_audit(
                 shared_breakline_result,
-                {"roundabout_subgrade_surface": _tin_surface_with_shared_breakline_metadata(
+                {"roundabout_subgrade_surface": tin_surface_with_shared_breakline_metadata(
                     surface,
                     shared_breakline_result,
                     consumer_ref="roundabout_subgrade_surface",
@@ -17757,7 +17713,7 @@ def _create_corridor_roundabout_slope_face_surface_preview(
         )
         return None
     if shared_breakline_result is not None:
-        surface = _tin_surface_with_shared_breakline_constraint_edges(
+        surface = tin_surface_with_shared_breakline_constraint_edges(
             surface,
             shared_breakline_result,
             consumer_ref="roundabout_slope_face_surface",
@@ -17879,7 +17835,7 @@ def _create_corridor_roundabout_slope_face_surface_preview(
             consumer_ref="roundabout_slope_face_surface",
             audit=shared_breakline_audit(
                 shared_breakline_result,
-                {"roundabout_slope_face_surface": _tin_surface_with_shared_breakline_metadata(
+                {"roundabout_slope_face_surface": tin_surface_with_shared_breakline_metadata(
                     surface,
                     shared_breakline_result,
                     consumer_ref="roundabout_slope_face_surface",
@@ -18067,7 +18023,7 @@ def _build_intersection_tie_slope_surface(
             source_refs=[str(getattr(tie_slope_result, "tie_slope_result_id", "") or ""), "applied_section_window_rows"],
         )
         if shared_breakline_result is not None:
-            surface = _tin_surface_with_shared_breakline_metadata(
+            surface = tin_surface_with_shared_breakline_metadata(
                 surface,
                 shared_breakline_result,
                 consumer_ref="intersection_tie_slope",
@@ -18157,7 +18113,7 @@ def _build_intersection_tie_slope_surface(
         source_refs=[str(getattr(tie_slope_result, "tie_slope_result_id", "") or "")],
     )
     if shared_breakline_result is not None:
-        surface = _tin_surface_with_shared_breakline_metadata(
+        surface = tin_surface_with_shared_breakline_metadata(
             surface,
             shared_breakline_result,
             consumer_ref="intersection_tie_slope",
@@ -18191,27 +18147,6 @@ def _intersection_tie_slope_oriented_ring_points(
     if area < 0.0:
         output = list(reversed(output))
     return output
-
-
-def _build_intersection_slope_face_surface_from_ready_loops(
-    loop_result: IntersectionSlopeFaceLoopResult,
-    *,
-    project_id: str,
-    boundary_result: IntersectionSlopeFaceBoundaryResult | None = None,
-    boundary_segment_result: IntersectionBoundarySegmentResult | None = None,
-    applied_section_set=None,
-    shared_breakline_result: SharedBreaklineResult | None = None,
-):
-    """Compatibility wrapper for the typed slope-face TIN builder."""
-
-    return build_intersection_slope_face_surface_from_ready_loops(
-        loop_result,
-        project_id=project_id,
-        boundary_result=boundary_result,
-        boundary_segment_result=boundary_segment_result,
-        applied_section_set=applied_section_set,
-        shared_breakline_result=shared_breakline_result,
-    )
 
 
 def _intersection_slope_face_loop_surface_generation_ready(row) -> bool:
@@ -18913,7 +18848,7 @@ def _build_intersection_slope_face_surface_tin_for_daylight_suppression(
             boundary_segment_result = None
             boundary_result = None
             shared_breakline_result = None
-        surface = _build_intersection_slope_face_surface_from_ready_loops(
+        surface = build_intersection_slope_face_surface_from_ready_loops(
             slope_loop_result,
             project_id=_project_id(project or find_project(document)),
             boundary_result=boundary_result,
@@ -18926,49 +18861,6 @@ def _build_intersection_slope_face_surface_tin_for_daylight_suppression(
         return surface
     except Exception:
         return None
-
-
-def _suppress_daylight_triangles_inside_intersection_surface_footprint(surface, intersection_surface):
-    return suppress_daylight_triangles_inside_intersection_surface_footprint(
-        surface,
-        intersection_surface,
-    )
-
-
-def _suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
-    surface,
-    intersection_slope_face_surface,
-):
-    return suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
-        surface,
-        intersection_slope_face_surface,
-    )
-
-
-def _suppress_daylight_triangles_above_intersection_surface(
-    surface,
-    intersection_surface,
-    *,
-    tolerance: float = 0.05,
-):
-    return suppress_daylight_triangles_above_intersection_surface(
-        surface,
-        intersection_surface,
-        tolerance=tolerance,
-    )
-
-
-def _trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
-    surface,
-    intersection_surface,
-    *,
-    tolerance: float = 0.05,
-):
-    return trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
-        surface,
-        intersection_surface,
-        tolerance=tolerance,
-    )
 
 
 def _create_intersection_slope_face_overlap_preview(
@@ -20455,14 +20347,6 @@ def _shared_breakline_refs_for_consumer(shared_result, consumer_ref: str) -> lis
     ]
 
 
-def _tin_surface_with_shared_breakline_metadata(surface, shared_result, *, consumer_ref: str):
-    return tin_surface_with_shared_breakline_metadata(surface, shared_result, consumer_ref=consumer_ref)
-
-
-def _tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, *, consumer_ref: str):
-    return tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, consumer_ref=consumer_ref)
-
-
 def _attach_shared_breakline_preview_metadata(obj, shared_result, *, consumer_ref: str = "", audit=None) -> None:
     if obj is None or shared_result is None:
         return
@@ -21783,7 +21667,7 @@ def _intersection_exclusion_polygon_from_sources(document, *, applied_section_se
     )
     if boundary_loop_candidate is not None and str(boundary_loop_candidate.get("status", "") or "") == "ready":
         return boundary_loop_candidate
-    practical_candidate = _intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
+    practical_candidate = intersection_practical_exclusion_polygon_candidate_from_boundary_segments(
         boundary_result,
         intersection_model=intersection_model,
     )
@@ -21813,16 +21697,8 @@ def _intersection_exclusion_polygon_from_sources(document, *, applied_section_se
     }
 
 
-def _intersection_practical_exclusion_polygon_from_boundary_segments(boundary_result: IntersectionBoundarySegmentResult, *, intersection_model=None) -> dict[str, object] | None:
-    return intersection_practical_exclusion_polygon_from_boundary_segments(boundary_result, intersection_model=intersection_model)
-
-
 def _intersection_boundary_loop_exclusion_polygon_candidate(applied_section_set, *, prerequisite, intersection_model=None) -> dict[str, object] | None:
     return intersection_boundary_loop_exclusion_polygon_candidate(applied_section_set, prerequisite=prerequisite, intersection_model=intersection_model)
-
-
-def _intersection_practical_exclusion_polygon_candidate_from_boundary_segments(boundary_result: IntersectionBoundarySegmentResult, *, intersection_model=None) -> dict[str, object]:
-    return intersection_practical_exclusion_polygon_candidate_from_boundary_segments(boundary_result, intersection_model=intersection_model)
 
 
 def _intersection_xyz_polygons_to_xy(polygons: list[list[tuple[float, float, float]]]) -> list[list[tuple[float, float]]]:
@@ -21844,7 +21720,7 @@ def _intersection_pavement_strip_polygons_xy_from_boundary_result(boundary_resul
             grouped.setdefault(alignment_ref, []).append(row)
     polygons: list[list[tuple[float, float, float]]] = []
     for rows in grouped.values():
-        polygon = _intersection_tie_in_strip_polygon(rows)
+        polygon = IntersectionPatchTriangulationService().tie_in_strip_polygon(rows)
         if polygon is not None:
             polygons.append(polygon)
     return _intersection_xyz_polygons_to_xy(polygons)
@@ -21951,10 +21827,6 @@ def _xy_triangle_intersects_polygon(triangle: list[tuple[float, float]], polygon
 
 def _xy_triangle_polygon_intersection_kind(triangle: list[tuple[float, float]], polygon: list[tuple[float, float]]) -> str:
     return xy_triangle_polygon_intersection_kind(triangle, polygon)
-
-
-def _xy_triangle_near_curb_return_arc_protection(triangle: list[tuple[float, float]], arc_polylines: list[list[tuple[float, float]]], *, max_distance: float) -> bool:
-    return xy_triangle_near_curb_return_arc_protection(triangle, arc_polylines, max_distance=max_distance)
 
 
 def _xy_triangle_intrudes_pavement_strip_protection(triangle: list[tuple[float, float]], pavement_strip_polygons: list[list[tuple[float, float]]]) -> bool:
@@ -22161,10 +22033,6 @@ def _build_roundabout_slope_face_surface_tin(
     )
 
 
-def _intersection_surface_tin_with_shared_breakline_constraint_edges(*, vertices: list[object], triangles: list[object], shared_result, surface_id: str) -> tuple[list[object], list[object], dict[str, object]]:
-    return intersection_surface_tin_with_shared_breakline_constraint_edges(vertices=vertices, triangles=triangles, shared_result=shared_result, surface_id=surface_id)
-
-
 def _tin_rows_with_shared_breakline_constraint_edges(*, vertices: list[object], triangles: list[object], shared_result, surface_id: str, consumer_ref: str) -> tuple[list[object], list[object], dict[str, object]]:
     return tin_rows_with_shared_breakline_constraint_edges(vertices=vertices, triangles=triangles, shared_result=shared_result, surface_id=surface_id, consumer_ref=consumer_ref)
 
@@ -22185,21 +22053,6 @@ def _intersection_patch_drainage_hint(boundary_vertices: list[object], all_verti
         "flow_hint_count": result.flow_hint_count,
         "flow_hint_summary": result.flow_hint_summary,
     }
-
-
-def _intersection_patch_boundary_tin_vertices(
-    patch_boundary_result: IntersectionPatchBoundaryResult,
-    *,
-    source_vertices: list[object],
-    grading_plane: tuple[float, float, float] | None = None,
-    grading_mode: str = "",
-) -> list[object]:
-    return IntersectionPatchBoundarySelectionService().patch_boundary_vertices(
-        patch_boundary_result,
-        source_vertices=source_vertices,
-        grading_plane=grading_plane,
-        grading_mode=grading_mode,
-    )
 
 
 def _intersection_ready_outer_boundary_loop_row(boundary_loop_result) -> object | None:
@@ -22258,27 +22111,6 @@ def _intersection_patch_superelevation_context(sections: list[object]) -> dict[s
     }
 
 
-def _intersection_patch_structured_strip_triangulation(
-    tie_in_result,
-    *,
-    source_vertices: list[object],
-    center: object,
-    intersection_model=None,
-    boundary_segment_result=None,
-    intersection_id: str,
-    policy: dict[str, float] | None = None,
-) -> dict[str, object]:
-    return IntersectionPatchTriangulationService().structured_strip_triangulation(
-        tie_in_result,
-        source_vertices=source_vertices,
-        center=center,
-        intersection_model=intersection_model,
-        boundary_segment_result=boundary_segment_result,
-        intersection_id=intersection_id,
-        policy=policy,
-    )
-
-
 def _intersection_patch_boundary_role_counts(
     grouped: dict[str, list[IntersectionBoundarySegmentRow]],
     primary_ref: str,
@@ -22300,12 +22132,6 @@ def _intersection_patch_boundary_role_summary(role_counts: dict[str, int]) -> st
 
 def _intersection_curb_return_surface_arc_stats(boundary_segment_result) -> dict[str, int]:
     return IntersectionPatchTriangulationService().curb_return_surface_arc_stats(
-        boundary_segment_result
-    )
-
-
-def _intersection_curb_return_surface_parts(boundary_segment_result) -> list[tuple[list[tuple[float, float, float]], str]]:
-    return IntersectionPatchTriangulationService().curb_return_surface_parts(
         boundary_segment_result
     )
 
@@ -22336,9 +22162,9 @@ def _intersection_curb_return_surface_polygons(boundary_segment_result) -> list[
         if len(chord_points) < 2:
             continue
         polygon = _unique_xyz_points([center, *chord_points])
-        if len(polygon) < 3 or abs(_xy_area_from_xyz_points(polygon)) <= 1.0e-6:
+        if len(polygon) < 3 or abs(xy_polygon_signed_area(polygon)) <= 1.0e-6:
             continue
-        if _xy_xyz_polygon_self_crossing(polygon):
+        if xy_polygon_self_intersects(polygon):
             continue
         output.append(polygon)
     return output
@@ -22351,21 +22177,6 @@ def _xy_polygon_outer_difference_candidate(
     return IntersectionPatchTriangulationService().polygon_outer_difference_candidate(
         polygon,
         clip_polygon,
-    )
-
-
-def _intersection_patch_ordered_polygon_triangulation(
-    vertices: list[object],
-    center: object,
-    *,
-    intersection_id: str,
-    policy: dict[str, float] | None = None,
-) -> dict[str, object]:
-    return IntersectionPatchTriangulationService().ordered_polygon_triangulation(
-        vertices,
-        center,
-        intersection_id=intersection_id,
-        policy=policy,
     )
 
 
@@ -22499,26 +22310,6 @@ def _intersection_patch_triangulation_policy(intersection_model, intersection_id
         "long_edge_factor": float(getattr(policy, "long_edge_factor", 2.5) or 2.5),
         "max_boundary_edge_length": float(getattr(policy, "max_boundary_edge_length", 0.0) or 0.0),
     }
-
-
-def _apply_intersection_grading_policy(
-    vertices: list[object],
-    grading_policy,
-    *,
-    grading_plane: tuple[float, float, float] | None = None,
-) -> list[object]:
-    return IntersectionPatchGradingService().apply_vertices(
-        vertices,
-        grading_policy,
-        grading_plane=grading_plane,
-    )
-
-
-def _intersection_grading_plane_for_policy(vertices: list[object], grading_policy) -> tuple[float, float, float] | None:
-    return IntersectionPatchGradingService().grading_plane(
-        vertices,
-        grading_policy,
-    )
 
 
 def _intersection_grading_plane_z(plane: tuple[float, float, float], x: float, y: float) -> float:
