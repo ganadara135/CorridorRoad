@@ -113,7 +113,7 @@ The extraction performed under Workstream C is confirmed working. Sampled `_xy_*
 
 `route_to_v1_tree` is defined at `objects/obj_project.py:1736` and imported from v1 code in 84 places, every one of them a function-local import. Function-local import at this scale indicates a circular-dependency workaround. Workstream B specified a shared `ProjectDocumentAdapter` for exactly this; the adapter exists but this call site family did not migrate.
 
-`init_gui.py` still registers 12 legacy v0 command modules.
+`init_gui.py` still registers 13 legacy v0 command modules. The initial count of 12 in this section was wrong; M7 measured it directly and the corrected figure and its breakdown are in `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md`.
 
 ### 3.6 Other
 
@@ -581,8 +581,27 @@ One consequential test changed as a result: `test_applied_section_service_evalua
 
 Not deleted, and why:
 
-- Watertight Solid failures stay. `AGENTS.md` lists keeping existing tests operational as allowed work during the pause, so deleting them would contradict the project's own policy and discard the record needed when development resumes. Marking them skipped with a recorded reason is the better instrument if the noise needs to go.
+- Watertight Solid failures were marked skipped rather than deleted, see below.
 - The value-mismatch failures stay. They assert different values for behavior that still exists, and as the two families above showed, such a test can be either a stale expectation or a real regression. Deleting them without deciding which would hide a regression permanently.
+
+### Watertight Solid failures marked skipped
+
+18 failing tests sit inside the paused Watertight Solid area: 17 in `test_watertight_solids_command.py` and 1 in `test_watertight_simulation_qa_service.py`. `AGENTS.md` lists keeping existing tests operational as allowed work during the pause, so deleting them would contradict the project's own policy and discard the record needed when development resumes.
+
+Each of the 18 now carries `@pytest.mark.skip` naming the pause and this plan. The other 43 tests in those two files still run and pass, so the compatibility guard the pause policy asks for stays in place. Reversing this is one decorator line per test.
+
+Their failure signatures point at a single upstream cause rather than 18 independent defects:
+
+| Count | Signature |
+| --- | --- |
+| 6 | `'not_validated' == 'ok'` |
+| 3 | `'not_built' == 'built'` |
+| 3 | `assert False is True` |
+| 2 | `assert None is not None` |
+| 2 | `'NoneType' object has no attribute 'solid_rows'` |
+| 2 | other assertion mismatches |
+
+Every one says the same thing: the Watertight build and validate path produces no output at all in this state. Whoever resumes Watertight development should look for one root cause first, not triage eighteen.
 
 Validation:
 

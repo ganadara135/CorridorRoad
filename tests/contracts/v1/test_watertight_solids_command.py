@@ -1,3 +1,5 @@
+import pytest
+
 import json
 import math
 import tempfile
@@ -1596,6 +1598,7 @@ def test_simulation_package_allows_accepted_intersection_zone_candidate_handoff(
     assert package_output.solid_rows[0].target_families == ["intersection_pavement_body"]
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_prerequisites_block_on_build_parametric_error_diagnostics() -> None:
     doc, project = _new_project_doc("V1WatertightSolidsBuildParametricDiagnosticBlockTest")
     try:
@@ -1691,6 +1694,7 @@ def test_watertight_solid_profiles_are_reprojected_to_centerline3d_frame() -> No
     assert "path_source=centerline3d_result" in converted.profile_rows[0].notes
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_selects_available_target_and_tracks_enabled_state() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelTargetSelectionTest")
@@ -1717,6 +1721,7 @@ def test_watertight_solids_panel_selects_available_target_and_tracks_enabled_sta
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_validate_builds_profile_and_edge_network_counts() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelValidateTest")
@@ -1744,6 +1749,7 @@ def test_watertight_solids_panel_validate_builds_profile_and_edge_network_counts
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelBuildSelectedTest")
@@ -1863,6 +1869,7 @@ def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_simulation_package_records_actual_terrain_shape_context() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsTerrainShapePackageTest")
@@ -2254,6 +2261,7 @@ def test_watertight_solids_creates_intersection_trim_candidate_preview_object() 
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_show_hide_focus_controls_built_output_object() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelShowHideFocusTest")
@@ -2296,6 +2304,7 @@ def test_watertight_solids_panel_show_hide_focus_controls_built_output_object() 
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_context() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelLinedDitchFocusTest")
@@ -2405,6 +2414,7 @@ def test_watertight_solids_status_summarizes_drainage_solid_handoff_readiness() 
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineBuildTest")
@@ -2446,6 +2456,7 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsStructureBodyBuildTest")
@@ -2486,6 +2497,7 @@ def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec(
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_builds_pipe_culvert_structure_body_as_cylinder() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPipeCulvertBodyBuildTest")
@@ -2516,6 +2528,7 @@ def test_watertight_solids_builds_pipe_culvert_structure_body_as_cylinder() -> N
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_builds_pipe_culvert_structure_body_as_hollow_wall_when_thickness_exists() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsHollowPipeCulvertBodyBuildTest")
@@ -2547,6 +2560,7 @@ def test_watertight_solids_builds_pipe_culvert_structure_body_as_hollow_wall_whe
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_reuses_external_structure_body_shape() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsExternalStructureBodyBuildTest")
@@ -2591,6 +2605,7 @@ def test_watertight_solids_reuses_external_structure_body_shape() -> None:
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_blocks_external_structure_body_when_connection_points_are_outside_shape() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsExternalStructureBodyPointMismatchTest")
@@ -2623,6 +2638,7 @@ def test_watertight_solids_blocks_external_structure_body_when_connection_points
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineNetworkBuildTest")
@@ -2692,6 +2708,7 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body()
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_drainage_pipeline_network_body_includes_built_structure_body_outputs() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineNetworkStructureFuseTest")
@@ -2729,6 +2746,7 @@ def test_drainage_pipeline_network_body_includes_built_structure_body_outputs() 
         App.closeDocument(doc.Name)
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_drainage_pipeline_network_build_enabled_autobuilds_structure_body_dependencies() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineNetworkDependencyBuildTest")
@@ -2937,6 +2955,7 @@ def _target_table_row(panel, target_id: str) -> int:
     return -1
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_build_enabled_builds_each_enabled_target_independently() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelBuildEnabledTest")

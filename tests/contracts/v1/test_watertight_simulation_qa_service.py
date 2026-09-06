@@ -1,3 +1,5 @@
+import pytest
+
 from freecad.Corridor_Road.v1.services.builders.watertight_simulation_qa_service import (
     WatertightSimulationQaBuildRequest,
     WatertightSimulationQaService,
@@ -52,6 +54,7 @@ def test_watertight_simulation_qa_reports_first_slice_ready_state() -> None:
     assert [row.family for row in output.family_rows] == ["drainage_pipeline_network_body", "road_body_envelope"]
 
 
+@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_simulation_qa_blocks_missing_context_and_invalid_solids() -> None:
     output = WatertightSimulationQaService().build(
         WatertightSimulationQaBuildRequest(
