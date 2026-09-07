@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     xy_distance,
     xy_point,
@@ -43,16 +42,3 @@ def test_xy_polygon_signed_area_supports_both_orientations() -> None:
     assert xy_polygon_signed_area(counter_clockwise) == 12.0
     assert xy_polygon_signed_area(tuple(reversed(counter_clockwise))) == -12.0
     assert xy_polygon_signed_area([(0.0, 0.0), (1.0, 1.0)]) == 0.0
-
-
-def test_build_corridor_xy_compatibility_wrappers_use_geometry_service_results() -> None:
-    vertices = [_Point(0.0, 0.0), _Point(4.0, 0.0), _Point(0.0, 3.0)]
-
-    assert cmd_build_corridor._xy_point_tuple(vertices[1]) == xy_point(vertices[1])
-    assert cmd_build_corridor._xy_distance((0.0, 0.0), (3.0, 4.0)) == 5.0
-    assert cmd_build_corridor._xy_triangle_area(*vertices) == 6.0
-    assert cmd_build_corridor._xy_polygon_signed_area(vertices) == 6.0
-    assert cmd_build_corridor._xy_point_in_triangle(
-        (1.0, 1.0),
-        ((0.0, 0.0), (4.0, 0.0), (0.0, 3.0)),
-    ) is True

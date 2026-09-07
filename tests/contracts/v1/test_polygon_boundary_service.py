@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     xy_polygon_signed_area,
     xyz_exterior_convex_hull,
@@ -80,7 +79,6 @@ def test_xyz_exterior_hull_preserves_turn_tolerance_and_command_wrappers() -> No
     hull = xyz_exterior_convex_hull([polygon])
 
     assert (1.0, -0.0000000005, 1.0) not in hull
-    assert cmd_build_corridor._xyz_tuple((2, 3)) == (2.0, 3.0, 0.0)
 
 
 def test_xyz_polygon_union_returns_single_polygon_boundary_ccw() -> None:
@@ -164,22 +162,3 @@ def test_ordered_outer_boundary_deduplicates_edges_and_selects_largest_ring() ->
 
     assert set(boundary) == set(large)
     assert xy_polygon_signed_area(boundary) == 16.0
-
-
-def test_polygon_union_command_wrappers_match_geometry_service() -> None:
-    square = [
-        (0.0, 0.0, 0.0),
-        (4.0, 0.0, 0.0),
-        (4.0, 4.0, 0.0),
-        (0.0, 4.0, 0.0),
-    ]
-    segments = [
-        (square[index], square[(index + 1) % 4]) for index in range(4)
-    ]
-
-    assert cmd_build_corridor._xy_polygon_union_outer_boundary(
-        [square]
-    ) == xyz_polygon_union_outer_boundary([square])
-    assert cmd_build_corridor._ordered_outer_boundary_from_segments(
-        segments
-    ) == xyz_ordered_outer_boundary_from_segments(segments)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     xy_closed_edges,
     xy_point_in_polygon,
@@ -77,11 +76,3 @@ def test_triangle_relation_handles_touch_disjoint_degenerate_and_wrappers() -> N
     assert xy_triangle_polygon_intersection_kind(disjoint, square) == ""
     assert not xy_triangle_intersects_polygon(disjoint, square)
     assert xy_triangle_polygon_intersection_kind(disjoint[:2], square) == ""
-    assert cmd_build_corridor._xy_closed_edges(square) == xy_closed_edges(square)
-    assert cmd_build_corridor._xy_point_in_polygon((2.0, 2.0), square)
-    assert not cmd_build_corridor._xy_point_in_polygon_strict((0.0, 2.0), square)
-    assert cmd_build_corridor._xy_triangle_polygon_intersection_kind(
-        touching, square
-    ) == "edge_crossing"
-    assert cmd_build_corridor._xy_triangle_intersects_polygon(touching, square)
-    assert cmd_build_corridor._xy_polygon_area(square) == 16.0

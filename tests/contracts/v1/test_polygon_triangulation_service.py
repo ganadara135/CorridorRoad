@@ -1,7 +1,6 @@
 import math
 from dataclasses import dataclass
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     ear_clip_triangulation_indices,
     xy_polygon_signed_area,
@@ -64,10 +63,3 @@ def test_triangle_quality_distinguishes_equilateral_skinny_and_degenerate() -> N
     assert abs(equilateral - 1.0) <= 1.0e-12
     assert 0.0 < skinny < 0.08
     assert degenerate == 0.0
-
-
-def test_build_corridor_triangulation_wrappers_match_geometry_service() -> None:
-    vertices = [_Vertex(0.0, 0.0), _Vertex(4.0, 0.0), _Vertex(4.0, 3.0), _Vertex(0.0, 3.0)]
-
-    assert cmd_build_corridor._intersection_patch_ear_clip_indices(vertices) == ear_clip_triangulation_indices(vertices)
-    assert cmd_build_corridor._xy_triangle_quality_ratio(*vertices[:3]) == xy_triangle_quality_ratio(*vertices[:3])

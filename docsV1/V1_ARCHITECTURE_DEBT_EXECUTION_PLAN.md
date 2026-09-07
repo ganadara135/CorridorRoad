@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, and M7 complete; M8 in progress with two families resolved; M3 through M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M8 in progress with two families resolved; M5 and M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -730,6 +730,20 @@ The 27 test-referenced shims are not referenced from the command test at all. Th
 So batch 2 is the same mechanical cycle as batch 1 with the test-side step being assertion trimming rather than call-site rewiring: verify each internal call form against the service signature, rename internal callers, trim the equivalence assertions, delete, extend the ratchet's removed-names set, and remove the one remaining `wrapper_limits` entry. Test-side handling was enumerated exactly: 26 wrapper-equals-service assertions across six service contract modules. Six of the tests holding them exist only for that comparison, their names say so (`..._wrappers_match_geometry_service`, `..._wrappers_use_geometry_service_results`), and trimming would leave them with no assertion; five of those six test functions are deleted, since the service behavior they compared against is asserted directly elsewhere in the same modules; that was verified for 18 of the 19 compared services. The exception is `triangulate_simple_polygon_points`, asserted only through `test_build_corridor_segment_and_simple_triangulation_wrappers_match_services`, so in that test the wrapper assertion is converted to a direct call of the service with the same expected value rather than removed, and the test is kept under that single assertion. Two tests mix wrapper lines with real service assertions, `test_xyz_exterior_hull_preserves_turn_tolerance_and_command_wrappers` and `test_triangle_relation_handles_touch_disjoint_degenerate_and_touching_cases`, and lose only their wrapper lines. The one argument-form rewrite, `_point_segment_distance_with_ratio`, packs six scalars into three coordinate pairs for `xy_point_segment_distance_with_ratio(point, segment_start, segment_end)`; its single internal caller at the `_intersection_tie_slope_endpoint_pair` area is rewritten to pass the pairs directly.
 
 After it, the shim layer described in section 3.2 is gone and M4 is complete.
+### M4 batch 2 on 2026-09-07: delete the remaining 62 delegation shims
+
+Executed by the same AST-driven cycle as batch 1, re-parsing from disk before every step and preserving each line's own ending. Two defects in the batch script were fixed first: the test-editing step was made idempotent so a re-run after a partial application does not fail on already-deleted tests, and the external-reference rule was corrected. The rule had counted a plain name match anywhere in the product tree, which flagged 26 shims falsely because the services define identically named private helpers, `_xy_distance` in the geometry service and `_tin_rows_with_shared_breakline_constraint_edges` in the shared-breakline builder among them. Reference through the command module is what matters, so the check now scans the product tree by AST for a from-import of `cmd_build_corridor` or an attribute on a `*build_corridor*` alias, and keeps the plain-name match only for the test tree. That produced the expected split: 19 local helpers kept, 17 renamed, 44 dead, 1 rewritten.
+
+- Six service contract modules edited as scoped: five wrapper-only tests deleted, one wrapper assertion converted to a direct `triangulate_simple_polygon_points` call, and the wrapper lines trimmed from the two mixed tests. 39 tests pass across the six modules.
+- 64 internal call sites rewired across 17 names; the six-positional call of `_point_segment_distance_with_ratio` rewritten to `xy_point_segment_distance_with_ratio((x, y), (x1, y1), (x2, y2))` with its float conversions intact.
+- 62 wrapper definitions deleted. The module goes from 24,759 to 24,392 lines and from 779 to 717 top-level functions; the 81 single-`return` call-delegating functions drop to the 19 legitimate local helpers, so the shim layer of section 3.2 is gone.
+- Architecture ratchet: the last `wrapper_limits` entry removed and all 62 names added to `removed_implementation_names`. 9 architecture tests pass.
+- flake8 then reported 46 imports left unused by the deletion, 40 names in the command module and the now-unused `cmd_build_corridor` import in six test modules. All were removed after confirming by regex that none is reachable through the command module. `flake8 freecad tests` shows no new warning against the pre-existing set.
+- Private `cmd_build_corridor._x` references in the contract tests fall from 54 to 28.
+
+Validation: the contract suite was run in four chunks rather than one 46-minute pass, and every chunk matched its slice of the 54-failure baseline exactly, 21 + 2 + 12 + 19, with no new and no resolved test. The chunks total 1,433 tests, the same population as the single-pass run. 26 smoke scripts pass at exit code 0.
+
+One process lesson is recorded here because it cost a full suite run. The first attempt ran the suite in the background and the flake8 import cleanup was applied while it was still running. Four tests that read the command module through `inspect.getsource` failed in that run and passed in isolation afterwards: editing a source file under a running suite shifts the line numbers those tests resolve. A run used as a commit gate must not overlap an edit to the tree it is measuring.
 
 ## 11. Open Decisions
 

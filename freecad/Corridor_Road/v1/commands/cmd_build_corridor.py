@@ -74,7 +74,6 @@ from ..services.builders import (
     CorridorSurfaceOrchestrationService,
     IntersectionSurfacePatchBuildRequest,
     IntersectionSurfacePatchBuildService,
-    IntersectionPatchBoundarySelectionService,
     IntersectionPatchTriangulationService,
     IntersectionPatchBoundaryContextService,
     IntersectionPatchPreparationPipelineRequest,
@@ -114,22 +113,11 @@ from ..services.evaluation.intersection_patch_grading_service import (
 )
 from ..services.builders.intersection_daylight_tin_service import (
     bbox3d_overlaps,
-    cross3,
-    dot3,
-    length3,
-    point_in_triangle_3d,
-    sub3,
     tin_surface_reference_triangles,
-    tin_surface_z_at_xy_from_reference_triangles,
-    tin_triangle_overlap_sample_points_xy,
     tin_triangle_xy_overlaps_reference_triangles,
-    triangle_edges_intersect_other_triangle_plane,
-    triangle_plane,
     triangle_triangle_intersection_segment,
     triangle_xyz_bbox,
-    triangle_z_at_xy,
     unique_xyz_points,
-    vertex_xyz,
     xyz_distance,
 )
 from ..services.builders.intersection_slope_face_tin_builder_service import (
@@ -142,15 +130,8 @@ from ..services.evaluation.intersection_patch_shape_quality_service import (
 from ..services.builders.intersection_exclusion_geometry_service import (
     intersection_boundary_loop_exclusion_polygon_candidate,
     intersection_practical_exclusion_polygon_candidate_from_boundary_segments,
-    intersection_practical_exclusion_polygon_from_boundary_segments,
-    tin_surface_all_edge_rows,
-    tin_surface_boundary_edge_rows,
-    xy_triangle_intrudes_pavement_strip_protection,
-    xy_triangle_near_curb_return_arc_protection,
 )
 from ..services.builders.shared_breakline_tin_builder_service import (
-    intersection_surface_tin_with_shared_breakline_constraint_edges,
-    tin_rows_with_shared_breakline_constraint_edges,
     tin_surface_with_shared_breakline_constraint_edges,
     tin_surface_with_shared_breakline_metadata,
 )
@@ -186,7 +167,6 @@ from ..services.evaluation.intersection_shared_boundary_graph_evaluation_service
 from ..services.evaluation.intersection_slope_face_boundary_evaluation_service import (
     IntersectionSlopeFaceBoundaryEvaluationRequest,
     IntersectionSlopeFaceBoundaryEvaluationService,
-    intersection_slope_face_boundary_target_segments,
 )
 from ..services.evaluation.intersection_tie_slope_evaluation_service import (
     IntersectionTieSlopeEvaluationRequest,
@@ -195,37 +175,17 @@ from ..services.evaluation.intersection_tie_slope_evaluation_service import (
 from ..services.mapping import ExchangeOutputMapper, ExchangePackageRequest, QuantityOutputMapper, SectionOutputMapper
 from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper, tin_mesh_preview_style
 from ..services.geometry import (
-    clip_polyline_points_to_anchor_window,
     clip_segment_to_anchor_box,
-    ear_clip_triangulation_indices,
-    intersect_payload_polygon_with_convex_polygon,
-    subtract_convex_polygon_from_payload_polygon,
-    triangulate_simple_polygon_points,
     xy_closed_edges,
     xy_distance,
-    xy_point,
-    xy_point_in_triangle_strict,
     xy_point_in_polygon,
-    xy_point_in_polygon_strict,
-    xy_point_on_segment,
     xy_point_segment_distance_with_ratio,
     xy_polygon_boundaries_intersect,
     xy_polygon_self_intersects,
     xy_polygon_signed_area,
-    xy_polygon_is_convex,
-    xy_segment_distance,
-    xy_segment_parameter_clamped,
-    xy_segments_cross_strict,
     xy_segments_intersect,
-    xy_triangle_intersects_polygon,
     xy_triangle_polygon_intersection_kind,
-    xy_triangle_quality_ratio,
-    xy_triangle_signed_area,
-    xyz_exterior_convex_hull,
-    xyz_ordered_outer_boundary_from_segments,
     xyz_point,
-    xyz_polygon_union_outer_boundary,
-    xyz_segment_intersection_point,
 )
 from ..ui.common.styles import apply_clickable_tab_style
 from ..ui.presentation.shared_breakline_audit_presentation import (
@@ -4696,7 +4656,7 @@ def _intersection_contract_edge_review_points(
     anchor = _intersection_contract_anchor_xyz(document)
     if anchor is None:
         return points
-    return _clip_segment_to_anchor_box(points, anchor, half_extent=12.0) or points
+    return clip_segment_to_anchor_box(points, anchor, half_extent=12.0) or points
 
 
 def _intersection_contract_clipped_polyline_shapes(
@@ -4715,7 +4675,7 @@ def _intersection_contract_clipped_polyline_shapes(
         return [shape] if shape is not None else []
     shapes: list[object] = []
     for first, second in zip(points[:-1], points[1:]):
-        clipped = _clip_segment_to_anchor_box([first, second], anchor, half_extent=half_extent)
+        clipped = clip_segment_to_anchor_box([first, second], anchor, half_extent=half_extent)
         if len(clipped) < 2:
             continue
         shape = _intersection_contract_polyline_shape(part_module, app_module, clipped)
@@ -4738,14 +4698,6 @@ def _intersection_contract_anchor_xyz(document=None) -> tuple[float, float, floa
         return _intersection_contract_xyz_point(getattr(anchors[0], "point_xyz", ()) or ())
     except Exception:
         return None
-
-
-def _clip_polyline_points_to_anchor_window(points: list[tuple[float, float, float]], anchor: tuple[float, float, float], *, half_length: float) -> list[tuple[float, float, float]]:
-    return clip_polyline_points_to_anchor_window(points, anchor, half_length=half_length)
-
-
-def _clip_segment_to_anchor_box(points: list[tuple[float, float, float]], anchor: tuple[float, float, float], *, half_extent: float) -> list[tuple[float, float, float]]:
-    return clip_segment_to_anchor_box(points, anchor, half_extent=half_extent)
 
 
 def _intersection_contract_xyz_points(values) -> list[tuple[float, float, float]]:
@@ -5072,7 +5024,7 @@ def _intersection_contract_tie_slope_highlight_shapes(part_module, app_module, t
     shapes: list[object] = []
     for _edge_key, point_attr, ref_attr in edge_sources:
         points = [
-            _xyz_tuple(point)
+            xyz_point(point)
             for point in tuple(getattr(tie_slope, point_attr, ()) or ())
             if len(tuple(point or ())) >= 3
         ]
@@ -5239,7 +5191,7 @@ def _intersection_shared_boundary_graph_edge_review_points(
     anchor = _intersection_contract_anchor_xyz(document)
     if anchor is None:
         return points
-    return _clip_segment_to_anchor_box(points, anchor, half_extent=12.0) or points
+    return clip_segment_to_anchor_box(points, anchor, half_extent=12.0) or points
 
 
 def _intersection_shared_boundary_graph_role_should_clip(role: str) -> bool:
@@ -5263,7 +5215,7 @@ def _intersection_shared_boundary_graph_cell_clipped_shapes(
         return []
     shapes: list[object] = []
     for start, end in zip(points[:-1], points[1:]):
-        clipped = _clip_segment_to_anchor_box([start, end], anchor, half_extent=12.0)
+        clipped = clip_segment_to_anchor_box([start, end], anchor, half_extent=12.0)
         if not clipped:
             continue
         if len(clipped) < 2 or _points_same_xyz(clipped[0], clipped[-1]):
@@ -6929,10 +6881,10 @@ def _create_subassembly_surface_strip_review_highlight(
         start_xy = vector_xy(start_vector)
         end_xy = vector_xy(end_vector)
         for polygon in roundabout_clip_polygons:
-            if _xy_point_in_polygon(start_xy, polygon) or _xy_point_in_polygon(end_xy, polygon):
+            if xy_point_in_polygon(start_xy, polygon) or xy_point_in_polygon(end_xy, polygon):
                 return True
-            for edge_start, edge_end in _xy_closed_edges(polygon):
-                if _xy_segments_intersect(start_xy, end_xy, edge_start, edge_end):
+            for edge_start, edge_end in xy_closed_edges(polygon):
+                if xy_segments_intersect(start_xy, end_xy, edge_start, edge_end):
                     return True
         return False
 
@@ -6940,7 +6892,7 @@ def _create_subassembly_surface_strip_review_highlight(
         if not roundabout_clip_polygons:
             return False
         triangle = [vector_xy(a), vector_xy(b), vector_xy(c)]
-        return any(_xy_triangle_polygon_intersection_kind(triangle, polygon) for polygon in roundabout_clip_polygons)
+        return any(xy_triangle_polygon_intersection_kind(triangle, polygon) for polygon in roundabout_clip_polygons)
 
     def append_triangle_face(a, b, c) -> bool:
         nonlocal skipped_roundabout_strip_triangle_count
@@ -8408,7 +8360,7 @@ def create_corridor_intersection_surface_preview(
         )
         _set_preview_property(preview_obj, "IntersectionId", str(getattr(prerequisite, "intersection_id", "") or ""))
         _set_preview_property(preview_obj, "IntersectionKind", str(getattr(prerequisite, "intersection_kind", "") or ""))
-        grading_policy = _intersection_grading_policy_for(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
+        grading_policy = IntersectionPatchGradingService().select_policy(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
         _set_preview_property(preview_obj, "IntersectionGradingPolicyRef", str(getattr(grading_policy, "policy_id", "") or ""))
         _set_preview_property(preview_obj, "IntersectionGradingMode", str(getattr(grading_policy, "mode", "") or "use_normal_superelevation"))
         _set_preview_property(preview_obj, "IntersectionTargetCrossfallPercent", f"{float(getattr(grading_policy, 'target_crossfall_percent', 0.0) or 0.0):.3f}")
@@ -12618,7 +12570,7 @@ def _applied_section_set_with_intersection_tie_in_sections(applied_section_set, 
             continue
         if str(getattr(row, "segment_role", "") or "") != "curb_return":
             continue
-        chord_points = [_xyz_tuple(point) for point in list(getattr(row, "chord_points_xyz", []) or [])]
+        chord_points = [xyz_point(point) for point in list(getattr(row, "chord_points_xyz", []) or [])]
         if len(chord_points) >= 2:
             arc_points.extend([chord_points[0], chord_points[-1]])
     if not arc_points:
@@ -12696,14 +12648,7 @@ def _intersection_tie_in_generated_section_for_point(
             second_frame = getattr(second, "frame", None)
             if first_frame is None or second_frame is None:
                 continue
-            distance, ratio = _point_segment_distance_with_ratio(
-                float(point[0]),
-                float(point[1]),
-                float(getattr(first_frame, "x", 0.0) or 0.0),
-                float(getattr(first_frame, "y", 0.0) or 0.0),
-                float(getattr(second_frame, "x", 0.0) or 0.0),
-                float(getattr(second_frame, "y", 0.0) or 0.0),
-            )
+            distance, ratio = xy_point_segment_distance_with_ratio((float(point[0]), float(point[1])), (float(getattr(first_frame, 'x', 0.0) or 0.0), float(getattr(first_frame, 'y', 0.0) or 0.0)), (float(getattr(second_frame, 'x', 0.0) or 0.0), float(getattr(second_frame, 'y', 0.0) or 0.0)))
             ratio = min(max(float(ratio), 0.0), 1.0)
             if best is None or distance < best[0]:
                 best = (distance, first, second, ratio, alignment_id)
@@ -13492,10 +13437,10 @@ def _intersection_tie_slope_unsafe_loop_diagnostics(
     if area <= 1.0e-6:
         diagnostics.append("intersection_tie_slope_loop_zero_area")
 
-    inner_len = _xy_distance(inner_edge[0], inner_edge[1]) if len(tuple(inner_edge or ())) >= 2 else 0.0
-    outer_len = _xy_distance(outer_edge[0], outer_edge[1]) if len(tuple(outer_edge or ())) >= 2 else 0.0
-    start_cap_len = _xy_distance(start_cap_edge[0], start_cap_edge[1]) if len(tuple(start_cap_edge or ())) >= 2 else 0.0
-    end_cap_len = _xy_distance(end_cap_edge[0], end_cap_edge[1]) if len(tuple(end_cap_edge or ())) >= 2 else 0.0
+    inner_len = xy_distance(inner_edge[0], inner_edge[1]) if len(tuple(inner_edge or ())) >= 2 else 0.0
+    outer_len = xy_distance(outer_edge[0], outer_edge[1]) if len(tuple(outer_edge or ())) >= 2 else 0.0
+    start_cap_len = xy_distance(start_cap_edge[0], start_cap_edge[1]) if len(tuple(start_cap_edge or ())) >= 2 else 0.0
+    end_cap_len = xy_distance(end_cap_edge[0], end_cap_edge[1]) if len(tuple(end_cap_edge or ())) >= 2 else 0.0
     edge_scale = max(inner_len, outer_len, 1.0)
     cap_scale = max(start_cap_len, end_cap_len, 1.0)
     bbox_diag = _intersection_tie_slope_bbox_diagonal(polygon)
@@ -13545,9 +13490,9 @@ def _intersection_tie_slope_contact_match(
     segment_status = str(getattr(contact_segment, "status", "") or "").strip().lower()
     if segment_status in {"", "missing", "error"}:
         diagnostics.append(f"intersection_tie_slope_intersection_contact_status_blocked:{contact_ref}:{segment_status or 'unknown'}")
-    start_xyz = _xyz_tuple(getattr(contact_segment, "start_xyz", (0.0, 0.0, 0.0)))
-    end_xyz = _xyz_tuple(getattr(contact_segment, "end_xyz", (0.0, 0.0, 0.0)))
-    if _xy_distance(start_xyz, end_xyz) <= 1.0e-6:
+    start_xyz = xyz_point(getattr(contact_segment, "start_xyz", (0.0, 0.0, 0.0)))
+    end_xyz = xyz_point(getattr(contact_segment, "end_xyz", (0.0, 0.0, 0.0)))
+    if xy_distance(start_xyz, end_xyz) <= 1.0e-6:
         diagnostics.append(f"intersection_tie_slope_intersection_contact_degenerate:{contact_ref}")
 
     if diagnostics:
@@ -13558,9 +13503,9 @@ def _intersection_tie_slope_contact_match(
 def _intersection_tie_slope_contact_inner_points(contact_segment) -> tuple[tuple[float, float, float], ...]:
     if contact_segment is None:
         return ()
-    start_xyz = _xyz_tuple(getattr(contact_segment, "start_xyz", (0.0, 0.0, 0.0)))
-    end_xyz = _xyz_tuple(getattr(contact_segment, "end_xyz", (0.0, 0.0, 0.0)))
-    if _xy_distance(start_xyz, end_xyz) <= 1.0e-6:
+    start_xyz = xyz_point(getattr(contact_segment, "start_xyz", (0.0, 0.0, 0.0)))
+    end_xyz = xyz_point(getattr(contact_segment, "end_xyz", (0.0, 0.0, 0.0)))
+    if xy_distance(start_xyz, end_xyz) <= 1.0e-6:
         return ()
     return (start_xyz, end_xyz)
 
@@ -13587,8 +13532,8 @@ def _intersection_tie_slope_closed_loop_edges(
 
     inner_start, inner_end = _intersection_tie_slope_endpoint_pair(inner_points)
     outer_start, outer_end = _intersection_tie_slope_endpoint_pair(outer_points)
-    forward_cost = _xy_distance(inner_start, outer_start) + _xy_distance(inner_end, outer_end)
-    reversed_cost = _xy_distance(inner_start, outer_end) + _xy_distance(inner_end, outer_start)
+    forward_cost = xy_distance(inner_start, outer_start) + xy_distance(inner_end, outer_end)
+    reversed_cost = xy_distance(inner_start, outer_end) + xy_distance(inner_end, outer_start)
     if reversed_cost < forward_cost:
         outer_start, outer_end = outer_end, outer_start
 
@@ -13596,13 +13541,13 @@ def _intersection_tie_slope_closed_loop_edges(
     outer_edge = (outer_start, outer_end)
     start_cap_edge = (inner_start, outer_start)
     end_cap_edge = (inner_end, outer_end)
-    if _xy_distance(inner_start, inner_end) <= 1.0e-6:
+    if xy_distance(inner_start, inner_end) <= 1.0e-6:
         diagnostics.append("intersection_tie_slope_loop_inner_edge_degenerate")
-    if _xy_distance(outer_start, outer_end) <= 1.0e-6:
+    if xy_distance(outer_start, outer_end) <= 1.0e-6:
         diagnostics.append("intersection_tie_slope_loop_outer_edge_degenerate")
-    if _xy_distance(start_cap_edge[0], start_cap_edge[1]) <= 1.0e-6:
+    if xy_distance(start_cap_edge[0], start_cap_edge[1]) <= 1.0e-6:
         diagnostics.append("intersection_tie_slope_loop_start_cap_degenerate")
-    if _xy_distance(end_cap_edge[0], end_cap_edge[1]) <= 1.0e-6:
+    if xy_distance(end_cap_edge[0], end_cap_edge[1]) <= 1.0e-6:
         diagnostics.append("intersection_tie_slope_loop_end_cap_degenerate")
 
     loop = [inner_start, inner_end, outer_end, outer_start, inner_start]
@@ -13616,7 +13561,7 @@ def _intersection_tie_slope_closed_loop_edges(
     }
     if len(unique_xy) < 4:
         diagnostics.append("intersection_tie_slope_loop_too_few_unique_points")
-    area = abs(_xy_polygon_area([(float(point[0]), float(point[1])) for point in simplified[:-1]])) if len(simplified) >= 4 else 0.0
+    area = abs(xy_polygon_signed_area([(float(point[0]), float(point[1])) for point in simplified[:-1]])) if len(simplified) >= 4 else 0.0
     if area <= 1.0e-6:
         diagnostics.append("intersection_tie_slope_loop_zero_area")
     return (
@@ -14821,11 +14766,11 @@ def _intersection_tie_slope_terminal_road_edge(section, *, side: str) -> tuple[t
     if section is None:
         return ()
     points = _slope_face_applied_section_breakline_points(section, side_label=str(side or "").strip().lower())
-    edge = tuple(_xyz_tuple(point) for point in points)
+    edge = tuple(xyz_point(point) for point in points)
     if len(edge) < 2:
         return ()
     first, last = _intersection_tie_slope_endpoint_pair(edge)
-    if _xy_distance(first, last) <= 1.0e-6:
+    if xy_distance(first, last) <= 1.0e-6:
         section_edge = _applied_section_slope_face_edge_points(
             section,
             side_label=str(side or "").strip().lower(),
@@ -14834,8 +14779,8 @@ def _intersection_tie_slope_terminal_road_edge(section, *, side: str) -> tuple[t
         )
         if section_edge is not None:
             inner, outer = section_edge
-            fallback_edge = (_xyz_tuple(inner), _xyz_tuple(outer))
-            if _xy_distance(fallback_edge[0], fallback_edge[1]) > 1.0e-6:
+            fallback_edge = (xyz_point(inner), xyz_point(outer))
+            if xy_distance(fallback_edge[0], fallback_edge[1]) > 1.0e-6:
                 return fallback_edge
         return ()
     return edge
@@ -14950,8 +14895,8 @@ def _intersection_tie_slope_terminal_outer_points(
         if edge is None:
             continue
         _inner, outer = edge
-        outer_xyz = _xyz_tuple(outer)
-        if outer_points and _xy_distance(outer_points[-1], outer_xyz) <= 1.0e-6:
+        outer_xyz = xyz_point(outer)
+        if outer_points and xy_distance(outer_points[-1], outer_xyz) <= 1.0e-6:
             continue
         outer_points.append(outer_xyz)
     return tuple(outer_points)
@@ -14972,56 +14917,19 @@ def _intersection_tie_slope_loop_points(
 def _intersection_tie_slope_endpoint_pair(
     points: tuple[tuple[float, float, float], ...],
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    return (_xyz_tuple(points[0]), _xyz_tuple(points[-1]))
-
-
-def _xy_polygon_union_outer_boundary(
-    polygons: list[list[tuple[float, float, float]]],
-) -> list[tuple[float, float, float]]:
-    return xyz_polygon_union_outer_boundary(polygons)
-
-
-def _ordered_outer_boundary_from_segments(
-    segments: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
-) -> list[tuple[float, float, float]]:
-    return xyz_ordered_outer_boundary_from_segments(segments)
+    return (xyz_point(points[0]), xyz_point(points[-1]))
 
 
 def _xy_key(point: tuple[float, float, float]) -> tuple[float, float]:
     return (round(float(point[0]), 6), round(float(point[1]), 6))
 
 
-def _xy_segment_intersection_point(
-    a1: tuple[float, float, float],
-    a2: tuple[float, float, float],
-    b1: tuple[float, float, float],
-    b2: tuple[float, float, float],
-) -> tuple[float, float, float] | None:
-    return xyz_segment_intersection_point(a1, a2, b1, b2)
-
-
-def _xy_point_on_segment(point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]) -> bool:
-    return xy_point_on_segment(point, start, end)
-
-
-def _xy_segment_parameter(point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]) -> float:
-    return xy_segment_parameter_clamped(point, start, end)
-
-
-def _xy_point_in_polygon_strict(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
-    return xy_point_in_polygon_strict(point, polygon)
-
-
 def _xyz_closed_edges(points: list[tuple[float, float, float]]) -> list[tuple[tuple[float, float, float], tuple[float, float, float]]]:
     return [(points[index], points[(index + 1) % len(points)]) for index in range(len(points))]
 
 
-def _xyz_tuple(point) -> tuple[float, float, float]:
-    return xyz_point(point)
-
-
 def _resample_xyz_polyline(points, target_count: int) -> list[tuple[float, float, float]]:
-    ordered = [_xyz_tuple(point) for point in list(points or [])]
+    ordered = [xyz_point(point) for point in list(points or [])]
     if not ordered:
         return []
     if len(ordered) == 1 or int(target_count or 0) <= 1:
@@ -15085,15 +14993,6 @@ def _intersection_patch_boundary_rings_intersect(
     first_points = [(float(row.x), float(row.y)) for row in first]
     second_points = [(float(row.x), float(row.y)) for row in second]
     return xy_polygon_boundaries_intersect(first_points, second_points)
-
-
-def _xy_segments_intersect(
-    a1: tuple[float, float],
-    a2: tuple[float, float],
-    b1: tuple[float, float],
-    b2: tuple[float, float],
-) -> bool:
-    return xy_segments_intersect(a1, a2, b1, b2)
 
 
 def _intersection_curb_return_policy_for(intersection_model, intersection_id: str):
@@ -16246,7 +16145,7 @@ def _roundabout_clip_boundary_polygons(
         if len(points_xyz) >= 2 and _intersection_slope_face_points_close_xy(points_xyz[0], points_xyz[-1]):
             points_xyz = points_xyz[:-1]
         polygon = [(float(point[0]), float(point[1])) for point in points_xyz if len(point) >= 2]
-        if len(polygon) < 3 or abs(_xy_polygon_area(polygon)) <= 1.0e-6:
+        if len(polygon) < 3 or abs(xy_polygon_signed_area(polygon)) <= 1.0e-6:
             continue
         polygons.append(polygon)
     return polygons
@@ -17898,7 +17797,7 @@ def _build_intersection_tie_slope_surface(
                 rejected_rows += 1
                 diagnostics.append(f"intersection_tie_slope_window_row_not_accepted:{row_id}")
                 continue
-            loop_points = [_xyz_tuple(point) for point in tuple(row.get("loop_points_xyz", ()) or ())]
+            loop_points = [xyz_point(point) for point in tuple(row.get("loop_points_xyz", ()) or ())]
             if len(loop_points) >= 2 and _intersection_slope_face_points_close_xy(loop_points[0], loop_points[-1]):
                 loop_points = loop_points[:-1]
             loop_points = _intersection_tie_slope_oriented_ring_points(loop_points)
@@ -17906,7 +17805,7 @@ def _build_intersection_tie_slope_surface(
                 rejected_rows += 1
                 diagnostics.append(f"intersection_tie_slope_window_loop_points_too_few:{row_id}")
                 continue
-            area = abs(_xy_polygon_area([(float(point[0]), float(point[1])) for point in loop_points]))
+            area = abs(xy_polygon_signed_area([(float(point[0]), float(point[1])) for point in loop_points]))
             if area <= 1.0e-6:
                 rejected_rows += 1
                 diagnostics.append(f"intersection_tie_slope_window_loop_zero_area:{row_id}")
@@ -18035,7 +17934,7 @@ def _build_intersection_tie_slope_surface(
             rejected_rows += 1
             diagnostics.append(f"intersection_tie_slope_row_not_ready:{row_id}")
             continue
-        loop_points = [_xyz_tuple(point) for point in tuple(getattr(row, "loop_points_xyz", ()) or ())]
+        loop_points = [xyz_point(point) for point in tuple(getattr(row, "loop_points_xyz", ()) or ())]
         if len(loop_points) >= 2 and _intersection_slope_face_points_close_xy(loop_points[0], loop_points[-1]):
             loop_points = loop_points[:-1]
         loop_points = _intersection_tie_slope_oriented_ring_points(loop_points)
@@ -18043,7 +17942,7 @@ def _build_intersection_tie_slope_surface(
             rejected_rows += 1
             diagnostics.append(f"intersection_tie_slope_loop_points_too_few:{row_id}")
             continue
-        area = abs(_xy_polygon_area([(float(point[0]), float(point[1])) for point in loop_points]))
+        area = abs(xy_polygon_signed_area([(float(point[0]), float(point[1])) for point in loop_points]))
         if area <= 1.0e-6:
             rejected_rows += 1
             diagnostics.append(f"intersection_tie_slope_loop_zero_area:{row_id}")
@@ -18126,7 +18025,7 @@ def _intersection_tie_slope_unique_ring_points(
 ) -> list[tuple[float, float, float]]:
     output: list[tuple[float, float, float]] = []
     for point in list(points or []):
-        xyz = _xyz_tuple(point)
+        xyz = xyz_point(point)
         if output and _intersection_slope_face_points_close_xy(output[-1], xyz):
             continue
         output.append(xyz)
@@ -18143,7 +18042,7 @@ def _intersection_tie_slope_oriented_ring_points(
     output = _intersection_tie_slope_unique_ring_points(points)
     if len(output) < 3:
         return output
-    area = _xy_polygon_area([(float(point[0]), float(point[1])) for point in output])
+    area = xy_polygon_signed_area([(float(point[0]), float(point[1])) for point in output])
     if area < 0.0:
         output = list(reversed(output))
     return output
@@ -18568,7 +18467,7 @@ def _intersection_slope_face_visible_transition_boundary_ids(
             sum(point[0] for point in points) / len(points),
             sum(point[1] for point in points) / len(points),
         )
-        return min(_xy_distance(mid, (point[0], point[1])) for point in curb_points)
+        return min(xy_distance(mid, (point[0], point[1])) for point in curb_points)
 
     selected = max(rows, key=score)
     selected_id = str(getattr(selected, "boundary_id", "") or "")
@@ -19050,24 +18949,24 @@ def _attach_intersection_slope_face_boundary_strip_quality(obj, surface) -> None
 
 
 def _intersection_slope_face_overlap_edge_segments(daylight_surface, intersection_surface, *, z_offset: float = 0.08) -> tuple[list[tuple[tuple[float, float, float], tuple[float, float, float]]], int]:
-    daylight_triangles = _tin_surface_reference_triangles(daylight_surface)
-    intersection_triangles = _tin_surface_reference_triangles(intersection_surface)
+    daylight_triangles = tin_surface_reference_triangles(daylight_surface)
+    intersection_triangles = tin_surface_reference_triangles(intersection_surface)
     if not daylight_triangles or not intersection_triangles:
         return [], 0
     segments = []
     seen: set[tuple[tuple[float, float, float], tuple[float, float, float]]] = set()
     tested_triangle_count = 0
     for daylight_triangle in daylight_triangles:
-        daylight_box = _triangle_xyz_bbox(daylight_triangle)
+        daylight_box = triangle_xyz_bbox(daylight_triangle)
         triangle_has_segment = False
         for intersection_triangle in intersection_triangles:
-            if not _bbox3d_overlaps(daylight_box, _triangle_xyz_bbox(intersection_triangle), tolerance=0.25):
+            if not bbox3d_overlaps(daylight_box, triangle_xyz_bbox(intersection_triangle), tolerance=0.25):
                 continue
-            segment = _triangle_triangle_intersection_segment(daylight_triangle, intersection_triangle)
+            segment = triangle_triangle_intersection_segment(daylight_triangle, intersection_triangle)
             if segment is None:
                 continue
             start, end = segment
-            if _xyz_distance(start, end) <= 1.0e-7:
+            if xyz_distance(start, end) <= 1.0e-7:
                 continue
             start = (start[0], start[1], start[2] + float(z_offset or 0.0))
             end = (end[0], end[1], end[2] + float(z_offset or 0.0))
@@ -19087,7 +18986,7 @@ def _intersection_slope_face_overlap_surface(daylight_surface, intersection_surf
         return None
     from ..models.result.tin_surface import TINQualityRow, TINSurface, TINTriangle, TINVertex
 
-    reference_triangles = _tin_surface_reference_triangles(intersection_surface)
+    reference_triangles = tin_surface_reference_triangles(intersection_surface)
     if not reference_triangles:
         return None
     vertex_map = {
@@ -19100,7 +18999,7 @@ def _intersection_slope_face_overlap_surface(daylight_surface, intersection_surf
         vertices = [vertex_map.get(str(ref or "")) for ref in (triangle.v1, triangle.v2, triangle.v3)]
         if any(vertex is None for vertex in vertices):
             continue
-        if not _tin_triangle_xy_overlaps_reference_triangles(vertices, reference_triangles):
+        if not tin_triangle_xy_overlaps_reference_triangles(vertices, reference_triangles):
             continue
         overlap_triangles.append(
             TINTriangle(
@@ -19151,74 +19050,10 @@ def _intersection_slope_face_overlap_surface(daylight_surface, intersection_surf
     )
 
 
-def _tin_triangle_xy_overlaps_reference_triangles(vertices: list[object], reference_triangles: list[tuple[object, object, object]]) -> bool:
-    return tin_triangle_xy_overlaps_reference_triangles(vertices, reference_triangles)
-
-
-def _tin_triangle_overlap_sample_points_xy(vertices: list[object]) -> list[tuple[float, float]]:
-    return tin_triangle_overlap_sample_points_xy(vertices)
-
-
-def _triangle_triangle_intersection_segment(triangle_a, triangle_b):
-    return triangle_triangle_intersection_segment(triangle_a, triangle_b)
-
-
-def _triangle_edges_intersect_other_triangle_plane(source_triangle, target_triangle) -> list[tuple[float, float, float]]:
-    return triangle_edges_intersect_other_triangle_plane(source_triangle, target_triangle)
-
-
-def _triangle_plane(triangle):
-    return triangle_plane(triangle)
-
-
-def _point_in_triangle_3d(point: tuple[float, float, float], triangle_points: list[tuple[float, float, float]]) -> bool:
-    return point_in_triangle_3d(point, triangle_points)
-
-
-def _triangle_xyz_bbox(triangle) -> tuple[float, float, float, float, float, float]:
-    return triangle_xyz_bbox(triangle)
-
-
-def _bbox3d_overlaps(first, second, *, tolerance: float = 0.0) -> bool:
-    return bbox3d_overlaps(first, second, tolerance=tolerance)
-
-
-def _unique_xyz_points(points: list[tuple[float, float, float]], *, tolerance: float = 1e-06) -> list[tuple[float, float, float]]:
-    return unique_xyz_points(points, tolerance=tolerance)
-
-
 def _normalized_segment_key(start, end) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     first = (round(float(start[0]), 5), round(float(start[1]), 5), round(float(start[2]), 5))
     second = (round(float(end[0]), 5), round(float(end[1]), 5), round(float(end[2]), 5))
     return (first, second) if first <= second else (second, first)
-
-
-def _vertex_xyz(vertex) -> tuple[float, float, float]:
-    return vertex_xyz(vertex)
-
-
-def _sub3(first, second) -> tuple[float, float, float]:
-    return sub3(first, second)
-
-
-def _dot3(first, second) -> float:
-    return dot3(first, second)
-
-
-def _cross3(first, second) -> tuple[float, float, float]:
-    return cross3(first, second)
-
-
-def _length3(value) -> float:
-    return length3(value)
-
-
-def _xyz_distance(first, second) -> float:
-    return xyz_distance(first, second)
-
-
-def _tin_surface_reference_triangles(surface) -> list[tuple[object, object, object]]:
-    return tin_surface_reference_triangles(surface)
 
 
 def _tin_surface_triangle_kind_count(surface, triangle_kind: str) -> int:
@@ -19230,14 +19065,6 @@ def _tin_surface_triangle_kind_count(surface, triangle_kind: str) -> int:
         for triangle in list(getattr(surface, "triangle_rows", []) or [])
         if str(getattr(triangle, "triangle_kind", "") or "") == expected
     )
-
-
-def _tin_surface_z_at_xy_from_reference_triangles(reference_triangles, x: float, y: float):
-    return tin_surface_z_at_xy_from_reference_triangles(reference_triangles, x, y)
-
-
-def _triangle_z_at_xy(a, b, c, x: float, y: float):
-    return triangle_z_at_xy(a, b, c, x, y)
 
 
 def _clip_tin_surface_by_intersection_exclusion(
@@ -19269,17 +19096,6 @@ def _clip_tin_surface_by_intersection_exclusion(
         source_control_section_indices=control_section_indices,
         surface_role=surface_role,
     )
-
-
-def _point_segment_distance_with_ratio(
-    px: float,
-    py: float,
-    x1: float,
-    y1: float,
-    x2: float,
-    y2: float,
-) -> tuple[float, float]:
-    return xy_point_segment_distance_with_ratio((px, py), (x1, y1), (x2, y2))
 
 
 def _augment_daylight_surface_with_intersection_slope_face_boundary_strips(
@@ -21198,7 +21014,7 @@ def _surface_boundary_coverage_matches_shared_breakline(
         first_station = float(first_projection.get("station", 0.0) or 0.0)
         second_station = float(second_projection.get("station", 0.0) or 0.0)
         span = abs(second_station - first_station)
-        edge_length = _xyz_distance(first_xyz, second_xyz)
+        edge_length = xyz_distance(first_xyz, second_xyz)
         if span <= tolerance or edge_length <= tolerance:
             continue
         # Avoid accepting diagonal boundary edges that only touch the breakline at their endpoints.
@@ -21226,7 +21042,7 @@ def _surface_boundary_coverage_matches_shared_breakline(
 def _polyline_station_values(points: list[tuple[float, float, float]]) -> list[float]:
     stations = [0.0]
     for first, second in zip(list(points or [])[:-1], list(points or [])[1:]):
-        stations.append(stations[-1] + _xyz_distance(first, second))
+        stations.append(stations[-1] + xyz_distance(first, second))
     return stations
 
 
@@ -21242,7 +21058,7 @@ def _project_point_to_polyline_station(
         distance = float(projection.get("distance", 0.0) or 0.0)
         if best_distance is None or distance < best_distance:
             ratio = float(projection.get("ratio", 0.0) or 0.0)
-            segment_length = _xyz_distance(start, end)
+            segment_length = xyz_distance(start, end)
             best_distance = distance
             best_station = float(stations[index]) + segment_length * ratio
     return {"station": best_station, "distance": float(best_distance if best_distance is not None else 0.0)}
@@ -21283,7 +21099,7 @@ def _project_point_to_segment3(
     wz = float(point[2]) - float(start[2])
     length_sq = vx * vx + vy * vy + vz * vz
     if length_sq <= 1.0e-18:
-        return {"distance": _xyz_distance(point, start), "ratio": 0.0}
+        return {"distance": xyz_distance(point, start), "ratio": 0.0}
     ratio = (wx * vx + wy * vy + wz * vz) / length_sq
     ratio = max(0.0, min(1.0, ratio))
     closest = (
@@ -21291,7 +21107,7 @@ def _project_point_to_segment3(
         float(start[1]) + vy * ratio,
         float(start[2]) + vz * ratio,
     )
-    return {"distance": _xyz_distance(point, closest), "ratio": ratio}
+    return {"distance": xyz_distance(point, closest), "ratio": ratio}
 
 
 def _row_xyz_tuple(row) -> tuple[float, float, float]:
@@ -21401,14 +21217,6 @@ def _tag_daylight_surface_with_suppressed_slope_face_boundary_strips(surface, bo
         ]
     )
     return replace(surface, vertex_rows=vertices, triangle_rows=triangles, quality_rows=filtered_quality)
-
-
-def _tin_surface_boundary_edge_rows(surface) -> list[dict[str, object]]:
-    return tin_surface_boundary_edge_rows(surface)
-
-
-def _tin_surface_all_edge_rows(surface) -> list[dict[str, object]]:
-    return tin_surface_all_edge_rows(surface)
 
 
 def _edge_midpoint_xy(edge_row: dict[str, object], vertex_map: dict[str, object]) -> tuple[float, float]:
@@ -21660,7 +21468,7 @@ def _intersection_exclusion_polygon_from_sources(document, *, applied_section_se
         intersection_model=intersection_model,
     )
     patch_boundary_result = corridor_intersection_patch_boundary_result(boundary_result)
-    boundary_loop_candidate = _intersection_boundary_loop_exclusion_polygon_candidate(
+    boundary_loop_candidate = intersection_boundary_loop_exclusion_polygon_candidate(
         applied,
         prerequisite=prerequisite,
         intersection_model=intersection_model,
@@ -21697,15 +21505,11 @@ def _intersection_exclusion_polygon_from_sources(document, *, applied_section_se
     }
 
 
-def _intersection_boundary_loop_exclusion_polygon_candidate(applied_section_set, *, prerequisite, intersection_model=None) -> dict[str, object] | None:
-    return intersection_boundary_loop_exclusion_polygon_candidate(applied_section_set, prerequisite=prerequisite, intersection_model=intersection_model)
-
-
 def _intersection_xyz_polygons_to_xy(polygons: list[list[tuple[float, float, float]]]) -> list[list[tuple[float, float]]]:
     output: list[list[tuple[float, float]]] = []
     for polygon in list(polygons or []):
         points = [(float(point[0]), float(point[1])) for point in list(polygon or [])]
-        if len(points) >= 3 and abs(_xy_polygon_area(points)) > 1.0e-6:
+        if len(points) >= 3 and abs(xy_polygon_signed_area(points)) > 1.0e-6:
             output.append(points)
     return output
 
@@ -21769,7 +21573,7 @@ def _intersection_daylight_protection_offset(exclusion: dict[str, object], polyg
     points = list(polygon or [])
     if len(points) < 3:
         return 0.0
-    area = abs(float(exclusion.get("area", 0.0) or _xy_polygon_area(points)))
+    area = abs(float(exclusion.get("area", 0.0) or xy_polygon_signed_area(points)))
     xs = [float(point[0]) for point in points]
     ys = [float(point[1]) for point in points]
     bbox_axis = max((max(xs) - min(xs)) if xs else 0.0, (max(ys) - min(ys)) if ys else 0.0)
@@ -21815,48 +21619,6 @@ def _intersection_control_section_indices(applied_section_set, *, intersection_i
         if control_area or (region_id and region_id in control_refs):
             indices.add(index)
     return indices
-
-
-def _xy_point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
-    return xy_point_in_polygon(point, polygon)
-
-
-def _xy_triangle_intersects_polygon(triangle: list[tuple[float, float]], polygon: list[tuple[float, float]]) -> bool:
-    return xy_triangle_intersects_polygon(triangle, polygon)
-
-
-def _xy_triangle_polygon_intersection_kind(triangle: list[tuple[float, float]], polygon: list[tuple[float, float]]) -> str:
-    return xy_triangle_polygon_intersection_kind(triangle, polygon)
-
-
-def _xy_triangle_intrudes_pavement_strip_protection(triangle: list[tuple[float, float]], pavement_strip_polygons: list[list[tuple[float, float]]]) -> bool:
-    return xy_triangle_intrudes_pavement_strip_protection(triangle, pavement_strip_polygons)
-
-
-def _xy_segments_cross_strict(
-    a1: tuple[float, float],
-    a2: tuple[float, float],
-    b1: tuple[float, float],
-    b2: tuple[float, float],
-) -> bool:
-    return xy_segments_cross_strict(a1, a2, b1, b2)
-
-
-def _xy_segment_distance(
-    first_start: tuple[float, float],
-    first_end: tuple[float, float],
-    second_start: tuple[float, float],
-    second_end: tuple[float, float],
-) -> float:
-    return xy_segment_distance(first_start, first_end, second_start, second_end)
-
-
-def _xy_closed_edges(points: list[tuple[float, float]]) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    return xy_closed_edges(points)
-
-
-def _xy_polygon_area(points: list[tuple[float, float]]) -> float:
-    return xy_polygon_signed_area(points)
 
 
 def _build_intersection_surface_patch_tin(
@@ -22033,10 +21795,6 @@ def _build_roundabout_slope_face_surface_tin(
     )
 
 
-def _tin_rows_with_shared_breakline_constraint_edges(*, vertices: list[object], triangles: list[object], shared_result, surface_id: str, consumer_ref: str) -> tuple[list[object], list[object], dict[str, object]]:
-    return tin_rows_with_shared_breakline_constraint_edges(vertices=vertices, triangles=triangles, shared_result=shared_result, surface_id=surface_id, consumer_ref=consumer_ref)
-
-
 def _intersection_patch_drainage_hint(boundary_vertices: list[object], all_vertices: list[object]) -> dict[str, object]:
     result = IntersectionPatchDrainageReviewService().evaluate(
         IntersectionPatchDrainageReviewRequest(
@@ -22053,27 +21811,6 @@ def _intersection_patch_drainage_hint(boundary_vertices: list[object], all_verti
         "flow_hint_count": result.flow_hint_count,
         "flow_hint_summary": result.flow_hint_summary,
     }
-
-
-def _intersection_ready_outer_boundary_loop_row(boundary_loop_result) -> object | None:
-    return IntersectionPatchBoundarySelectionService().ready_outer_loop(
-        boundary_loop_result
-    )
-
-
-def _intersection_boundary_loop_tin_vertices(
-    boundary_loop_row,
-    *,
-    source_vertices: list[object],
-    grading_plane: tuple[float, float, float] | None = None,
-    grading_mode: str = "",
-) -> list[object]:
-    return IntersectionPatchBoundarySelectionService().boundary_loop_vertices(
-        boundary_loop_row,
-        source_vertices=source_vertices,
-        grading_plane=grading_plane,
-        grading_mode=grading_mode,
-    )
 
 
 def _intersection_patch_superelevation_context(sections: list[object]) -> dict[str, object]:
@@ -22111,43 +21848,6 @@ def _intersection_patch_superelevation_context(sections: list[object]) -> dict[s
     }
 
 
-def _intersection_patch_boundary_role_counts(
-    grouped: dict[str, list[IntersectionBoundarySegmentRow]],
-    primary_ref: str,
-    *,
-    arc_count: int,
-    overlap_cut_count: int,
-) -> dict[str, int]:
-    return IntersectionPatchTriangulationService().boundary_role_counts(
-        grouped,
-        primary_ref,
-        arc_count=arc_count,
-        overlap_cut_count=overlap_cut_count,
-    )
-
-
-def _intersection_patch_boundary_role_summary(role_counts: dict[str, int]) -> str:
-    return IntersectionPatchTriangulationService().boundary_role_summary(role_counts)
-
-
-def _intersection_curb_return_surface_arc_stats(boundary_segment_result) -> dict[str, int]:
-    return IntersectionPatchTriangulationService().curb_return_surface_arc_stats(
-        boundary_segment_result
-    )
-
-
-def _intersection_surface_part_is_valid(polygon: list[tuple[float, float, float]]) -> bool:
-    return IntersectionPatchTriangulationService().surface_part_is_valid(polygon)
-
-
-def _lerp_xyz(
-    start: tuple[float, float, float],
-    end: tuple[float, float, float],
-    factor: float,
-) -> tuple[float, float, float]:
-    return IntersectionPatchTriangulationService().lerp_xyz(start, end, factor)
-
-
 def _intersection_curb_return_surface_polygons(boundary_segment_result) -> list[list[tuple[float, float, float]]]:
     if boundary_segment_result is None:
         return []
@@ -22157,61 +21857,17 @@ def _intersection_curb_return_surface_polygons(boundary_segment_result) -> list[
             continue
         if str(getattr(row, "segment_role", "") or "") != "curb_return":
             continue
-        chord_points = [_xyz_tuple(point) for point in list(getattr(row, "chord_points_xyz", []) or [])]
-        center = _xyz_tuple(getattr(row, "center_xyz", (0.0, 0.0, 0.0)))
+        chord_points = [xyz_point(point) for point in list(getattr(row, "chord_points_xyz", []) or [])]
+        center = xyz_point(getattr(row, "center_xyz", (0.0, 0.0, 0.0)))
         if len(chord_points) < 2:
             continue
-        polygon = _unique_xyz_points([center, *chord_points])
+        polygon = unique_xyz_points([center, *chord_points])
         if len(polygon) < 3 or abs(xy_polygon_signed_area(polygon)) <= 1.0e-6:
             continue
         if xy_polygon_self_intersects(polygon):
             continue
         output.append(polygon)
     return output
-
-
-def _xy_polygon_outer_difference_candidate(
-    polygon: list[tuple[float, float, float]],
-    clip_polygon: list[tuple[float, float, float]],
-) -> list[tuple[float, float, float]] | None:
-    return IntersectionPatchTriangulationService().polygon_outer_difference_candidate(
-        polygon,
-        clip_polygon,
-    )
-
-
-def _intersection_patch_ear_clip_indices(vertices: list[object]) -> list[tuple[int, int, int]]:
-    return ear_clip_triangulation_indices(vertices)
-
-
-def _xy_triangulate_simple_polygon_points(
-    points: list[tuple[float, float]],
-) -> list[list[tuple[float, float]]]:
-    return triangulate_simple_polygon_points(points)
-
-
-def _xy_triangle_quality_ratio(first, second, third) -> float:
-    return xy_triangle_quality_ratio(first, second, third)
-
-
-def _xy_triangle_area(first, second, third) -> float:
-    return xy_triangle_signed_area(first, second, third)
-
-
-def _xy_point_in_triangle(point, triangle) -> bool:
-    return xy_point_in_triangle_strict(point, triangle)
-
-
-def _xy_polygon_is_convex(points) -> bool:
-    return xy_polygon_is_convex(points)
-
-
-def _xy_intersect_polygon_with_convex_polygon(polygon, clip_polygon):
-    return intersect_payload_polygon_with_convex_polygon(polygon, clip_polygon)
-
-
-def _xy_subtract_convex_polygon_from_polygon(polygon, clip_polygon):
-    return subtract_convex_polygon_from_payload_polygon(polygon, clip_polygon)
 
 
 def _intersection_patch_shape_quality(vertices, triangles) -> dict[str, object]:
@@ -22231,18 +21887,6 @@ def _intersection_patch_shape_quality(vertices, triangles) -> dict[str, object]:
     }
 
 
-def _xy_polygon_signed_area(vertices: list[object]) -> float:
-    return xy_polygon_signed_area(vertices)
-
-
-def _xy_point_tuple(vertex) -> tuple[float, float]:
-    return xy_point(vertex)
-
-
-def _xy_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
-    return xy_distance(a, b)
-
-
 def _nearest_tin_vertex_xy(vertices: list[object], x: float, y: float):
     nearest = None
     nearest_distance = None
@@ -22254,17 +21898,6 @@ def _nearest_tin_vertex_xy(vertices: list[object], x: float, y: float):
             nearest = vertex
             nearest_distance = distance
     return nearest
-
-
-def _intersection_patch_boundary_hull(vertices: list[object]) -> list[object]:
-    return IntersectionPatchBoundarySelectionService().convex_hull(vertices)
-
-
-def _intersection_grading_policy_for(intersection_model, intersection_id: str):
-    return IntersectionPatchGradingService().select_policy(
-        intersection_model,
-        intersection_id,
-    )
 
 
 def _intersection_slope_face_policy_for(intersection_model, intersection_id: str) -> IntersectionSlopeFacePolicyRow:

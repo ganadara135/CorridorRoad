@@ -1,4 +1,3 @@
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     intersect_payload_polygon_with_convex_polygon,
     subtract_convex_polygon_from_payload_polygon,
@@ -69,16 +68,3 @@ def test_convex_subtraction_handles_containment_partial_overlap_and_disjoint() -
     assert contained == []
     assert sum(_area(fragment) for fragment in partial) == 8.0
     assert sum(_area(fragment) for fragment in disjoint) == 16.0
-
-
-def test_build_corridor_convex_clipping_wrappers_match_geometry_service() -> None:
-    source = _payload([(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)])
-    clip = [(2.0, -1.0), (5.0, -1.0), (5.0, 2.0), (2.0, 2.0)]
-
-    assert cmd_build_corridor._xy_polygon_is_convex(clip) is True
-    assert cmd_build_corridor._xy_intersect_polygon_with_convex_polygon(
-        source, clip
-    ) == intersect_payload_polygon_with_convex_polygon(source, clip)
-    assert cmd_build_corridor._xy_subtract_convex_polygon_from_polygon(
-        source, clip
-    ) == subtract_convex_polygon_from_payload_polygon(source, clip)

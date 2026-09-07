@@ -1,4 +1,3 @@
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     clip_polyline_points_to_anchor_window,
     clip_segment_to_anchor_box,
@@ -10,6 +9,7 @@ from freecad.Corridor_Road.v1.services.geometry import (
     xy_segments_intersect,
     xyz_segment_intersection_point,
 )
+from freecad.Corridor_Road.v1.services.geometry import triangulate_simple_polygon_points
 
 
 def test_anchor_window_clipping_keeps_two_point_contract_and_interpolates_z() -> None:
@@ -40,16 +40,6 @@ def test_anchor_box_clipping_handles_crossing_outside_and_z_interpolation() -> N
         (0.0, 0.0, 0.0),
         half_extent=2.0,
     ) == []
-
-
-def test_build_corridor_anchor_clip_wrappers_match_geometry_service() -> None:
-    points = [(-5.0, 0.0, 0.0), (5.0, 0.0, 10.0)]
-    anchor = (0.0, 0.0, 0.0)
-    assert cmd_build_corridor._clip_segment_to_anchor_box(
-        points,
-        anchor,
-        half_extent=2.0,
-    ) == clip_segment_to_anchor_box(points, anchor, half_extent=2.0)
 
 
 def test_segment_intersection_distinguishes_cross_touch_collinear_and_disjoint() -> None:
@@ -135,25 +125,7 @@ def test_xyz_segment_intersection_rejects_parallel_collinear_and_zero_length() -
 def test_build_corridor_segment_and_simple_triangulation_wrappers_match_services() -> None:
     polygon = [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)]
 
-    assert cmd_build_corridor._xy_segments_intersect(
-        (0.0, 0.0), (4.0, 4.0), (0.0, 4.0), (4.0, 0.0)
-    ) is True
-    assert cmd_build_corridor._xy_segments_cross_strict(
-        (0.0, 0.0), (4.0, 4.0), (0.0, 4.0), (4.0, 0.0)
-    ) is True
-    assert cmd_build_corridor._xy_segment_distance(
-        (0.0, 0.0), (4.0, 0.0), (0.0, 3.0), (4.0, 3.0)
-    ) == 3.0
-    assert cmd_build_corridor._xy_segment_parameter(
-        (6.0, 0.0), (0.0, 0.0), (4.0, 0.0)
-    ) == 1.0
-    assert cmd_build_corridor._xy_segment_intersection_point(
-        (0.0, 0.0, 0.0),
-        (10.0, 0.0, 10.0),
-        (5.0, -5.0, 20.0),
-        (5.0, 5.0, 40.0),
-    ) == (5.0, 0.0, 17.5)
-    assert cmd_build_corridor._xy_triangulate_simple_polygon_points(polygon) == [
+    assert triangulate_simple_polygon_points(polygon) == [
         [(0.0, 3.0), (0.0, 0.0), (4.0, 0.0)],
         [(4.0, 0.0), (4.0, 3.0), (0.0, 3.0)],
     ]
