@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M8 in progress with two families resolved; M5 and M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the audit display rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -745,11 +745,33 @@ Validation: the contract suite was run in four chunks rather than one 46-minute 
 
 One process lesson is recorded here because it cost a full suite run. The first attempt ran the suite in the background and the flake8 import cleanup was applied while it was still running. Four tests that read the command module through `inspect.getsource` failed in that run and passed in isolation afterwards: editing a source file under a running suite shifts the line numbers those tests resolve. A run used as a commit gate must not overlap an edit to the tree it is measuring.
 
+### M5 open decision 2 resolved on 2026-09-10: ownership by consumer, not by content
+
+Measured entry state: 33 `*_rows` functions totalling 2,643 lines, two fewer than the plan's 35 because M3 and M4 removed row-shaped shims. The decision the plan deferred, `services/mapping` or `ui/presentation`, is settled by evidence rather than by taste, and the deciding fact is how the command module and the panel are wired to each other.
+
+`ui/viewers/build_corridor_view.py` never imports the command module. It declares module-level placeholders set to `None` and the command module calls `configure_build_corridor_task_panel_runtime(globals())` at import time, which copies every binding into the viewer's namespace. The row builders sit in the command module because that injection made it possible, not because the command owns them. Two facts follow. A row builder can move to `ui/presentation` without breaking the panel, because the command re-imports it and the injection still carries it across. And `ui/presentation` already contains the pattern to imitate: `shared_breakline_audit_presentation.py` maps a duck-typed audit source through `_value()`, so it reads document objects without importing FreeCAD.
+
+The rule adopted, consistent with the plan's task 1:
+
+- Rows whose consumer is a panel table go to `ui/presentation`, including rows read off document object properties, since duck-typed access keeps the layer free of FreeCAD. Display-only parameters such as an `include_internal` toggle are the signature of this class.
+- Rows that feed a normalized output contract go to `services/mapping`, next to the existing 15 mappers.
+- Discovery of the document and its objects, `App.ActiveDocument` and the preview-object lookup, stays in the command module. It is the only part that genuinely needs FreeCAD.
+
+### M5 chunk 1 on 2026-09-10: the shared-breakline audit display rows
+
+The plan's task 2, the largest family, taken first. `shared_breakline_audit_display_rows` is 499 lines and pure, and its transitive closure inside the command module is 18 functions and 856 lines with no FreeCAD reference anywhere in it. Two closure members were excluded after measuring their callers: `_unique_text_values` has 65 callers across the command module and `_join_review_notes` has 16, so they are general utilities rather than audit-row code. Fourteen other product modules each define their own `_unique_text_values`, so the presentation module received private copies in the same style instead of an import that would have created a new dependency.
+
+Moved into `ui/presentation/shared_breakline_audit_presentation.py`: 16 functions and 6 constants, 907 lines. The constant set grew from the 4 the functions name directly to 6 once their own references were closed over, and they are emitted in source order because they build on each other. The command module keeps the document read and imports the moved names back; the two import blocks from that module were merged into one, and 11 names with no remaining reference in the command were dropped from it. `shared_breakline_audit_display_rows` is imported with no local caller and marked, because the panel receives it only through the runtime binding map.
+
+`cmd_build_corridor.py` falls from 24,392 to 23,457 lines, and the presentation module grows from 89 to 1,055. The moved code imports no FreeCAD, Part, or Qt, satisfying the milestone's third acceptance criterion for this family.
+
+Validation: compile, flake8 with no new warning, 9 architecture tests, and the contract suite in three chunks totalling 1,433 tests, each matching its slice of the 54-failure baseline exactly, 21 + 19 + 14, with no new and no resolved test. 26 smoke scripts pass at exit code 0. Review tables are unchanged by construction, since the moved functions are byte-identical and the panel resolves them through the same binding, but the milestone still carries a level 7 requirement and the audit table should be confirmed in the GUI before M5 is called complete.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
 
 1. Resolved on 2026-09-04. `ProjectDocumentAdapter.route_to_project_tree` already existed, and the adapter module already imported the legacy function at module level, which proved there was no circular-dependency reason for the 78 function-local imports. M1 was a call-site migration.
-2. M5: for each row family, is the correct owner `services/mapping` or `ui/presentation`? This depends on whether the rows feed a normalized output contract or only a panel table.
+2. Resolved on 2026-09-10. Ownership follows the consumer: panel tables to `ui/presentation`, normalized output contracts to `services/mapping`, document discovery staying in the command. The injection in `configure_build_corridor_task_panel_runtime` is what makes the move safe, and the existing `shared_breakline_audit_presentation.py` is the pattern. See the M5 record in section 10.
 3. M0 task 5: what is the target duration for the fast contract tier, and which modules belong to the long-running tier?
 4. M7: is a legacy command with a complete v1 replacement removed from the toolbar in a later task, or retained indefinitely for user familiarity?
