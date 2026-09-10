@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the audit display rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the audit display rows and the contract review rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -766,6 +766,20 @@ Moved into `ui/presentation/shared_breakline_audit_presentation.py`: 16 function
 `cmd_build_corridor.py` falls from 24,392 to 23,457 lines, and the presentation module grows from 89 to 1,055. The moved code imports no FreeCAD, Part, or Qt, satisfying the milestone's third acceptance criterion for this family.
 
 Validation: compile, flake8 with no new warning, 9 architecture tests, and the contract suite in three chunks totalling 1,433 tests, each matching its slice of the 54-failure baseline exactly, 21 + 19 + 14, with no new and no resolved test. 26 smoke scripts pass at exit code 0. Review tables are unchanged by construction, since the moved functions are byte-identical and the panel resolves them through the same binding, but the milestone still carries a level 7 requirement and the audit table should be confirmed in the GUI before M5 is called complete.
+
+### M5 chunk 2 on 2026-09-10: the intersection contract review rows
+
+The plan's task 3. The naive reading of it, move `corridor_intersection_contract_review_rows` and everything it calls, does not survive measurement: its transitive closure is 110 functions and 3,122 lines and pulls in evaluation orchestration and document access that the ownership rule keeps in the command. `corridor_intersection_patch_prerequisite_result` has 11 callers elsewhere in the module, `_corridor_build_preview_object` has 19, `_section_station` 16, `_unique_text_values` 60. That function is not a display leaf; it evaluates, reads the document, and shapes rows in one body.
+
+So the chunk took the row-shaping leaves instead, the five functions that only format contract rows: `_roundabout_boundary_readiness_contract_review_row`, `_intersection_contract_display_status`, and the three `*_contract_review_rows` builders for the upper slope-face panel, the slope-face cells, and the shared-boundary graph. All five are pure; together with their closure they are 302 lines with no FreeCAD reference.
+
+Two moved unchanged. The other three began by looking their own preview object up, all three with the same role, `intersection_slope`, on the same document, so the lookup moved out rather than in: the caller resolves the object once and passes it, and each function now takes `obj`. Naming the parameter after the variable the bodies already used means not one body line changed, which an AST comparison against the previous commit confirms for all five, byte for byte after the removed lookup.
+
+They went into a new `ui/presentation/intersection_contract_review_presentation.py`, which imports the two audit-row parsers from its sibling module where chunk 1 put them, and carries its own private `_unique_text_values` and `_join_review_notes` for the same reason chunk 1 did. That is now the second copy of those two helpers inside `ui/presentation`; a shared helper module is worth doing when a third module needs them, and is not worth the churn yet. No test referenced any of the five functions, so no test changed.
+
+`cmd_build_corridor.py` falls from 23,457 to 23,185 lines. Remaining in it from this family is the evaluation and document work the rule assigns to a command.
+
+Validation: compile, flake8 clean on both files, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests each matching its slice of the 54-failure baseline, 21 + 19 + 14, with no new and no resolved test, and 26 smoke scripts at exit code 0.
 
 ## 11. Open Decisions
 
