@@ -163,6 +163,9 @@ from freecad.Corridor_Road.v1.services.geometry import (
 )
 from freecad.Corridor_Road.v1.services.builders import build_intersection_slope_face_surface_from_ready_loops
 from freecad.Corridor_Road.v1.services.evaluation.intersection_slope_face_boundary_evaluation_service import intersection_slope_face_boundary_target_segments
+from freecad.Corridor_Road.v1.ui.presentation import (
+    shared_breakline_audit_presentation,
+)
 
 _QAPP = None
 
@@ -7350,7 +7353,7 @@ def test_shared_breakline_audit_summary_explains_status_only_warning() -> None:
 
 
 def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None:
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7358,7 +7361,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:slope_face_surface:shared-breakline:intersection:intersection:t:patch-to-slope-face:1",
     ) == "Rebuild Intersection and Slope Face constraints"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7366,7 +7369,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:slope_face_surface:shared-breakline:intersection:intersection:t:curb-return-to-slope-face:1:start",
     ) == "Rebuild Intersection and Slope Face constraints"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7374,7 +7377,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:design_surface:shared-breakline:intersection:intersection:t:curb-return-to-shoulder:1:start",
     ) == "Rebuild Intersection and Design constraints"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7382,7 +7385,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:design_surface:shared-breakline:intersection:intersection:t:patch-to-shoulder:1",
     ) == "Rebuild Intersection and Design constraints"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7390,7 +7393,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:slope_face_surface:shared-breakline:intersection:intersection:t:shoulder-to-slope-face:1",
     ) == "Rebuild Applied Sections, then constrained surfaces"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7398,7 +7401,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:drainage_surface:shared-breakline:corridor:corridor:main:corridor-gutter-handoff:1",
     ) == "Review Drainage source, then rebuild Applied Sections"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7406,7 +7409,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:drainage_surface:shared-breakline:intersection:intersection:t:intersection-gutter-handoff:1",
     ) == "Review Intersection Drainage source, then rebuild Intersection"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7414,7 +7417,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:design_surface:shared-breakline:region-transition:corridor:main:region_start_boundary:3:design_surface",
     ) == "Review Region spans, then Build Parametric"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7422,7 +7425,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:design_surface:shared-breakline:region-transition:corridor:main:assembly_change_boundary:5:design_surface",
     ) == "Review Region spans, then Build Parametric"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,
@@ -7430,7 +7433,7 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:design_surface:shared-breakline:intersection:intersection:t:control_area_entry:1:control-main:design_surface",
     ) == "Review Intersection control areas and Region spans, then Build Parametric"
-    assert build_corridor_command._shared_breakline_recommended_action(
+    assert shared_breakline_audit_presentation._shared_breakline_recommended_action(
         geometry_mismatch_count=1,
         mesh_mismatch_count=1,
         missing_consumer_count=0,

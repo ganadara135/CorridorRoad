@@ -22,6 +22,9 @@ from freecad.Corridor_Road.v1.models.result.intersection_shared_boundary_graph i
     IntersectionSharedBoundaryGraphResult,
     IntersectionSharedBoundaryNodeRow,
 )
+from freecad.Corridor_Road.v1.ui.presentation import (
+    shared_breakline_audit_presentation,
+)
 
 
 def _point(point_id: str, breakline_ref: str, sequence: int, x: float, y: float, z: float = 0.0):
@@ -480,7 +483,7 @@ def test_intersection_shared_boundary_graph_pair_audit_checks_adjacent_consumers
             }
         )
 
-    audited = cmd_build_corridor._shared_boundary_graph_pair_audit_rows(rows)
+    audited = shared_breakline_audit_presentation._shared_boundary_graph_pair_audit_rows(rows)
     assert sum(int(row.get("graph_pair_missing_count", 0) or 0) for row in audited) == 0
     assert sum(int(row.get("graph_pair_match_count", 0) or 0) for row in audited) >= 3
 
@@ -488,7 +491,7 @@ def test_intersection_shared_boundary_graph_pair_audit_checks_adjacent_consumers
     for row in broken_rows:
         if row["role"] == "daylight":
             row["graph_refs"] = []
-    broken = cmd_build_corridor._shared_boundary_graph_pair_audit_rows(broken_rows)
+    broken = shared_breakline_audit_presentation._shared_boundary_graph_pair_audit_rows(broken_rows)
     daylight = next(row for row in broken if row["role"] == "daylight")
     assert daylight["status"] == "warning"
     assert daylight["graph_pair_missing_count"] == 1
@@ -523,7 +526,7 @@ def test_intersection_shared_boundary_graph_consumer_audit_reports_foreign_edges
         }
     ]
 
-    audited = cmd_build_corridor._shared_boundary_graph_consumer_audit_rows(rows)
+    audited = shared_breakline_audit_presentation._shared_boundary_graph_consumer_audit_rows(rows)
     design = audited[0]
 
     assert design["status"] == "warning"

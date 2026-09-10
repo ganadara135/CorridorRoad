@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the audit display rows and the contract review rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family and the contract review rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -780,6 +780,20 @@ They went into a new `ui/presentation/intersection_contract_review_presentation.
 `cmd_build_corridor.py` falls from 23,457 to 23,185 lines. Remaining in it from this family is the evaluation and document work the rule assigns to a command.
 
 Validation: compile, flake8 clean on both files, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests each matching its slice of the 54-failure baseline, 21 + 19 + 14, with no new and no resolved test, and 26 smoke scripts at exit code 0.
+
+### M5 chunk 3 on 2026-09-10: the audit rows rejoin their display rows
+
+Chunk 1 moved `shared_breakline_audit_display_rows`; this moves the builder that feeds it, `corridor_shared_breakline_audit_rows`, the largest remaining row function at 318 lines. Its closure is small, 9 functions and 513 lines, and only the top function touches FreeCAD, through `App.ActiveDocument` and the preview-object lookup.
+
+The lookup sat inside the loop, so the split falls out of the shape: the command resolves the document, walks `CORRIDOR_BUILD_REVIEW_OBJECTS`, and collects `(role, title, object_name, obj)` entries, and presentation loops over those entries and shapes every row. Naming the tuple after the four variables the loop already bound leaves the 307-line body untouched, confirmed line by line against the previous commit, with the new `for` header the only difference. What remains in the command is twelve lines of document discovery.
+
+Six helpers moved with it into the same module chunk 1 created, all byte-identical: `_shared_boundary_graph_pair_audit_rows`, `_shared_boundary_graph_consumer_audit_rows`, `_shared_breakline_recommended_action`, the two near-kept-warning helpers, and `_normalize_corridor_build_review_status` with its status-value constant. The module already held `_shared_breakline_recommended_action_from_notes` and the audit-row parsers from chunk 1, so the moved code found its callees locally. Three helpers stayed: `_corridor_build_preview_object` with 18 callers elsewhere, `_join_review_notes` with 9, and the review-status normalizer is imported back for its 4 remaining callers.
+
+Fourteen test call sites reached three of the moved helpers through the command module and were rewired to the presentation module, 11 in `test_build_corridor_command.py` and 3 in `test_intersection_shared_boundary_graph_builder.py`. They were found the way M3 found its own: by running the suite, not by reading the diff. The audit that only checks the command module's own body would have missed them, and that is worth remembering for the remaining chunks.
+
+`cmd_build_corridor.py` falls from 23,185 to 22,694 lines, 2,065 below where M4 started. `shared_breakline_audit_presentation.py` is now 1,562 lines and still imports no FreeCAD, Part, or Qt.
+
+Validation: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests each matching its slice of the 54-failure baseline, 21 + 19 + 14, and 26 smoke scripts at exit code 0.
 
 ## 11. Open Decisions
 
