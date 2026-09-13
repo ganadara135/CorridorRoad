@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, and the subassembly kind guided review rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, and the roundabout Results tab rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -842,6 +842,24 @@ Two editing slips were caught before validation rather than after. The script le
 `cmd_build_corridor.py` falls from 22,560 to 22,434 lines.
 
 Validation: compile, flake8, 9 architecture tests, and the contract suite in three chunks, each run verbosely under a hard timeout after the earlier hang, totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14. The two roundabout guided-review tests that call this function passed. 26 smoke scripts pass at exit code 0. The guided review step list in the Build Corridor panel is user-visible and needs a level 7 check alongside the Drainage Flow table.
+
+### Level 7 manual confirmation of M5 chunks 4 and 5, on 2026-09-13
+
+The maintainer checked the Drainage Flow review table and the subassembly-kind guided review steps in the Build Corridor panel and found no problems.
+
+### M5 chunk 6 on 2026-09-13: the roundabout Results tab rows
+
+`_corridor_roundabout_build_review_rows` is 87 lines with one caller, `corridor_build_review_rows`, and its only helper `_corridor_roundabout_review_row` has no other caller. It differs from the earlier chunks in where the document work sits: after the roundabout gate, three `doc.getObject` reads for the apron, subgrade, and slope-face previews are interleaved with the row appends.
+
+Those reads are side-effect free and nothing between them touches the document, so the command now performs them up front and passes the objects in. The command keeps the document, the intersection preview lookup, and the `IntersectionKind` roundabout gate; `roundabout_build_review_rows(intersection_obj, *, apron_obj, subgrade_obj, slope_face_obj)` in the new `ui/presentation/build_review_presentation.py` shapes the circulatory, apron, subgrade, and breakline-readiness rows. The parameters carry the names the body already used, so the moved lines are the original lines with the three lookups removed and nothing else changed, confirmed against the previous commit for all 75 lines and for the helper.
+
+Because the reads moved, identity of text was not treated as enough. The previous commit's function and the new command-plus-presentation pair were executed side by side against the same fake documents: not a roundabout, no intersection object, all outputs ready, a shared-breakline mismatch, and a missing subgrade with an empty circulatory surface. Rows matched in values and key order in every case, and both return an empty list for no document.
+
+The module is named for the Results tab review rather than for roundabouts because the remaining leaves of `corridor_build_review_rows`, the hub this function feeds, belong in the same place.
+
+`cmd_build_corridor.py` falls from 22,434 to 22,339 lines.
+
+Validation: compile, flake8, 9 architecture tests, the contract suite in three verbose, time-limited chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. The roundabout Results tab rows need a level 7 check.
 
 ## 11. Open Decisions
 
