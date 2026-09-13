@@ -795,6 +795,10 @@ Fourteen test call sites reached three of the moved helpers through the command 
 
 Validation: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests each matching its slice of the 54-failure baseline, 21 + 19 + 14, and 26 smoke scripts at exit code 0.
 
+### Level 7 manual confirmation on 2026-09-13
+
+The maintainer confirmed in the FreeCAD GUI that the review surfaces touched by M5 chunks 1 to 3 render as before: the shared-breakline audit table, including its internal-row toggle, and the intersection contract review table. The same session confirmed the M8 ditch flowline elevation fix in the Cross Section viewer, where the benched side slope and flowline now run continuous with the ditch bottom instead of sitting one profile elevation above it. This closes the level 7 requirement for the work committed so far; chunks after this point need their own confirmation.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
