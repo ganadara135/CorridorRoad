@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, the Results tab intersection rows, and the Roadside Drainage station rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, the Results tab intersection rows, and the Drainage Surface review rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -980,6 +980,18 @@ The note constants in this module and in `drainage_flow_review_presentation.py` 
 `cmd_build_corridor.py` falls from 21,008 to 20,810 lines.
 
 Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, including the four roadside drainage review tests and the three intersection drainage review tests, and 26 smoke scripts at exit code 0. The Drainage Surface review table needs a level 7 check.
+
+### M5 chunk 14 on 2026-09-13: the intersection drainage review row
+
+`corridor_intersection_drainage_review_rows`, 90 lines, adds the Suggested Inlet row at the end of the Drainage Surface review table. It is the first M5 target whose front half is mostly evaluation. It widens the Applied Section set with intersection tie-in sections, evaluates the patch prerequisites, collects patch finished-grade points, chooses the low point and the points level with it, reads the DrainageModel, and evaluates which Drainage Elements cover the control regions and the low-point station. Only then does it decide ready, warn, or missing and build the row.
+
+So the split is by result rather than by lookup. The command keeps its name and signature, which three tests call directly, and every one of those steps, and passes their results, the prerequisite, the patch points, the low point and its level set, and the coverage, to `intersection_drainage_review_rows` in `drainage_review_presentation`. The presentation function is the original statements for the low-point elevation, the intersection id, the control region refs, and everything from the coverage rows on, in their original order and unchanged. The intersection id and control refs are pure reads of the prerequisite used only by the row, so they moved; the low-point elevation is also still computed in the command, where the level set needs it. `_intersection_patch_fg_points` and `_intersection_drainage_coverage` stay: they are engineering evaluation, candidates for `services/evaluation` rather than presentation.
+
+The previous commit's function and the new pair were run side by side with each evaluation step replaced by a recording stub: no Applied Sections, a blocked prerequisite, no patch points, covered, candidates only, and no coverage with an empty intersection id, each at two marker start indexes. Rows matched in values and key order, and the evaluation steps ran in the same order with the same low-point station.
+
+`cmd_build_corridor.py` falls from 20,810 to 20,755 lines.
+
+Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, including the three intersection drainage review tests, and 26 smoke scripts at exit code 0. The Suggested Inlet row joins the pending level 7 check of the Drainage Surface table.
 
 ## 11. Open Decisions
 

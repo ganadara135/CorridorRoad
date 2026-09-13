@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from .review_text import display_source_ref as _display_source_ref
 from .review_text import unique_refs as _unique_refs
 
 DRAINAGE_REVIEW_MISSING_APPLIED_SECTIONS_NOTE = "Applied Sections are required before drainage review."
@@ -218,3 +219,81 @@ def _drainage_review_marker_point(section, ditch_points: list[object]) -> tuple[
 
 def _drainage_review_marker_name(row_index: int) -> str:
     return f"ReviewIssueDrainageStation{max(0, int(row_index)) + 1:03d}"
+
+
+def intersection_drainage_review_rows(
+    prerequisite,
+    *,
+    patch_points: list[dict[str, object]],
+    low_point: dict[str, object],
+    low_points: list[dict[str, object]],
+    coverage: dict[str, object],
+    marker_start_index: int = 0,
+) -> list[dict[str, object]]:
+    """Return intersection low-point and Drainage Element coverage diagnostics."""
+
+    low_z = float(low_point.get("z", 0.0) or 0.0)
+    intersection_id = str(getattr(prerequisite, "intersection_id", "") or "")
+    control_refs = list(getattr(prerequisite, "control_region_refs", ()) or ())
+    coverage_rows = list(coverage.get("ready_rows", []) or [])
+    candidate_rows = list(coverage.get("candidate_rows", []) or [])
+    coverage_diagnostics = list(coverage.get("diagnostics", []) or [])
+    coverage_refs = [
+        str(getattr(row, "drainage_element_id", "") or "")
+        for row in coverage_rows
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    ]
+    if coverage_rows:
+        status = "ready"
+        notes = (
+            f"Intersection drainage handoff ready. low_point_z={low_z:.3f}; "
+            f"Drainage Elements={', '.join(_display_source_ref(ref) for ref in coverage_refs[:4])}."
+        )
+    elif candidate_rows:
+        status = "warn"
+        candidate_refs = [
+            str(getattr(row, "drainage_element_id", "") or "")
+            for row in candidate_rows
+            if str(getattr(row, "drainage_element_id", "") or "").strip()
+        ]
+        notes = (
+            f"Intersection Drainage Elements are linked, but none cover the low-point station. "
+            f"low_point_station={float(low_point.get('station', 0.0) or 0.0):.3f}; "
+            f"candidates={', '.join(_display_source_ref(ref) for ref in candidate_refs[:4]) or '-'}."
+        )
+    else:
+        status = "missing"
+        notes = (
+            f"Intersection low-point candidate has no Drainage Element coverage. low_point_z={low_z:.3f}; "
+            f"control_regions={', '.join(_display_source_ref(ref) for ref in control_refs) or '-'}."
+        )
+    return [
+        {
+            "review_kind": "intersection_drainage",
+            "context": "intersection_drainage",
+            "context_label": "Intersection Drainage",
+            "intersection_id": intersection_id,
+            "station": float(low_point.get("station", 0.0) or 0.0),
+            "section_id": "",
+            "status": status,
+            "ditch_point_count": len(patch_points),
+            "left_count": "-",
+            "right_count": "-",
+            "marker_object": _drainage_review_marker_name(int(marker_start_index or 0)),
+            "marker_label": f"Suggested Inlet - {intersection_id or 'intersection'}",
+            "marker_kind": "suggested_inlet",
+            "x": f"{float(low_point.get('x', 0.0) or 0.0):.6f}",
+            "y": f"{float(low_point.get('y', 0.0) or 0.0):.6f}",
+            "z": f"{low_z:.6f}",
+            "low_point_count": len(low_points),
+            "drainage_element_refs": ",".join(coverage_refs),
+            "drainage_candidate_refs": ",".join(
+                str(getattr(row, "drainage_element_id", "") or "")
+                for row in candidate_rows
+                if str(getattr(row, "drainage_element_id", "") or "").strip()
+            ),
+            "control_region_refs": ",".join(control_refs),
+            "diagnostics": "; ".join(coverage_diagnostics),
+            "notes": notes,
+        }
+    ]
