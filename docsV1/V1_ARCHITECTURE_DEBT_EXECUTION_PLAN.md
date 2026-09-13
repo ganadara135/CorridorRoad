@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, and the roundabout Results tab rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, and the Results tab review row extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -860,6 +860,28 @@ The module is named for the Results tab review rather than for roundabouts becau
 `cmd_build_corridor.py` falls from 22,434 to 22,339 lines.
 
 Validation: compile, flake8, 9 architecture tests, the contract suite in three verbose, time-limited chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. The roundabout Results tab rows need a level 7 check.
+
+### Level 7 manual confirmation of M5 chunk 6, on 2026-09-13
+
+The maintainer checked the roundabout rows in the Build Corridor Results tab and confirmed them.
+
+### M5 chunk 7 on 2026-09-13: the Results tab review row and its note helpers
+
+`corridor_build_review_rows`, the Results tab hub, stays in the command for now; this chunk moved its main leaf. `_corridor_build_review_row` is 153 lines, and its closure adds 13 pure note helpers, among them `_intersection_surface_review_notes` at 179 lines, `_with_corridor_consumer_hardening_warning`, `_shared_breakline_review_note`, and `_corridor_build_review_output_path`.
+
+The row function touched the document in exactly two lines. When a preview object is missing and no diagnostic object explains it, it called `_intersection_slope_face_surface_absent_note(document)` or `_intersection_tie_slope_surface_absent_note(document)`, which look up the Intersection Surface preview to say why the dedicated surface is absent. Those two helpers stay in the command. The row function's `document=None` parameter became `absent_note_for_role`, a callable the hub supplies through a small new command helper, `_corridor_build_review_absent_note(document, role)`, that dispatches to the same two functions. The callable is invoked only on the branches that called the helpers before, so the lookups still happen only when they did. Against the previous commit, the row function changed in its signature and those two lines and nowhere else, and all 13 helpers and the private `_display_source_id` copy are identical.
+
+Because a signature changed, the previous commit's row function and the new one were also run side by side over ten cases: a missing slope, tie-slope, and design preview with and without diagnostic text or status, a centerline, a design surface with clipping and applied-section diagnostics, an empty daylight surface, an intersection slope face, and a roundabout ownership warning. Rows matched in values and key order.
+
+One behaviour narrowed, deliberately: called with no callable, a missing slope or tie-slope preview now gets an empty note where the old function would have fallen back to `App.ActiveDocument`. No production caller omits it, since the hub always passes one, and every test that calls the row directly passes a built object, so that branch is not reached.
+
+Four helpers keep callers in the command and are imported back: the row itself, `_intersection_surface_review_notes` for the surface preview it annotates, `_intersection_slope_face_upper_panel_review_note`, and `_surface_patch_review_status_note`. Eight test call sites in `test_build_corridor_command.py` now reach the moved helpers through `build_review_presentation`, and all eight tests that hold them pass.
+
+`cmd_build_corridor.py` falls from 22,339 to 21,655 lines, and `build_review_presentation.py` is 842 lines.
+
+Validation: compile, flake8, 9 architecture tests, the contract suite in three verbose, time-limited chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. `test_corridor_build_review_rows_summarize_preview_outputs`, which exercises the hub and is in the baseline, fails with the same assertion as before; its reported line moved from 8925 to 8926 because the test module's presentation import grew by one line.
+
+The intermittent hang seen earlier recurred once, on the first run of `test_build_corridor_command.py`, at `test_build_corridor_panel_updates_selected_surface_transition_spacing`. The hard timeout stopped it. Run alone, that test fails in four seconds on its known baseline assertion, and the whole module then ran to completion in 68 seconds on the same tree with the same result as the baseline. The hang has now appeared on two unrelated trees and follows panel tests that fail in the baseline, which points at state a failing Qt panel test leaves behind rather than at either change. It is not diagnosed; the verbose log under a timeout is how the next occurrence will be located.
 
 ## 11. Open Decisions
 

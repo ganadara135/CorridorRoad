@@ -164,6 +164,7 @@ from freecad.Corridor_Road.v1.services.geometry import (
 from freecad.Corridor_Road.v1.services.builders import build_intersection_slope_face_surface_from_ready_loops
 from freecad.Corridor_Road.v1.services.evaluation.intersection_slope_face_boundary_evaluation_service import intersection_slope_face_boundary_target_segments
 from freecad.Corridor_Road.v1.ui.presentation import (
+    build_review_presentation,
     shared_breakline_audit_presentation,
 )
 
@@ -1098,7 +1099,7 @@ def test_corridor_surface_preview_contract_exposes_applied_section_diagnostics()
         assert list(obj.AppliedSectionClipReviewRows) == [
             "STA 0.000;section=section:0;previous=section:-20;side=left;subassemblies=slope:left;points=slope:left:daylight;links=slope:left:link"
         ]
-        review_row = build_corridor_command._corridor_build_review_row(
+        review_row = build_review_presentation._corridor_build_review_row(
             "daylight",
             "Slope Face Surface",
             "DiagnosticPreview",
@@ -2346,7 +2347,7 @@ def test_intersection_slope_face_surface_preview_records_consumed_loop_contract(
         assert "surface_generation_not_ready" in str(slope_row["notes"])
         assert f"consumed_contract_diagnostics={len(diagnostics)}" in str(slope_row["notes"])
         assert (
-            build_corridor_command._corridor_build_review_output_path(
+            build_review_presentation._corridor_build_review_output_path(
                 "intersection_slope",
                 SimpleNamespace(
                     ReadyLoopCount=0,
@@ -3085,7 +3086,7 @@ def test_intersection_slope_face_boundary_strips_are_suppressed_but_record_metad
         build_corridor_command._tin_quality_text(augmented, "intersection_slope_face_boundary_strip_diagnostic")
         == "visible_boundary_strip_generation_suppressed"
     )
-    review_note = build_corridor_command._intersection_slope_face_boundary_review_note(
+    review_note = build_review_presentation._intersection_slope_face_boundary_review_note(
         SimpleNamespace(
             IntersectionSlopeFaceBoundarySummary="boundary_result=intersection-slope-face-boundary:test; status=ready; ready=1/1; warnings=0; strip_generation=suppressed",
             IntersectionSlopeFaceBoundaryStripGenerationMode="suppressed",
@@ -6999,7 +7000,7 @@ def test_shared_breakline_audit_metadata_is_visible_in_review_note() -> None:
         }
 
         build_corridor_command._attach_shared_breakline_preview_metadata(obj, shared, audit=audit)
-        note = build_corridor_command._shared_breakline_review_note(obj)
+        note = build_review_presentation._shared_breakline_review_note(obj)
 
         assert obj.SharedBreaklineAuditStatus == "warning"
         assert int(obj.SharedBreaklineGeometryMatchCount) == 1
@@ -10121,7 +10122,7 @@ def test_watertight_solid_readiness_reports_missing_prerequisites() -> None:
         build_corridor_command._set_preview_property(obj, "SurfaceKind", "design_surface")
         build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
         build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
-        row = build_corridor_command._corridor_build_review_row(
+        row = build_review_presentation._corridor_build_review_row(
             "design",
             "Design Surface",
             "WatertightMissingPrerequisitesProbe",
@@ -10248,7 +10249,7 @@ def test_build_corridor_disclosure_reports_consumed_applied_section_result_roles
         build_corridor_command._set_preview_property(obj, "SurfaceKind", "design_surface")
         build_corridor_command._set_preview_integer_property(obj, "VertexCount", 4)
         build_corridor_command._set_preview_integer_property(obj, "TriangleCount", 2)
-        row = build_corridor_command._corridor_build_review_row(
+        row = build_review_presentation._corridor_build_review_row(
             "design",
             "Design Surface",
             "RoleCountProbe",
@@ -10622,7 +10623,7 @@ def test_build_corridor_review_warns_when_expected_surface_role_is_missing() -> 
         assert obj.ResultContractExpectedSurfaceRoleStatus == "missing"
         assert list(obj.ResultContractExpectedSurfaceRoles) == ["design_surface"]
         assert list(obj.ResultContractMatchedSurfaceRoles) == []
-        row = build_corridor_command._corridor_build_review_row(
+        row = build_review_presentation._corridor_build_review_row(
             "design",
             "Design Surface",
             "MissingSurfaceRoleProbe",
@@ -10654,7 +10655,7 @@ def test_build_corridor_review_warns_when_consumed_result_contract_links_are_mis
 
         assert int(obj.ResultContractCompatibilityFallbackActive) == 1
         assert "legacy width/point result fields" in obj.ResultContractCompatibilityReason
-        row = build_corridor_command._corridor_build_review_row(
+        row = build_review_presentation._corridor_build_review_row(
             "design",
             "Design Surface",
             "MissingResultContractProbe",
