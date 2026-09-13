@@ -6,6 +6,8 @@ import math
 
 from dataclasses import dataclass
 from typing import Mapping
+from .review_text import join_review_notes as _join_review_notes
+from .review_text import unique_text_values as _unique_text_values
 
 
 @dataclass(frozen=True)
@@ -163,22 +165,6 @@ INTERSECTION_SHARED_BOUNDARY_EXPECTED_CONSUMERS = {
     "upper_transition_internal_seam": ("intersection_slope_face_surface",),
     "cell_closure_internal_seam": ("intersection_slope_face_surface",),
 }
-
-
-def _unique_text_values(values: list[str]) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
-
-
-def _join_review_notes(*parts: str) -> str:
-    return "; ".join(str(part or "").strip() for part in parts if str(part or "").strip())
 
 
 def shared_breakline_audit_display_rows(rows: list[dict[str, object]], *, include_internal: bool = False) -> list[dict[str, object]]:

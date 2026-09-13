@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family and the contract review rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, and the drainage flow review rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -798,6 +798,23 @@ Validation: compile, flake8, 9 architecture tests, the contract suite in three c
 ### Level 7 manual confirmation on 2026-09-13
 
 The maintainer confirmed in the FreeCAD GUI that the review surfaces touched by M5 chunks 1 to 3 render as before: the shared-breakline audit table, including its internal-row toggle, and the intersection contract review table. The same session confirmed the M8 ditch flowline elevation fix in the Cross Section viewer, where the benched side slope and flowline now run continuous with the ditch bottom instead of sitting one profile elevation above it. This closes the level 7 requirement for the work committed so far; chunks after this point need their own confirmation.
+
+### M5 chunk 4 on 2026-09-13: the drainage flow review rows, and a shared review_text helper
+
+The drainage review family was measured before choosing. `corridor_drainage_review_rows` and `corridor_intersection_drainage_review_rows` both reach `corridor_intersection_patch_prerequisite_result` and the region-boundary machinery, closures of well over a hundred functions, so they wait until the evaluation they call has an owner. `corridor_drainage_flow_review_rows` is separable: 104 lines whose helpers are pure.
+
+It is also the first row builder in M5 with document side effects interleaved with the shaping. It removes the `ReviewIssueDrainageFlowRoutes` preview object on each of its three placeholder paths, and computes a per-route highlight mode by reading the applied sections from the document. Both stay in the command. The split:
+
+- `ui/presentation/drainage_flow_review_presentation.py` shapes one row per Flow Route from the drainage and structure models and returns an empty list when there are none. The highlight mode arrives as a `highlight_mode_for_route` callable, so presentation never sees the document and the lookups still happen once per row in the original order. The three placeholder rows come from `drainage_flow_review_placeholder_row` with the original notes as named constants.
+- The command resolves the document and both models, removes the preview object and returns a placeholder on the missing-model, preset-model, and no-routes paths exactly as before, and passes the highlight lookup in. The structure model is still looked up only after the two early exits.
+
+Verified against the previous commit rather than by reading: the three moved helpers are byte-identical, the row loop differs in exactly one line, the highlight call, the three setup statements are AST-identical, and the three placeholder rows are equal to the original literals in values and in key order. A synthetic model exercising the ready, broken-ref, empty-chain, and no-structure paths produced the expected statuses and station span.
+
+This chunk is also where the text helpers stopped being copied. Chunk 2 recorded that a shared module was worth it once a third presentation module needed `_unique_text_values` and `_join_review_notes`; this was the third. `ui/presentation/review_text.py` now holds `unique_text_values`, `join_review_notes`, and `display_source_ref`, their bodies identical to the command's, and the two earlier modules import them under their private names instead of carrying copies, so none of their call sites changed. The command keeps its own copies, which have 50 and more callers there.
+
+`cmd_build_corridor.py` falls from 22,694 to 22,560 lines.
+
+Validation: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests each matching its slice of the 54-failure baseline, 21 + 19 + 14, and 26 smoke scripts at exit code 0. The Drainage Flow review table is a user-visible surface changed after the 2026-09-13 confirmation and needs its own level 7 check.
 
 ## 11. Open Decisions
 

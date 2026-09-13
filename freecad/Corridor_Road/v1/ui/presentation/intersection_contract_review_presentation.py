@@ -6,22 +6,8 @@ from .shared_breakline_audit_presentation import (
     _parse_intersection_shared_boundary_graph_audit_row,
     _parse_intersection_slope_face_cell_audit_row,
 )
-
-
-def _unique_text_values(values: list[str]) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
-
-
-def _join_review_notes(*parts: str) -> str:
-    return "; ".join(str(part or "").strip() for part in parts if str(part or "").strip())
+from .review_text import join_review_notes as _join_review_notes
+from .review_text import unique_text_values as _unique_text_values
 
 
 def _roundabout_boundary_readiness_contract_review_row(approach_legs, boundary_loops) -> dict[str, object] | None:

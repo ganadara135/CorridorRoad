@@ -221,6 +221,13 @@ from ..ui.presentation.intersection_contract_review_presentation import (
     _intersection_upper_slope_face_panel_contract_review_row_from_preview,
     _roundabout_boundary_readiness_contract_review_row,
 )
+from ..ui.presentation.drainage_flow_review_presentation import (
+    DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE,
+    DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE,
+    DRAINAGE_FLOW_REVIEW_PRESET_MODEL_NOTE,
+    drainage_flow_review_placeholder_row,
+    drainage_flow_review_rows,
+)
 
 IntersectionTieInEdgeRow = _intersection_tie_in_edge_models.IntersectionTieInEdgeRow
 
@@ -3803,102 +3810,19 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
     drainage_model = to_drainage_model(find_v1_drainage_model(doc))
     if drainage_model is None:
         _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
-        return [
-            {
-                "flow_route_id": "",
-                "status": "missing",
-                "from_element": "",
-                "to_element": "",
-                "outlet": "",
-                "structure_refs": "",
-                "station_start": "",
-                "station_end": "",
-                "notes": "DrainageModel is required before Drainage Flow review.",
-            }
-        ]
+        return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE)]
     if _is_intersection_preset_drainage_model(drainage_model):
         _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
-        return [
-            {
-                "flow_route_id": "",
-                "status": "missing",
-                "from_element": "",
-                "to_element": "",
-                "outlet": "",
-                "structure_refs": "",
-                "station_start": "",
-                "station_end": "",
-                "notes": "Intersection preset drainage is source-stage handoff metadata, not a Drainage Flow highlight source.",
-            }
-        ]
-    element_by_id = {
-        str(getattr(row, "drainage_element_id", "") or ""): row
-        for row in list(getattr(drainage_model, "element_rows", []) or [])
-    }
+        return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_PRESET_MODEL_NOTE)]
     structure_model = to_structure_model(find_v1_structure_model(doc))
-    structure_by_id = {
-        str(getattr(row, "structure_id", "") or ""): row
-        for row in list(getattr(structure_model, "structure_rows", []) or [])
-    } if structure_model is not None else {}
-    rows: list[dict[str, object]] = []
-    for flow_row in list(getattr(drainage_model, "flow_route_rows", []) or []):
-        connected_elements = _drainage_flow_connected_elements(flow_row, element_by_id)
-        structure_refs = _drainage_flow_structure_refs(flow_row, connected_elements)
-        station_range = _drainage_flow_station_range(flow_row, connected_elements, structure_by_id)
-        route_id = str(getattr(flow_row, "flow_route_id", "") or "")
-        from_ref = str(getattr(flow_row, "from_element_ref", "") or "")
-        to_ref = str(getattr(flow_row, "to_element_ref", "") or "")
-        outlet_ref = str(getattr(flow_row, "outlet_ref", "") or "")
-        chain_values = [value for value in (from_ref, to_ref, outlet_ref) if value]
-        missing_refs = [
-            ref
-            for ref in (from_ref, to_ref)
-            if ref and ref.startswith("drainage:") and ref not in element_by_id
-        ]
-        if missing_refs:
-            status = "missing"
-            notes = "Broken Flow Route element refs: " + ", ".join(_display_source_ref(ref) for ref in missing_refs)
-        elif not chain_values:
-            status = "missing"
-            notes = "Flow Route has no From, To, or Outlet refs."
-        elif not structure_refs:
-            status = "warn"
-            notes = f"Route {' -> '.join(_display_source_ref(value) for value in chain_values)} has no linked Structure ref."
-        else:
-            status = "ready"
-            notes = (
-                f"Route {' -> '.join(_display_source_ref(value) for value in chain_values)}; "
-                f"structures={', '.join(_display_source_ref(ref) for ref in structure_refs)}"
-            )
-        rows.append(
-            {
-                "flow_route_id": route_id,
-                "status": status,
-                "from_element": from_ref,
-                "to_element": to_ref,
-                "outlet": outlet_ref,
-                "structure_refs": ", ".join(structure_refs),
-                "station_start": "" if station_range is None else station_range[0],
-                "station_end": "" if station_range is None else station_range[1],
-                "highlight_mode": _drainage_flow_row_highlight_mode(doc, route_id),
-                "notes": notes,
-            }
-        )
+    rows = drainage_flow_review_rows(
+        drainage_model,
+        structure_model,
+        highlight_mode_for_route=lambda route_id: _drainage_flow_row_highlight_mode(doc, route_id),
+    )
     if not rows:
         _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
-        return [
-            {
-                "flow_route_id": "",
-                "status": "missing",
-                "from_element": "",
-                "to_element": "",
-                "outlet": "",
-                "structure_refs": "",
-                "station_start": "",
-                "station_end": "",
-                "notes": "No Drainage Flow Route rows.",
-            }
-        ]
+        return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE)]
     return rows
 
 
@@ -13671,64 +13595,6 @@ def _drainage_review_marker_point(section, ditch_points: list[object]) -> tuple[
 
 def _drainage_review_marker_name(row_index: int) -> str:
     return f"ReviewIssueDrainageStation{max(0, int(row_index)) + 1:03d}"
-
-
-def _drainage_flow_connected_elements(flow_row, element_by_id: dict[str, object]) -> list[object]:
-    elements: list[object] = []
-    seen: set[str] = set()
-    for ref in (
-        str(getattr(flow_row, "from_element_ref", "") or ""),
-        str(getattr(flow_row, "to_element_ref", "") or ""),
-        str(getattr(flow_row, "outlet_ref", "") or ""),
-    ):
-        if not ref or ref in seen:
-            continue
-        seen.add(ref)
-        element = element_by_id.get(ref)
-        if element is not None:
-            elements.append(element)
-    return elements
-
-
-def _drainage_flow_structure_refs(flow_row, connected_elements: list[object]) -> list[str]:
-    refs: list[str] = []
-    for element in list(connected_elements or []):
-        ref = str(getattr(element, "structure_ref", "") or "").strip()
-        if ref:
-            refs.append(ref)
-    outlet_ref = str(getattr(flow_row, "outlet_ref", "") or "").strip()
-    if outlet_ref.startswith("structure:"):
-        refs.append(outlet_ref)
-    return _unique_text_values(refs)
-
-
-def _drainage_flow_station_range(
-    flow_row,
-    connected_elements: list[object],
-    structure_by_id: dict[str, object],
-) -> tuple[float, float] | None:
-    stations: list[float] = []
-    for element in list(connected_elements or []):
-        stations.extend(
-            [
-                float(getattr(element, "station_start", 0.0) or 0.0),
-                float(getattr(element, "station_end", 0.0) or 0.0),
-            ]
-        )
-    for ref in _drainage_flow_structure_refs(flow_row, connected_elements):
-        structure = structure_by_id.get(ref)
-        placement = getattr(structure, "placement", None)
-        if placement is None:
-            continue
-        stations.extend(
-            [
-                float(getattr(placement, "station_start", 0.0) or 0.0),
-                float(getattr(placement, "station_end", 0.0) or 0.0),
-            ]
-        )
-    if not stations:
-        return None
-    return min(stations), max(stations)
 
 
 def _drainage_flow_row_highlight_mode(document, route_ref: str) -> str:
