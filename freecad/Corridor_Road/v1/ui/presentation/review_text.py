@@ -41,3 +41,15 @@ def format_count_summary(counts: dict[str, int], *, limit: int = 5) -> str:
     if len(rows) > limit:
         text += f", +{len(rows) - limit} more"
     return text
+
+
+def unique_refs(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output

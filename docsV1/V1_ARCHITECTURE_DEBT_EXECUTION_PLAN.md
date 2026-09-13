@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, and the Results tab intersection rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, the Results tab intersection rows, and the Roadside Drainage station rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -962,6 +962,24 @@ Run side by side with the previous commit over seven documents, recording each m
 Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. The row joins the pending level 7 check of the Results tab.
 
 With this the hub's intersection branch has no row shaping left in the command. The hub itself, `corridor_build_review_rows`, is now iteration over `CORRIDOR_BUILD_REVIEW_OBJECTS`, preview and diagnostic lookups, and calls to the command rows, which is document coordination.
+
+### M5 chunk 13 on 2026-09-13: the Roadside Drainage station review rows
+
+`corridor_drainage_review_rows`, 115 lines, fills the Drainage Surface review table with one row per Applied Section station, then appends the intersection drainage row. Three kinds of work were mixed in it. It reads three models from the document, Applied Sections, the RegionModel, and the DrainageModel. For every station it finds the active ditch Drainage Elements through `_active_ditch_drainage_rows`, which runs `StationContextResolver`, an evaluation service. And at the end it calls `corridor_intersection_drainage_review_rows`, which evaluates intersection patch prerequisites. None of those belong in presentation; everything else in the function is row shaping.
+
+The command keeps its name and signature and all three kinds of work. It reads the models, passes the Applied Section set to `drainage_review_station_rows(applied, *, active_ditch_rows_for)` in the new `ui/presentation/drainage_review_presentation.py`, and appends the intersection rows when there are station rows. The moved loop is unchanged except that the five-line lookup call became `active_ditch_rows_for(station)`, a callable the command builds around the same function and models, so the resolver still runs once per station in station order. The two placeholder rows, no Applied Sections and no station rows, come from `drainage_review_placeholder_row` with the original notes as named constants.
+
+The original returned early without appending intersection rows exactly when its first row had an empty station, which only the placeholder has, since real rows carry a float. The command now tests the empty result directly, the same condition stated plainly.
+
+Seven pure helpers the shaping used moved unchanged: the source-surface mismatch notes, the ditch point context by side, the two side-normalizing helpers, `_drainage_point_side`, the marker point, and `_drainage_review_marker_name`. The last two of those are imported back for the highlight and focus code and for the intersection drainage row, which share the marker naming. `_unique_refs` is now needed by two presentation modules, so it joined `review_text` as `unique_refs` and `build_review_presentation` imports it instead of its copy.
+
+The previous commit's function and the new pair were run side by side on four documents, none, no Applied Sections, no station rows, and a mixed set with unsorted stations, a missing section, a one-sided section, a section without ditch points, and an active ditch element on both sides, while recording every model read, active-ditch lookup, and intersection call. Rows matched in values and key order, and the lookups and calls happened in the same order with the same arguments.
+
+The note constants in this module and in `drainage_flow_review_presentation.py` from chunk 4 were written with single quotes by the extraction scripts; both now use the codebase's double quotes, with their values checked unchanged.
+
+`cmd_build_corridor.py` falls from 21,008 to 20,810 lines.
+
+Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, including the four roadside drainage review tests and the three intersection drainage review tests, and 26 smoke scripts at exit code 0. The Drainage Surface review table needs a level 7 check.
 
 ## 11. Open Decisions
 

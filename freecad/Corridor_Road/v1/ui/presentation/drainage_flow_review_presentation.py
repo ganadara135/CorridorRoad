@@ -7,11 +7,11 @@ from typing import Callable
 from .review_text import display_source_ref as _display_source_ref
 from .review_text import unique_text_values as _unique_text_values
 
-DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE = 'DrainageModel is required before Drainage Flow review.'
+DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE = "DrainageModel is required before Drainage Flow review."
 DRAINAGE_FLOW_REVIEW_PRESET_MODEL_NOTE = (
-    'Intersection preset drainage is source-stage handoff metadata, not a Drainage Flow highlight source.'
+    "Intersection preset drainage is source-stage handoff metadata, not a Drainage Flow highlight source."
 )
-DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE = 'No Drainage Flow Route rows.'
+DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE = "No Drainage Flow Route rows."
 
 
 def drainage_flow_review_placeholder_row(notes: str) -> dict[str, object]:

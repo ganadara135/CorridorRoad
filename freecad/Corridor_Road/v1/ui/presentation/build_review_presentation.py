@@ -6,6 +6,7 @@ from typing import Callable
 
 from .review_text import join_review_notes as _join_review_notes
 from .review_text import unique_text_values as _unique_text_values
+from .review_text import unique_refs as _unique_refs
 from .review_text import display_source_id as _display_source_id
 from .review_text import display_source_ref as _display_source_ref
 from .review_text import format_count_summary as _format_count_summary
@@ -1033,18 +1034,6 @@ def _section_structure_refs(section) -> list[str]:
         if text:
             refs.append(text)
     return _unique_text_values(refs)
-
-
-def _unique_refs(values: list[str]) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
 
 
 def intersection_upper_slope_face_panel_review_row(obj) -> dict[str, object] | None:
