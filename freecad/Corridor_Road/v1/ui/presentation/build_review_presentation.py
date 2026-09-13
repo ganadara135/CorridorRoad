@@ -1045,3 +1045,196 @@ def _unique_refs(values: list[str]) -> list[str]:
         seen.add(text)
         output.append(text)
     return output
+
+
+def intersection_upper_slope_face_panel_review_row(obj) -> dict[str, object] | None:
+    if obj is None:
+        return None
+    candidate_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelCandidateCount", 0) or 0)
+    accepted_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelAcceptedCount", 0) or 0)
+    generated_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelGeneratedCount", 0) or 0)
+    triangle_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelTriangleCount", 0) or 0)
+    suppressed_count = int(getattr(obj, "IntersectionSlopeFaceSuppressedUpperCellCount", 0) or 0)
+    if not any((candidate_count, accepted_count, generated_count, triangle_count, suppressed_count)):
+        return None
+    status = "ready" if generated_count > 0 and triangle_count == generated_count * 2 else "warning" if candidate_count else "missing"
+    refs = list(getattr(obj, "IntersectionUpperSlopeFacePanelRefs", []) or [])
+    boundary_refs = list(getattr(obj, "IntersectionUpperSlopeFacePanelBoundaryRefs", []) or [])
+    coverage_status = str(getattr(obj, "IntersectionUpperSlopeFacePanelCoverageStatus", "") or "")
+    diagnostic = str(getattr(obj, "IntersectionUpperSlopeFacePanelDiagnostic", "") or "")
+    notes = _join_review_notes(
+        _intersection_slope_face_upper_panel_review_note(obj),
+        f"refs={len(refs)}",
+        f"boundary_refs={len(boundary_refs)}",
+        diagnostic,
+    )
+    if coverage_status and coverage_status != "ready":
+        status = "warning"
+    return {
+        "role": "intersection_upper_slope_face_panel",
+        "result": "Intersection Upper Slope Face Panel",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSlopeFaceSurfacePreview"),
+        "object_label": str(getattr(obj, "Label", "") or "Intersection Slope Face Surface"),
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": triangle_count,
+        "output_path": "intersection_upper_slope_face_panel",
+        "notes": notes,
+    }
+
+
+def intersection_surface_replacement_readiness_row(obj) -> dict[str, object] | None:
+    if obj is None:
+        return None
+    gate_status = str(getattr(obj, "IntersectionSurfaceReplacementGateStatus", "") or "")
+    if not gate_status:
+        return None
+    recommendation = str(getattr(obj, "IntersectionSurfaceReplacementGateRecommendation", "") or "")
+    patch_triangles = int(getattr(obj, "IntersectionSurfaceComparisonPatchTriangleCount", 0) or 0)
+    zone_triangles = int(getattr(obj, "IntersectionSurfaceComparisonZoneTriangleCount", 0) or 0)
+    delta = int(getattr(obj, "IntersectionSurfaceComparisonTriangleDelta", 0) or 0)
+    ratio = float(getattr(obj, "IntersectionSurfaceComparisonZoneToPatchTriangleRatio", 0.0) or 0.0)
+    diagnostics = [str(value or "") for value in list(getattr(obj, "IntersectionSurfaceReplacementDiagnostics", []) or []) if str(value or "")]
+    acceptance_diagnostics = [str(value or "") for value in list(getattr(obj, "IntersectionSurfaceReplacementAcceptanceDiagnostics", []) or []) if str(value or "")]
+    if gate_status == "ready_to_replace":
+        status = "ready"
+        readiness = "ready_to_replace"
+    elif gate_status == "blocked":
+        status = "warning"
+        readiness = "blocked"
+    else:
+        status = "warning"
+        readiness = "review_only"
+    blocked_note = "; blocked_reason=accepted_zone_surface_not_ready" if readiness == "blocked" else ""
+    notes = (
+        f"Replacement readiness={readiness}; gate={gate_status}; "
+        f"patch_triangles={patch_triangles}; zone_triangles={zone_triangles}; "
+        f"delta={delta}; ratio={ratio:.3f}; "
+        f"recommendation={recommendation or 'review_required'}; diagnostics={len(diagnostics)}; "
+        f"acceptance_evidence={len(acceptance_diagnostics)}"
+        f"{blocked_note}"
+    )
+    return {
+        "role": "intersection_replacement_readiness",
+        "result": "Intersection Replacement Readiness",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Replacement Readiness",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": zone_triangles,
+        "output_path": "review_gate",
+        "notes": notes,
+    }
+
+
+def intersection_tie_in_continuity_row(
+    obj,
+    *,
+    station_span_for: Callable[[str], str],
+) -> dict[str, object] | None:
+    if obj is None:
+        return None
+    tie_in_count = int(getattr(obj, "PatchPavementTieInEdgeCount", 0) or 0) + int(getattr(obj, "PatchStemTieInEdgeCount", 0) or 0)
+    curb_return_count = int(getattr(obj, "PatchCurbReturnEdgeCount", 0) or 0)
+    overlap_count = int(getattr(obj, "PatchOverlapCutEdgeCount", 0) or 0)
+    boundary_diagnostic_count = int(getattr(obj, "IntersectionPatchBoundaryDiagnosticCount", 0) or 0)
+    boundary_diagnostics = [
+        str(value or "")
+        for value in list(getattr(obj, "IntersectionPatchBoundaryDiagnostics", []) or [])
+        if str(value or "")
+    ]
+    boundary_error_count = len([
+        value for value in boundary_diagnostics
+        if not str(value).strip().lower().startswith(("warning:", "info:"))
+    ])
+    if boundary_diagnostic_count and not boundary_diagnostics:
+        boundary_error_count = boundary_diagnostic_count
+    shared_status = str(getattr(obj, "SharedBreaklineAuditStatus", "") or "")
+    geometry_mismatch = int(getattr(obj, "SharedBreaklineGeometryMismatchCount", 0) or 0)
+    mesh_mismatch = int(getattr(obj, "SharedBreaklineMeshMismatchCount", 0) or 0)
+    missing_consumer = int(getattr(obj, "SharedBreaklineMissingConsumerCount", 0) or 0)
+    reversed_count = int(getattr(obj, "SharedBreaklineReversedEdgeCount", 0) or 0)
+    if not any([tie_in_count, curb_return_count, overlap_count, boundary_diagnostic_count, shared_status]):
+        return None
+    if boundary_error_count > 0 or geometry_mismatch > 0 or missing_consumer > 0:
+        status = "error"
+    elif boundary_diagnostic_count > 0 or mesh_mismatch > 0 or reversed_count > 0 or shared_status in {"warning", "error"}:
+        status = "warning"
+    else:
+        status = "ready"
+    station_span = station_span_for(str(getattr(obj, "IntersectionId", "") or ""))
+    notes = (
+        f"tie-in edges={tie_in_count}; curb_return_edges={curb_return_count}; overlap_cut_edges={overlap_count}; "
+        f"boundary_diagnostics={boundary_diagnostic_count}; shared_breakline_audit={shared_status or 'not_available'}; "
+        f"geometry_mismatch={geometry_mismatch}; mesh_mismatch={mesh_mismatch}; "
+        f"missing_consumer={missing_consumer}; reversed={reversed_count}; "
+        f"station_span={station_span or 'unavailable'}"
+    )
+    qa_summary = str(getattr(obj, "IntersectionManualQASummary", "") or "")
+    if qa_summary:
+        notes = f"{notes}; {qa_summary}"
+    return {
+        "role": "intersection_tie_in_continuity",
+        "result": "Intersection Tie-In Continuity",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Tie-In Continuity",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": tie_in_count + curb_return_count + overlap_count,
+        "output_path": "review_gate",
+        "notes": notes,
+    }
+
+
+def intersection_grading_ownership_row(
+    obj,
+    *,
+    station_span_for: Callable[[str], str],
+    profile_refs_for: Callable[[str], list[str]],
+) -> dict[str, object] | None:
+    if obj is None:
+        return None
+    grading_policy_ref = str(getattr(obj, "IntersectionGradingPolicyRef", "") or "")
+    grading_mode = str(getattr(obj, "IntersectionGradingMode", "") or "")
+    target_crossfall = str(getattr(obj, "IntersectionTargetCrossfallPercent", "") or "")
+    superelevation_sources = int(getattr(obj, "IntersectionSuperelevationSourceCount", 0) or 0)
+    transition_count = int(getattr(obj, "IntersectionSuperelevationTransitionCount", 0) or 0)
+    superelevation_context = str(getattr(obj, "IntersectionSuperelevationContext", "") or "")
+    consumed_grading_ref = str(getattr(obj, "ConsumedIntersectionGradingContextResultId", "") or "")
+    if not any([grading_policy_ref, grading_mode, target_crossfall, superelevation_sources, transition_count, consumed_grading_ref]):
+        return None
+    left_min = float(getattr(obj, "IntersectionSuperelevationLeftMin", 0.0) or 0.0)
+    left_max = float(getattr(obj, "IntersectionSuperelevationLeftMax", 0.0) or 0.0)
+    right_min = float(getattr(obj, "IntersectionSuperelevationRightMin", 0.0) or 0.0)
+    right_max = float(getattr(obj, "IntersectionSuperelevationRightMax", 0.0) or 0.0)
+    left_delta = abs(left_max - left_min)
+    right_delta = abs(right_max - right_min)
+    max_delta = max(left_delta, right_delta)
+    if max_delta > 0.5 or transition_count > 0:
+        status = "warning"
+    else:
+        status = "ready"
+    station_span = station_span_for(str(getattr(obj, "IntersectionId", "") or ""))
+    controlling_source = "intersection_policy" if grading_policy_ref or grading_mode else "normal_superelevation"
+    profile_refs = profile_refs_for(str(getattr(obj, "IntersectionId", "") or ""))
+    notes = (
+        f"owner={controlling_source}; grading_policy={_display_source_id(grading_policy_ref, 'grading:') or '-'}; "
+        f"mode={grading_mode or '-'}; target_crossfall={target_crossfall or '-'}%; "
+        f"superelevation_sources={superelevation_sources}; transitions={transition_count}; "
+        f"left_crossfall={left_min:.3f}%..{left_max:.3f}%; right_crossfall={right_min:.3f}%..{right_max:.3f}%; "
+        f"max_crossfall_delta={max_delta:.3f}%; grading_context={consumed_grading_ref or '-'}; "
+        f"profile_refs={','.join(profile_refs) if profile_refs else '-'}; station_span={station_span or 'unavailable'}"
+    )
+    if superelevation_context:
+        notes = f"{notes}; context={superelevation_context}"
+    return {
+        "role": "intersection_grading_ownership",
+        "result": "Intersection Grading Ownership",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Grading Ownership",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": transition_count,
+        "output_path": "review_gate",
+        "notes": notes,
+    }

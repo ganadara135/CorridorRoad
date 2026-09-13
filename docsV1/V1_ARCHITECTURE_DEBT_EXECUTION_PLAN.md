@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, and the Results tab Applied Section and surface-role leaves extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, and four Results tab intersection rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -934,6 +934,20 @@ Run side by side with the previous commit's code: the summary over no document, 
 Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. The Applied Section columns and surface-role notes of the Results tab join the pending level 7 check.
 
 What remains of the Results tab hub in the command is the hub itself and five intersection rows it adds after the `intersection` role, the upper slope-face panel, surface replacement readiness, tie-in continuity, grading ownership, and drainage handoff gate. Each reads intersection models or evaluates, so they need the evaluated result passed in rather than only a lookup lifted out.
+
+### M5 chunk 11 on 2026-09-13: four intersection rows of the Results tab
+
+Four of the five rows `corridor_build_review_rows` adds after its `intersection` role: the upper slope-face panel, surface replacement readiness, tie-in continuity, and grading ownership, 183 lines together. Each looks up an intersection preview and shapes a row from its properties. Two also read the document partway through, after their own early returns: tie-in continuity asks `_intersection_applied_section_station_span` for the Applied Section station span, and grading ownership asks for that span and for `_intersection_grading_profile_refs`. Nothing outside the command references any of the four.
+
+Each command row keeps its name and signature, resolves the document and the preview exactly as before, and passes the object to a function of the same subject in `build_review_presentation`. The moved lines start at the None guard and are unchanged, except the three calls to the document helpers, which became calls to `station_span_for` and `profile_refs_for` callables that the command supplies around the same helpers.
+
+Checked against the previous commit by running both side by side over five documents, none, empty, bare previews, fully populated previews, and a ready replacement gate, while recording every call to the two document helpers. All four rows returned identical results in every case, and the helpers were called in the same order with the same arguments, so a row that returns early still never reaches the document a second time.
+
+`_intersection_slope_face_upper_panel_review_note` lost its last command caller and left the command's import. `cmd_build_corridor.py` falls from 21,241 to 21,083 lines.
+
+Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. These rows join the pending level 7 check of the Results tab.
+
+Left in the hub's intersection branch is `_corridor_intersection_drainage_handoff_gate_row`, which reads the drainage model.
 
 ## 11. Open Decisions
 
