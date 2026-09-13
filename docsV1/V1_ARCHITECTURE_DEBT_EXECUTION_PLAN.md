@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, and the drainage flow review rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, and the subassembly kind guided review rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -828,6 +828,20 @@ B-1 leaves two known inconsistencies open, recorded here so they are not mistake
 The light contract chunk went from 21 failures to 19, the two resolved tests being exactly these, with no new failure. The contract baseline is now 52.
 
 One run of that chunk hung and was stopped: the test process sat with a window titled "ParametricRoad v1 - Structures" open and 38 seconds of CPU after more than ten minutes, a modal dialog waiting for input. The same chunk had finished in 70 seconds an hour earlier on code that differed only in these two tests, and the verbose re-run under a hard timeout finished in 156 seconds without hanging, so the hang did not reproduce and the test that opened the window was not identified. If it recurs, the verbose log's last started test names it.
+
+### M5 chunk 5 on 2026-09-13: the subassembly kind guided review rows
+
+The next three candidates were measured first. `corridor_build_review_rows` is a hub, 43 functions and 1,472 lines reaching intersection, drainage, and Applied Section review, so it is not a chunk. The two small ones are `_corridor_roundabout_build_review_rows` and `corridor_subassembly_kind_guided_review_rows`; this chunk takes the second.
+
+Its split is the cleanest so far because the document work is all at the top. The command resolves the document, converts the Applied Section set, returns an empty list when there is none, and orders the sections by station with `_station_ordered_applied_sections`, which has 20 other callers and stays. Everything after that reads only `sections`: the per-kind aggregation of sections, points, links, shapes, surface roles, and preset statuses, then the ordered rows with their warnings. The extraction script asserts that none of the moved statements load `doc`, `document`, `applied`, or `App` before writing anything.
+
+The shaping went into `ui/presentation/subassembly_guided_review_presentation.py` as `subassembly_kind_guided_review_rows(sections)` together with `SUBASSEMBLY_GUIDED_REVIEW_KIND_ORDER`, which had no other use in the command. `_subassembly_kind_display_name` and `_format_count_summary` still have callers in the command's highlight and summary code, so the module holds private copies, and imports `display_source_ref` from `review_text`. The moved body, both copies, and the constant are identical to the previous commit. `corridor_subassembly_kind_guided_review_rows` keeps its name and signature, which `test_intersection_command.py` imports; no test changed.
+
+Two editing slips were caught before validation rather than after. The script left one blank line without a carriage return where the constant had been, which surfaced as a new line-ending warning on a file that had shown none; and that blank line was itself an addition the original layout did not have. Both were removed, and the command diff is now two added lines and 128 removed.
+
+`cmd_build_corridor.py` falls from 22,560 to 22,434 lines.
+
+Validation: compile, flake8, 9 architecture tests, and the contract suite in three chunks, each run verbosely under a hard timeout after the earlier hang, totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14. The two roundabout guided-review tests that call this function passed. 26 smoke scripts pass at exit code 0. The guided review step list in the Build Corridor panel is user-visible and needs a level 7 check alongside the Drainage Flow table.
 
 ## 11. Open Decisions
 
