@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, and four Results tab intersection rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, and the Results tab intersection rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -948,6 +948,20 @@ Checked against the previous commit by running both side by side over five docum
 Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. These rows join the pending level 7 check of the Results tab.
 
 Left in the hub's intersection branch is `_corridor_intersection_drainage_handoff_gate_row`, which reads the drainage model.
+
+### M5 chunk 12 on 2026-09-13: the Intersection Drainage Handoff Gate row
+
+The last row of the Results tab hub's intersection branch, 85 lines. After looking up the intersection preview it reads two models from the document, the intersection's drainage policy rows through `_intersection_drainage_policy_rows` and the DrainageModel, and then decides from them whether accepted drainage references reach the model.
+
+Unlike the rows in chunk 11, both reads happen unconditionally once the preview exists and before the row's gate, so no callable was needed. The command row keeps its name and signature, the lookup, the None guard, and both reads in their original order, and passes the policy rows and the model to `intersection_drainage_handoff_gate_row(obj, *, policy_rows, drainage_model)` in `build_review_presentation`. The moved body is the original from the intersection id on with exactly those two read lines removed. The command also recomputes the intersection id it needs for the policy lookup, a pure property read.
+
+Run side by side with the previous commit over seven documents, recording each model read: no document, no preview, a preview with nothing to hand off, hints only, an accepted policy whose element and route are in the model, a locked policy referencing a missing element, and a policy with no model and no intersection id. Rows matched, and both versions read the intersection model then the DrainageModel in the same cases.
+
+`cmd_build_corridor.py` falls from 21,083 to 21,008 lines.
+
+Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. The row joins the pending level 7 check of the Results tab.
+
+With this the hub's intersection branch has no row shaping left in the command. The hub itself, `corridor_build_review_rows`, is now iteration over `CORRIDOR_BUILD_REVIEW_OBJECTS`, preview and diagnostic lookups, and calls to the command rows, which is document coordination.
 
 ## 11. Open Decisions
 

@@ -1238,3 +1238,84 @@ def intersection_grading_ownership_row(
         "output_path": "review_gate",
         "notes": notes,
     }
+
+
+def intersection_drainage_handoff_gate_row(obj, *, policy_rows, drainage_model) -> dict[str, object] | None:
+    intersection_id = str(getattr(obj, "IntersectionId", "") or "").strip()
+    hint_ref = str(getattr(obj, "ConsumedIntersectionDrainageHintResultId", "") or "").strip()
+    low_point_count = int(getattr(obj, "IntersectionTINLowPointCandidateCount", 0) or 0)
+    flow_hint_count = int(getattr(obj, "IntersectionBoundaryToLowFlowHintCount", 0) or 0)
+    flow_hint_summary = str(getattr(obj, "IntersectionBoundaryToLowFlowHintSummary", "") or "").strip()
+    element_ids = {
+        str(getattr(row, "drainage_element_id", "") or "").strip()
+        for row in list(getattr(drainage_model, "element_rows", []) or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    } if drainage_model is not None else set()
+    route_ids = {
+        str(getattr(row, "flow_route_id", "") or "").strip()
+        for row in list(getattr(drainage_model, "flow_route_rows", []) or [])
+        if str(getattr(row, "flow_route_id", "") or "").strip()
+    } if drainage_model is not None else set()
+    accepted_policies = [
+        row for row in policy_rows
+        if str(getattr(row, "intent_status", "") or "").strip().lower() == "accepted"
+        or str(getattr(row, "approval_status", "") or "").strip().lower() in {"accepted", "locked"}
+    ]
+    policy_element_refs = _unique_text_values([
+        str(value or "").strip()
+        for row in policy_rows
+        for value in list(getattr(row, "drainage_element_refs", []) or [])
+        if str(value or "").strip()
+    ])
+    policy_route_refs = _unique_text_values([
+        str(value or "").strip()
+        for row in policy_rows
+        for value in list(getattr(row, "flow_route_refs", []) or [])
+        if str(value or "").strip()
+    ])
+    matched_elements = [ref for ref in policy_element_refs if ref in element_ids]
+    matched_routes = [ref for ref in policy_route_refs if ref in route_ids]
+    missing_elements = [ref for ref in policy_element_refs if ref and ref not in element_ids]
+    missing_routes = [ref for ref in policy_route_refs if ref and ref not in route_ids]
+    has_hint = bool(hint_ref or low_point_count or flow_hint_count or flow_hint_summary)
+    has_policy = bool(policy_rows)
+    if not any([has_hint, has_policy, drainage_model is not None]):
+        return None
+    if missing_elements or missing_routes:
+        status = "error"
+        handoff = "accepted_drainage_refs_missing"
+        action = "Create or relink the referenced DrainageModel elements and flow routes."
+    elif accepted_policies and (matched_elements or matched_routes):
+        status = "ready"
+        handoff = "accepted_drainage"
+        action = "No action needed."
+    elif has_hint:
+        status = "warning"
+        handoff = "hint_only"
+        action = "Convert low-point hints into accepted DrainageModel elements and flow routes."
+    else:
+        status = "missing"
+        handoff = "drainage_source_missing"
+        action = "Add an Intersection drainage policy and DrainageModel handoff rows."
+    notes = (
+        f"handoff={handoff}; intersection={intersection_id or '-'}; "
+        f"hint_ref={hint_ref or '-'}; low_points={low_point_count}; flow_hints={flow_hint_count}; "
+        f"policies={len(policy_rows)}; accepted_policies={len(accepted_policies)}; "
+        f"elements={len(matched_elements)}/{len(policy_element_refs)}; routes={len(matched_routes)}/{len(policy_route_refs)}; "
+        f"missing_elements={','.join(missing_elements) if missing_elements else '-'}; "
+        f"missing_routes={','.join(missing_routes) if missing_routes else '-'}; "
+        f"recommended_action={action}"
+    )
+    if flow_hint_summary:
+        notes = f"{notes}; hint_summary={flow_hint_summary}"
+    return {
+        "role": "intersection_drainage_handoff_gate",
+        "result": "Intersection Drainage Handoff Gate",
+        "object_name": str(getattr(obj, "Name", "") or "V1CorridorIntersectionSurfacePreview"),
+        "object_label": "Intersection Drainage Handoff Gate",
+        "status": status,
+        "vertex_count": "",
+        "triangle_or_point_count": max(low_point_count, len(matched_elements) + len(matched_routes)),
+        "output_path": "review_gate",
+        "notes": notes,
+    }
