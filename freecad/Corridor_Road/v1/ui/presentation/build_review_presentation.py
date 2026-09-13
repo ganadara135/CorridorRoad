@@ -6,6 +6,7 @@ from typing import Callable
 
 from .review_text import join_review_notes as _join_review_notes
 from .review_text import unique_text_values as _unique_text_values
+from .review_text import display_source_id as _display_source_id
 from .shared_breakline_audit_presentation import _normalize_corridor_build_review_status
 
 
@@ -832,10 +833,3 @@ def _surface_patch_review_status_note(obj) -> str:
             row_status = values[0].rsplit(":", 1)[-1]
             statuses.append(f"{label}={row_status}")
     return ", ".join(statuses)
-
-
-def _display_source_id(value: object, prefix: str) -> str:
-    text = str(value or "")
-    if prefix and text.startswith(prefix):
-        return text[len(prefix) :]
-    return text

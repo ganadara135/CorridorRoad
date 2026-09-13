@@ -24,3 +24,10 @@ def display_source_ref(value: object) -> str:
     if ":" not in text:
         return text
     return text.split(":", 1)[1]
+
+
+def display_source_id(value: object, prefix: str) -> str:
+    text = str(value or "")
+    if prefix and text.startswith(prefix):
+        return text[len(prefix) :]
+    return text

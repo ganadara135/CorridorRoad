@@ -165,6 +165,7 @@ from freecad.Corridor_Road.v1.services.builders import build_intersection_slope_
 from freecad.Corridor_Road.v1.services.evaluation.intersection_slope_face_boundary_evaluation_service import intersection_slope_face_boundary_target_segments
 from freecad.Corridor_Road.v1.ui.presentation import (
     build_review_presentation,
+    intersection_review_presentation,
     shared_breakline_audit_presentation,
 )
 
@@ -4297,19 +4298,19 @@ def test_corridor_guided_review_distinguishes_degraded_skewed_exclusion_footprin
 
 
 def test_intersection_exclusion_practical_footprint_recommended_actions() -> None:
-    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+    assert intersection_review_presentation._intersection_exclusion_practical_footprint_recommended_action(
         "ready",
         "",
     ) == ""
-    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+    assert intersection_review_presentation._intersection_exclusion_practical_footprint_recommended_action(
         "missing",
         "intersection_exclusion_footprint_primary_strip_invalid:alignment:side",
     ) == "Review Intersection tie-in source geometry, then rebuild Applied Sections and Build Parametric"
-    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+    assert intersection_review_presentation._intersection_exclusion_practical_footprint_recommended_action(
         "missing",
         "intersection_exclusion_footprint_union_invalid:no_closed_outer_loop",
     ) == "Review skew angle and tie-in extents, then rebuild Build Parametric"
-    assert build_corridor_command._intersection_exclusion_practical_footprint_recommended_action(
+    assert intersection_review_presentation._intersection_exclusion_practical_footprint_recommended_action(
         "degraded",
         "intersection_exclusion_footprint_outer_loop_recovered:exterior_hull",
     ) == "Review recovered footprint outline before accepting adjacent surface clipping"

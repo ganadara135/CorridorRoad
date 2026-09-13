@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, and the Results tab review row extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, and the Intersections guided review notes extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -898,6 +898,24 @@ The cause is in how the suites were being run, not in the code under test. `scri
 That test shows the mechanism. It suppresses `cmd_structure_editor._show_message` around its first apply, but the Structures panel in `ui/editors/structure_editor.py` receives `_show_message` through the same globals-injection pattern as the Build Corridor panel and holds its own reference, so replacing the command module's attribute does not reach the panel, and the panel's apply opens `QMessageBox.information`. Why the block is intermittent rather than constant was not established; it does not need to be, since the documented runner removes the modal entirely.
 
 Consequences for the record above. The before-and-after comparisons remain valid, because every baseline and every chunk result was produced the same way. But those runs were not the documented tier commands, and the failure baseline may differ under the Qt runner if some baseline failures come from unpatched message boxes. From M5 chunk 9 on, gates use `scripts/run_pytest_with_qt.py`, starting from a baseline re-measured with it. The test's ineffective patch is a separate, small test defect worth fixing on its own.
+
+### Qt runner baseline, re-measured on 2026-09-13
+
+Before chunk 9 the contract baseline was measured again on the committed tree with `scripts/run_pytest_with_qt.py`, the runner the validation script uses. It is identical to the plain-pytest baseline: 19 + 19 + 14 = 52 failures, the same tests. The earlier comparisons therefore stand, and the only effect of the runner is that modal message boxes no longer block. None of the runs below hung.
+
+### M5 chunk 9 on 2026-09-13: the Intersections guided review notes
+
+`corridor_intersection_review_summary` builds the Intersections guided review step. Its closure is 58 functions because it calls `corridor_intersection_patch_prerequisite_result` and the region-boundary rows, both evaluation, so the summary itself stays. Its four note helpers do not evaluate: `_intersection_patch_boundary_review_notes`, `_intersection_grading_review_notes`, and `_intersection_surface_quality_review_notes` each resolve the document, look up the intersection preview, and shape notes from its properties, and `_intersection_exclusion_review_notes` does the same over the design and daylight previews.
+
+The command helpers keep their names and signatures, because the summary calls them after its early returns and `test_build_corridor_command.py` calls the exclusion helper with a document. Each is now document resolution and the preview lookup followed by a call into the new `ui/presentation/intersection_review_presentation.py`. The three single-preview functions there take `obj` and carry the original lines from the None guard on, unchanged. The exclusion function takes the two previews by role, and its loop's lookup became a dictionary read, the only line that differs; the command builds that dictionary in the same design-then-daylight order the loop looked them up. `_intersection_exclusion_practical_footprint_recommended_action`, used only by the exclusion notes, moved with them unchanged.
+
+The previous commit's four helpers and the new command-plus-presentation pairs were run side by side over five document states: none, empty, intersection preview only, all previews with warnings on every path, and a bare intersection with a clipped design preview. All returned identical values.
+
+Two smaller moves followed from the rules recorded earlier. `_display_source_id` is now needed by two presentation modules, so it joined `review_text` as `display_source_id` and `build_review_presentation` imports it instead of keeping its copy; the command keeps its own for three callers and the panel binding. And `_surface_patch_review_status_note`, imported back into the command in chunk 7 for the surface quality notes, lost its last command caller and left that import. Four test assertions on the recommended action now reach it through its new owner.
+
+`cmd_build_corridor.py` falls from 21,569 to 21,420 lines.
+
+Validation, with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, including the skewed-footprint guided review test and the recommended-action test, and 26 smoke scripts at exit code 0. The Intersections guided review step and the Results tab review rows from chunk 7 need a level 7 check.
 
 ## 11. Open Decisions
 
