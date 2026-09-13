@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .review_text import display_source_ref as _display_source_ref
+from .review_text import format_count_summary as _format_count_summary
 
 
 SUBASSEMBLY_GUIDED_REVIEW_KIND_ORDER = (
@@ -143,13 +143,3 @@ def subassembly_kind_guided_review_rows(sections) -> list[dict[str, object]]:
 def _subassembly_kind_display_name(kind: str) -> str:
     text = str(kind or "unknown").strip() or "unknown"
     return " ".join(part.capitalize() for part in text.replace("-", "_").split("_") if part)
-
-
-def _format_count_summary(counts: dict[str, int], *, limit: int = 5) -> str:
-    if not counts:
-        return "none"
-    rows = sorted(((str(key), int(value)) for key, value in counts.items()), key=lambda item: (-item[1], item[0]))
-    text = ", ".join(f"{_display_source_ref(key)}:{value}" for key, value in rows[:limit])
-    if len(rows) > limit:
-        text += f", +{len(rows) - limit} more"
-    return text

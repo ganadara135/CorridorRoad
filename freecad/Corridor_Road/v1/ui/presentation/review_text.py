@@ -31,3 +31,13 @@ def display_source_id(value: object, prefix: str) -> str:
     if prefix and text.startswith(prefix):
         return text[len(prefix) :]
     return text
+
+
+def format_count_summary(counts: dict[str, int], *, limit: int = 5) -> str:
+    if not counts:
+        return "none"
+    rows = sorted(((str(key), int(value)) for key, value in counts.items()), key=lambda item: (-item[1], item[0]))
+    text = ", ".join(f"{display_source_ref(key)}:{value}" for key, value in rows[:limit])
+    if len(rows) > limit:
+        text += f", +{len(rows) - limit} more"
+    return text

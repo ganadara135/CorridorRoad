@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, and the Intersections guided review notes extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, and the Results tab Applied Section and surface-role leaves extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -916,6 +916,24 @@ Two smaller moves followed from the rules recorded earlier. `_display_source_id`
 `cmd_build_corridor.py` falls from 21,569 to 21,420 lines.
 
 Validation, with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, including the skewed-footprint guided review test and the recommended-action test, and 26 smoke scripts at exit code 0. The Intersections guided review step and the Results tab review rows from chunk 7 need a level 7 check.
+
+### M5 chunk 10 on 2026-09-13: the Applied Sections summary and surface-role notes of the Results tab
+
+Two more leaves of `corridor_build_review_rows`. `corridor_applied_sections_review_summary`, 64 lines, gives every Results tab row its Applied Section context; `_subassembly_surface_role_review_note`, 62 lines, appends the Subassembly link coverage for a row's surface role. Both convert the document's Applied Section set on their first line and read only that set afterwards.
+
+Both keep their names and signatures, since the panel binding and `test_build_corridor_command.py` call the summary with a document, and are reduced to that conversion followed by a call into `build_review_presentation`: `applied_sections_review_summary(applied)` and `subassembly_surface_role_review_note(applied, *, surface_role)`, each carrying the original lines from the None guard on without a change.
+
+With them moved the two row decorators the hub applies, `_with_applied_section_review_summary` unchanged and `_with_subassembly_surface_role_review_note`, plus four pure helpers they used and nothing else calls: `_review_surface_role_for_result_role`, `_text_count_map`, `_first_active_structure_ref`, and `_section_structure_refs`. The surface-role decorator used to take the document and convert the Applied Section set only when a row's role maps to a surface role. It now takes a note callable in its place, which the hub supplies around the command helper, so the conversion still happens only for those rows; that parameter and the one call are the decorator's only changed lines.
+
+`_format_count_summary` is now needed by two presentation modules, so it joined `review_text` as `format_count_summary` and the subassembly guided review module imports it instead of its copy. Inside `review_text` it calls `display_source_ref`, the one token that differs from the command's copy, which keeps its own for three callers. `build_review_presentation` also holds a private `_unique_refs`, as the other modules in the codebase do.
+
+Run side by side with the previous commit's code: the summary over no document, no Applied Sections, an empty set, and a populated set with regions, assemblies, structures, ditch points, daylight widths, diagnostics, and an unparseable station; the surface-role note for three roles over those sets; the decorator over eight rows, where the note callable was invoked for exactly the roles with a surface role; and the count summary through the command's copy, `review_text`, and the guided review module. All matched.
+
+`cmd_build_corridor.py` falls from 21,420 to 21,241 lines.
+
+Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. The Applied Section columns and surface-role notes of the Results tab join the pending level 7 check.
+
+What remains of the Results tab hub in the command is the hub itself and five intersection rows it adds after the `intersection` role, the upper slope-face panel, surface replacement readiness, tie-in continuity, grading ownership, and drainage handoff gate. Each reads intersection models or evaluates, so they need the evaluated result passed in rather than only a lookup lifted out.
 
 ## 11. Open Decisions
 

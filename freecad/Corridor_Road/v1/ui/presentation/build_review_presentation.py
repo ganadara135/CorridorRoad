@@ -7,6 +7,8 @@ from typing import Callable
 from .review_text import join_review_notes as _join_review_notes
 from .review_text import unique_text_values as _unique_text_values
 from .review_text import display_source_id as _display_source_id
+from .review_text import display_source_ref as _display_source_ref
+from .review_text import format_count_summary as _format_count_summary
 from .shared_breakline_audit_presentation import _normalize_corridor_build_review_status
 
 
@@ -833,3 +835,213 @@ def _surface_patch_review_status_note(obj) -> str:
             row_status = values[0].rsplit(":", 1)[-1]
             statuses.append(f"{label}={row_status}")
     return ", ".join(statuses)
+
+
+def applied_sections_review_summary(applied) -> dict[str, object]:
+    """Summarize Applied Sections as the source context for Build Corridor rows."""
+
+    if applied is None:
+        return {
+            "status": "missing",
+            "summary": "Applied Sections: missing",
+            "diagnostics": "Run Applied Sections before Build Parametric.",
+            "station_count": 0,
+            "diagnostic_count": 0,
+        }
+    station_rows = list(getattr(applied, "station_rows", []) or [])
+    sections = list(getattr(applied, "sections", []) or [])
+    stations = []
+    for row in station_rows:
+        try:
+            stations.append(float(getattr(row, "station", 0.0) or 0.0))
+        except Exception:
+            pass
+    diagnostic_count = sum(len(list(getattr(section, "diagnostic_rows", []) or [])) for section in sections)
+    ditch_point_count = sum(
+        1
+        for section in sections
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+    )
+    slope_face_count = sum(
+        1
+        for section in sections
+        if float(getattr(section, "daylight_left_width", 0.0) or 0.0) > 0.0
+        or float(getattr(section, "daylight_right_width", 0.0) or 0.0) > 0.0
+    )
+    region_count = len({str(getattr(section, "region_id", "") or "") for section in sections if str(getattr(section, "region_id", "") or "")})
+    assembly_count = len({str(getattr(section, "assembly_id", "") or "") for section in sections if str(getattr(section, "assembly_id", "") or "")})
+    structure_refs = {
+        ref
+        for section in sections
+        for ref in [_first_active_structure_ref(section)]
+        if ref
+    }
+    structure_count = len(structure_refs)
+    station_range = f"{min(stations):.3f}->{max(stations):.3f}" if stations else "no stations"
+    summary = (
+        f"{len(station_rows)} STA | {station_range} | "
+        f"regions:{region_count} | assemblies:{assembly_count} | structures:{structure_count} | "
+        f"ditch_pts:{ditch_point_count} | slope_rows:{slope_face_count}"
+    )
+    diagnostics = f"{diagnostic_count} diagnostic(s)" if diagnostic_count else "ok"
+    return {
+        "status": "warn" if diagnostic_count else "ok",
+        "summary": summary,
+        "diagnostics": diagnostics,
+        "station_count": len(station_rows),
+        "station_range": station_range,
+        "diagnostic_count": diagnostic_count,
+        "ditch_point_count": ditch_point_count,
+        "slope_face_count": slope_face_count,
+        "region_count": region_count,
+        "assembly_count": assembly_count,
+        "structure_count": structure_count,
+        "structure_refs": sorted(structure_refs),
+    }
+
+
+def subassembly_surface_role_review_note(applied, *, surface_role: str) -> str:
+    if applied is None:
+        return ""
+    sections = list(getattr(applied, "sections", []) or [])
+    if not sections:
+        return ""
+    linked_section_count = 0
+    link_count = 0
+    subassembly_refs: list[str] = []
+    preset_refs: list[str] = []
+    preset_statuses: list[str] = []
+    role = str(surface_role or "").strip()
+    for section in sections:
+        section_has_role = False
+        subassembly_by_id = {
+            str(getattr(row, "subassembly_id", "") or "").strip(): row
+            for row in list(getattr(section, "subassembly_rows", []) or [])
+            if str(getattr(row, "subassembly_id", "") or "").strip()
+        }
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            if str(getattr(link, "surface_role", "") or "").strip() != role:
+                continue
+            section_has_role = True
+            link_count += 1
+            subassembly_ref = str(getattr(link, "subassembly_ref", "") or "")
+            subassembly_refs.append(subassembly_ref)
+            subassembly = subassembly_by_id.get(subassembly_ref.strip())
+            if subassembly is not None:
+                preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+                preset_status = str(getattr(subassembly, "preset_status", "") or "").strip()
+                if preset_ref:
+                    preset_refs.append(preset_ref)
+                if preset_status:
+                    preset_statuses.append(preset_status)
+                elif preset_ref:
+                    preset_statuses.append("linked")
+                else:
+                    preset_statuses.append("snapshot")
+        if section_has_role:
+            linked_section_count += 1
+    if not link_count:
+        return f"subassembly role={role}: not linked; legacy point-role fallback"
+    refs = _unique_refs(subassembly_refs)
+    ref_note = f"; refs={','.join(_display_source_ref(ref) for ref in refs[:3])}" if refs else ""
+    if len(refs) > 3:
+        ref_note += f"; +{len(refs) - 3} more"
+    preset_ref_rows = _unique_refs(preset_refs)
+    preset_ref_note = f"; preset_refs={','.join(_display_source_ref(ref) for ref in preset_ref_rows[:3])}" if preset_ref_rows else ""
+    if len(preset_ref_rows) > 3:
+        preset_ref_note += f"; +{len(preset_ref_rows) - 3} more presets"
+    preset_status_note = ""
+    preset_status_counts = _text_count_map(preset_statuses)
+    if preset_status_counts:
+        preset_status_note = f"; preset_status={_format_count_summary(preset_status_counts)}"
+    coverage = (
+        f"subassembly role={role}: linked sections={linked_section_count}/{len(sections)}, "
+        f"links={link_count}{ref_note}{preset_ref_note}{preset_status_note}"
+    )
+    if linked_section_count < len(sections):
+        coverage += "; fallback used for unlinked sections"
+    return coverage
+
+
+def _with_subassembly_surface_role_review_note(
+    row: dict[str, object],
+    note_for_surface_role: Callable[[str], str],
+) -> dict[str, object]:
+    surface_role = _review_surface_role_for_result_role(str(row.get("role", "") or ""))
+    if not surface_role:
+        return row
+    note = note_for_surface_role(surface_role)
+    if not note:
+        return row
+    output = dict(row)
+    existing = str(output.get("notes", "") or "").strip()
+    output["notes"] = f"{existing} | {note}" if existing else note
+    return output
+
+
+def _with_applied_section_review_summary(row: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+    output = dict(row or {})
+    output["applied_section_summary"] = str(summary.get("summary", "") or "")
+    output["applied_section_diagnostics"] = str(summary.get("diagnostics", "") or "")
+    output["applied_section_status"] = str(summary.get("status", "") or "")
+    return output
+
+
+def _review_surface_role_for_result_role(role: str) -> str:
+    if role == "design":
+        return "design_surface"
+    if role == "subgrade":
+        return "subgrade_surface"
+    if role == "daylight":
+        return "slope_face_surface"
+    if role == "drainage":
+        return "drainage_surface"
+    return ""
+
+
+def _text_count_map(values: list[str] | tuple[str, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        counts[text] = counts.get(text, 0) + 1
+    return counts
+
+
+def _first_active_structure_ref(section) -> str:
+    for value in _section_structure_refs(section):
+        if value:
+            return value
+    return ""
+
+
+def _section_structure_refs(section) -> list[str]:
+    refs: list[str] = []
+    for value in list(getattr(section, "active_structure_ids", []) or []):
+        text = str(value or "").strip()
+        if text:
+            refs.append(text)
+    subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "structure_ids", []) or []):
+            text = str(value or "").strip()
+            if text:
+                refs.append(text)
+        text = str(getattr(subassembly, "structure_ref", "") or "").strip()
+        if text:
+            refs.append(text)
+    return _unique_text_values(refs)
+
+
+def _unique_refs(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
