@@ -239,6 +239,9 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         assert node.end_lineno - node.lineno + 1 <= maximum_lines, name
 
     removed_implementation_names = {
+        # Deleted by M5 chunk 8: review helpers that nothing referenced.
+        "_intersection_drainage_element_rows",
+        "corridor_subassembly_guided_review_summary",
         # Deleted by M4 batch 2: the remaining service delegation shims.
         "_bbox3d_overlaps",
         "_clip_polyline_points_to_anchor_window",

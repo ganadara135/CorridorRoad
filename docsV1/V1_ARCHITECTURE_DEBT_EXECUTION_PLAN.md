@@ -883,6 +883,22 @@ Validation: compile, flake8, 9 architecture tests, the contract suite in three v
 
 The intermittent hang seen earlier recurred once, on the first run of `test_build_corridor_command.py`, at `test_build_corridor_panel_updates_selected_surface_transition_spacing`. The hard timeout stopped it. Run alone, that test fails in four seconds on its known baseline assertion, and the whole module then ran to completion in 68 seconds on the same tree with the same result as the baseline. The hang has now appeared on two unrelated trees and follows panel tests that fail in the baseline, which points at state a failing Qt panel test leaves behind rather than at either change. It is not diagnosed; the verbose log under a timeout is how the next occurrence will be located.
 
+### M5 chunk 8 on 2026-09-13: two review helpers nothing referenced
+
+A survey of the remaining review functions, 46 of them and about 2,000 lines, found two with no reference anywhere in the repository except their own definitions: `corridor_subassembly_guided_review_summary`, 80 lines, and `_intersection_drainage_element_rows`, 2 lines. `git grep` over every tracked file returns only the `def` line for each. Deleting them strands nothing else: `_intersection_drainage_coverage`, the second one's only callee, has another caller, and flake8 reports no import left unused. Both names were added to `removed_implementation_names` in the architecture ratchet so they cannot quietly return. `cmd_build_corridor.py` falls from 21,655 to 21,569 lines.
+
+Validation: compile, flake8, 9 architecture tests, and the contract suite in three chunks matching the 52-failure baseline, 19 + 19 + 14, with no new and no resolved test.
+
+### The intermittent test hang: cause found
+
+The hang recorded under chunk 7 and the M8 decisions happened again during this chunk's gate, this time at `test_structure_editor_command.py::test_structure_editor_reopens_with_applied_rows_and_selected_detail`, matching the "ParametricRoad v1 - Structures" window seen the first time.
+
+The cause is in how the suites were being run, not in the code under test. `scripts/run_local_validation.ps1` runs contract tests through `scripts/run_pytest_with_qt.py`, which creates the QApplication and replaces `QMessageBox.information`, `warning`, `critical`, and `question` with functions that return immediately, so that unattended runs never block on a modal dialog. The M4 and M5 gates recorded above ran `python -m pytest` directly and so ran without that replacement. Any test path that reaches a real message box then waits for a click that never comes.
+
+That test shows the mechanism. It suppresses `cmd_structure_editor._show_message` around its first apply, but the Structures panel in `ui/editors/structure_editor.py` receives `_show_message` through the same globals-injection pattern as the Build Corridor panel and holds its own reference, so replacing the command module's attribute does not reach the panel, and the panel's apply opens `QMessageBox.information`. Why the block is intermittent rather than constant was not established; it does not need to be, since the documented runner removes the modal entirely.
+
+Consequences for the record above. The before-and-after comparisons remain valid, because every baseline and every chunk result was produced the same way. But those runs were not the documented tier commands, and the failure baseline may differ under the Qt runner if some baseline failures come from unpatched message boxes. From M5 chunk 9 on, gates use `scripts/run_pytest_with_qt.py`, starting from a baseline re-measured with it. The test's ineffective patch is a separate, small test defect worth fixing on its own.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

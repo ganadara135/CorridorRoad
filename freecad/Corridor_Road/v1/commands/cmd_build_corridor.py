@@ -1330,88 +1330,6 @@ def _subassembly_surface_role_review_note(document, *, surface_role: str) -> str
     return coverage
 
 
-def corridor_subassembly_guided_review_summary(document=None) -> dict[str, object]:
-    """Return a compact summary of evaluated Assembly/Subassembly output rows."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    applied = to_applied_section_set(find_v1_applied_section_set(doc))
-    if applied is None:
-        return {
-            "status": "missing",
-            "focus": "Subassemblies",
-            "notes": "Applied Sections are not built yet.",
-        }
-    sections = _station_ordered_applied_sections(applied)
-    if not sections:
-        return {
-            "status": "missing",
-            "focus": "Subassemblies",
-            "notes": "No Applied Section rows are available.",
-        }
-
-    subassembly_count = 0
-    point_count = 0
-    link_count = 0
-    shape_count = 0
-    kind_counts: dict[str, int] = {}
-    role_counts: dict[str, int] = {}
-    preset_status_counts: dict[str, int] = {}
-    diagnostic_count = 0
-
-    for section in sections:
-        subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
-        point_rows = list(getattr(section, "subassembly_point_rows", []) or [])
-        link_rows = list(getattr(section, "subassembly_link_rows", []) or [])
-        shape_rows = list(getattr(section, "subassembly_shape_rows", []) or [])
-        subassembly_count += len(subassembly_rows)
-        point_count += len(point_rows)
-        link_count += len(link_rows)
-        shape_count += len(shape_rows)
-        for row in subassembly_rows:
-            kind = str(getattr(row, "kind", "") or "unknown").strip() or "unknown"
-            kind_counts[kind] = kind_counts.get(kind, 0) + 1
-            preset_ref = str(getattr(row, "preset_ref", "") or "").strip()
-            preset_status = str(getattr(row, "preset_status", "") or "").strip()
-            if not preset_status:
-                preset_status = "linked" if preset_ref else "snapshot"
-            preset_status_counts[preset_status] = preset_status_counts.get(preset_status, 0) + 1
-            diagnostic_count += len(list(getattr(row, "diagnostics", []) or []))
-        for row in link_rows:
-            role = str(getattr(row, "surface_role", "") or "unassigned").strip() or "unassigned"
-            role_counts[role] = role_counts.get(role, 0) + 1
-            diagnostic_count += len(list(getattr(row, "diagnostics", []) or []))
-
-    kind_note = _format_count_summary(kind_counts)
-    role_note = _format_count_summary(role_counts)
-    preset_note = _format_count_summary(preset_status_counts)
-    ditch_count = int(kind_counts.get("ditch", 0) or 0)
-    drainage_link_count = int(role_counts.get("drainage_surface", 0) or 0)
-    status = "ready"
-    warnings: list[str] = []
-    if not subassembly_count:
-        status = "missing"
-        warnings.append("no evaluated subassemblies")
-    if ditch_count and not drainage_link_count:
-        status = "warning"
-        warnings.append("ditch has no drainage_surface links")
-    if diagnostic_count:
-        status = "warning" if status != "missing" else status
-        warnings.append(f"diagnostics={diagnostic_count}")
-    notes = (
-        f"sections={len(sections)}, subassemblies={subassembly_count}, "
-        f"points={point_count}, links={link_count}, shapes={shape_count}; "
-        f"kinds={kind_note}; roles={role_note}; presets={preset_note}"
-    )
-    if warnings:
-        notes = f"{notes}; " + "; ".join(warnings)
-    return {
-        "status": status,
-        "focus": "Assembly/Subassembly Surfaces",
-        "notes": notes,
-        "preset_status_counts": preset_status_counts,
-    }
-
-
 def corridor_subassembly_kind_guided_review_rows(document=None) -> list[dict[str, object]]:
     """Return guided-review rows split by evaluated Subassembly kind."""
 
@@ -13147,10 +13065,6 @@ def _intersection_patch_sections(applied_section_set, prerequisite: Intersection
             or (str(getattr(section, "region_id", "") or "") in control_refs)
         )
     ]
-
-
-def _intersection_drainage_element_rows(drainage_model, prerequisite: IntersectionPatchPrerequisiteResult) -> list[object]:
-    return list(_intersection_drainage_coverage(drainage_model, prerequisite).get("candidate_rows", []) or [])
 
 
 def _intersection_drainage_coverage(
