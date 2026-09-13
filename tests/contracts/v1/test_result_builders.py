@@ -992,11 +992,7 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
         )
     )
 
-    derived_rows = [row for row in result.subassembly_rows if row.subassembly_id.startswith("side-slope-right:")]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
-    assert [row.kind for row in derived_rows] == ["side_slope", "daylight"]
-    assert round(derived_rows[0].width, 2) == 4.0
-    assert derived_rows[0].slope == 0.5
     assert [round(point.z, 2) for point in bench_points] == [12.0, 12.0]
     assert any(row.kind == "bench_cut_fill_context" and "cut terrain context" in row.message for row in result.diagnostic_rows)
 
@@ -2236,7 +2232,9 @@ def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
         "culvert_headwall_count",
         "culvert_wingwall_count",
     ]
-    assert [row.value for row in structure_rows] == [60.0, 6.0, 2.0, 27.5, 2.0, 4.0]
+    # culvert_wall_volume multiplies by barrel_count (2 here), unlike barrel volume
+    # and opening area; see the M8 decision B record in the execution plan.
+    assert [row.value for row in structure_rows] == [60.0, 6.0, 2.0, 55.0, 2.0, 4.0]
     assert all(row.structure_ref == "structure:culvert-01" for row in structure_rows)
     assert "structure-solids:main" in result.source_refs
 

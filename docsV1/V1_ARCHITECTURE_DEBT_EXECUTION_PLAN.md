@@ -816,6 +816,19 @@ This chunk is also where the text helpers stopped being copied. Chunk 2 recorded
 
 Validation: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests each matching its slice of the 54-failure baseline, 21 + 19 + 14, and 26 smoke scripts at exit code 0. The Drainage Flow review table is a user-visible surface changed after the 2026-09-13 confirmation and needs its own level 7 check.
 
+### M8 decisions A and B on 2026-09-13
+
+The two `test_result_builders.py` failures that needed a product decision were settled by the maintainer, both on the recommended option.
+
+- Decision A, A-2. `test_applied_section_service_orients_bench_side_slope_up_for_cut_context` expected derived `side_slope` and `daylight` rows in `subassembly_rows`, an expansion no release has implemented and no product code reads. The test keeps what it was really protecting, that in a cut context the benched side slope climbs to existing ground, through its point-elevation and `bench_cut_fill_context` diagnostic assertions, and drops the four lines about derived rows. No product change.
+- Decision B, B-1. `culvert_wall_volume` for a two-barrel culvert is 55.0, the formula's `x barrel_count` as its author wrote it; the old 27.5 only passed while `barrel_count` failed to reach the function. The test now expects 55.0 with a comment naming the convention. No product change.
+
+B-1 leaves two known inconsistencies open, recorded here so they are not mistaken for settled: adjacent barrels share a wall, so multiplying by the barrel count overstates wall volume, and `culvert_barrel_volume` and `culvert_opening_area` are still per-structure while wall volume is per-barrel. Both belong to a quantity report design task, and matter because quantities feed estimates.
+
+The light contract chunk went from 21 failures to 19, the two resolved tests being exactly these, with no new failure. The contract baseline is now 52.
+
+One run of that chunk hung and was stopped: the test process sat with a window titled "ParametricRoad v1 - Structures" open and 38 seconds of CPU after more than ten minutes, a modal dialog waiting for input. The same chunk had finished in 70 seconds an hour earlier on code that differed only in these two tests, and the verbose re-run under a hard timeout finished in 156 seconds without hanging, so the hang did not reproduce and the test that opened the window was not identified. If it recurs, the verbose log's last started test names it.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
