@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from .shared_breakline_audit_presentation import (
     _parse_intersection_shared_boundary_graph_audit_row,
     _parse_intersection_slope_face_cell_audit_row,
@@ -287,3 +289,374 @@ def _intersection_shared_boundary_graph_contract_review_rows_from_preview(obj) -
             }
         )
     return rows
+
+
+def intersection_contract_review_rows(
+    *,
+    topology,
+    tie_slope_result,
+    tie_slope_window_rows,
+    roundabout_approach_legs,
+    boundary_loops,
+    slope_loops,
+    corridor_clips,
+    drainage_hints,
+    surface_boundary_mode,
+    surface_boundary_loop,
+    surface_boundary_fallback,
+    intersection_preview_object,
+    slope_loop_blocking_reasons_for: Callable[[object], list[str]],
+    include_internal: bool = False,
+) -> list[dict[str, object]]:
+    """Return edge-network-first intersection contract rows for Build Parametric review."""
+
+    rows: list[dict[str, object]] = []
+    rows.append(
+        {
+            "contract_family": "topology",
+            "status": topology.status,
+            "row_id": topology.topology_result_id,
+            "role": "control_area",
+            "source_refs": ", ".join(list(getattr(topology, "source_refs", []) or [])),
+            "boundary_refs": ", ".join(row.control_area_id for row in list(topology.control_area_rows or [])),
+            "source_status": _intersection_contract_source_status(
+                [
+                    *list(getattr(topology, "anchor_rows", []) or []),
+                    *list(getattr(topology, "leg_span_rows", []) or []),
+                    *list(getattr(topology, "control_area_rows", []) or []),
+                    *list(getattr(topology, "lane_connection_rows", []) or []),
+                ]
+            ),
+            "source_diagnostics": _intersection_contract_source_diagnostics(
+                [
+                    *list(getattr(topology, "anchor_rows", []) or []),
+                    *list(getattr(topology, "leg_span_rows", []) or []),
+                    *list(getattr(topology, "control_area_rows", []) or []),
+                    *list(getattr(topology, "lane_connection_rows", []) or []),
+                ]
+            ),
+            "focus_object": "V1CorridorIntersectionSurfacePreview",
+            "notes": (
+                f"kind={getattr(topology, 'intersection_kind', '')}; "
+                f"anchors={getattr(topology, 'anchor_count', 0)}; legs={topology.leg_span_count}; "
+                f"corners={getattr(topology, 'corner_count', 0)}; curb_return_arcs={getattr(topology, 'curb_return_arc_count', 0)}; "
+                f"leg_graph={getattr(topology, 'leg_graph_status', '')}; corner_graph={getattr(topology, 'corner_graph_status', '')}; "
+                f"control areas={topology.control_area_count}; "
+                f"lane connections={getattr(topology, 'lane_connection_count', 0)}; "
+                f"alignments={topology.participating_alignment_count}; diagnostics={len(topology.diagnostic_rows)}"
+            ),
+        }
+    )
+    if tie_slope_window_rows:
+        rows.append(
+            {
+                "contract_family": "intersection_tie_slope_window",
+                "status": "ready" if all(str(row.get("status", "") or "") == "accepted" for row in tie_slope_window_rows) else "warning",
+                "row_id": f"intersection-tie-slope-window:{str(getattr(tie_slope_result, 'intersection_id', '') or 'main')}",
+                "role": "applied_section_window",
+                "source_refs": ",".join(
+                    _unique_text_values(
+                        [
+                            str(row.get("outer_applied_section_ref", "") or "")
+                            for row in tie_slope_window_rows
+                        ]
+                        + [
+                            str(row.get("inner_applied_section_ref", "") or "")
+                            for row in tie_slope_window_rows
+                        ]
+                    )
+                ),
+                "boundary_refs": "applied_section_side_slope_edges",
+                "source_status": "accepted" if all(str(row.get("status", "") or "") == "accepted" for row in tie_slope_window_rows) else "warning",
+                "source_diagnostics": "; ".join(_intersection_tie_slope_window_diagnostics(tie_slope_window_rows)[:8]),
+                "focus_object": "V1CorridorIntersectionTieSlopeSurfacePreview",
+                "notes": _intersection_tie_slope_window_summary_note(tie_slope_window_rows),
+                "output_path": "intersection_tie_slope_window_candidates",
+            }
+        )
+    roundabout_boundary_readiness_row = _roundabout_boundary_readiness_contract_review_row(
+        roundabout_approach_legs,
+        boundary_loops,
+    )
+    if roundabout_boundary_readiness_row is not None:
+        rows.append(roundabout_boundary_readiness_row)
+    for row in list(getattr(boundary_loops, "loop_rows", []) or []):
+        rows.append(
+            {
+                "contract_family": "boundary_loop",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or boundary_loops.status)),
+                "row_id": str(getattr(row, "loop_id", "") or ""),
+                "role": str(getattr(row, "loop_role", "") or ""),
+                "source_refs": ", ".join(list(getattr(row, "source_refs", ()) or ())),
+                "boundary_refs": ", ".join(list(getattr(row, "segment_refs", ()) or ())),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "diagnostics", ()) or ())),
+                "focus_object": "V1CorridorIntersectionSurfacePreview",
+                "notes": _join_review_notes(
+                    f"kind={getattr(boundary_loops, 'intersection_kind', '')}",
+                    f"surface_boundary_mode={surface_boundary_mode}" if surface_boundary_mode else "",
+                    f"surface_boundary_loop={surface_boundary_loop}" if surface_boundary_loop else "",
+                    f"fallback_reason={surface_boundary_fallback}" if surface_boundary_fallback else "",
+                    f"closed={'yes' if bool(getattr(row, 'closed', False)) else 'no'}",
+                    f"points={int(getattr(row, 'point_count', 0) or 0)}",
+                    f"segments={int(getattr(row, 'segment_count', 0) or 0)}",
+                    f"area={float(getattr(row, 'area_xy', 0.0) or 0.0):.3f}",
+                    "consumers=" + ",".join(list(getattr(row, "consumer_roles", ()) or ())),
+                    "; ".join(list(getattr(row, "diagnostics", ()) or ())),
+                    str(getattr(row, "recommended_action", "") or ""),
+                ),
+                "output_path": "intersection_boundary_loop_result",
+            }
+        )
+    for row in list(slope_loops.loop_rows or []):
+        blocking_reasons = slope_loop_blocking_reasons_for(row)
+        rows.append(
+            {
+                "contract_family": "slope_face_loop",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or slope_loops.status)),
+                "row_id": str(getattr(row, "loop_id", "") or ""),
+                "role": str(getattr(row, "loop_family", "") or ""),
+                "source_refs": _join_review_notes(
+                    ", ".join(list(getattr(row, "source_edge_network_refs", ()) or ())),
+                    ", ".join(list(getattr(row, "source_surface_zone_refs", ()) or ())),
+                    ", ".join(list(getattr(row, "source_applied_section_refs", ()) or ())),
+                ),
+                "boundary_refs": ", ".join(list(getattr(row, "boundary_edge_refs", ()) or ())),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(
+                    _unique_text_values(
+                        [
+                            *[str(value or "") for value in tuple(getattr(row, "source_diagnostic_rows", ()) or ())],
+                            *[str(value or "") for value in tuple(getattr(row, "diagnostics", ()) or ())],
+                        ]
+                    )
+                ),
+                "focus_object": "",
+                "notes": _join_review_notes(
+                    f"alignment={getattr(row, 'alignment_ref', '')}",
+                    f"leg={getattr(row, 'leg_ref', '')}",
+                    f"side={getattr(row, 'side', '')}",
+                    f"points={getattr(row, 'point_count', 0)}",
+                    "closed_xy=yes" if bool(getattr(row, "closed_xy", False)) else "closed_xy=no",
+                    "self_crossing=yes" if bool(getattr(row, "self_crossing", False)) else "",
+                    f"generation={getattr(row, 'surface_generation_role', '')}:{getattr(row, 'surface_generation_status', '')}",
+                    "blocking=" + ",".join(blocking_reasons[:4]) if blocking_reasons else "",
+                    f"source_lineage={getattr(row, 'source_lineage_status', '')}" if str(getattr(row, "source_lineage_status", "") or "") != "accepted" else "",
+                    f"surface_zone_status={getattr(row, 'source_surface_zone_status', '')}" if str(getattr(row, "source_surface_zone_status", "") or "") not in {"", "accepted"} else "",
+                    f"edge_network_status={getattr(row, 'source_edge_network_status', '')}" if str(getattr(row, "source_edge_network_status", "") or "") not in {"", "accepted"} else "",
+                    "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
+                    "; ".join(list(getattr(row, "diagnostics", ()) or ())),
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    # One lookup for the three presentation row builders below.
+    upper_panel_contract_row = _intersection_upper_slope_face_panel_contract_review_row_from_preview(intersection_preview_object)
+    if upper_panel_contract_row is not None:
+        rows.append(upper_panel_contract_row)
+    rows.extend(_intersection_slope_face_cell_contract_review_rows_from_preview(intersection_preview_object))
+    rows.extend(_intersection_shared_boundary_graph_contract_review_rows_from_preview(intersection_preview_object))
+    for row in list(corridor_clips.clip_rows or []):
+        rows.append(
+            {
+                "contract_family": "corridor_clip",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or corridor_clips.status)),
+                "row_id": str(getattr(row, "clip_id", "") or ""),
+                "role": str(getattr(row, "surface_role", "") or ""),
+                "source_refs": _join_review_notes(
+                    str(getattr(row, "source_control_area_ref", "") or getattr(row, "control_area_ref", "") or ""),
+                    ", ".join(list(getattr(row, "source_region_refs", ()) or ())),
+                ),
+                "boundary_refs": ", ".join(list(getattr(row, "protected_zone_refs", ()) or ())),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
+                "focus_object": "V1CorridorIntersectionExclusionZonePreview",
+                "notes": _join_review_notes(
+                    f"alignment={getattr(row, 'alignment_ref', '')}",
+                    f"method={getattr(row, 'clip_method', '')}",
+                    f"timing={getattr(row, 'clip_timing', '')}",
+                    f"intent={getattr(row, 'control_area_intent_status', '')}",
+                    f"lineage={getattr(row, 'region_lineage_status', '')}",
+                    "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    for row in list(drainage_hints.hint_rows or []):
+        rows.append(
+            {
+                "contract_family": "drainage_hint",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or drainage_hints.status)),
+                "row_id": str(getattr(row, "hint_id", "") or ""),
+                "role": str(getattr(row, "hint_kind", "") or ""),
+                "source_refs": _join_review_notes(
+                    str(getattr(row, "source_drainage_policy_ref", "") or getattr(row, "drainage_policy_ref", "") or ""),
+                    str(getattr(row, "accepted_drainage_ref", "") or ""),
+                    ", ".join(list(getattr(row, "source_edge_refs", ()) or ())),
+                ),
+                "boundary_refs": _join_review_notes(
+                    str(getattr(row, "zone_ref", "") or ""),
+                    ", ".join(list(getattr(row, "control_area_refs", ()) or ())),
+                ),
+                "source_status": str(getattr(row, "source_status", "") or "accepted"),
+                "source_diagnostics": "; ".join(list(getattr(row, "source_diagnostic_rows", ()) or ())),
+                "focus_object": "V1CorridorIntersectionSurfacePreview",
+                "notes": _join_review_notes(
+                    f"zone={getattr(row, 'zone_role', '')}",
+                    f"surface={getattr(row, 'surface_role', '')}",
+                    f"recommend={getattr(row, 'recommended_element_kind', '')}",
+                    f"handoff={getattr(row, 'drainage_handoff_status', '')}",
+                    f"review={getattr(row, 'drainage_review_status', '')}",
+                    "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    for row in rows:
+        row.setdefault("output_path", "contract_consumed")
+    if not include_internal:
+        internal_families = {
+            "edge_network",
+            "surface_zone",
+            "drainage_hint",
+            "slope_face_loop",
+            "slope_face_cell",
+            "shared_boundary_graph",
+        }
+        rows = [
+            row
+            for row in rows
+            if str(row.get("contract_family", "") or "") not in internal_families
+        ]
+    return rows
+
+
+def _intersection_contract_source_status(rows: list[object]) -> str:
+    statuses = [str(getattr(row, "source_status", "") or "") for row in rows]
+    statuses = [status for status in statuses if status]
+    if any(status == "error" for status in statuses):
+        return "error"
+    if any(status == "warning" for status in statuses):
+        return "warning"
+    return "accepted"
+
+
+def _intersection_contract_source_diagnostics(rows: list[object]) -> str:
+    diagnostics: list[str] = []
+    for row in rows:
+        for item in tuple(getattr(row, "source_diagnostic_rows", ()) or ()):
+            text = str(item or "").strip()
+            if text and text not in diagnostics:
+                diagnostics.append(text)
+    return "; ".join(diagnostics)
+
+
+def _intersection_tie_slope_window_summary_note(rows: list[dict[str, object]]) -> str:
+    row_list = list(rows or [])
+    accepted = [
+        row for row in row_list
+        if str(row.get("status", "") or "") == "accepted"
+    ]
+    warnings = [
+        row for row in row_list
+        if str(row.get("status", "") or "") != "accepted"
+    ]
+    cell_roles = [
+        str(row.get("cell_role", "") or "")
+        for row in row_list
+        if str(row.get("cell_role", "") or "")
+    ]
+    alignments = [
+        str(row.get("alignment_ref", "") or "")
+        for row in row_list
+        if str(row.get("alignment_ref", "") or "")
+    ]
+    sides = [
+        str(row.get("side", "") or "")
+        for row in row_list
+        if str(row.get("side", "") or "")
+    ]
+    ownership_classes = [
+        str(row.get("ownership_class", "") or "")
+        for row in row_list
+        if str(row.get("ownership_class", "") or "")
+    ]
+    diagnostics = _intersection_tie_slope_window_diagnostics(row_list)
+    role_counts = {
+        role: sum(1 for value in cell_roles if value == role)
+        for role in _unique_text_values(cell_roles)
+    }
+    for known_role in ("transition_pair", "intersection_adjacent_pair", "curb_return_approach_pair"):
+        role_counts.setdefault(known_role, 0)
+    supplemental_endpoint_count = sum(
+        1 for row in row_list
+        if str(row.get("supplemental_extent_role", "") or "") == "supplemental_endpoint_pair"
+    )
+    supplemental_inner_count = sum(1 for row in row_list if bool(row.get("inner_is_supplemental", False)))
+    control_area_transition_count = sum(
+        1 for row in row_list
+        if bool(row.get("control_area_transition_allowed", False))
+    )
+    role_text = ",".join(f"{role}={count}" for role, count in role_counts.items())
+    ownership_counts = {
+        ownership: sum(1 for value in ownership_classes if value == ownership)
+        for ownership in _unique_text_values(ownership_classes)
+    }
+    ownership_text = ",".join(f"{ownership}={count}" for ownership, count in ownership_counts.items())
+    parts = [
+        f"Applied Section window candidates: rows={len(row_list)}",
+        f"accepted={len(accepted)}",
+        f"warnings={len(warnings)}",
+        "source=applied_section_context_transition_window",
+        f"supplemental_inner={supplemental_inner_count}",
+        f"supplemental_endpoints={supplemental_endpoint_count}",
+        f"control_area_transitions={control_area_transition_count}",
+    ]
+    if role_text:
+        parts.append(role_text)
+    if ownership_text:
+        parts.append("ownership=" + ownership_text)
+    endpoint_by_road = _intersection_tie_slope_window_endpoint_summary_by_road(row_list)
+    if endpoint_by_road and endpoint_by_road != "not_evaluated":
+        parts.append("supplemental_endpoint_by_road=" + endpoint_by_road)
+    if alignments:
+        parts.append("alignments=" + ",".join(_unique_text_values(alignments)))
+    if sides:
+        parts.append("sides=" + ",".join(_unique_text_values(sides)))
+    if diagnostics:
+        parts.append("diagnostics=" + "; ".join(diagnostics[:4]))
+    return "; ".join(parts)
+
+
+def _intersection_tie_slope_window_diagnostics(rows: list[dict[str, object]]) -> list[str]:
+    diagnostics: list[str] = []
+    for row in list(rows or []):
+        diagnostics.extend(
+            str(value or "")
+            for value in tuple(row.get("diagnostics", ()) or ())
+            if str(value or "")
+        )
+    return _unique_text_values(diagnostics)
+
+
+def _intersection_tie_slope_window_endpoint_summary_by_road(rows: list[dict[str, object]]) -> str:
+    """Return accepted supplemental endpoint window counts by road role."""
+
+    accepted_endpoint_rows = [
+        row for row in list(rows or [])
+        if str(row.get("status", "") or "") == "accepted"
+        and str(row.get("ownership_class", "") or "") == "tie_slope_candidate"
+        and str(row.get("supplemental_extent_role", "") or "") == "supplemental_endpoint_pair"
+    ]
+    road_roles = [
+        str(row.get("road_role", "") or "")
+        for row in accepted_endpoint_rows
+        if str(row.get("road_role", "") or "")
+    ]
+    if not road_roles:
+        return "not_evaluated"
+    counts = {
+        role: sum(1 for row in accepted_endpoint_rows if str(row.get("road_role", "") or "") == role)
+        for role in _unique_text_values(road_roles)
+    }
+    return ",".join(f"{role}={count}" for role, count in counts.items())

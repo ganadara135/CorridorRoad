@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, the Results tab intersection rows, and the Drainage Surface review rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows and body, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, the Results tab intersection rows, and the Drainage Surface review rows extracted; M8 in progress with two families resolved; M6 not started
 Depends on:
 
 - `AGENTS.md`
@@ -992,6 +992,20 @@ The previous commit's function and the new pair were run side by side with each 
 `cmd_build_corridor.py` falls from 20,810 to 20,755 lines.
 
 Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, including the three intersection drainage review tests, and 26 smoke scripts at exit code 0. The Suggested Inlet row joins the pending level 7 check of the Drainage Surface table.
+
+### M5 chunk 15 on 2026-09-14: the intersection contract review body
+
+`corridor_intersection_contract_review_rows`, 270 lines, is the function whose leaves chunk 2 took and which the plan named as task 3. Its first 22 statements are the part that stays in a command: the IntersectionModel and Applied Section reads, eight `IntersectionEvaluationService` calls, the tie-slope result and Applied Section window rows, which evaluate patch prerequisites, and three properties of the intersection preview. The rest, from `rows = []` to the return, is row shaping over those results, with one more preview lookup in the middle.
+
+The command keeps its name and signature, which the panel binding, two contract modules, and two regression smokes use, all of that setup, and the missing-model placeholder. It now also performs the slope-face preview lookup before the shaping, and passes the twelve results the shaping reads to `intersection_contract_review_rows` in `intersection_contract_review_presentation`, next to the leaves chunk 2 put there. The moved lines are the original from `rows = []` on with the lookup removed and one call changed: `_intersection_slope_face_loop_row_blocking_reasons` stays in the command, because it runs the slope-face surface ring validity check that the command's surface generation readiness also uses, and arrives as a `slope_loop_blocking_reasons_for` callable.
+
+Five pure text helpers moved unchanged: the contract source status and diagnostics, and the tie-slope window summary note with its diagnostics and endpoint-by-road helpers. The endpoint helper is imported back for the tie-slope surface builder's metadata. Five names the command had imported from this module in chunk 2 lost their last command use and left the import; none is reached through the command module anywhere.
+
+Run side by side with the previous commit against a fake evaluation service and recording stubs for every other step, over a tee intersection with internal rows hidden and shown, a roundabout, and a missing model. Rows matched in values and key order, and every evaluation call and lookup happened in the same order, with one intended difference: the slope-face preview lookup now precedes the two blocking-reason callbacks instead of following them, which changes nothing since the callbacks never read the document.
+
+`cmd_build_corridor.py` falls from 20,755 to 20,418 lines.
+
+Validation with the Qt runner: compile, flake8, 9 architecture tests, the contract suite in three chunks totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0. Seven contract-review tests fail, all of them in the baseline. The Intersections contract table in the Build Corridor panel needs a level 7 check.
 
 ## 11. Open Decisions
 
