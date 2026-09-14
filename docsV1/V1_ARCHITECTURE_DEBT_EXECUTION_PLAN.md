@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, and M7 complete; M5 in progress with the shared-breakline audit family, the contract review rows and body, the drainage flow review rows, the subassembly kind guided review rows, the roundabout Results tab rows, the Results tab review row, the Intersections guided review notes, the Results tab Applied Section and surface-role leaves, the Results tab intersection rows, and the Drainage Surface review rows extracted; M8 in progress with two families resolved; M6 not started
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), and M7 complete; M6 in progress; M8 in progress with two families resolved
 Depends on:
 
 - `AGENTS.md`
@@ -1025,4 +1025,4 @@ These require a decision before the affected milestone starts. None blocks M0.
 2. Resolved on 2026-09-10. Ownership follows the consumer: panel tables to `ui/presentation`, normalized output contracts to `services/mapping`, document discovery staying in the command. The injection in `configure_build_corridor_task_panel_runtime` is what makes the move safe, and the existing `shared_breakline_audit_presentation.py` is the pattern. See the M5 record in section 10.
 3. M0 task 5: what is the target duration for the fast contract tier, and which modules belong to the long-running tier?
 4. M7: is a legacy command with a complete v1 replacement removed from the toolbar in a later task, or retained indefinitely for user familiarity?
-5. M5 remainder, raised on 2026-09-14: move the region boundary evaluation to services/evaluation and the preview audit serializers to services/mapping, deduplicating the identical copies in services/builders; or close M5 at its presentation scope and continue with M6. See the M5 record of 2026-09-14 in section 10.
+5. Resolved on 2026-09-14. M5 closes at its presentation scope and work continues with M6. Moving the region boundary continuity evaluation to `services/evaluation` and the preview audit serializers to `services/mapping`, replacing the identical copies in `services/builders`, is recorded as follow-up work outside M5. See the M5 record of 2026-09-14 in section 10.
