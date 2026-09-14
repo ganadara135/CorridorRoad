@@ -1017,6 +1017,26 @@ Two families were measured for chunk 16 and neither belongs in `ui/presentation`
 
 **Where M5 stands.** Chunks 1 to 15 moved every review row builder whose job was to format results for a panel table. What remains in the command are evaluation rules and serialization contracts, both outside the presentation layer. The milestone's first acceptance criterion, no review row calculation in the command, can only be met by moving those into `services/evaluation` and `services/mapping`. That is new service design and deduplication against the builders, larger and riskier than the presentation moves. It is left as a decision for the maintainer: extend M5 to cover it, or close M5's presentation scope and continue with M6.
 
+### M6 entry, measured 2026-09-14
+
+20 `create_*_preview` functions totalling 3,157 lines, down from the plan's 26 and 3,243 because M3 to M5 removed some. The largest are `create_corridor_intersection_surface_preview` at 719 lines, `_create_corridor_intersection_slope_face_surface_preview` at 388, `create_corridor_daylight_surface_preview` at 242, and four roundabout and tie-slope previews between 148 and 181.
+
+The 719-line function is 16 statements of setup and TIN construction followed by one 609-line `if preview_obj is not None:` block. That block is not "evaluation then object creation". It alternates evaluating a result, writing its fields onto the preview object, and creating a child preview object from it, about forty times, and several later evaluations read preview objects created earlier in the same block. A single cut into a builder service returning a typed result, as task 1 describes, would reorder document work that later steps depend on. M6 therefore proceeds in chunks that each keep the document work in the command and in its original order.
+
+### M6 verification method
+
+Because M6 changes the functions that build what the user sees and what is saved, text comparison and the contract suite are not enough. Each chunk is also checked by dumping the preview objects themselves. A pytest plugin wraps `App.closeDocument` and, as each test closes its document, records every `V1Corridor*` and `ReviewIssue*` object with its label, type, parents, and every property in `PropertiesList` order with its value; shapes are summarized by null state, face, edge, and vertex counts, and bounding box, and meshes by facet and point counts. It runs over the 74 contract tests that build intersection, roundabout, slope-face, shared-breakline, and intersection drainage previews, which close 44 documents holding 168 preview objects and 16,888 properties, including 19 intersection surface previews. Tests that fail in the baseline still build their objects before the assertion, so they are dumped too. The dump of the previous commit and the dump of the edited tree must match exactly.
+
+Two HEAD runs were compared first to see whether that is possible. They differed in three places: `BuildDurationMs`, which is a timing; `Proxy`, whose text includes a memory address; and the order of `IntersectionBoundaryLoopGraphFilledEdgeRefs` on the Intersection Slope Face Surface preview in three tests. The last one is a finding in its own right: that list is built in string hash order, so the saved property can differ between two FreeCAD sessions building the same document. It is recorded here and not fixed, since M6 is extraction only. With the first two excluded and `PYTHONHASHSEED=0` set, two HEAD runs matched exactly, and that is the configuration every M6 comparison uses.
+
+### M6 chunk 1 on 2026-09-14: the intersection patch surface properties
+
+The first 60 statements of that block after the surface preview contract write the intersection id and kind, the grading policy, the slope-face policy metadata, 43 TIN quality values, and the prerequisite counts, refs, and diagnostics onto the preview object. Two of them were evaluations interleaved with the writes: `IntersectionPatchGradingService().select_policy` and `_intersection_slope_face_policy_for`, both pure functions of the IntersectionModel and the intersection id. They now run just before the writes, and the 58 writes move, in their original order, into `_attach_intersection_patch_surface_metadata(preview_obj, *, prerequisite, tin_surface, grading_policy, slope_face_policy)`, a command helper beside the existing `_attach_*` helpers since it writes document properties. The slope-face policy is still a local of the preview function, which it uses again later for the slope-face surface preview. The only behavioural difference is theoretical: if either policy lookup raised, it would now raise before the first of those properties is written rather than after two of them.
+
+`create_corridor_intersection_surface_preview` falls from 719 to 664 lines; the module grows by 19 lines for the helper's signature and docstring.
+
+Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the previous commit with an identical failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

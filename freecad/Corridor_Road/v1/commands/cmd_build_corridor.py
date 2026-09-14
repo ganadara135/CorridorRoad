@@ -5861,70 +5861,15 @@ def create_corridor_intersection_surface_preview(
             applied_section_set=intersection_applied_section_set,
             preview_result=result,
         )
-        _set_preview_property(preview_obj, "IntersectionId", str(getattr(prerequisite, "intersection_id", "") or ""))
-        _set_preview_property(preview_obj, "IntersectionKind", str(getattr(prerequisite, "intersection_kind", "") or ""))
         grading_policy = IntersectionPatchGradingService().select_policy(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
-        _set_preview_property(preview_obj, "IntersectionGradingPolicyRef", str(getattr(grading_policy, "policy_id", "") or ""))
-        _set_preview_property(preview_obj, "IntersectionGradingMode", str(getattr(grading_policy, "mode", "") or "use_normal_superelevation"))
-        _set_preview_property(preview_obj, "IntersectionTargetCrossfallPercent", f"{float(getattr(grading_policy, 'target_crossfall_percent', 0.0) or 0.0):.3f}")
         slope_face_policy = _intersection_slope_face_policy_for(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
-        _attach_intersection_slope_face_policy_metadata(preview_obj, slope_face_policy)
-        _set_preview_float_property(preview_obj, "IntersectionGradingZDeltaMax", _tin_quality_float(tin_surface, "intersection_grading_z_delta_max"))
-        _set_preview_integer_property(preview_obj, "IntersectionSuperelevationSourceCount", int(_tin_quality_float(tin_surface, "intersection_superelevation_source_count") or 0))
-        _set_preview_integer_property(preview_obj, "IntersectionSuperelevationTransitionCount", int(_tin_quality_float(tin_surface, "intersection_superelevation_transition_count") or 0))
-        _set_preview_float_property(preview_obj, "IntersectionSuperelevationLeftMin", _tin_quality_float(tin_surface, "intersection_superelevation_left_min"))
-        _set_preview_float_property(preview_obj, "IntersectionSuperelevationLeftMax", _tin_quality_float(tin_surface, "intersection_superelevation_left_max"))
-        _set_preview_float_property(preview_obj, "IntersectionSuperelevationRightMin", _tin_quality_float(tin_surface, "intersection_superelevation_right_min"))
-        _set_preview_float_property(preview_obj, "IntersectionSuperelevationRightMax", _tin_quality_float(tin_surface, "intersection_superelevation_right_max"))
-        _set_preview_property(preview_obj, "IntersectionSuperelevationContext", _tin_quality_text(tin_surface, "intersection_superelevation_context"))
-        _set_preview_integer_property(preview_obj, "IntersectionTINLowPointCandidateCount", int(_tin_quality_float(tin_surface, "intersection_low_point_candidate_count") or 0))
-        _set_preview_float_property(preview_obj, "IntersectionTINLowPointX", _tin_quality_float(tin_surface, "intersection_low_point_x"))
-        _set_preview_float_property(preview_obj, "IntersectionTINLowPointY", _tin_quality_float(tin_surface, "intersection_low_point_y"))
-        _set_preview_float_property(preview_obj, "IntersectionTINLowPointZ", _tin_quality_float(tin_surface, "intersection_low_point_z"))
-        _set_preview_property(preview_obj, "IntersectionTINLowPointSourceRef", _tin_quality_text(tin_surface, "intersection_low_point_source_ref"))
-        _set_preview_integer_property(preview_obj, "IntersectionBoundaryToLowFlowHintCount", int(_tin_quality_float(tin_surface, "intersection_boundary_to_low_flow_hint_count") or 0))
-        _set_preview_property(preview_obj, "IntersectionBoundaryToLowFlowHintSummary", _tin_quality_text(tin_surface, "intersection_boundary_to_low_flow_hint_summary"))
-        _set_preview_integer_property(preview_obj, "ParticipatingAlignmentCount", int(getattr(prerequisite, "participating_alignment_count", 0) or 0))
-        _set_preview_integer_property(preview_obj, "ControlRegionCount", int(getattr(prerequisite, "control_region_count", 0) or 0))
-        _set_preview_integer_property(preview_obj, "TieInEdgeCount", int(getattr(prerequisite, "tie_in_edge_count", 0) or 0))
-        _set_preview_integer_property(preview_obj, "PatchBoundaryPointCount", int(_tin_quality_float(tin_surface, "patch_boundary_point_count") or 0))
-        _set_preview_property(preview_obj, "PatchBoundarySource", _tin_quality_text(tin_surface, "patch_boundary_source"))
-        _set_preview_integer_property(preview_obj, "PatchDegenerateTriangleCount", int(_tin_quality_float(tin_surface, "patch_degenerate_triangle_count") or 0))
-        _set_preview_float_property(preview_obj, "PatchBoundaryEdgeMaxLength", _tin_quality_float(tin_surface, "patch_boundary_edge_max_length"))
-        _set_preview_integer_property(preview_obj, "PatchBoundaryLongEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_edge_long_count") or 0))
-        _set_preview_float_property(preview_obj, "PatchBoundaryLongEdgeFactor", _tin_quality_float(tin_surface, "patch_boundary_edge_long_factor"))
-        _set_preview_float_property(preview_obj, "PatchBoundaryLongEdgeLimit", _tin_quality_float(tin_surface, "patch_boundary_edge_long_limit"))
-        _set_preview_float_property(preview_obj, "PatchBoundaryMaxEdgeLengthPolicy", _tin_quality_float(tin_surface, "patch_boundary_edge_max_length_policy"))
-        _set_preview_property(preview_obj, "PatchTriangulationMode", _tin_quality_text(tin_surface, "patch_triangulation_mode"))
-        _set_preview_property(preview_obj, "PatchSurfaceBoundaryStrategy", _tin_quality_text(tin_surface, "patch_surface_boundary_strategy"))
-        _set_preview_integer_property(preview_obj, "PatchStructuredStripCount", int(_tin_quality_float(tin_surface, "patch_structured_strip_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchCurbReturnSurfaceEdgeCount", int(_tin_quality_float(tin_surface, "patch_curb_return_surface_edge_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchCurbReturnArcCount", int(_tin_quality_float(tin_surface, "patch_curb_return_arc_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchCurbReturnArcSampleCount", int(_tin_quality_float(tin_surface, "patch_curb_return_arc_sample_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchCurbReturnArcSegmentCount", int(_tin_quality_float(tin_surface, "patch_curb_return_arc_segment_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchEdgeBlendFaceCount", int(_tin_quality_float(tin_surface, "patch_edge_blend_face_count") or 0))
-        _set_preview_property(preview_obj, "PatchBoundaryRoleSummary", _tin_quality_text(tin_surface, "patch_boundary_role_summary"))
-        _set_preview_integer_property(preview_obj, "PatchPavementTieInEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_pavement_tie_in_edge_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchStemTieInEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_stem_tie_in_edge_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchOverlapCutEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_overlap_cut_edge_count") or 0))
-        _set_preview_integer_property(preview_obj, "PatchCurbReturnEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_curb_return_edge_count") or 0))
-        _set_preview_float_property(preview_obj, "PatchBoundaryBBoxX", _tin_quality_float(tin_surface, "patch_boundary_bbox_x"))
-        _set_preview_float_property(preview_obj, "PatchBoundaryBBoxY", _tin_quality_float(tin_surface, "patch_boundary_bbox_y"))
-        _set_preview_float_property(preview_obj, "PatchBoundaryBBoxAspectRatio", _tin_quality_float(tin_surface, "patch_boundary_bbox_aspect_ratio"))
-        _set_preview_float_property(preview_obj, "PatchTriangleMinQuality", _tin_quality_float(tin_surface, "patch_triangle_min_quality"))
-        _set_preview_integer_property(preview_obj, "PatchTriangleSkinnyCount", int(_tin_quality_float(tin_surface, "patch_triangle_skinny_count") or 0))
-        _set_preview_float_property(preview_obj, "IntersectionPatchBoundaryPolygonArea", _tin_quality_float(tin_surface, "ordered_patch_boundary_polygon_area"))
-        _set_preview_property(
+        _attach_intersection_patch_surface_metadata(
             preview_obj,
-            "IntersectionPatchBoundarySelfCrossing",
-            "Yes" if int(_tin_quality_float(tin_surface, "ordered_patch_boundary_self_crossing") or 0) else "No",
+            prerequisite=prerequisite,
+            tin_surface=tin_surface,
+            grading_policy=grading_policy,
+            slope_face_policy=slope_face_policy,
         )
-        _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryRingCount", int(_tin_quality_float(tin_surface, "ordered_patch_boundary_ring_count") or 0))
-        _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryHoleRingCount", int(_tin_quality_float(tin_surface, "ordered_patch_boundary_hole_ring_count") or 0))
-        _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryIslandRingCount", int(_tin_quality_float(tin_surface, "ordered_patch_boundary_island_ring_count") or 0))
-        _set_preview_string_list_property(preview_obj, "ControlRegionRefs", list(getattr(prerequisite, "control_region_refs", ()) or ()))
-        _set_preview_integer_property(preview_obj, "IntersectionDiagnosticCount", len(list(getattr(prerequisite, "diagnostic_rows", ()) or ())))
-        _set_preview_string_list_property(preview_obj, "IntersectionDiagnostics", list(getattr(prerequisite, "diagnostic_rows", ()) or ()))
         tie_in_result = corridor_intersection_tie_in_edge_result(
             intersection_applied_section_set,
             prerequisite=prerequisite,
@@ -6459,6 +6404,80 @@ def create_corridor_intersection_surface_preview(
         except Exception:
             pass
     return preview_obj
+
+
+def _attach_intersection_patch_surface_metadata(
+    preview_obj,
+    *,
+    prerequisite,
+    tin_surface,
+    grading_policy,
+    slope_face_policy,
+) -> None:
+    """Record the intersection patch identity, grading, TIN quality, and prerequisite properties."""
+
+    _set_preview_property(preview_obj, "IntersectionId", str(getattr(prerequisite, "intersection_id", "") or ""))
+    _set_preview_property(preview_obj, "IntersectionKind", str(getattr(prerequisite, "intersection_kind", "") or ""))
+    _set_preview_property(preview_obj, "IntersectionGradingPolicyRef", str(getattr(grading_policy, "policy_id", "") or ""))
+    _set_preview_property(preview_obj, "IntersectionGradingMode", str(getattr(grading_policy, "mode", "") or "use_normal_superelevation"))
+    _set_preview_property(preview_obj, "IntersectionTargetCrossfallPercent", f"{float(getattr(grading_policy, 'target_crossfall_percent', 0.0) or 0.0):.3f}")
+    _attach_intersection_slope_face_policy_metadata(preview_obj, slope_face_policy)
+    _set_preview_float_property(preview_obj, "IntersectionGradingZDeltaMax", _tin_quality_float(tin_surface, "intersection_grading_z_delta_max"))
+    _set_preview_integer_property(preview_obj, "IntersectionSuperelevationSourceCount", int(_tin_quality_float(tin_surface, "intersection_superelevation_source_count") or 0))
+    _set_preview_integer_property(preview_obj, "IntersectionSuperelevationTransitionCount", int(_tin_quality_float(tin_surface, "intersection_superelevation_transition_count") or 0))
+    _set_preview_float_property(preview_obj, "IntersectionSuperelevationLeftMin", _tin_quality_float(tin_surface, "intersection_superelevation_left_min"))
+    _set_preview_float_property(preview_obj, "IntersectionSuperelevationLeftMax", _tin_quality_float(tin_surface, "intersection_superelevation_left_max"))
+    _set_preview_float_property(preview_obj, "IntersectionSuperelevationRightMin", _tin_quality_float(tin_surface, "intersection_superelevation_right_min"))
+    _set_preview_float_property(preview_obj, "IntersectionSuperelevationRightMax", _tin_quality_float(tin_surface, "intersection_superelevation_right_max"))
+    _set_preview_property(preview_obj, "IntersectionSuperelevationContext", _tin_quality_text(tin_surface, "intersection_superelevation_context"))
+    _set_preview_integer_property(preview_obj, "IntersectionTINLowPointCandidateCount", int(_tin_quality_float(tin_surface, "intersection_low_point_candidate_count") or 0))
+    _set_preview_float_property(preview_obj, "IntersectionTINLowPointX", _tin_quality_float(tin_surface, "intersection_low_point_x"))
+    _set_preview_float_property(preview_obj, "IntersectionTINLowPointY", _tin_quality_float(tin_surface, "intersection_low_point_y"))
+    _set_preview_float_property(preview_obj, "IntersectionTINLowPointZ", _tin_quality_float(tin_surface, "intersection_low_point_z"))
+    _set_preview_property(preview_obj, "IntersectionTINLowPointSourceRef", _tin_quality_text(tin_surface, "intersection_low_point_source_ref"))
+    _set_preview_integer_property(preview_obj, "IntersectionBoundaryToLowFlowHintCount", int(_tin_quality_float(tin_surface, "intersection_boundary_to_low_flow_hint_count") or 0))
+    _set_preview_property(preview_obj, "IntersectionBoundaryToLowFlowHintSummary", _tin_quality_text(tin_surface, "intersection_boundary_to_low_flow_hint_summary"))
+    _set_preview_integer_property(preview_obj, "ParticipatingAlignmentCount", int(getattr(prerequisite, "participating_alignment_count", 0) or 0))
+    _set_preview_integer_property(preview_obj, "ControlRegionCount", int(getattr(prerequisite, "control_region_count", 0) or 0))
+    _set_preview_integer_property(preview_obj, "TieInEdgeCount", int(getattr(prerequisite, "tie_in_edge_count", 0) or 0))
+    _set_preview_integer_property(preview_obj, "PatchBoundaryPointCount", int(_tin_quality_float(tin_surface, "patch_boundary_point_count") or 0))
+    _set_preview_property(preview_obj, "PatchBoundarySource", _tin_quality_text(tin_surface, "patch_boundary_source"))
+    _set_preview_integer_property(preview_obj, "PatchDegenerateTriangleCount", int(_tin_quality_float(tin_surface, "patch_degenerate_triangle_count") or 0))
+    _set_preview_float_property(preview_obj, "PatchBoundaryEdgeMaxLength", _tin_quality_float(tin_surface, "patch_boundary_edge_max_length"))
+    _set_preview_integer_property(preview_obj, "PatchBoundaryLongEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_edge_long_count") or 0))
+    _set_preview_float_property(preview_obj, "PatchBoundaryLongEdgeFactor", _tin_quality_float(tin_surface, "patch_boundary_edge_long_factor"))
+    _set_preview_float_property(preview_obj, "PatchBoundaryLongEdgeLimit", _tin_quality_float(tin_surface, "patch_boundary_edge_long_limit"))
+    _set_preview_float_property(preview_obj, "PatchBoundaryMaxEdgeLengthPolicy", _tin_quality_float(tin_surface, "patch_boundary_edge_max_length_policy"))
+    _set_preview_property(preview_obj, "PatchTriangulationMode", _tin_quality_text(tin_surface, "patch_triangulation_mode"))
+    _set_preview_property(preview_obj, "PatchSurfaceBoundaryStrategy", _tin_quality_text(tin_surface, "patch_surface_boundary_strategy"))
+    _set_preview_integer_property(preview_obj, "PatchStructuredStripCount", int(_tin_quality_float(tin_surface, "patch_structured_strip_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchCurbReturnSurfaceEdgeCount", int(_tin_quality_float(tin_surface, "patch_curb_return_surface_edge_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchCurbReturnArcCount", int(_tin_quality_float(tin_surface, "patch_curb_return_arc_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchCurbReturnArcSampleCount", int(_tin_quality_float(tin_surface, "patch_curb_return_arc_sample_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchCurbReturnArcSegmentCount", int(_tin_quality_float(tin_surface, "patch_curb_return_arc_segment_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchEdgeBlendFaceCount", int(_tin_quality_float(tin_surface, "patch_edge_blend_face_count") or 0))
+    _set_preview_property(preview_obj, "PatchBoundaryRoleSummary", _tin_quality_text(tin_surface, "patch_boundary_role_summary"))
+    _set_preview_integer_property(preview_obj, "PatchPavementTieInEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_pavement_tie_in_edge_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchStemTieInEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_stem_tie_in_edge_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchOverlapCutEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_overlap_cut_edge_count") or 0))
+    _set_preview_integer_property(preview_obj, "PatchCurbReturnEdgeCount", int(_tin_quality_float(tin_surface, "patch_boundary_curb_return_edge_count") or 0))
+    _set_preview_float_property(preview_obj, "PatchBoundaryBBoxX", _tin_quality_float(tin_surface, "patch_boundary_bbox_x"))
+    _set_preview_float_property(preview_obj, "PatchBoundaryBBoxY", _tin_quality_float(tin_surface, "patch_boundary_bbox_y"))
+    _set_preview_float_property(preview_obj, "PatchBoundaryBBoxAspectRatio", _tin_quality_float(tin_surface, "patch_boundary_bbox_aspect_ratio"))
+    _set_preview_float_property(preview_obj, "PatchTriangleMinQuality", _tin_quality_float(tin_surface, "patch_triangle_min_quality"))
+    _set_preview_integer_property(preview_obj, "PatchTriangleSkinnyCount", int(_tin_quality_float(tin_surface, "patch_triangle_skinny_count") or 0))
+    _set_preview_float_property(preview_obj, "IntersectionPatchBoundaryPolygonArea", _tin_quality_float(tin_surface, "ordered_patch_boundary_polygon_area"))
+    _set_preview_property(
+        preview_obj,
+        "IntersectionPatchBoundarySelfCrossing",
+        "Yes" if int(_tin_quality_float(tin_surface, "ordered_patch_boundary_self_crossing") or 0) else "No",
+    )
+    _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryRingCount", int(_tin_quality_float(tin_surface, "ordered_patch_boundary_ring_count") or 0))
+    _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryHoleRingCount", int(_tin_quality_float(tin_surface, "ordered_patch_boundary_hole_ring_count") or 0))
+    _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryIslandRingCount", int(_tin_quality_float(tin_surface, "ordered_patch_boundary_island_ring_count") or 0))
+    _set_preview_string_list_property(preview_obj, "ControlRegionRefs", list(getattr(prerequisite, "control_region_refs", ()) or ()))
+    _set_preview_integer_property(preview_obj, "IntersectionDiagnosticCount", len(list(getattr(prerequisite, "diagnostic_rows", ()) or ())))
+    _set_preview_string_list_property(preview_obj, "IntersectionDiagnostics", list(getattr(prerequisite, "diagnostic_rows", ()) or ()))
 
 
 def _attach_intersection_contract_consumption_metadata(
