@@ -167,7 +167,7 @@ def test_create_or_update_v1_drainage_model_object_updates_existing_object() -> 
         assert list(second.DrainageElementIds) == ["drainage:side-ditch-left"]
         assert list(second.ElementSides) == ["left"]
         assert list(second.ElementRegionRefs) == ["region:2"]
-        assert list(second.ElementAssemblyComponentRefs) == ["ditch:left"]
+        assert list(second.ElementSubassemblyRefs) == ["ditch:left"]
         assert to_drainage_model(second).element_rows[0].station_start == 10.0
     finally:
         App.closeDocument(doc.Name)
@@ -549,6 +549,7 @@ def test_drainage_validation_checks_element_station_range_against_region() -> No
                 drainage_element_id="drainage:inside",
                 element_kind="ditch",
                 region_ref="region:1",
+                subassembly_ref="ditch:left",
                 station_start=10.0,
                 station_end=40.0,
                 policy_set_ref="drainage-policy:1",
@@ -557,6 +558,7 @@ def test_drainage_validation_checks_element_station_range_against_region() -> No
                 drainage_element_id="drainage:outside",
                 element_kind="ditch",
                 region_ref="region:1",
+                subassembly_ref="ditch:left",
                 station_start=45.0,
                 station_end=70.0,
                 policy_set_ref="drainage-policy:1",
@@ -593,6 +595,7 @@ def test_drainage_validation_allows_ui_precision_region_boundary_match() -> None
                 drainage_element_id="drainage:left",
                 element_kind="ditch",
                 region_ref="region:1",
+                subassembly_ref="ditch:left",
                 station_start=0.0,
                 station_end=203.108,
                 policy_set_ref="drainage-policy:1",
@@ -601,6 +604,7 @@ def test_drainage_validation_allows_ui_precision_region_boundary_match() -> None
                 drainage_element_id="drainage:right",
                 element_kind="ditch",
                 region_ref="region:1",
+                subassembly_ref="ditch:left",
                 station_start=0.0,
                 station_end=203.108,
                 policy_set_ref="drainage-policy:1",

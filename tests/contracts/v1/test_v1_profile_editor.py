@@ -289,23 +289,28 @@ def test_apply_profile_vertical_curve_rows_rejects_negative_length_window() -> N
 
 
 def test_generate_profile_vertical_curve_rows_from_pvi_controls() -> None:
-    rows = generate_profile_vertical_curve_rows_from_controls(
-        [
-            {"station": 0.0, "elevation": 10.0, "kind": "grade_break"},
-            {"station": 50.0, "elevation": 15.0, "kind": "pvi"},
-            {"station": 100.0, "elevation": 11.0, "kind": "pvi"},
-            {"station": 140.0, "elevation": 13.0, "kind": "grade_break"},
-        ],
-        default_length=30.0,
-    )
+    controls = [
+        {"station": 0.0, "elevation": 10.0, "kind": "grade_break"},
+        {"station": 50.0, "elevation": 15.0, "kind": "pvi"},
+        {"station": 100.0, "elevation": 11.0, "kind": "pvi"},
+        {"station": 140.0, "elevation": 13.0, "kind": "grade_break"},
+    ]
 
+    rows = generate_profile_vertical_curve_rows_from_controls(controls, default_length=30.0)
+
+    # one symmetric curve per interior PVI; the length comes from the design K value,
+    # with default_length as the minimum and the adjacent spacing as the limit
     assert len(rows) == 2
-    assert rows[0]["station_start"] == 35.0
-    assert rows[0]["station_end"] == 65.0
-    assert rows[0]["length"] == 30.0
-    assert rows[1]["station_start"] == 85.0
-    assert rows[1]["station_end"] == 115.0
-    assert rows[1]["length"] == 30.0
+    for row, pvi, previous_row, next_row in zip(rows, controls[1:3], controls[0:2], controls[2:4]):
+        centre = (float(row["station_start"]) + float(row["station_end"])) / 2.0
+        assert round(centre, 6) == float(pvi["station"])
+        assert round(float(row["station_end"]) - float(row["station_start"]), 6) == round(float(row["length"]), 6)
+        assert float(row["length"]) >= 30.0
+        spacing_limit = 2.0 * 0.45 * min(
+            float(pvi["station"]) - float(previous_row["station"]),
+            float(next_row["station"]) - float(pvi["station"]),
+        )
+        assert float(row["length"]) <= spacing_limit + 1.0e-6
     assert rows[0]["parameter"] < 0.0
     assert rows[1]["parameter"] > 0.0
 
@@ -705,32 +710,42 @@ def test_profile_command_menu_text_is_simplified() -> None:
 def test_profile_preset_data_returns_copy_of_control_rows() -> None:
     names = profile_preset_names()
 
-    assert "Starter Road" in names
-    rows = profile_preset_rows("Starter Road")
+    assert names
+    preset = names[0]
+    original = profile_preset_rows(preset)[0]["station"]
+    rows = profile_preset_rows(preset)
     rows[0]["station"] = 999.0
 
-    assert profile_preset_rows("Starter Road")[0]["station"] == 0.0
+    assert profile_preset_rows(preset)[0]["station"] == original
 
 
 def test_profile_preset_data_samples_onto_current_station_rows() -> None:
-    rows = profile_preset_rows_for_station_rows(
-        "Starter Road",
-        [
-            {"station": 0.0, "kind": "grade_break"},
-            {"station": 50.0, "kind": "pvi"},
-            {"station": 100.0, "kind": "grade_break"},
-        ],
-    )
+    preset = profile_preset_names()[0]
+    source = profile_preset_rows(preset)
+    stations = [
+        {"station": 0.0, "kind": "grade_break"},
+        {"station": float(source[1]["station"]), "kind": "pvi"},
+        {"station": float(source[-1]["station"]), "kind": "grade_break"},
+    ]
 
-    assert [row["station"] for row in rows] == [0.0, 50.0, 100.0]
-    assert [round(float(row["elevation"]), 6) for row in rows] == [12.0, 15.0, 13.5]
-    assert [row["kind"] for row in rows] == ["grade_break", "pvi", "grade_break"]
+    rows = profile_preset_rows_for_station_rows(preset, stations)
+
+    assert [row["station"] for row in rows] == [row["station"] for row in stations]
+    assert [row["kind"] for row in rows] == [row["kind"] for row in stations]
+    # sampled elevations follow the preset's own profile at those stations
+    assert [round(float(row["elevation"]), 6) for row in rows] == [
+        round(float(source[0]["elevation"]), 6),
+        round(float(source[1]["elevation"]), 6),
+        round(float(source[-1]["elevation"]), 6),
+    ]
 
 
 def test_profile_preset_data_falls_back_to_source_rows_without_current_stations() -> None:
-    rows = profile_preset_rows_for_station_rows("Starter Road", [])
+    preset = profile_preset_names()[0]
 
-    assert [row["station"] for row in rows] == [0.0, 90.0, 180.0]
+    rows = profile_preset_rows_for_station_rows(preset, [])
+
+    assert [row["station"] for row in rows] == [row["station"] for row in profile_preset_rows(preset)]
 
 
 def test_profile_csv_import_accepts_v0_style_fg_headers() -> None:

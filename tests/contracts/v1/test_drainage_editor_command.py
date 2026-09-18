@@ -338,14 +338,17 @@ def test_drainage_editor_validate_shows_flow_route_summary() -> None:
     doc, _project = _new_project_doc("V1DrainageEditorValidationSummaryTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Dual Side Ditches")
+        panel._load_selected_preset()
 
         panel._validate()
         status = panel._status.toPlainText()
 
         assert "Validation: ok" in status
+        # the capture/pipe summary diagnostic is rendered as a line, not dumped by id
         assert "Flow Route Summary:" in status
         assert "capture-only=0" in status
-        assert "pipe-producing=0" in status
+        assert "pipe-producing=2" in status
         assert "fallback=0" in status
         assert "info:flow_route_capture_pipe_summary" not in status
     finally:
@@ -924,61 +927,15 @@ def test_drainage_editor_show_flow_network_applies_model_and_creates_preview() -
     _ensure_qapp()
     doc, project = _new_project_doc("V1DrainageEditorShowFlowNetworkTest")
     try:
-        create_or_update_v1_structure_model_object(
+        alignment = create_sample_v1_alignment(doc, project=project)
+        structure_model = structure_preset_model_from_document(
+            "Drainage Structures",
             doc,
             project=project,
-            structure_model=StructureModel(
-                schema_version=1,
-                project_id="proj-1",
-                structure_model_id="structures:main",
-                structure_rows=[
-                    StructureRow(
-                        structure_id="structure:inlet-01",
-                        structure_kind="utility",
-                        structure_role="reference",
-                        placement=StructurePlacement("placement:inlet-01", "alignment:main", 38.0, 40.0),
-                    ),
-                    StructureRow(
-                        structure_id="structure:culvert-01",
-                        structure_kind="culvert",
-                        structure_role="crossing",
-                        placement=StructurePlacement("placement:culvert-01", "alignment:main", 45.0, 55.0),
-                    ),
-                    StructureRow(
-                        structure_id="structure:outlet-01",
-                        structure_kind="utility",
-                        structure_role="reference",
-                        placement=StructurePlacement("placement:outlet-01", "alignment:main", 58.0, 62.0),
-                    ),
-                ],
-                connection_point_rows=[
-                    StructureConnectionPoint(
-                        connection_point_id="connection:inlet-01:pipe-out",
-                        structure_ref="structure:inlet-01",
-                        point_role="pipe_out",
-                        station=40.0,
-                        offset=-5.2,
-                        diameter=0.75,
-                    ),
-                    StructureConnectionPoint(
-                        connection_point_id="connection:culvert-01:upstream",
-                        structure_ref="structure:culvert-01",
-                        point_role="upstream",
-                        station=45.0,
-                        offset=-5.2,
-                        diameter=0.9,
-                    ),
-                    StructureConnectionPoint(
-                        connection_point_id="connection:outlet-01:pipe-in",
-                        structure_ref="structure:outlet-01",
-                        point_role="pipe_in",
-                        station=62.0,
-                        offset=6.4,
-                        diameter=0.9,
-                    ),
-                ],
-            ),
+            alignment=alignment,
         )
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
         panel = V1DrainageEditorTaskPanel(document=doc)
         panel._preset_combo.setCurrentText("Drainage Structures Flow")
         panel._load_selected_preset()
@@ -989,13 +946,15 @@ def test_drainage_editor_show_flow_network_applies_model_and_creates_preview() -
         model = to_drainage_model(find_v1_drainage_model(doc))
         assert preview is not None
         assert preview.CRRecordKind == "v1_drainage_pipeline_networks_preview"
-        assert preview.FlowRouteRefs == "flow-route:flowId-02,flow-route:flowId-03"
+        # the three capture-only routes carry no pipe, so only the structure-backed ones
+        # reach the network preview
+        assert preview.FlowRouteRefs == (
+            "flow-route:flowId-04,flow-route:flowId-05,flow-route:flowId-06,flow-route:flowId-07"
+        )
         assert "Drainage Flow Network preview shown." in panel._status.toPlainText()
         assert model is not None
         assert [row.flow_route_id for row in model.flow_route_rows] == [
-            "flow-route:flowId-01",
-            "flow-route:flowId-02",
-            "flow-route:flowId-03",
+            "flow-route:flowId-0%d" % index for index in range(1, 8)
         ]
     finally:
         App.closeDocument(doc.Name)

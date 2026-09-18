@@ -2353,9 +2353,10 @@ class IntersectionEvaluationService:
             curb_return_arc_count=len([row for row in corner_graph_rows if int(getattr(row, "arc_point_count", 0) or 0) >= 3]),
             control_area_count=len(control_area_rows),
             lane_connection_count=len(lane_connection_rows),
+            # the refs read as an order, like the leg graph diagnostic, so sort by it
             leg_graph_order_refs=[
                 f"{int(getattr(span, 'leg_graph_order', 0) or 0)}:{str(getattr(span, 'leg_ref', '') or '')}"
-                for span in leg_span_rows
+                for span in sorted(leg_span_rows, key=lambda span: int(getattr(span, 'leg_graph_order', 0) or 0))
             ],
             leg_graph_diagnostic_rows=leg_graph_diagnostics,
             corner_graph_order_refs=[

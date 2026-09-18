@@ -210,7 +210,7 @@ def test_subassembly_preview_text_uses_subassembly_ownership() -> None:
     assert "subassembly_ref: ditch:left" in text
     assert "surface_role=drainage_surface" in text
     assert "shape=trapezoid" in text
-    assert "material=concrete" in text
+    assert "material: concrete" in text
 
 
 def test_subassembly_physical_body_contract_summary_reports_ready_and_missing_contracts() -> None:

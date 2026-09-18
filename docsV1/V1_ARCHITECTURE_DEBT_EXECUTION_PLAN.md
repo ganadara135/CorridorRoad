@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 in progress with two families resolved
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 in progress, contract baseline 52 to 32
 Depends on:
 
 - `AGENTS.md`
@@ -1119,6 +1119,26 @@ Because chunks 2 to 5 used the earlier rules, the whole module was audited after
 One deliberate move came out of that: the daylight preview initialised `general_shared_breakline_result`, `region_shared_breakline_result`, and `intersection_shared_breakline_result` to None before the try, and the lifted helper binds them only inside its own nested try. Those three initialisations moved into the helper, where they belong, rather than being deleted.
 
 Validation: compile, flake8, 9 architecture tests, the module-wide free-name audit, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
+
+### M8 batch 1 on 2026-09-18: twenty stale contract expectations
+
+Twenty of the 52 failures were test drift, each one a test still stating a contract the product had moved past. They were taken module by module, every module re-run through the Qt runner before the next was touched, and nothing was changed on a guess: each failure was reproduced, its cause read in the current product code, and the test rewritten to state what the code now guarantees.
+
+What the drift looked like, by family.
+
+- Renames and relabels, 7 tests. `test_intersection_model.py` still rejected the roundabout kind and accepted `diverging_diamond`; the region editor's three labels now read "Assembly / Subassembly source"; the subassembly editor writes "material: concrete"; the stationing source object exposes `preview["station_rows"]`; the earthwork service reports an empty `subassembly_ref` where it used to invent one.
+- Contracts that grew a dimension, 6 tests. The profile editor's "Starter Road" preset is gone and vertical curve length now comes from the design K value clamped by the adjacent spacing, so the four tests were rewritten around `profile_preset_names()[0]` and that relationship rather than a preset name and a fixed 30 m. The drainage source object gained `ElementSubassemblyRefs`, so four fixture rows carry `subassembly_ref="ditch:left"`.
+- Environment assumptions, 2 tests. The applied sections test asserted a hidden count that only holds when view objects exist; it is now guarded for the headless run.
+- Filters that caught more than they meant, 1 test. The section command bridge matched every quantity row; it now filters on `"section-earthwork-area" in row.quantity_row_id`.
+- Fixtures the product outgrew, 2 tests. Both drainage editor failures. `test_drainage_editor_show_flow_network_applies_model_and_creates_preview` hand-seeded three Structures, but the "Drainage Structures Flow" preset now references five, so validation reported two missing Structure refs and returned before creating anything: the assertion `preview is not None` was reading a real error. It now seeds the paired Structure preset the way the flow route segment test beside it does, and gets `Validation: ok`, one network, four pipe segments. `test_drainage_editor_validate_shows_flow_route_summary` asserted the Flow Route Summary line on an empty model; that line is rendered from the capture/pipe summary diagnostic, which `DrainageValidationService` emits only when there are flow routes. Printing "capture-only=0; pipe-producing=0" beside "Flow Routes: 0" is noise, so the product is right and the test now states the contract on a preset that has routes: the summary is rendered as a line and the raw `info:flow_route_capture_pipe_summary` id is not dumped into the status.
+
+One product change is in the batch. `leg_graph_order_refs` in `intersection_evaluation_service.py` was built in row order while reading as an ordering, and is now sorted by `leg_graph_order`.
+
+Validation: the contract suite in three chunks with the Qt runner, 1,433 tests, 32 failures against the 52-failure baseline, 1 + 19 + 12; the failing set is a strict subset, with 20 resolved and none new. 9 architecture tests and 26 smoke scripts at exit code 0.
+
+The 32 that remain are not drift of this kind and are taken next: 19 in `test_build_corridor_command.py`, 12 in `test_intersection_command.py`, and the boundary loop question below.
+
+Open question for the maintainer, not decided here. `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` builds a ready loop through the curb-return envelope path, closed, 32 points, area 312, and yet `result.status == "error"` because of `error:intersection_boundary_authoritative_source_edges_missing`. That rule landed on 2026-07-02, the envelope feature and this test on 2026-07-06, so the rule predates what it now rejects. A sibling test locks error and no loops for the case with no envelope, so the rule itself is wanted; the question is whether a complete envelope loop should satisfy it.
 
 ## 11. Open Decisions
 

@@ -1576,10 +1576,11 @@ def test_show_v1_section_preview_adds_section_cut_fill_area_quantities() -> None
     )
 
     quantity_rows = list(preview["section_output"].quantity_rows)
+    # section earthwork area rows are marked in the row id, as the command's own filter does
     area_rows = [
         row
         for row in quantity_rows
-        if row.subassembly_ref == "section_earthwork_area"
+        if "section-earthwork-area" in row.quantity_row_id
     ]
 
     assert preview["section_earthwork_area_result"].status == "ok"

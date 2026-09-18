@@ -135,7 +135,9 @@ def test_region_assembly_reference_warnings_report_missing_refs() -> None:
 
     warnings = region_assembly_reference_warnings(model, ["assembly:basic-road"])
 
-    assert warnings == ["WARNING: region:missing references missing assembly_ref assembly:missing."]
+    assert warnings == [
+        "WARNING: region:missing references missing Assembly / Subassembly source assembly:missing."
+    ]
 
 
 def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() -> None:
@@ -181,7 +183,7 @@ def test_region_editor_table_is_assembly_only_region_authoring() -> None:
         assert [panel._table.horizontalHeaderItem(index).text() for index in range(panel._table.columnCount())] == [
             "Start STA",
             "End STA (Auto)",
-            "Assembly",
+            "Assembly Source",
             "Priority",
             "Notes",
         ]
@@ -300,7 +302,7 @@ def test_region_editor_command_resources_are_v1_regions() -> None:
     resources = CmdV1RegionEditor().GetResources()
 
     assert resources["MenuText"] == "Regions"
-    assert "base Assembly" in resources["ToolTip"]
+    assert "Assembly / Subassembly source" in resources["ToolTip"]
 
 
 def _group_names(folder) -> set[str]:

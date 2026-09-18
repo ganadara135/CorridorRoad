@@ -286,8 +286,10 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
 
 
 def test_intersection_kind_helper_rejects_unsupported_kind() -> None:
+    accepted = intersection_row_from_kind(intersection_id="intersection:circle", intersection_kind="roundabout")
+    assert accepted.intersection_kind == "roundabout"
     try:
-        intersection_row_from_kind(intersection_id="intersection:bad", intersection_kind="roundabout")
+        intersection_row_from_kind(intersection_id="intersection:bad", intersection_kind="diverging_diamond")
     except ValueError as exc:
         assert "Unsupported intersection kind" in str(exc)
     else:

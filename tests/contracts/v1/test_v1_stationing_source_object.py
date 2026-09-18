@@ -295,7 +295,7 @@ def test_plan_profile_preview_prefers_v1_stationing_rows_when_available() -> Non
         assert preview is not None
         assert preview["legacy_objects"]["stationing"] == stationing
         assert [row.station for row in preview["plan_output"].station_rows] == list(stationing.StationValues)
-        stations = [row["station"] for row in preview["key_station_rows"]]
+        stations = [row["station"] for row in preview["station_rows"]]
         assert 45.0 in stations
         assert 20.0 not in stations
     finally:
