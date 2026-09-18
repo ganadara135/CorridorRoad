@@ -5870,46 +5870,21 @@ def create_corridor_intersection_surface_preview(
             grading_policy=grading_policy,
             slope_face_policy=slope_face_policy,
         )
-        tie_in_result = corridor_intersection_tie_in_edge_result(
-            intersection_applied_section_set,
+        tie_in_result = _attach_intersection_tie_in_edge_preview(
+            doc,
+            preview_obj,
+            intersection_applied_section_set=intersection_applied_section_set,
+            intersection_model=intersection_model,
             prerequisite=prerequisite,
-            intersection_model=intersection_model,
+            project=project,
         )
-        _set_preview_property(preview_obj, "TieInEdgePreviewStatus", str(getattr(tie_in_result, "status", "") or ""))
-        _set_preview_integer_property(
-            preview_obj,
-            "TieInEdgeDiagnosticCount",
-            len(list(getattr(tie_in_result, "diagnostic_rows", []) or [])),
-        )
-        tie_in_preview = _create_corridor_intersection_tie_in_edge_preview(
+        boundary_result = _attach_intersection_boundary_segment_preview(
             doc,
-            tie_in_result,
-            project=project or find_project(doc),
-        )
-        if tie_in_preview is not None:
-            _set_preview_property(preview_obj, "TieInEdgePreviewRef", str(getattr(tie_in_preview, "Name", "") or ""))
-        boundary_result = corridor_intersection_boundary_segment_result(
-            tie_in_result,
-            intersection_model=intersection_model,
-        )
-        _set_preview_property(preview_obj, "IntersectionBoundaryMode", str(getattr(boundary_result, "boundary_mode", "") or ""))
-        _set_preview_property(preview_obj, "IntersectionBoundaryStatus", str(getattr(boundary_result, "status", "") or ""))
-        _set_preview_integer_property(preview_obj, "IntersectionBoundarySegmentCount", int(getattr(boundary_result, "segment_count", 0) or 0))
-        _set_preview_integer_property(preview_obj, "IntersectionBoundaryTieInSegmentCount", int(getattr(boundary_result, "tie_in_segment_count", 0) or 0))
-        _set_preview_integer_property(preview_obj, "IntersectionBoundaryArcSegmentCount", int(getattr(boundary_result, "arc_segment_count", 0) or 0))
-        _set_preview_string_list_property(preview_obj, "IntersectionBoundaryDiagnostics", list(getattr(boundary_result, "diagnostic_rows", []) or []))
-        _set_preview_integer_property(
             preview_obj,
-            "IntersectionBoundaryDiagnosticCount",
-            len(list(getattr(boundary_result, "diagnostic_rows", []) or [])),
+            intersection_model=intersection_model,
+            project=project,
+            tie_in_result=tie_in_result,
         )
-        boundary_preview = _create_corridor_intersection_boundary_segment_preview(
-            doc,
-            boundary_result,
-            project=project or find_project(doc),
-        )
-        if boundary_preview is not None:
-            _set_preview_property(preview_obj, "IntersectionBoundaryPreviewRef", str(getattr(boundary_preview, "Name", "") or ""))
         patch_boundary_result = corridor_intersection_patch_boundary_result(boundary_result)
         drainage_hint_result_for_breaklines = None
         try:
@@ -5963,30 +5938,14 @@ def create_corridor_intersection_surface_preview(
             shared_breakline_result,
             {"intersection_surface": shared_breakline_intersection_surface},
         )
-        _attach_shared_breakline_preview_metadata(
+        _attach_intersection_shared_breakline_and_patch_boundary_metadata(
             preview_obj,
-            shared_breakline_result,
-            consumer_ref="intersection_surface",
-            audit=shared_breakline_audit_result,
+            patch_boundary_result=patch_boundary_result,
+            shared_boundary_graph_result=shared_boundary_graph_result,
+            shared_breakline_audit_result=shared_breakline_audit_result,
+            shared_breakline_intersection_surface=shared_breakline_intersection_surface,
+            shared_breakline_result=shared_breakline_result,
         )
-        _attach_shared_breakline_constraint_preview_metadata(preview_obj, shared_breakline_intersection_surface)
-        _attach_boundary_loop_shared_breakline_preview_metadata(
-            preview_obj,
-            shared_breakline_result,
-            consumer_ref="intersection_surface",
-        )
-        _attach_intersection_shared_boundary_graph_preview_metadata(
-            preview_obj,
-            shared_boundary_graph_result,
-            consumer_ref="intersection_surface",
-        )
-        _set_preview_property(preview_obj, "IntersectionPatchBoundaryMode", str(getattr(patch_boundary_result, "boundary_mode", "") or ""))
-        _set_preview_property(preview_obj, "IntersectionPatchBoundaryStatus", str(getattr(patch_boundary_result, "status", "") or ""))
-        _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryOrderedPointCount", int(getattr(patch_boundary_result, "boundary_point_count", 0) or 0))
-        _set_preview_integer_property(preview_obj, "IntersectionPatchBoundarySourceSegmentCount", int(getattr(patch_boundary_result, "source_segment_count", 0) or 0))
-        _set_preview_property(preview_obj, "IntersectionPatchBoundaryClosed", "Yes" if bool(getattr(patch_boundary_result, "closed", False)) else "No")
-        _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryDiagnosticCount", len(list(getattr(patch_boundary_result, "diagnostic_rows", []) or [])))
-        _set_preview_string_list_property(preview_obj, "IntersectionPatchBoundaryDiagnostics", list(getattr(patch_boundary_result, "diagnostic_rows", []) or []))
         surface_boundary_review = _intersection_surface_boundary_review(
             intersection_model=intersection_model,
             prerequisite=prerequisite,
@@ -5994,11 +5953,12 @@ def create_corridor_intersection_surface_preview(
             boundary_result=boundary_result,
             patch_boundary_result=patch_boundary_result,
         )
-        _attach_intersection_surface_boundary_review_metadata(preview_obj, surface_boundary_review)
-        exclusion_preview = _create_corridor_intersection_exclusion_zone_preview(
+        exclusion_preview = _attach_intersection_exclusion_zone_preview(
             doc,
-            patch_boundary_result,
-            project=project or find_project(doc),
+            preview_obj,
+            patch_boundary_result=patch_boundary_result,
+            project=project,
+            surface_boundary_review=surface_boundary_review,
         )
         if exclusion_preview is not None:
             _set_preview_property(preview_obj, "IntersectionExclusionZoneRef", str(getattr(exclusion_preview, "Name", "") or ""))
@@ -6022,77 +5982,241 @@ def create_corridor_intersection_surface_preview(
             slope_face_policy=slope_face_policy,
             tie_slope_window_rows_for_breaklines=tie_slope_window_rows_for_breaklines,
         )
-        drainage_rows = corridor_intersection_drainage_review_rows(doc)
-        drainage_row = next(
-            (
-                row for row in drainage_rows
-                if str(row.get("intersection_id", "") or "") == str(getattr(prerequisite, "intersection_id", "") or "")
-            ),
-            None,
-        )
-        if drainage_row is not None:
-            _set_preview_property(preview_obj, "IntersectionDrainageCoverageStatus", str(drainage_row.get("status", "") or ""))
-            _set_preview_property(preview_obj, "IntersectionLowPointStation", f"{float(drainage_row.get('station', 0.0) or 0.0):.3f}")
-            _set_preview_float_property(preview_obj, "IntersectionLowPointZ", float(drainage_row.get("z", 0.0) or 0.0))
-            _set_preview_integer_property(preview_obj, "IntersectionLowPointCandidateCount", int(drainage_row.get("low_point_count", 0) or 0))
-            _set_preview_string_list_property(
-                preview_obj,
-                "IntersectionDrainageElementRefs",
-                [ref for ref in str(drainage_row.get("drainage_element_refs", "") or "").split(",") if ref],
-            )
-            _set_preview_string_list_property(
-                preview_obj,
-                "IntersectionDrainageCandidateRefs",
-                [ref for ref in str(drainage_row.get("drainage_candidate_refs", "") or "").split(",") if ref],
-            )
-            _set_preview_string_list_property(
-                preview_obj,
-                "IntersectionDrainageDiagnostics",
-                [value.strip() for value in str(drainage_row.get("diagnostics", "") or "").split(";") if value.strip()],
-            )
-        surface_patch_result = corridor_intersection_surface_patch_result(
-            tin_surface,
-            patch_boundary_result=patch_boundary_result if "patch_boundary_result" in locals() else None,
-            consumed_contract_refs=list(getattr(preview_obj, "ConsumedIntersectionContractRefs", []) or []),
-            surface_boundary_diagnostics=[
-                str(value or "")
-                for value in list(surface_boundary_review.get("diagnostics", []) or [])
-                if str(value or "").startswith(("intersection_surface_boundary_fallback:", "cross_intersection_", "warning:", "error:"))
-            ]
-            if "surface_boundary_review" in locals()
-            else (),
-        )
-        _attach_intersection_surface_patch_result_metadata(preview_obj, surface_patch_result)
-        _set_preview_property(preview_obj, "IntersectionImplementationMode", "legacy_patch_frozen")
-        _set_preview_property(preview_obj, "IntersectionRedesignPath", "edge_network_first")
-        _set_preview_property(preview_obj, "IntersectionOutputPath", "legacy_output")
-        _attach_intersection_surface_replacement_gate_metadata(
+        _attach_intersection_drainage_low_point_metadata(
+            doc,
             preview_obj,
-            locals().get("surface_zone_surface_preview"),
+            prerequisite=prerequisite,
         )
-        _attach_intersection_surface_replacement_handoff_metadata(
+        _attach_intersection_surface_patch_result_and_handoff(
             preview_obj,
-            preview_obj,
-            handoff_role="transitional_patch",
+            patch_boundary_result=patch_boundary_result,
+            surface_boundary_review=surface_boundary_review,
+            tin_surface=tin_surface,
         )
-        _attach_intersection_surface_downstream_handoff_selection(
-            preview_obj,
-            None,
-            None,
-        )
-        _attach_intersection_legacy_patch_compatibility_audit(preview_obj)
-        _set_preview_property(
-            preview_obj,
-            "IntersectionImplementationStatus",
-            "Frozen first-slice patch path; next redesign work must use Intersection Edge Network.",
-        )
-        _attach_intersection_manual_qa_capture_metadata(preview_obj)
-        _set_preview_property(preview_obj, "IntersectionReviewSummary", _intersection_surface_review_notes(preview_obj))
         try:
             route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
     return preview_obj
+
+
+def _attach_intersection_exclusion_zone_preview(
+    doc,
+    preview_obj,
+    *,
+    patch_boundary_result,
+    project,
+    surface_boundary_review,
+) -> object:
+    """Build the intersection exclusion zone preview and tag the surfaces it clips."""
+
+    exclusion_preview = None
+
+    _attach_intersection_surface_boundary_review_metadata(preview_obj, surface_boundary_review)
+    exclusion_preview = _create_corridor_intersection_exclusion_zone_preview(
+        doc,
+        patch_boundary_result,
+        project=project or find_project(doc),
+    )
+
+    return exclusion_preview
+
+
+def _attach_intersection_shared_breakline_and_patch_boundary_metadata(
+    preview_obj,
+    *,
+    patch_boundary_result,
+    shared_boundary_graph_result,
+    shared_breakline_audit_result,
+    shared_breakline_intersection_surface,
+    shared_breakline_result,
+) -> None:
+    """Record shared breakline, boundary loop, shared boundary graph, and patch boundary metadata."""
+
+    _attach_shared_breakline_preview_metadata(
+        preview_obj,
+        shared_breakline_result,
+        consumer_ref="intersection_surface",
+        audit=shared_breakline_audit_result,
+    )
+    _attach_shared_breakline_constraint_preview_metadata(preview_obj, shared_breakline_intersection_surface)
+    _attach_boundary_loop_shared_breakline_preview_metadata(
+        preview_obj,
+        shared_breakline_result,
+        consumer_ref="intersection_surface",
+    )
+    _attach_intersection_shared_boundary_graph_preview_metadata(
+        preview_obj,
+        shared_boundary_graph_result,
+        consumer_ref="intersection_surface",
+    )
+    _set_preview_property(preview_obj, "IntersectionPatchBoundaryMode", str(getattr(patch_boundary_result, "boundary_mode", "") or ""))
+    _set_preview_property(preview_obj, "IntersectionPatchBoundaryStatus", str(getattr(patch_boundary_result, "status", "") or ""))
+    _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryOrderedPointCount", int(getattr(patch_boundary_result, "boundary_point_count", 0) or 0))
+    _set_preview_integer_property(preview_obj, "IntersectionPatchBoundarySourceSegmentCount", int(getattr(patch_boundary_result, "source_segment_count", 0) or 0))
+    _set_preview_property(preview_obj, "IntersectionPatchBoundaryClosed", "Yes" if bool(getattr(patch_boundary_result, "closed", False)) else "No")
+    _set_preview_integer_property(preview_obj, "IntersectionPatchBoundaryDiagnosticCount", len(list(getattr(patch_boundary_result, "diagnostic_rows", []) or [])))
+    _set_preview_string_list_property(preview_obj, "IntersectionPatchBoundaryDiagnostics", list(getattr(patch_boundary_result, "diagnostic_rows", []) or []))
+
+
+def _attach_intersection_surface_patch_result_and_handoff(
+    preview_obj,
+    *,
+    patch_boundary_result,
+    surface_boundary_review,
+    tin_surface,
+) -> None:
+    """Record the surface patch result, implementation mode, replacement gate, and handoff metadata."""
+
+    surface_patch_result = corridor_intersection_surface_patch_result(
+        tin_surface,
+        patch_boundary_result=patch_boundary_result if "patch_boundary_result" in locals() else None,
+        consumed_contract_refs=list(getattr(preview_obj, "ConsumedIntersectionContractRefs", []) or []),
+        surface_boundary_diagnostics=[
+            str(value or "")
+            for value in list(surface_boundary_review.get("diagnostics", []) or [])
+            if str(value or "").startswith(("intersection_surface_boundary_fallback:", "cross_intersection_", "warning:", "error:"))
+        ]
+        if "surface_boundary_review" in locals()
+        else (),
+    )
+    _attach_intersection_surface_patch_result_metadata(preview_obj, surface_patch_result)
+    _set_preview_property(preview_obj, "IntersectionImplementationMode", "legacy_patch_frozen")
+    _set_preview_property(preview_obj, "IntersectionRedesignPath", "edge_network_first")
+    _set_preview_property(preview_obj, "IntersectionOutputPath", "legacy_output")
+    _attach_intersection_surface_replacement_gate_metadata(
+        preview_obj,
+        locals().get("surface_zone_surface_preview"),
+    )
+    _attach_intersection_surface_replacement_handoff_metadata(
+        preview_obj,
+        preview_obj,
+        handoff_role="transitional_patch",
+    )
+    _attach_intersection_surface_downstream_handoff_selection(
+        preview_obj,
+        None,
+        None,
+    )
+    _attach_intersection_legacy_patch_compatibility_audit(preview_obj)
+    _set_preview_property(
+        preview_obj,
+        "IntersectionImplementationStatus",
+        "Frozen first-slice patch path; next redesign work must use Intersection Edge Network.",
+    )
+    _attach_intersection_manual_qa_capture_metadata(preview_obj)
+    _set_preview_property(preview_obj, "IntersectionReviewSummary", _intersection_surface_review_notes(preview_obj))
+
+
+def _attach_intersection_drainage_low_point_metadata(
+    doc,
+    preview_obj,
+    *,
+    prerequisite,
+) -> None:
+    """Record the intersection drainage low-point review row on the surface preview."""
+
+    drainage_rows = corridor_intersection_drainage_review_rows(doc)
+    drainage_row = next(
+        (
+            row for row in drainage_rows
+            if str(row.get("intersection_id", "") or "") == str(getattr(prerequisite, "intersection_id", "") or "")
+        ),
+        None,
+    )
+    if drainage_row is not None:
+        _set_preview_property(preview_obj, "IntersectionDrainageCoverageStatus", str(drainage_row.get("status", "") or ""))
+        _set_preview_property(preview_obj, "IntersectionLowPointStation", f"{float(drainage_row.get('station', 0.0) or 0.0):.3f}")
+        _set_preview_float_property(preview_obj, "IntersectionLowPointZ", float(drainage_row.get("z", 0.0) or 0.0))
+        _set_preview_integer_property(preview_obj, "IntersectionLowPointCandidateCount", int(drainage_row.get("low_point_count", 0) or 0))
+        _set_preview_string_list_property(
+            preview_obj,
+            "IntersectionDrainageElementRefs",
+            [ref for ref in str(drainage_row.get("drainage_element_refs", "") or "").split(",") if ref],
+        )
+        _set_preview_string_list_property(
+            preview_obj,
+            "IntersectionDrainageCandidateRefs",
+            [ref for ref in str(drainage_row.get("drainage_candidate_refs", "") or "").split(",") if ref],
+        )
+        _set_preview_string_list_property(
+            preview_obj,
+            "IntersectionDrainageDiagnostics",
+            [value.strip() for value in str(drainage_row.get("diagnostics", "") or "").split(";") if value.strip()],
+        )
+
+
+def _attach_intersection_boundary_segment_preview(
+    doc,
+    preview_obj,
+    *,
+    intersection_model,
+    project,
+    tie_in_result,
+) -> object:
+    """Record the Intersection boundary segment result and build its preview."""
+
+    boundary_result = None
+
+    boundary_result = corridor_intersection_boundary_segment_result(
+        tie_in_result,
+        intersection_model=intersection_model,
+    )
+    _set_preview_property(preview_obj, "IntersectionBoundaryMode", str(getattr(boundary_result, "boundary_mode", "") or ""))
+    _set_preview_property(preview_obj, "IntersectionBoundaryStatus", str(getattr(boundary_result, "status", "") or ""))
+    _set_preview_integer_property(preview_obj, "IntersectionBoundarySegmentCount", int(getattr(boundary_result, "segment_count", 0) or 0))
+    _set_preview_integer_property(preview_obj, "IntersectionBoundaryTieInSegmentCount", int(getattr(boundary_result, "tie_in_segment_count", 0) or 0))
+    _set_preview_integer_property(preview_obj, "IntersectionBoundaryArcSegmentCount", int(getattr(boundary_result, "arc_segment_count", 0) or 0))
+    _set_preview_string_list_property(preview_obj, "IntersectionBoundaryDiagnostics", list(getattr(boundary_result, "diagnostic_rows", []) or []))
+    _set_preview_integer_property(
+        preview_obj,
+        "IntersectionBoundaryDiagnosticCount",
+        len(list(getattr(boundary_result, "diagnostic_rows", []) or [])),
+    )
+    boundary_preview = _create_corridor_intersection_boundary_segment_preview(
+        doc,
+        boundary_result,
+        project=project or find_project(doc),
+    )
+    if boundary_preview is not None:
+        _set_preview_property(preview_obj, "IntersectionBoundaryPreviewRef", str(getattr(boundary_preview, "Name", "") or ""))
+
+    return boundary_result
+
+
+def _attach_intersection_tie_in_edge_preview(
+    doc,
+    preview_obj,
+    *,
+    intersection_applied_section_set,
+    intersection_model,
+    prerequisite,
+    project,
+) -> object:
+    """Record the Intersection Tie-In edge result and build its preview."""
+
+    tie_in_result = None
+
+    tie_in_result = corridor_intersection_tie_in_edge_result(
+        intersection_applied_section_set,
+        prerequisite=prerequisite,
+        intersection_model=intersection_model,
+    )
+    _set_preview_property(preview_obj, "TieInEdgePreviewStatus", str(getattr(tie_in_result, "status", "") or ""))
+    _set_preview_integer_property(
+        preview_obj,
+        "TieInEdgeDiagnosticCount",
+        len(list(getattr(tie_in_result, "diagnostic_rows", []) or [])),
+    )
+    tie_in_preview = _create_corridor_intersection_tie_in_edge_preview(
+        doc,
+        tie_in_result,
+        project=project or find_project(doc),
+    )
+    if tie_in_preview is not None:
+        _set_preview_property(preview_obj, "TieInEdgePreviewRef", str(getattr(tie_in_preview, "Name", "") or ""))
+
+    return tie_in_result
 
 
 def _attach_intersection_contract_previews(

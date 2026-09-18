@@ -1053,6 +1053,27 @@ After the fix the dump is identical to the baseline again, with the same failing
 
 Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
 
+### Level 7 manual confirmation of M6 chunk 2, on 2026-09-18
+
+The maintainer confirmed the intersection previews in the GUI, including the roundabout apron, subgrade, and slope-face previews that the chunk's second defect had dropped before it was fixed.
+
+### M6 chunk 3 on 2026-09-18: the remaining runs of the intersection preview
+
+Chunk 2 lifted whole branches; this chunk lifts six contiguous runs of statements that each do one thing, using a generator that takes a statement range rather than a single statement. Each helper receives the names its run reads and returns the names the rest of the function still reads, so the caller keeps the same locals; every line is unchanged apart from one level of indentation.
+
+- the Tie-In edge result, its properties, and its preview, returning the result the boundary segment step needs;
+- the boundary segment result, its seven properties, and its preview, returning the result;
+- the shared breakline, boundary loop, shared boundary graph, and patch boundary metadata;
+- the exclusion zone preview and the tagging of the surfaces it clips;
+- the intersection drainage low-point review row;
+- the surface patch result with the implementation mode, replacement gate, handoff, and manual QA metadata.
+
+`create_corridor_intersection_surface_preview` falls from 353 to 258 lines, from 719 at the start of M6. What is left is the document and prerequisite checks, the TIN build, the preview mapper call, and thirteen helper calls.
+
+Two guards in the generator earned their place here. The first refused a range whose names a later statement reads through `locals()`, which is how the run boundaries were chosen rather than guessed. The second is the rule from chunk 2: a returned name is initialised to None inside the helper. The last run, the surface patch metadata, does read `patch_boundary_result` and `surface_boundary_review` through `locals()` inside the moved code; both are assigned unconditionally before the run and are passed in as parameters, so they are locals of the helper too and the tests still see the same values. `surface_zone_surface_preview`, read the same way, is assigned nowhere and stays None.
+
+Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
