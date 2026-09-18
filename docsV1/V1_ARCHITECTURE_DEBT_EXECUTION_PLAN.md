@@ -1074,6 +1074,18 @@ Two guards in the generator earned their place here. The first refused a range w
 
 Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
 
+### M6 chunk 4 on 2026-09-18: the intersection preview reaches its target size
+
+Three more moves finish the first preview function.
+
+Two runs became helpers the same way as chunk 3: the opening run that clears the build diagnostic and records the surface preview contract, the grading and slope-face policies, and the patch metadata, returning the slope-face policy the later steps use; and the run that evaluates the patch boundary and shared breakline contracts and records their metadata, returning the four results the contract previews and the surface patch step read.
+
+The third is a deduplication rather than a lift. The applied-sections check, the prerequisite check, and the TIN build failure each removed the same eight intersection preview objects in the same order and then recorded a build diagnostic that differed only in status and notes. The generator verified that all three teardowns are identical before folding them into `_clear_intersection_surface_previews_with_diagnostic(doc, *, project, status, notes)`. Each caller keeps its own condition, its own status and notes, including the error path's `f"...: {exc}"`, and its own `return None`, so the control flow is untouched.
+
+`create_corridor_intersection_surface_preview` is now 169 lines, from 719 at the start of M6, and reads as document checks, the TIN build, the preview mapper call, and eleven named steps. That satisfies the milestone's size criterion for this function, roughly 150 lines, closely enough that further splitting would cut across the steps rather than between them.
+
+Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

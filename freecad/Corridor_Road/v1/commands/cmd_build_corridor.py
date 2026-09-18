@@ -5754,41 +5754,21 @@ def create_corridor_intersection_surface_preview(
         return None
     applied_section_set = to_applied_section_set(find_v1_applied_section_set(doc))
     if applied_section_set is None:
-        _remove_preview_object(doc, "V1CorridorIntersectionSurfacePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionCurbReturnSlopePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionTieInEdgePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionBoundarySegmentPreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionExclusionZonePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
-        _record_corridor_build_preview_diagnostic(
+        _clear_intersection_surface_previews_with_diagnostic(
             doc,
-            role="intersection",
-            surface_kind="intersection_surface",
+            project=project,
             status="missing",
             notes="Intersection Surface preview was not created because Applied Sections are required.",
-            project=project or find_project(doc),
         )
         return None
     intersection_model = to_intersection_model(find_v1_intersection_model(doc))
     prerequisite = corridor_intersection_patch_prerequisite_result(doc)
     if str(getattr(prerequisite, "status", "") or "") == "missing":
-        _remove_preview_object(doc, "V1CorridorIntersectionSurfacePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionCurbReturnSlopePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionTieInEdgePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionBoundarySegmentPreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionExclusionZonePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
-        _record_corridor_build_preview_diagnostic(
+        _clear_intersection_surface_previews_with_diagnostic(
             doc,
-            role="intersection",
-            surface_kind="intersection_surface",
+            project=project,
             status="missing",
             notes=_intersection_patch_diagnostic_notes(prerequisite),
-            project=project or find_project(doc),
         )
         return None
     surface_id = _surface_id(surface_model, "intersection_surface") or f"{corridor_model.corridor_id}:intersection-surface"
@@ -5811,21 +5791,11 @@ def create_corridor_intersection_surface_preview(
         )
         tin_surface = _tin_surface_from_intersection_patch_build_result(build_result)
     except Exception as exc:
-        _remove_preview_object(doc, "V1CorridorIntersectionSurfacePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionCurbReturnSlopePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionTieInEdgePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionBoundarySegmentPreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionExclusionZonePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
-        _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
-        _record_corridor_build_preview_diagnostic(
+        _clear_intersection_surface_previews_with_diagnostic(
             doc,
-            role="intersection",
-            surface_kind="intersection_surface",
+            project=project,
             status="error",
             notes=f"Intersection Surface preview was not created: {exc}",
-            project=project or find_project(doc),
         )
         return None
     _remove_preview_object(doc, "V1CorridorIntersectionCurbReturnSlopePreview")
@@ -5850,25 +5820,17 @@ def create_corridor_intersection_surface_preview(
         return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
-        _remove_corridor_build_preview_diagnostic(doc, "intersection")
-        _attach_corridor_surface_preview_contract(
+        slope_face_policy = _attach_intersection_surface_preview_contract_and_metadata(
+            doc,
             preview_obj,
-            role="intersection",
-            surface_kind="intersection_surface",
-            surface_id=surface_id,
             corridor_model=corridor_model,
-            surface_model=surface_model,
-            applied_section_set=intersection_applied_section_set,
-            preview_result=result,
-        )
-        grading_policy = IntersectionPatchGradingService().select_policy(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
-        slope_face_policy = _intersection_slope_face_policy_for(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
-        _attach_intersection_patch_surface_metadata(
-            preview_obj,
+            intersection_applied_section_set=intersection_applied_section_set,
+            intersection_model=intersection_model,
             prerequisite=prerequisite,
+            result=result,
+            surface_id=surface_id,
+            surface_model=surface_model,
             tin_surface=tin_surface,
-            grading_policy=grading_policy,
-            slope_face_policy=slope_face_policy,
         )
         tie_in_result = _attach_intersection_tie_in_edge_preview(
             doc,
@@ -5885,66 +5847,15 @@ def create_corridor_intersection_surface_preview(
             project=project,
             tie_in_result=tie_in_result,
         )
-        patch_boundary_result = corridor_intersection_patch_boundary_result(boundary_result)
-        drainage_hint_result_for_breaklines = None
-        try:
-            service_for_breaklines = IntersectionEvaluationService()
-            topology_for_breaklines = service_for_breaklines.evaluate_topology(intersection_model)
-            edge_network_for_breaklines = service_for_breaklines.evaluate_edge_network(intersection_model, topology_for_breaklines)
-            surface_zones_for_breaklines = service_for_breaklines.evaluate_surface_zones(intersection_model, edge_network_for_breaklines)
-            grading_for_breaklines = service_for_breaklines.evaluate_grading_context(intersection_model, surface_zones_for_breaklines)
-            drainage_hint_result_for_breaklines = service_for_breaklines.evaluate_drainage_hints(
-                intersection_model,
-                surface_zones_for_breaklines,
-                grading_for_breaklines,
-            )
-        except Exception:
-            drainage_hint_result_for_breaklines = None
-        tie_slope_window_applied_section_set = _applied_section_set_with_intersection_tie_in_sections(
-            applied_section_set,
-            document=doc,
-        )
-        if str(getattr(prerequisite, "intersection_kind", "") or "").strip().lower() == "roundabout":
-            tie_slope_window_rows_for_breaklines = []
-        else:
-            tie_slope_window_rows_for_breaklines = _intersection_tie_slope_applied_section_window_rows(
-                tie_slope_window_applied_section_set,
-                prerequisite=prerequisite,
-                intersection_model=intersection_model,
-            )
-        shared_breakline_result = corridor_intersection_shared_breakline_result(
-            intersection_applied_section_set,
-            prerequisite=prerequisite,
-            intersection_model=intersection_model,
-            patch_boundary_result=patch_boundary_result,
-            tie_slope_window_rows=tie_slope_window_rows_for_breaklines,
-            drainage_hint_result=drainage_hint_result_for_breaklines,
-        )
-        shared_boundary_graph_result = corridor_intersection_shared_boundary_graph_result(
-            shared_breakline_result,
-            intersection_id=str(getattr(prerequisite, "intersection_id", "") or ""),
-        )
-        shared_breakline_intersection_surface = tin_surface_with_shared_breakline_constraint_edges(
-            tin_surface,
-            shared_breakline_result,
-            consumer_ref="intersection_surface",
-        )
-        shared_breakline_intersection_surface = tin_surface_with_shared_breakline_metadata(
-            shared_breakline_intersection_surface,
-            shared_breakline_result,
-            consumer_ref="intersection_surface",
-        )
-        shared_breakline_audit_result = shared_breakline_audit(
-            shared_breakline_result,
-            {"intersection_surface": shared_breakline_intersection_surface},
-        )
-        _attach_intersection_shared_breakline_and_patch_boundary_metadata(
+        patch_boundary_result, shared_boundary_graph_result, shared_breakline_result, tie_slope_window_rows_for_breaklines = _attach_intersection_shared_breakline_previews(
+            doc,
             preview_obj,
-            patch_boundary_result=patch_boundary_result,
-            shared_boundary_graph_result=shared_boundary_graph_result,
-            shared_breakline_audit_result=shared_breakline_audit_result,
-            shared_breakline_intersection_surface=shared_breakline_intersection_surface,
-            shared_breakline_result=shared_breakline_result,
+            applied_section_set=applied_section_set,
+            boundary_result=boundary_result,
+            intersection_applied_section_set=intersection_applied_section_set,
+            intersection_model=intersection_model,
+            prerequisite=prerequisite,
+            tin_surface=tin_surface,
         )
         surface_boundary_review = _intersection_surface_boundary_review(
             intersection_model=intersection_model,
@@ -5998,6 +5909,157 @@ def create_corridor_intersection_surface_preview(
         except Exception:
             pass
     return preview_obj
+
+
+def _clear_intersection_surface_previews_with_diagnostic(
+    doc,
+    *,
+    project,
+    status: str,
+    notes: str,
+) -> None:
+    """Remove every intersection preview object and record why the surface was not created."""
+
+    _remove_preview_object(doc, "V1CorridorIntersectionSurfacePreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionCurbReturnSlopePreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionTieInEdgePreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionBoundarySegmentPreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionExclusionZonePreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
+    _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
+    _record_corridor_build_preview_diagnostic(
+        doc,
+        role="intersection",
+        surface_kind="intersection_surface",
+        status=status,
+        notes=notes,
+        project=project or find_project(doc),
+    )
+
+
+def _attach_intersection_surface_preview_contract_and_metadata(
+    doc,
+    preview_obj,
+    *,
+    corridor_model,
+    intersection_applied_section_set,
+    intersection_model,
+    prerequisite,
+    result,
+    surface_id,
+    surface_model,
+    tin_surface,
+) -> object:
+    """Clear the build diagnostic and record the surface preview contract, policies, and patch metadata."""
+
+    slope_face_policy = None
+
+    _remove_corridor_build_preview_diagnostic(doc, "intersection")
+    _attach_corridor_surface_preview_contract(
+        preview_obj,
+        role="intersection",
+        surface_kind="intersection_surface",
+        surface_id=surface_id,
+        corridor_model=corridor_model,
+        surface_model=surface_model,
+        applied_section_set=intersection_applied_section_set,
+        preview_result=result,
+    )
+    grading_policy = IntersectionPatchGradingService().select_policy(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
+    slope_face_policy = _intersection_slope_face_policy_for(intersection_model, str(getattr(prerequisite, "intersection_id", "") or ""))
+    _attach_intersection_patch_surface_metadata(
+        preview_obj,
+        prerequisite=prerequisite,
+        tin_surface=tin_surface,
+        grading_policy=grading_policy,
+        slope_face_policy=slope_face_policy,
+    )
+
+    return slope_face_policy
+
+
+def _attach_intersection_shared_breakline_previews(
+    doc,
+    preview_obj,
+    *,
+    applied_section_set,
+    boundary_result,
+    intersection_applied_section_set,
+    intersection_model,
+    prerequisite,
+    tin_surface,
+) -> tuple:
+    """Evaluate the patch boundary and shared breakline contracts and record their metadata."""
+
+    patch_boundary_result = None
+    shared_boundary_graph_result = None
+    shared_breakline_result = None
+    tie_slope_window_rows_for_breaklines = None
+
+    patch_boundary_result = corridor_intersection_patch_boundary_result(boundary_result)
+    drainage_hint_result_for_breaklines = None
+    try:
+        service_for_breaklines = IntersectionEvaluationService()
+        topology_for_breaklines = service_for_breaklines.evaluate_topology(intersection_model)
+        edge_network_for_breaklines = service_for_breaklines.evaluate_edge_network(intersection_model, topology_for_breaklines)
+        surface_zones_for_breaklines = service_for_breaklines.evaluate_surface_zones(intersection_model, edge_network_for_breaklines)
+        grading_for_breaklines = service_for_breaklines.evaluate_grading_context(intersection_model, surface_zones_for_breaklines)
+        drainage_hint_result_for_breaklines = service_for_breaklines.evaluate_drainage_hints(
+            intersection_model,
+            surface_zones_for_breaklines,
+            grading_for_breaklines,
+        )
+    except Exception:
+        drainage_hint_result_for_breaklines = None
+    tie_slope_window_applied_section_set = _applied_section_set_with_intersection_tie_in_sections(
+        applied_section_set,
+        document=doc,
+    )
+    if str(getattr(prerequisite, "intersection_kind", "") or "").strip().lower() == "roundabout":
+        tie_slope_window_rows_for_breaklines = []
+    else:
+        tie_slope_window_rows_for_breaklines = _intersection_tie_slope_applied_section_window_rows(
+            tie_slope_window_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+    shared_breakline_result = corridor_intersection_shared_breakline_result(
+        intersection_applied_section_set,
+        prerequisite=prerequisite,
+        intersection_model=intersection_model,
+        patch_boundary_result=patch_boundary_result,
+        tie_slope_window_rows=tie_slope_window_rows_for_breaklines,
+        drainage_hint_result=drainage_hint_result_for_breaklines,
+    )
+    shared_boundary_graph_result = corridor_intersection_shared_boundary_graph_result(
+        shared_breakline_result,
+        intersection_id=str(getattr(prerequisite, "intersection_id", "") or ""),
+    )
+    shared_breakline_intersection_surface = tin_surface_with_shared_breakline_constraint_edges(
+        tin_surface,
+        shared_breakline_result,
+        consumer_ref="intersection_surface",
+    )
+    shared_breakline_intersection_surface = tin_surface_with_shared_breakline_metadata(
+        shared_breakline_intersection_surface,
+        shared_breakline_result,
+        consumer_ref="intersection_surface",
+    )
+    shared_breakline_audit_result = shared_breakline_audit(
+        shared_breakline_result,
+        {"intersection_surface": shared_breakline_intersection_surface},
+    )
+    _attach_intersection_shared_breakline_and_patch_boundary_metadata(
+        preview_obj,
+        patch_boundary_result=patch_boundary_result,
+        shared_boundary_graph_result=shared_boundary_graph_result,
+        shared_breakline_audit_result=shared_breakline_audit_result,
+        shared_breakline_intersection_surface=shared_breakline_intersection_surface,
+        shared_breakline_result=shared_breakline_result,
+    )
+
+    return (patch_boundary_result, shared_boundary_graph_result, shared_breakline_result, tie_slope_window_rows_for_breaklines)
 
 
 def _attach_intersection_exclusion_zone_preview(
