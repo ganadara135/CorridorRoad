@@ -1086,6 +1086,20 @@ The third is a deduplication rather than a lift. The applied-sections check, the
 
 Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
 
+### M6 chunk 5 on 2026-09-18: the intersection slope face surface preview
+
+The second-largest preview function, `_create_corridor_intersection_slope_face_surface_preview` at 388 lines, turned out to be simpler than the first. After building the surface and creating the preview object, 105 of its statements do one thing: read a TIN quality row and write it to a property of the preview object. Nothing in that stretch touches the document, and the only inputs are the preview object, the surface, and the loop result.
+
+It was split by subject rather than by size, into six helpers: the preview identity with the loop counts and boundary strip quality; the slope face cell counts, refs, and diagnostics; the upper slope face panel coverage, generation mode, and diagnostics; the shared boundary graph counts with the boundary loop shared breakline refs; the boundary loop transition strips, corners, and summaries; and the boundary loop graph coverage with its audit rows and owner fill readiness. Every line keeps its text and loses one level of indentation, and each helper takes only what its run reads.
+
+The function is now 93 lines: the guard, the surface build, the empty-surface and mapper error paths, the preview object lookup, six named metadata steps, and the tree routing.
+
+This used a third generator, which takes any command function and a range of its top-level statements, rather than the two written for the shape of the first preview function. The `locals()` guard from chunk 3 came along with it.
+
+Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
+
+Preview functions above 150 lines that remain: `create_corridor_daylight_surface_preview` at 242, `create_corridor_design_surface_preview` at 177, `_create_corridor_roundabout_slope_face_surface_preview` at 181, `_create_corridor_roundabout_subgrade_surface_preview` at 166, and `_create_corridor_roundabout_entry_exit_connector_surface_preview` at 151. The daylight and design surface previews are not covered by the current dump selection, so that selection needs widening before they are touched.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.

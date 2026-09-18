@@ -14027,6 +14027,46 @@ def _create_corridor_intersection_slope_face_surface_preview(
         )
         return None
     _remove_corridor_build_preview_diagnostic(document, "intersection_slope")
+    _attach_intersection_slope_face_surface_identity(
+        obj,
+        loop_result=loop_result,
+        surface=surface,
+    )
+    _attach_intersection_slope_face_cell_metadata(
+        obj,
+        surface=surface,
+    )
+    _attach_intersection_upper_slope_face_panel_metadata(
+        obj,
+        surface=surface,
+    )
+    _attach_intersection_shared_boundary_graph_surface_metadata(
+        obj,
+        surface=surface,
+    )
+    _attach_intersection_boundary_loop_transition_metadata(
+        obj,
+        surface=surface,
+    )
+    _attach_intersection_boundary_loop_graph_metadata(
+        obj,
+        surface=surface,
+    )
+    try:
+        route_object_to_project_tree(project or find_project(document), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _attach_intersection_slope_face_surface_identity(
+    obj,
+    *,
+    loop_result,
+    surface,
+) -> None:
+    """Record the slope face preview identity, loop counts, and boundary strip quality."""
+
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_slope_face_surface_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionSlopeFaceSurfacePreview")
     _set_preview_property(obj, "IntersectionId", str(getattr(loop_result, "intersection_id", "") or ""))
@@ -14043,6 +14083,15 @@ def _create_corridor_intersection_slope_face_surface_preview(
         [str(ref or "") for ref in list(getattr(surface, "boundary_refs", []) or []) if str(ref or "")],
     )
     _attach_intersection_slope_face_boundary_strip_quality(obj, surface)
+
+
+def _attach_intersection_slope_face_cell_metadata(
+    obj,
+    *,
+    surface,
+) -> None:
+    """Record slope face cell counts, refs, and diagnostics."""
+
     _set_preview_property(obj, "IntersectionSlopeFaceCellResultId", _tin_quality_text(surface, "intersection_slope_face_cell_result_id"))
     _set_preview_property(obj, "IntersectionSlopeFaceCellStatus", _tin_quality_text(surface, "intersection_slope_face_cell_status"))
     _set_preview_integer_property(obj, "IntersectionSlopeFaceCellCount", int(_tin_quality_float(surface, "intersection_slope_face_cell_count") or 0))
@@ -14087,6 +14136,15 @@ def _create_corridor_intersection_slope_face_surface_preview(
     cell_audit_rows = _tin_quality_text(surface, "intersection_slope_face_cell_audit_rows")
     if cell_audit_rows:
         _set_preview_string_list_property(obj, "IntersectionSlopeFaceCellAuditRows", [value.strip() for value in cell_audit_rows.split(";;") if value.strip()])
+
+
+def _attach_intersection_upper_slope_face_panel_metadata(
+    obj,
+    *,
+    surface,
+) -> None:
+    """Record upper slope face panel coverage, generation mode, and diagnostics."""
+
     _set_preview_integer_property(
         obj,
         "IntersectionUpperSlopeFacePanelCandidateCount",
@@ -14163,6 +14221,15 @@ def _create_corridor_intersection_slope_face_surface_preview(
     upper_panel_diagnostic = _tin_quality_text(surface, "intersection_upper_slope_face_panel_diagnostic")
     if upper_panel_diagnostic:
         _set_preview_property(obj, "IntersectionUpperSlopeFacePanelDiagnostic", upper_panel_diagnostic)
+
+
+def _attach_intersection_shared_boundary_graph_surface_metadata(
+    obj,
+    *,
+    surface,
+) -> None:
+    """Record shared boundary graph counts and boundary loop shared breakline refs."""
+
     _set_preview_property(obj, "IntersectionSharedBoundaryGraphResultId", _tin_quality_text(surface, "intersection_shared_boundary_graph_result_id"))
     _set_preview_property(obj, "IntersectionSharedBoundaryGraphStatus", _tin_quality_text(surface, "intersection_shared_boundary_graph_status"))
     _set_preview_integer_property(obj, "IntersectionSharedBoundaryGraphNodeCount", int(_tin_quality_float(surface, "intersection_shared_boundary_graph_node_count") or 0))
@@ -14199,6 +14266,15 @@ def _create_corridor_intersection_slope_face_surface_preview(
             "IntersectionBoundaryLoopSharedBreaklineRefs",
             [value.strip() for value in boundary_loop_shared_refs.split(",") if value.strip()],
         )
+
+
+def _attach_intersection_boundary_loop_transition_metadata(
+    obj,
+    *,
+    surface,
+) -> None:
+    """Record boundary loop transition strips, corners, and their summaries."""
+
     _set_preview_property(
         obj,
         "IntersectionBoundaryLoopTransitionGenerationMode",
@@ -14256,6 +14332,15 @@ def _create_corridor_intersection_slope_face_surface_preview(
             "IntersectionBoundaryLoopTransitionCornerFillRows",
             [value.strip() for value in boundary_loop_transition_corner_rows.split(";;") if value.strip()],
         )
+
+
+def _attach_intersection_boundary_loop_graph_metadata(
+    obj,
+    *,
+    surface,
+) -> None:
+    """Record boundary loop graph coverage, audit rows, and owner fill readiness on the slope face preview."""
+
     _set_preview_property(
         obj,
         "IntersectionBoundaryLoopGraphCoverageStatus",
@@ -14347,11 +14432,6 @@ def _create_corridor_intersection_slope_face_surface_preview(
             [value.strip() for value in graph_surface_boundary_refs.split(",") if value.strip()],
         )
     _attach_intersection_slope_face_owner_fill_readiness_metadata(obj)
-    try:
-        route_object_to_project_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    return obj
 
 
 def _create_corridor_intersection_tie_slope_surface_preview(
