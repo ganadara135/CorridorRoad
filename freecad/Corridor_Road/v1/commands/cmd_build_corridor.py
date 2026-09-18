@@ -6008,331 +6008,20 @@ def create_corridor_intersection_surface_preview(
                 target = _corridor_build_preview_object(doc, role)
                 if target is not None:
                     _attach_intersection_exclusion_zone_metadata(target, doc, exclusion_preview=exclusion_preview)
-        try:
-            service = IntersectionEvaluationService()
-            topology_result = service.evaluate_topology(intersection_model)
-            edge_network_result = service.evaluate_edge_network(intersection_model, topology_result)
-            surface_zone_result = service.evaluate_surface_zones(intersection_model, edge_network_result)
-            grading_context_result = service.evaluate_grading_context(intersection_model, surface_zone_result)
-            drainage_hint_result = service.evaluate_drainage_hints(intersection_model, surface_zone_result, grading_context_result)
-            applied = to_applied_section_set(find_v1_applied_section_set(doc))
-            slope_loop_result = service.evaluate_slope_face_loops(intersection_model, surface_zone_result, edge_network_result, applied)
-            _attach_intersection_contract_consumption_metadata(
-                preview_obj,
-                topology_result=topology_result,
-                edge_network_result=edge_network_result,
-                surface_zone_result=surface_zone_result,
-                grading_context_result=grading_context_result,
-                drainage_hint_result=drainage_hint_result,
-                slope_loop_result=slope_loop_result,
-            )
-            surface_zone_output = corridor_intersection_surface_zone_output(surface_zone_result, edge_network_result)
-            _attach_intersection_surface_zone_output_metadata(preview_obj, surface_zone_output)
-            _remove_preview_object(doc, "V1CorridorIntersectionSurfaceZoneOutputPreview")
-            _set_preview_property(preview_obj, "IntersectionSurfaceZoneOutputPreviewRef", "")
-            _remove_preview_object(doc, "V1CorridorIntersectionSurfaceZoneSurfacePreview")
-            _set_preview_property(preview_obj, "IntersectionSurfaceZoneSurfacePreviewRef", "")
-            _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopStatus", str(getattr(slope_loop_result, "status", "") or ""))
-            _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopCount", int(getattr(slope_loop_result, "loop_count", 0) or 0))
-            _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopReadyCount", int(getattr(slope_loop_result, "ready_count", 0) or 0))
-            _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopWarningCount", int(getattr(slope_loop_result, "warning_count", 0) or 0))
-            _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopErrorCount", int(getattr(slope_loop_result, "error_count", 0) or 0))
-            _set_preview_string_list_property(
-                preview_obj,
-                "IntersectionSlopeFaceLoopDiagnostics",
-                [str(value or "") for value in list(getattr(slope_loop_result, "diagnostic_rows", []) or [])],
-            )
-            _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
-            _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopPreviewRef", "")
-            slope_face_boundary_result = corridor_intersection_slope_face_boundary_result(
-                intersection_applied_section_set,
-                prerequisite=prerequisite,
-                intersection_model=intersection_model,
-            )
-            _remove_preview_object(doc, "ReviewIntersectionTieSlopeTransitionGapHighlight")
-            _set_preview_property(
-                preview_obj,
-                "IntersectionTieSlopeTransitionGapHighlightRef",
-                "",
-            )
-            is_roundabout_intersection = str(getattr(prerequisite, "intersection_kind", "") or "").strip().lower() == "roundabout"
-            if is_roundabout_intersection:
-                _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
-                _set_preview_property(preview_obj, "IntersectionTieSlopeStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeCount", 0)
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeReadyCount", 0)
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeWarningCount", 0)
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeErrorCount", 0)
-                _set_preview_property(
-                    preview_obj,
-                    "IntersectionTieSlopeReadinessSummary",
-                    "generic intersection tie slope disabled for roundabout generalization",
-                )
-                _set_preview_property(preview_obj, "IntersectionTieSlopeCoverageStatus", "not_applicable")
-                _set_preview_property(
-                    preview_obj,
-                    "IntersectionTieSlopeCoverageSummary",
-                    "roundabout connector/tie-slope transitional output removed; use dedicated roundabout contracts",
-                )
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageGroups", [])
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageBlockedGroups", [])
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageMissingRoles", [])
-                _set_preview_property(
-                    preview_obj,
-                    "IntersectionTieSlopeRecommendedAction",
-                    "Continue with dedicated roundabout surface-zone generalization.",
-                )
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeDiagnosticCount", 1)
-                _set_preview_string_list_property(
-                    preview_obj,
-                    "IntersectionTieSlopeDiagnostics",
-                    ["info:roundabout_generic_intersection_tie_slope_disabled"],
-                )
-                _set_preview_property(preview_obj, "IntersectionTieSlopeSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "IntersectionTieSlopeSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeSurfaceTriangleCount", 0)
-            else:
-                tie_slope_result = corridor_intersection_tie_slope_result(
-                    intersection_applied_section_set,
-                    prerequisite=prerequisite,
-                    intersection_model=intersection_model,
-                    boundary_segment_result=boundary_result,
-                    slope_face_boundary_result=slope_face_boundary_result,
-                )
-                tie_slope_summary = _intersection_tie_slope_readiness_summary(tie_slope_result)
-                tie_slope_coverage = _intersection_tie_slope_coverage_summary(tie_slope_result)
-                tie_slope_diagnostics = _intersection_tie_slope_diagnostics(tie_slope_result)
-                tie_slope_action = _intersection_tie_slope_recommended_action(tie_slope_result)
-                _set_preview_property(preview_obj, "IntersectionTieSlopeStatus", str(getattr(tie_slope_result, "status", "") or ""))
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeCount", int(getattr(tie_slope_result, "tie_slope_count", 0) or 0))
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeReadyCount", int(getattr(tie_slope_result, "ready_count", 0) or 0))
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeWarningCount", int(getattr(tie_slope_result, "warning_count", 0) or 0))
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeErrorCount", int(getattr(tie_slope_result, "error_count", 0) or 0))
-                _set_preview_property(preview_obj, "IntersectionTieSlopeReadinessSummary", tie_slope_summary)
-                _set_preview_property(preview_obj, "IntersectionTieSlopeCoverageStatus", str(tie_slope_coverage.get("status", "") or ""))
-                _set_preview_property(preview_obj, "IntersectionTieSlopeCoverageSummary", str(tie_slope_coverage.get("summary", "") or ""))
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageGroups", list(tie_slope_coverage.get("groups", []) or []))
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageBlockedGroups", list(tie_slope_coverage.get("blocked_groups", []) or []))
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageMissingRoles", list(tie_slope_coverage.get("missing_roles", []) or []))
-                _set_preview_property(preview_obj, "IntersectionTieSlopeRecommendedAction", tie_slope_action)
-                _set_preview_integer_property(preview_obj, "IntersectionTieSlopeDiagnosticCount", len(tie_slope_diagnostics))
-                _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeDiagnostics", tie_slope_diagnostics[:200])
-                tie_slope_preview = _create_corridor_intersection_tie_slope_surface_preview(
-                    doc,
-                    tie_slope_result,
-                    window_rows=tie_slope_window_rows_for_breaklines,
-                    project=project or find_project(doc),
-                    shared_breakline_result=shared_breakline_result,
-                )
-                if tie_slope_preview is not None:
-                    _set_preview_property(preview_obj, "IntersectionTieSlopeSurfacePreviewRef", str(getattr(tie_slope_preview, "Name", "") or ""))
-                    _set_preview_property(preview_obj, "IntersectionTieSlopeSurfaceStatus", "ready")
-                    _set_preview_integer_property(
-                        preview_obj,
-                        "IntersectionTieSlopeSurfaceTriangleCount",
-                        int(getattr(tie_slope_preview, "TriangleCount", 0) or 0),
-                    )
-                else:
-                    _set_preview_property(preview_obj, "IntersectionTieSlopeSurfacePreviewRef", "")
-                    _set_preview_property(preview_obj, "IntersectionTieSlopeSurfaceStatus", "empty")
-                    _set_preview_integer_property(preview_obj, "IntersectionTieSlopeSurfaceTriangleCount", 0)
-            slope_face_preview = None
-            if is_roundabout_intersection:
-                _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
-                _remove_corridor_build_preview_diagnostic(doc, "intersection_slope")
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", 0)
-                _set_preview_property(
-                    preview_obj,
-                    "IntersectionSlopeFaceSurfaceRecommendedAction",
-                    "Use dedicated Roundabout Slope Face Surface for roundabout slope ownership.",
-                )
-            else:
-                slope_face_preview = _create_corridor_intersection_slope_face_surface_preview(
-                    doc,
-                    slope_loop_result,
-                    project=project or find_project(doc),
-                    boundary_result=slope_face_boundary_result,
-                    boundary_segment_result=boundary_result,
-                    applied_section_set=intersection_applied_section_set,
-                    shared_breakline_result=shared_breakline_result,
-                )
-            _remove_preview_object(doc, "ReviewIntersectionUpperSlopeFacePanelHighlight")
-            _set_preview_property(
-                preview_obj,
-                "IntersectionUpperSlopeFacePanelHighlightRef",
-                "",
-            )
-            if is_roundabout_intersection:
-                _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutSplitterIslandSurfacePreview")
-                _set_preview_property(preview_obj, "RoundaboutEntryExitSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutEntryExitSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutEntryExitSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutSplitterIslandSurfaceTriangleCount", 0)
-                apron_preview_roundabout = _create_corridor_roundabout_apron_surface_preview(
-                    doc,
-                    project=project or find_project(doc),
-                    corridor_model=corridor_model,
-                    applied_section_set=intersection_applied_section_set,
-                    prerequisite=prerequisite,
-                    intersection_model=intersection_model,
-                    shared_breakline_result=shared_breakline_result,
-                )
-                if apron_preview_roundabout is not None:
-                    _set_preview_property(
-                        preview_obj,
-                        "RoundaboutApronSurfacePreviewRef",
-                        str(getattr(apron_preview_roundabout, "Name", "") or ""),
-                    )
-                    _set_preview_property(preview_obj, "RoundaboutApronSurfaceStatus", "ready")
-                    _set_preview_integer_property(
-                        preview_obj,
-                        "RoundaboutApronSurfaceTriangleCount",
-                        int(getattr(apron_preview_roundabout, "TriangleCount", 0) or 0),
-                    )
-                else:
-                    _set_preview_property(preview_obj, "RoundaboutApronSurfacePreviewRef", "")
-                    _set_preview_property(preview_obj, "RoundaboutApronSurfaceStatus", "empty")
-                    _set_preview_integer_property(preview_obj, "RoundaboutApronSurfaceTriangleCount", 0)
-                subgrade_preview_roundabout = _create_corridor_roundabout_subgrade_surface_preview(
-                    doc,
-                    project=project or find_project(doc),
-                    corridor_model=corridor_model,
-                    applied_section_set=intersection_applied_section_set,
-                    prerequisite=prerequisite,
-                    intersection_model=intersection_model,
-                    shared_breakline_result=shared_breakline_result,
-                )
-                if subgrade_preview_roundabout is not None:
-                    _set_preview_property(
-                        preview_obj,
-                        "RoundaboutSubgradeSurfacePreviewRef",
-                        str(getattr(subgrade_preview_roundabout, "Name", "") or ""),
-                    )
-                    _set_preview_property(preview_obj, "RoundaboutSubgradeSurfaceStatus", "ready")
-                    _set_preview_integer_property(
-                        preview_obj,
-                        "RoundaboutSubgradeSurfaceTriangleCount",
-                        int(getattr(subgrade_preview_roundabout, "TriangleCount", 0) or 0),
-                    )
-                else:
-                    _set_preview_property(preview_obj, "RoundaboutSubgradeSurfacePreviewRef", "")
-                    _set_preview_property(preview_obj, "RoundaboutSubgradeSurfaceStatus", "empty")
-                    _set_preview_integer_property(preview_obj, "RoundaboutSubgradeSurfaceTriangleCount", 0)
-                slope_face_preview_roundabout = _create_corridor_roundabout_slope_face_surface_preview(
-                    doc,
-                    project=project or find_project(doc),
-                    corridor_model=corridor_model,
-                    applied_section_set=intersection_applied_section_set,
-                    prerequisite=prerequisite,
-                    intersection_model=intersection_model,
-                    shared_breakline_result=shared_breakline_result,
-                )
-                if slope_face_preview_roundabout is not None:
-                    _set_preview_property(
-                        preview_obj,
-                        "RoundaboutSlopeFaceSurfacePreviewRef",
-                        str(getattr(slope_face_preview_roundabout, "Name", "") or ""),
-                    )
-                    _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfaceStatus", "ready")
-                    _set_preview_integer_property(
-                        preview_obj,
-                        "RoundaboutSlopeFaceSurfaceTriangleCount",
-                        int(getattr(slope_face_preview_roundabout, "TriangleCount", 0) or 0),
-                    )
-                else:
-                    _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfacePreviewRef", "")
-                    _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfaceStatus", "empty")
-                    _set_preview_integer_property(preview_obj, "RoundaboutSlopeFaceSurfaceTriangleCount", 0)
-            else:
-                _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutSplitterIslandSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutApronSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutSubgradeSurfacePreview")
-                _remove_preview_object(doc, "V1CorridorRoundaboutSlopeFaceSurfacePreview")
-                _set_preview_property(preview_obj, "RoundaboutEntryExitSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutEntryExitSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutEntryExitSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutSplitterIslandSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutApronSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutApronSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutApronSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutSubgradeSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutSubgradeSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutSubgradeSurfaceTriangleCount", 0)
-                _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfacePreviewRef", "")
-                _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfaceStatus", "not_applicable")
-                _set_preview_integer_property(preview_obj, "RoundaboutSlopeFaceSurfaceTriangleCount", 0)
-            if slope_face_preview is not None:
-                _attach_intersection_contract_consumption_metadata(
-                    slope_face_preview,
-                    slope_loop_result=slope_loop_result,
-                )
-                _attach_intersection_slope_face_policy_metadata(slope_face_preview, slope_face_policy)
-                _attach_intersection_slope_face_boundary_result_metadata(slope_face_preview, slope_face_boundary_result)
-                _attach_shared_breakline_preview_metadata(
-                    slope_face_preview,
-                    shared_breakline_result,
-                    consumer_ref="intersection_slope_face_surface",
-                    audit=shared_breakline_audit(
-                        shared_breakline_result,
-                        {"intersection_slope_face_surface": tin_surface_with_shared_breakline_metadata(
-                            build_intersection_slope_face_surface_from_ready_loops(
-                                slope_loop_result,
-                                project_id=_project_id(project or find_project(doc)),
-                                boundary_result=slope_face_boundary_result,
-                                boundary_segment_result=boundary_result,
-                                applied_section_set=intersection_applied_section_set,
-                                shared_breakline_result=shared_breakline_result,
-                            ),
-                            shared_breakline_result,
-                            consumer_ref="intersection_slope_face_surface",
-                        )},
-                    ),
-                )
-                _attach_intersection_shared_boundary_graph_preview_metadata(
-                    slope_face_preview,
-                    shared_boundary_graph_result,
-                    consumer_ref="intersection_slope_face_surface",
-                )
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfacePreviewRef", str(getattr(slope_face_preview, "Name", "") or ""))
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "ready")
-                _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", int(getattr(slope_face_preview, "TriangleCount", 0) or 0))
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceRecommendedAction", "No action required")
-            elif not is_roundabout_intersection:
-                _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "empty")
-                _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", 0)
-                _set_preview_property(
-                    preview_obj,
-                    "IntersectionSlopeFaceSurfaceRecommendedAction",
-                    _intersection_slope_face_loop_recommended_action(slope_loop_result),
-                )
-        except Exception as exc:
-            _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
-            _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
-            _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
-            _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
-            _remove_preview_object(doc, "V1CorridorRoundaboutApronSurfacePreview")
-            _remove_preview_object(doc, "V1CorridorRoundaboutSplitterIslandSurfacePreview")
-            _remove_preview_object(doc, "V1CorridorRoundaboutSubgradeSurfacePreview")
-            _remove_preview_object(doc, "V1CorridorRoundaboutSlopeFaceSurfacePreview")
-            _remove_preview_object(doc, "ReviewIntersectionUpperSlopeFacePanelHighlight")
-            _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopStatus", "error")
-            _set_preview_string_list_property(preview_obj, "IntersectionSlopeFaceLoopDiagnostics", [f"slope_face_loop_preview_error: {exc}"])
+        _attach_intersection_contract_previews(
+            doc,
+            preview_obj,
+            boundary_result=boundary_result,
+            corridor_model=corridor_model,
+            intersection_applied_section_set=intersection_applied_section_set,
+            intersection_model=intersection_model,
+            prerequisite=prerequisite,
+            project=project,
+            shared_boundary_graph_result=shared_boundary_graph_result,
+            shared_breakline_result=shared_breakline_result,
+            slope_face_policy=slope_face_policy,
+            tie_slope_window_rows_for_breaklines=tie_slope_window_rows_for_breaklines,
+        )
         drainage_rows = corridor_intersection_drainage_review_rows(doc)
         drainage_row = next(
             (
@@ -6404,6 +6093,472 @@ def create_corridor_intersection_surface_preview(
         except Exception:
             pass
     return preview_obj
+
+
+def _attach_intersection_contract_previews(
+    doc,
+    preview_obj,
+    *,
+    boundary_result,
+    corridor_model,
+    intersection_applied_section_set,
+    intersection_model,
+    prerequisite,
+    project,
+    shared_boundary_graph_result,
+    shared_breakline_result,
+    slope_face_policy,
+    tie_slope_window_rows_for_breaklines,
+) -> None:
+    """Evaluate intersection contracts and build the slope face, roundabout, and tie slope previews they own."""
+
+    try:
+        service = IntersectionEvaluationService()
+        topology_result = service.evaluate_topology(intersection_model)
+        edge_network_result = service.evaluate_edge_network(intersection_model, topology_result)
+        surface_zone_result = service.evaluate_surface_zones(intersection_model, edge_network_result)
+        grading_context_result = service.evaluate_grading_context(intersection_model, surface_zone_result)
+        drainage_hint_result = service.evaluate_drainage_hints(intersection_model, surface_zone_result, grading_context_result)
+        applied = to_applied_section_set(find_v1_applied_section_set(doc))
+        slope_loop_result = service.evaluate_slope_face_loops(intersection_model, surface_zone_result, edge_network_result, applied)
+        _attach_intersection_contract_consumption_metadata(
+            preview_obj,
+            topology_result=topology_result,
+            edge_network_result=edge_network_result,
+            surface_zone_result=surface_zone_result,
+            grading_context_result=grading_context_result,
+            drainage_hint_result=drainage_hint_result,
+            slope_loop_result=slope_loop_result,
+        )
+        surface_zone_output = corridor_intersection_surface_zone_output(surface_zone_result, edge_network_result)
+        _attach_intersection_surface_zone_output_metadata(preview_obj, surface_zone_output)
+        _remove_preview_object(doc, "V1CorridorIntersectionSurfaceZoneOutputPreview")
+        _set_preview_property(preview_obj, "IntersectionSurfaceZoneOutputPreviewRef", "")
+        _remove_preview_object(doc, "V1CorridorIntersectionSurfaceZoneSurfacePreview")
+        _set_preview_property(preview_obj, "IntersectionSurfaceZoneSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopStatus", str(getattr(slope_loop_result, "status", "") or ""))
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopCount", int(getattr(slope_loop_result, "loop_count", 0) or 0))
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopReadyCount", int(getattr(slope_loop_result, "ready_count", 0) or 0))
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopWarningCount", int(getattr(slope_loop_result, "warning_count", 0) or 0))
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceLoopErrorCount", int(getattr(slope_loop_result, "error_count", 0) or 0))
+        _set_preview_string_list_property(
+            preview_obj,
+            "IntersectionSlopeFaceLoopDiagnostics",
+            [str(value or "") for value in list(getattr(slope_loop_result, "diagnostic_rows", []) or [])],
+        )
+        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopPreviewRef", "")
+        slope_face_boundary_result = corridor_intersection_slope_face_boundary_result(
+            intersection_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+        )
+        _remove_preview_object(doc, "ReviewIntersectionTieSlopeTransitionGapHighlight")
+        _set_preview_property(
+            preview_obj,
+            "IntersectionTieSlopeTransitionGapHighlightRef",
+            "",
+        )
+        is_roundabout_intersection = str(getattr(prerequisite, "intersection_kind", "") or "").strip().lower() == "roundabout"
+        _attach_intersection_tie_slope_surface_preview(
+            doc,
+            preview_obj,
+            boundary_result=boundary_result,
+            intersection_applied_section_set=intersection_applied_section_set,
+            intersection_model=intersection_model,
+            is_roundabout_intersection=is_roundabout_intersection,
+            prerequisite=prerequisite,
+            project=project,
+            shared_breakline_result=shared_breakline_result,
+            slope_face_boundary_result=slope_face_boundary_result,
+            tie_slope_window_rows_for_breaklines=tie_slope_window_rows_for_breaklines,
+        )
+        slope_face_preview = None
+        slope_face_preview = _create_intersection_slope_face_surface_preview_for_kind(
+            doc,
+            preview_obj,
+            boundary_result=boundary_result,
+            intersection_applied_section_set=intersection_applied_section_set,
+            is_roundabout_intersection=is_roundabout_intersection,
+            project=project,
+            shared_breakline_result=shared_breakline_result,
+            slope_face_boundary_result=slope_face_boundary_result,
+            slope_loop_result=slope_loop_result,
+        )
+        _remove_preview_object(doc, "ReviewIntersectionUpperSlopeFacePanelHighlight")
+        _set_preview_property(
+            preview_obj,
+            "IntersectionUpperSlopeFacePanelHighlightRef",
+            "",
+        )
+        _attach_roundabout_intersection_surface_previews(
+            doc,
+            preview_obj,
+            corridor_model=corridor_model,
+            intersection_applied_section_set=intersection_applied_section_set,
+            intersection_model=intersection_model,
+            is_roundabout_intersection=is_roundabout_intersection,
+            prerequisite=prerequisite,
+            project=project,
+            shared_breakline_result=shared_breakline_result,
+        )
+        _attach_intersection_slope_face_surface_metadata(
+            doc,
+            preview_obj,
+            boundary_result=boundary_result,
+            intersection_applied_section_set=intersection_applied_section_set,
+            is_roundabout_intersection=is_roundabout_intersection,
+            project=project,
+            shared_boundary_graph_result=shared_boundary_graph_result,
+            shared_breakline_result=shared_breakline_result,
+            slope_face_boundary_result=slope_face_boundary_result,
+            slope_face_policy=slope_face_policy,
+            slope_face_preview=slope_face_preview,
+            slope_loop_result=slope_loop_result,
+        )
+    except Exception as exc:
+        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceLoopPreview")
+        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutApronSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSplitterIslandSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSubgradeSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSlopeFaceSurfacePreview")
+        _remove_preview_object(doc, "ReviewIntersectionUpperSlopeFacePanelHighlight")
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceLoopStatus", "error")
+        _set_preview_string_list_property(preview_obj, "IntersectionSlopeFaceLoopDiagnostics", [f"slope_face_loop_preview_error: {exc}"])
+
+
+def _attach_intersection_slope_face_surface_metadata(
+    doc,
+    preview_obj,
+    *,
+    boundary_result,
+    intersection_applied_section_set,
+    is_roundabout_intersection,
+    project,
+    shared_boundary_graph_result,
+    shared_breakline_result,
+    slope_face_boundary_result,
+    slope_face_policy,
+    slope_face_preview,
+    slope_loop_result,
+) -> None:
+    """Record the Intersection Slope Face surface preview status, counts, and diagnostics."""
+
+    if slope_face_preview is not None:
+        _attach_intersection_contract_consumption_metadata(
+            slope_face_preview,
+            slope_loop_result=slope_loop_result,
+        )
+        _attach_intersection_slope_face_policy_metadata(slope_face_preview, slope_face_policy)
+        _attach_intersection_slope_face_boundary_result_metadata(slope_face_preview, slope_face_boundary_result)
+        _attach_shared_breakline_preview_metadata(
+            slope_face_preview,
+            shared_breakline_result,
+            consumer_ref="intersection_slope_face_surface",
+            audit=shared_breakline_audit(
+                shared_breakline_result,
+                {"intersection_slope_face_surface": tin_surface_with_shared_breakline_metadata(
+                    build_intersection_slope_face_surface_from_ready_loops(
+                        slope_loop_result,
+                        project_id=_project_id(project or find_project(doc)),
+                        boundary_result=slope_face_boundary_result,
+                        boundary_segment_result=boundary_result,
+                        applied_section_set=intersection_applied_section_set,
+                        shared_breakline_result=shared_breakline_result,
+                    ),
+                    shared_breakline_result,
+                    consumer_ref="intersection_slope_face_surface",
+                )},
+            ),
+        )
+        _attach_intersection_shared_boundary_graph_preview_metadata(
+            slope_face_preview,
+            shared_boundary_graph_result,
+            consumer_ref="intersection_slope_face_surface",
+        )
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfacePreviewRef", str(getattr(slope_face_preview, "Name", "") or ""))
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "ready")
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", int(getattr(slope_face_preview, "TriangleCount", 0) or 0))
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceRecommendedAction", "No action required")
+    elif not is_roundabout_intersection:
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "empty")
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", 0)
+        _set_preview_property(
+            preview_obj,
+            "IntersectionSlopeFaceSurfaceRecommendedAction",
+            _intersection_slope_face_loop_recommended_action(slope_loop_result),
+        )
+
+
+def _attach_roundabout_intersection_surface_previews(
+    doc,
+    preview_obj,
+    *,
+    corridor_model,
+    intersection_applied_section_set,
+    intersection_model,
+    is_roundabout_intersection,
+    prerequisite,
+    project,
+    shared_breakline_result,
+) -> None:
+    """Build or disable the roundabout entry/exit, splitter island, apron, subgrade, and slope face previews."""
+
+    if is_roundabout_intersection:
+        _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSplitterIslandSurfacePreview")
+        _set_preview_property(preview_obj, "RoundaboutEntryExitSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutEntryExitSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutEntryExitSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutSplitterIslandSurfaceTriangleCount", 0)
+        apron_preview_roundabout = _create_corridor_roundabout_apron_surface_preview(
+            doc,
+            project=project or find_project(doc),
+            corridor_model=corridor_model,
+            applied_section_set=intersection_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            shared_breakline_result=shared_breakline_result,
+        )
+        if apron_preview_roundabout is not None:
+            _set_preview_property(
+                preview_obj,
+                "RoundaboutApronSurfacePreviewRef",
+                str(getattr(apron_preview_roundabout, "Name", "") or ""),
+            )
+            _set_preview_property(preview_obj, "RoundaboutApronSurfaceStatus", "ready")
+            _set_preview_integer_property(
+                preview_obj,
+                "RoundaboutApronSurfaceTriangleCount",
+                int(getattr(apron_preview_roundabout, "TriangleCount", 0) or 0),
+            )
+        else:
+            _set_preview_property(preview_obj, "RoundaboutApronSurfacePreviewRef", "")
+            _set_preview_property(preview_obj, "RoundaboutApronSurfaceStatus", "empty")
+            _set_preview_integer_property(preview_obj, "RoundaboutApronSurfaceTriangleCount", 0)
+        subgrade_preview_roundabout = _create_corridor_roundabout_subgrade_surface_preview(
+            doc,
+            project=project or find_project(doc),
+            corridor_model=corridor_model,
+            applied_section_set=intersection_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            shared_breakline_result=shared_breakline_result,
+        )
+        if subgrade_preview_roundabout is not None:
+            _set_preview_property(
+                preview_obj,
+                "RoundaboutSubgradeSurfacePreviewRef",
+                str(getattr(subgrade_preview_roundabout, "Name", "") or ""),
+            )
+            _set_preview_property(preview_obj, "RoundaboutSubgradeSurfaceStatus", "ready")
+            _set_preview_integer_property(
+                preview_obj,
+                "RoundaboutSubgradeSurfaceTriangleCount",
+                int(getattr(subgrade_preview_roundabout, "TriangleCount", 0) or 0),
+            )
+        else:
+            _set_preview_property(preview_obj, "RoundaboutSubgradeSurfacePreviewRef", "")
+            _set_preview_property(preview_obj, "RoundaboutSubgradeSurfaceStatus", "empty")
+            _set_preview_integer_property(preview_obj, "RoundaboutSubgradeSurfaceTriangleCount", 0)
+        slope_face_preview_roundabout = _create_corridor_roundabout_slope_face_surface_preview(
+            doc,
+            project=project or find_project(doc),
+            corridor_model=corridor_model,
+            applied_section_set=intersection_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            shared_breakline_result=shared_breakline_result,
+        )
+        if slope_face_preview_roundabout is not None:
+            _set_preview_property(
+                preview_obj,
+                "RoundaboutSlopeFaceSurfacePreviewRef",
+                str(getattr(slope_face_preview_roundabout, "Name", "") or ""),
+            )
+            _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfaceStatus", "ready")
+            _set_preview_integer_property(
+                preview_obj,
+                "RoundaboutSlopeFaceSurfaceTriangleCount",
+                int(getattr(slope_face_preview_roundabout, "TriangleCount", 0) or 0),
+            )
+        else:
+            _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfacePreviewRef", "")
+            _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfaceStatus", "empty")
+            _set_preview_integer_property(preview_obj, "RoundaboutSlopeFaceSurfaceTriangleCount", 0)
+    else:
+        _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSplitterIslandSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutApronSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSubgradeSurfacePreview")
+        _remove_preview_object(doc, "V1CorridorRoundaboutSlopeFaceSurfacePreview")
+        _set_preview_property(preview_obj, "RoundaboutEntryExitSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutEntryExitSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutEntryExitSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutEntryExitConnectorSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutSplitterIslandSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutSplitterIslandSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutApronSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutApronSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutApronSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutSubgradeSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutSubgradeSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutSubgradeSurfaceTriangleCount", 0)
+        _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "RoundaboutSlopeFaceSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "RoundaboutSlopeFaceSurfaceTriangleCount", 0)
+
+
+def _create_intersection_slope_face_surface_preview_for_kind(
+    doc,
+    preview_obj,
+    *,
+    boundary_result,
+    intersection_applied_section_set,
+    is_roundabout_intersection,
+    project,
+    shared_breakline_result,
+    slope_face_boundary_result,
+    slope_loop_result,
+) -> object:
+    """Create the Intersection Slope Face surface preview, or disable it for a roundabout."""
+
+    slope_face_preview = None
+
+    if is_roundabout_intersection:
+        _remove_preview_object(doc, "V1CorridorIntersectionSlopeFaceSurfacePreview")
+        _remove_corridor_build_preview_diagnostic(doc, "intersection_slope")
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "IntersectionSlopeFaceSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "IntersectionSlopeFaceSurfaceTriangleCount", 0)
+        _set_preview_property(
+            preview_obj,
+            "IntersectionSlopeFaceSurfaceRecommendedAction",
+            "Use dedicated Roundabout Slope Face Surface for roundabout slope ownership.",
+        )
+    else:
+        slope_face_preview = _create_corridor_intersection_slope_face_surface_preview(
+            doc,
+            slope_loop_result,
+            project=project or find_project(doc),
+            boundary_result=slope_face_boundary_result,
+            boundary_segment_result=boundary_result,
+            applied_section_set=intersection_applied_section_set,
+            shared_breakline_result=shared_breakline_result,
+        )
+
+    return slope_face_preview
+
+
+def _attach_intersection_tie_slope_surface_preview(
+    doc,
+    preview_obj,
+    *,
+    boundary_result,
+    intersection_applied_section_set,
+    intersection_model,
+    is_roundabout_intersection,
+    prerequisite,
+    project,
+    shared_breakline_result,
+    slope_face_boundary_result,
+    tie_slope_window_rows_for_breaklines,
+) -> None:
+    """Build or disable the Intersection Tie Slope surface preview and record its status."""
+
+    if is_roundabout_intersection:
+        _remove_preview_object(doc, "V1CorridorIntersectionTieSlopeSurfacePreview")
+        _set_preview_property(preview_obj, "IntersectionTieSlopeStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeCount", 0)
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeReadyCount", 0)
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeWarningCount", 0)
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeErrorCount", 0)
+        _set_preview_property(
+            preview_obj,
+            "IntersectionTieSlopeReadinessSummary",
+            "generic intersection tie slope disabled for roundabout generalization",
+        )
+        _set_preview_property(preview_obj, "IntersectionTieSlopeCoverageStatus", "not_applicable")
+        _set_preview_property(
+            preview_obj,
+            "IntersectionTieSlopeCoverageSummary",
+            "roundabout connector/tie-slope transitional output removed; use dedicated roundabout contracts",
+        )
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageGroups", [])
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageBlockedGroups", [])
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageMissingRoles", [])
+        _set_preview_property(
+            preview_obj,
+            "IntersectionTieSlopeRecommendedAction",
+            "Continue with dedicated roundabout surface-zone generalization.",
+        )
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeDiagnosticCount", 1)
+        _set_preview_string_list_property(
+            preview_obj,
+            "IntersectionTieSlopeDiagnostics",
+            ["info:roundabout_generic_intersection_tie_slope_disabled"],
+        )
+        _set_preview_property(preview_obj, "IntersectionTieSlopeSurfacePreviewRef", "")
+        _set_preview_property(preview_obj, "IntersectionTieSlopeSurfaceStatus", "not_applicable")
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeSurfaceTriangleCount", 0)
+    else:
+        tie_slope_result = corridor_intersection_tie_slope_result(
+            intersection_applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            boundary_segment_result=boundary_result,
+            slope_face_boundary_result=slope_face_boundary_result,
+        )
+        tie_slope_summary = _intersection_tie_slope_readiness_summary(tie_slope_result)
+        tie_slope_coverage = _intersection_tie_slope_coverage_summary(tie_slope_result)
+        tie_slope_diagnostics = _intersection_tie_slope_diagnostics(tie_slope_result)
+        tie_slope_action = _intersection_tie_slope_recommended_action(tie_slope_result)
+        _set_preview_property(preview_obj, "IntersectionTieSlopeStatus", str(getattr(tie_slope_result, "status", "") or ""))
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeCount", int(getattr(tie_slope_result, "tie_slope_count", 0) or 0))
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeReadyCount", int(getattr(tie_slope_result, "ready_count", 0) or 0))
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeWarningCount", int(getattr(tie_slope_result, "warning_count", 0) or 0))
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeErrorCount", int(getattr(tie_slope_result, "error_count", 0) or 0))
+        _set_preview_property(preview_obj, "IntersectionTieSlopeReadinessSummary", tie_slope_summary)
+        _set_preview_property(preview_obj, "IntersectionTieSlopeCoverageStatus", str(tie_slope_coverage.get("status", "") or ""))
+        _set_preview_property(preview_obj, "IntersectionTieSlopeCoverageSummary", str(tie_slope_coverage.get("summary", "") or ""))
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageGroups", list(tie_slope_coverage.get("groups", []) or []))
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageBlockedGroups", list(tie_slope_coverage.get("blocked_groups", []) or []))
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeCoverageMissingRoles", list(tie_slope_coverage.get("missing_roles", []) or []))
+        _set_preview_property(preview_obj, "IntersectionTieSlopeRecommendedAction", tie_slope_action)
+        _set_preview_integer_property(preview_obj, "IntersectionTieSlopeDiagnosticCount", len(tie_slope_diagnostics))
+        _set_preview_string_list_property(preview_obj, "IntersectionTieSlopeDiagnostics", tie_slope_diagnostics[:200])
+        tie_slope_preview = _create_corridor_intersection_tie_slope_surface_preview(
+            doc,
+            tie_slope_result,
+            window_rows=tie_slope_window_rows_for_breaklines,
+            project=project or find_project(doc),
+            shared_breakline_result=shared_breakline_result,
+        )
+        if tie_slope_preview is not None:
+            _set_preview_property(preview_obj, "IntersectionTieSlopeSurfacePreviewRef", str(getattr(tie_slope_preview, "Name", "") or ""))
+            _set_preview_property(preview_obj, "IntersectionTieSlopeSurfaceStatus", "ready")
+            _set_preview_integer_property(
+                preview_obj,
+                "IntersectionTieSlopeSurfaceTriangleCount",
+                int(getattr(tie_slope_preview, "TriangleCount", 0) or 0),
+            )
+        else:
+            _set_preview_property(preview_obj, "IntersectionTieSlopeSurfacePreviewRef", "")
+            _set_preview_property(preview_obj, "IntersectionTieSlopeSurfaceStatus", "empty")
+            _set_preview_integer_property(preview_obj, "IntersectionTieSlopeSurfaceTriangleCount", 0)
 
 
 def _attach_intersection_patch_surface_metadata(

@@ -1037,6 +1037,22 @@ The first 60 statements of that block after the surface preview contract write t
 
 Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the previous commit with an identical failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
 
+### M6 chunk 2 on 2026-09-18: the contract preview branches
+
+Five self-contained pieces of `create_corridor_intersection_surface_preview` moved into command helpers beside it, keeping every line as written and only losing two levels of nesting: the tie-slope surface branch, 80 lines; the slope-face surface branch, 21; the roundabout entry-exit, splitter island, apron, subgrade and slope-face branch, 113; the slope-face surface metadata branch, 44; and finally the whole 116-line try block that contains them, which evaluates the intersection contracts and records their results. Each helper takes exactly the names its block reads from the enclosing function, and the document work stays in the command module. `create_corridor_intersection_surface_preview` falls from 664 to 353 lines, half its size at the start of M6.
+
+A `locals()` lookup was checked before lifting anything, since moving code out of a function changes what `locals()` sees. Three names are read that way in this function: `patch_boundary_result` and `surface_boundary_review`, both assigned outside the lifted blocks and still local, and `surface_zone_surface_preview`, which turns out never to be assigned anywhere in the repository, at HEAD or now, so that lookup has always returned None.
+
+The extraction script was wrong twice, and both times the checks caught it rather than the suite.
+
+First, it treated `except ... as exc` and comprehension variables as free names, so the try block's helper took `exc` as a parameter and returned a comprehension's `value`. flake8 reported the undefined names; the fix was to count handler names as bound and keep comprehension targets local to their own scope.
+
+Second, and more serious: the slope-face branch assigns `slope_face_preview`, which later statements read, so the helper returns it. But the branch only assigns it on the non-roundabout path; the `= None` that preceded it stayed in the caller. On the roundabout path the helper raised `UnboundLocalError`, the enclosing try recorded a slope-face loop error, and the apron, subgrade, and roundabout slope-face previews were never created. Text comparison and flake8 both pass on that version. The preview dump caught it: 52 differences over twelve roundabout tests, three missing objects each, with the exception text sitting in `IntersectionSlopeFaceLoopDiagnostics`. The generator now initialises a returned name to None inside the helper, the way the caller did.
+
+After the fix the dump is identical to the baseline again, with the same failing set.
+
+Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
