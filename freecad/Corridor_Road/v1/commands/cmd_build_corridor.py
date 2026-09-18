@@ -5679,6 +5679,40 @@ def create_corridor_design_surface_preview(
         )
         return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
+    _attach_design_surface_preview_metadata(
+        doc,
+        preview_obj,
+        applied_section_set=applied_section_set,
+        corridor_model=corridor_model,
+        design_shared_breakline_result=design_shared_breakline_result,
+        intersection_shared_boundary_graph_result=intersection_shared_boundary_graph_result,
+        project=project,
+        result=result,
+        shared_breakline_audit_result=shared_breakline_audit_result,
+        surface_id=surface_id,
+        surface_model=surface_model,
+        tin_surface=tin_surface,
+    )
+    return preview_obj
+
+
+def _attach_design_surface_preview_metadata(
+    doc,
+    preview_obj,
+    *,
+    applied_section_set,
+    corridor_model,
+    design_shared_breakline_result,
+    intersection_shared_boundary_graph_result,
+    project,
+    result,
+    shared_breakline_audit_result,
+    surface_id,
+    surface_model,
+    tin_surface,
+) -> None:
+    """Record the design surface preview contract, shared breakline, and audit metadata."""
+
     if preview_obj is not None:
         _remove_corridor_build_preview_diagnostic(doc, "design")
         _attach_corridor_surface_preview_contract(
@@ -5721,7 +5755,6 @@ def create_corridor_design_surface_preview(
             route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
-    return preview_obj
 
 
 def _tin_surface_from_intersection_patch_build_result(build_result):
@@ -8287,9 +8320,6 @@ def create_corridor_daylight_surface_preview(
     # Applied Sections, and can reintroduce subassembly-template side slopes.
     transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "daylight_surface") or f"{corridor_model.corridor_id}:daylight"
-    general_shared_breakline_result = None
-    region_shared_breakline_result = None
-    intersection_shared_breakline_result = None
     intersection_shared_boundary_graph_result = None
     shared_breakline_result = None
     shared_breakline_audit_result = None
@@ -8322,93 +8352,18 @@ def create_corridor_daylight_surface_preview(
             )
         )
         tin_surface = _tin_surface_from_corridor_surface_build_result(build_result)
-        tin_surface = _clip_tin_surface_by_intersection_exclusion(
-            tin_surface,
+        intersection_slope_trim_display_segments, intersection_slope_trim_triangle_count, intersection_tin_surface, tin_surface = _clip_daylight_surface_against_intersection_surfaces(
             doc,
             applied_section_set=applied_section_set,
-            surface_role="daylight",
-        )
-        intersection_tin_surface = _build_intersection_surface_tin_for_slope_face_height_clip(
-            doc,
-            project=project or find_project(doc),
             corridor_model=corridor_model,
+            project=project,
             surface_model=surface_model,
-            applied_section_set=applied_section_set,
+            tin_surface=tin_surface,
         )
-        tin_surface = suppress_daylight_triangles_inside_intersection_surface_footprint(
-            tin_surface,
-            intersection_tin_surface,
-        )
-        tin_surface = suppress_daylight_triangles_above_intersection_surface(
-            tin_surface,
-            intersection_tin_surface,
-            tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
-        )
-        intersection_slope_face_surface = _build_intersection_slope_face_surface_tin_for_daylight_suppression(
-            doc,
-            project=project or find_project(doc),
-        )
-        tin_surface = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
-            tin_surface,
-            intersection_slope_face_surface,
-        )
-        intersection_slope_trim_display_segments, intersection_slope_trim_triangle_count = _intersection_slope_face_overlap_edge_segments(
-            tin_surface,
-            intersection_tin_surface,
-            z_offset=0.08,
-        )
-        tin_surface = trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
-            tin_surface,
-            intersection_tin_surface,
-            tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
-        )
-        tin_surface = _augment_daylight_surface_with_intersection_slope_face_boundary_strips(
-            tin_surface,
+        intersection_shared_boundary_graph_result, shared_breakline_audit_result, shared_breakline_result, tin_surface = _build_daylight_surface_shared_breaklines(
             doc,
             applied_section_set=applied_section_set,
-        )
-        general_shared_breakline_result = corridor_general_shared_breakline_result(applied_section_set)
-        region_shared_breakline_result = corridor_region_transition_shared_breakline_result(applied_section_set)
-        try:
-            slope_prerequisite = corridor_intersection_patch_prerequisite_result(doc)
-            if str(getattr(slope_prerequisite, "status", "") or "") != "missing":
-                slope_intersection_model = to_intersection_model(find_v1_intersection_model(doc))
-                intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
-                    applied_section_set,
-                    prerequisite=slope_prerequisite,
-                    intersection_model=slope_intersection_model,
-                )
-                intersection_shared_boundary_graph_result = corridor_intersection_shared_boundary_graph_result(
-                    intersection_shared_breakline_result,
-                    intersection_id=str(getattr(slope_prerequisite, "intersection_id", "") or ""),
-                )
-        except Exception:
-            intersection_shared_breakline_result = None
-            intersection_shared_boundary_graph_result = None
-        shared_breakline_result = combined_shared_breakline_result(
-            general_shared_breakline_result,
-            region_shared_breakline_result,
-            intersection_shared_breakline_result,
-        )
-        tin_surface = tin_surface_with_shared_breakline_constraint_edges(
-            tin_surface,
-            shared_breakline_result,
-            consumer_ref="slope_face_surface",
-        )
-        tin_surface = tin_surface_with_shared_breakline_metadata(
-            tin_surface,
-            shared_breakline_result,
-            consumer_ref="slope_face_surface",
-        )
-        tin_surface = _clip_tin_surface_by_roundabout_ownership(
-            tin_surface,
-            doc,
-            applied_section_set=applied_section_set,
-            surface_role="slope_face_surface",
-        )
-        shared_breakline_audit_result = shared_breakline_audit(
-            shared_breakline_result,
-            {"slope_face_surface": tin_surface},
+            tin_surface=tin_surface,
         )
     except Exception as exc:
         _record_corridor_build_preview_diagnostic(
@@ -8439,6 +8394,175 @@ def create_corridor_daylight_surface_preview(
         )
         return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
+    _attach_daylight_surface_preview_metadata(
+        doc,
+        preview_obj,
+        applied_section_set=applied_section_set,
+        corridor_model=corridor_model,
+        intersection_shared_boundary_graph_result=intersection_shared_boundary_graph_result,
+        intersection_slope_trim_display_segments=intersection_slope_trim_display_segments,
+        intersection_slope_trim_triangle_count=intersection_slope_trim_triangle_count,
+        intersection_tin_surface=intersection_tin_surface,
+        project=project,
+        result=result,
+        shared_breakline_audit_result=shared_breakline_audit_result,
+        shared_breakline_result=shared_breakline_result,
+        show_daylight_contact_markers=show_daylight_contact_markers,
+        surface_id=surface_id,
+        surface_model=surface_model,
+        tin_surface=tin_surface,
+    )
+    return preview_obj
+
+
+def _clip_daylight_surface_against_intersection_surfaces(
+    doc,
+    *,
+    applied_section_set,
+    corridor_model,
+    project,
+    surface_model,
+    tin_surface,
+) -> tuple:
+    """Clip, suppress, and trim the daylight surface against the intersection surfaces."""
+
+    intersection_slope_trim_display_segments = None
+    intersection_slope_trim_triangle_count = None
+    intersection_tin_surface = None
+
+    tin_surface = _clip_tin_surface_by_intersection_exclusion(
+        tin_surface,
+        doc,
+        applied_section_set=applied_section_set,
+        surface_role="daylight",
+    )
+    intersection_tin_surface = _build_intersection_surface_tin_for_slope_face_height_clip(
+        doc,
+        project=project or find_project(doc),
+        corridor_model=corridor_model,
+        surface_model=surface_model,
+        applied_section_set=applied_section_set,
+    )
+    tin_surface = suppress_daylight_triangles_inside_intersection_surface_footprint(
+        tin_surface,
+        intersection_tin_surface,
+    )
+    tin_surface = suppress_daylight_triangles_above_intersection_surface(
+        tin_surface,
+        intersection_tin_surface,
+        tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
+    )
+    intersection_slope_face_surface = _build_intersection_slope_face_surface_tin_for_daylight_suppression(
+        doc,
+        project=project or find_project(doc),
+    )
+    tin_surface = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
+        tin_surface,
+        intersection_slope_face_surface,
+    )
+    intersection_slope_trim_display_segments, intersection_slope_trim_triangle_count = _intersection_slope_face_overlap_edge_segments(
+        tin_surface,
+        intersection_tin_surface,
+        z_offset=0.08,
+    )
+    tin_surface = trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
+        tin_surface,
+        intersection_tin_surface,
+        tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
+    )
+    tin_surface = _augment_daylight_surface_with_intersection_slope_face_boundary_strips(
+        tin_surface,
+        doc,
+        applied_section_set=applied_section_set,
+    )
+
+    return (intersection_slope_trim_display_segments, intersection_slope_trim_triangle_count, intersection_tin_surface, tin_surface)
+
+
+def _build_daylight_surface_shared_breaklines(
+    doc,
+    *,
+    applied_section_set,
+    tin_surface,
+) -> tuple:
+    """Evaluate the general, region, and intersection shared breaklines and fold them into the daylight surface."""
+
+    general_shared_breakline_result = None
+    region_shared_breakline_result = None
+    intersection_shared_breakline_result = None
+
+    intersection_shared_boundary_graph_result = None
+    shared_breakline_audit_result = None
+    shared_breakline_result = None
+
+    general_shared_breakline_result = corridor_general_shared_breakline_result(applied_section_set)
+    region_shared_breakline_result = corridor_region_transition_shared_breakline_result(applied_section_set)
+    try:
+        slope_prerequisite = corridor_intersection_patch_prerequisite_result(doc)
+        if str(getattr(slope_prerequisite, "status", "") or "") != "missing":
+            slope_intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+            intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
+                applied_section_set,
+                prerequisite=slope_prerequisite,
+                intersection_model=slope_intersection_model,
+            )
+            intersection_shared_boundary_graph_result = corridor_intersection_shared_boundary_graph_result(
+                intersection_shared_breakline_result,
+                intersection_id=str(getattr(slope_prerequisite, "intersection_id", "") or ""),
+            )
+    except Exception:
+        intersection_shared_breakline_result = None
+        intersection_shared_boundary_graph_result = None
+    shared_breakline_result = combined_shared_breakline_result(
+        general_shared_breakline_result,
+        region_shared_breakline_result,
+        intersection_shared_breakline_result,
+    )
+    tin_surface = tin_surface_with_shared_breakline_constraint_edges(
+        tin_surface,
+        shared_breakline_result,
+        consumer_ref="slope_face_surface",
+    )
+    tin_surface = tin_surface_with_shared_breakline_metadata(
+        tin_surface,
+        shared_breakline_result,
+        consumer_ref="slope_face_surface",
+    )
+    tin_surface = _clip_tin_surface_by_roundabout_ownership(
+        tin_surface,
+        doc,
+        applied_section_set=applied_section_set,
+        surface_role="slope_face_surface",
+    )
+    shared_breakline_audit_result = shared_breakline_audit(
+        shared_breakline_result,
+        {"slope_face_surface": tin_surface},
+    )
+
+    return (intersection_shared_boundary_graph_result, shared_breakline_audit_result, shared_breakline_result, tin_surface)
+
+
+def _attach_daylight_surface_preview_metadata(
+    doc,
+    preview_obj,
+    *,
+    applied_section_set,
+    corridor_model,
+    intersection_shared_boundary_graph_result,
+    intersection_slope_trim_display_segments,
+    intersection_slope_trim_triangle_count,
+    intersection_tin_surface,
+    project,
+    result,
+    shared_breakline_audit_result,
+    shared_breakline_result,
+    show_daylight_contact_markers,
+    surface_id,
+    surface_model,
+    tin_surface,
+) -> None:
+    """Record the daylight surface preview contract, shared breakline, and trim metadata."""
+
     if preview_obj is not None:
         _remove_corridor_build_preview_diagnostic(doc, "daylight")
         _attach_corridor_surface_preview_contract(
@@ -8502,7 +8626,6 @@ def create_corridor_daylight_surface_preview(
             applied_section_set=applied_section_set,
             show_daylight_contact_markers=show_daylight_contact_markers,
         )
-    return preview_obj
 
 
 def create_corridor_drainage_surface_preview(
@@ -14584,159 +14707,6 @@ def _create_corridor_intersection_tie_slope_surface_preview(
     return obj
 
 
-def _create_corridor_roundabout_entry_exit_connector_surface_preview(
-    document,
-    *,
-    project=None,
-    corridor_model=None,
-    applied_section_set=None,
-    prerequisite: IntersectionPatchPrerequisiteResult | None = None,
-    intersection_model=None,
-    shared_breakline_result=None,
-):
-    """Create source-loop-owned roundabout entry/exit connector preview surfaces."""
-
-    if document is None or prerequisite is None:
-        return None
-    try:
-        surface = _build_roundabout_entry_exit_connector_surface_tin(
-            project_id=_project_id(project or find_project(document)),
-            corridor_model=corridor_model,
-            applied_section_set=applied_section_set,
-            prerequisite=prerequisite,
-            intersection_model=intersection_model,
-            surface_id="roundabout_entry_exit_connector_surface",
-        )
-    except Exception as exc:
-        _remove_preview_object(document, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
-        _record_corridor_build_preview_diagnostic(
-            document,
-            role="roundabout_entry_exit_connector_surface",
-            surface_kind="roundabout_entry_exit_connector_surface",
-            status="error",
-            notes=f"Roundabout Entry/Exit Connector Surface preview was not created: {exc}",
-            project=project or find_project(document),
-        )
-        return None
-    if not list(getattr(surface, "triangle_rows", []) or []):
-        _remove_preview_object(document, "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
-        _record_corridor_build_preview_diagnostic(
-            document,
-            role="roundabout_entry_exit_connector_surface",
-            surface_kind="roundabout_entry_exit_connector_surface",
-            status="missing",
-            notes="Roundabout Entry/Exit Connector Surface preview was not created because no connector boundary loops produced triangles.",
-            project=project or find_project(document),
-        )
-        return None
-    if shared_breakline_result is not None:
-        surface = tin_surface_with_shared_breakline_constraint_edges(
-            surface,
-            shared_breakline_result,
-            consumer_ref="roundabout_entry_exit_connector",
-        )
-    result = TINMeshPreviewMapper().create_or_update_preview_object(
-        document,
-        surface,
-        object_name="V1CorridorRoundaboutEntryExitConnectorSurfacePreview",
-        label_prefix="Roundabout Entry/Exit Connector Surface",
-        surface_role="intersection",
-        recompute=False,
-    )
-    if str(getattr(result, "status", "") or "") == "error":
-        _record_corridor_build_preview_diagnostic(
-            document,
-            role="roundabout_entry_exit_connector_surface",
-            surface_kind="roundabout_entry_exit_connector_surface",
-            status="error",
-            notes=str(getattr(result, "notes", "") or "Roundabout Entry/Exit Connector Surface preview mapper failed."),
-            project=project or find_project(document),
-        )
-        return None
-    obj = document.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
-    if obj is None:
-        _record_corridor_build_preview_diagnostic(
-            document,
-            role="roundabout_entry_exit_connector_surface",
-            surface_kind="roundabout_entry_exit_connector_surface",
-            status="missing",
-            notes="Roundabout Entry/Exit Connector Surface preview mapper did not return a document object.",
-            project=project or find_project(document),
-        )
-        return None
-    _remove_corridor_build_preview_diagnostic(document, "roundabout_entry_exit_connector_surface")
-    intersection_id = str(getattr(prerequisite, "intersection_id", "") or "")
-    try:
-        obj.Label = f"Roundabout Entry/Exit Connector Surface - intersection:{intersection_id or 'unknown'}"
-    except Exception:
-        pass
-    _set_preview_property(obj, "CRRecordKind", "v1_corridor_roundabout_entry_exit_connector_surface_preview")
-    _set_preview_property(obj, "V1ObjectType", "V1CorridorRoundaboutEntryExitConnectorSurfacePreview")
-    _set_preview_property(obj, "IntersectionId", intersection_id)
-    _set_preview_property(obj, "IntersectionKind", "roundabout")
-    _set_preview_integer_property(
-        obj,
-        "RoundaboutEntryExitConnectorLoopCount",
-        int(_tin_quality_float(surface, "roundabout_entry_exit_connector_loop_count") or 0),
-    )
-    _set_preview_integer_property(
-        obj,
-        "RoundaboutEntryExitConnectorTriangleCount",
-        int(_tin_quality_float(surface, "roundabout_entry_exit_connector_triangle_count") or 0),
-    )
-    _set_preview_property(
-        obj,
-        "RoundaboutEntryExitConnectorGeometrySource",
-        str(_tin_quality_text(surface, "roundabout_entry_exit_connector_geometry_source") or ""),
-    )
-    _set_preview_integer_property(
-        obj,
-        "RoundaboutEntryExitConnectorApproachLegCount",
-        int(_tin_quality_float(surface, "roundabout_entry_exit_connector_approach_leg_count") or 0),
-    )
-    _set_preview_string_list_property(
-        obj,
-        "RoundaboutEntryExitConnectorApproachLegRoles",
-        [
-            item.strip()
-            for item in str(_tin_quality_text(surface, "roundabout_entry_exit_connector_approach_leg_roles") or "").split(",")
-            if item.strip()
-        ],
-    )
-    _set_preview_property(
-        obj,
-        "RoundaboutEntryExitConnectorApproachLegSource",
-        str(_tin_quality_text(surface, "roundabout_entry_exit_connector_approach_leg_source") or ""),
-    )
-    _set_preview_integer_property(obj, "TriangleCount", len(list(getattr(surface, "triangle_rows", []) or [])))
-    _set_preview_integer_property(obj, "VertexCount", len(list(getattr(surface, "vertex_rows", []) or [])))
-    _set_preview_string_list_property(
-        obj,
-        "RoundaboutEntryExitConnectorBoundaryRefs",
-        [str(ref or "") for ref in list(getattr(surface, "boundary_refs", []) or []) if str(ref or "")],
-    )
-    if shared_breakline_result is not None:
-        _attach_shared_breakline_preview_metadata(
-            obj,
-            shared_breakline_result,
-            consumer_ref="roundabout_entry_exit_connector",
-            audit=shared_breakline_audit(
-                shared_breakline_result,
-                {"roundabout_entry_exit_connector": tin_surface_with_shared_breakline_metadata(
-                    surface,
-                    shared_breakline_result,
-                    consumer_ref="roundabout_entry_exit_connector",
-                )},
-            ),
-        )
-        _attach_shared_breakline_constraint_preview_metadata(obj, surface)
-    try:
-        route_object_to_project_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    return obj
-
-
 def _create_corridor_roundabout_apron_surface_preview(
     document,
     *,
@@ -14962,6 +14932,28 @@ def _create_corridor_roundabout_subgrade_surface_preview(
         obj.Label = f"Roundabout Subgrade Surface - intersection:{intersection_id or 'unknown'}"
     except Exception:
         pass
+    _attach_roundabout_subgrade_surface_metadata(
+        obj,
+        intersection_id=intersection_id,
+        shared_breakline_result=shared_breakline_result,
+        surface=surface,
+    )
+    try:
+        route_object_to_project_tree(project or find_project(document), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _attach_roundabout_subgrade_surface_metadata(
+    obj,
+    *,
+    intersection_id,
+    shared_breakline_result,
+    surface,
+) -> None:
+    """Record the roundabout subgrade preview identity, clip, depth, and shared breakline metadata."""
+
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_roundabout_subgrade_surface_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorRoundaboutSubgradeSurfacePreview")
     _set_preview_property(obj, "IntersectionId", intersection_id)
@@ -15037,11 +15029,6 @@ def _create_corridor_roundabout_subgrade_surface_preview(
             ),
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
-    try:
-        route_object_to_project_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    return obj
 
 
 def _create_corridor_roundabout_slope_face_surface_preview(
@@ -15130,6 +15117,28 @@ def _create_corridor_roundabout_slope_face_surface_preview(
         obj.Label = f"Roundabout Slope Face Surface - intersection:{intersection_id or 'unknown'}"
     except Exception:
         pass
+    _attach_roundabout_slope_face_surface_metadata(
+        obj,
+        intersection_id=intersection_id,
+        shared_breakline_result=shared_breakline_result,
+        surface=surface,
+    )
+    try:
+        route_object_to_project_tree(project or find_project(document), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _attach_roundabout_slope_face_surface_metadata(
+    obj,
+    *,
+    intersection_id,
+    shared_breakline_result,
+    surface,
+) -> None:
+    """Record the roundabout slope face preview identity, handoff, geometry, and shared breakline metadata."""
+
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_roundabout_slope_face_surface_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorRoundaboutSlopeFaceSurfacePreview")
     _set_preview_property(obj, "IntersectionId", intersection_id)
@@ -15220,11 +15229,6 @@ def _create_corridor_roundabout_slope_face_surface_preview(
             ),
         )
         _attach_shared_breakline_constraint_preview_metadata(obj, surface)
-    try:
-        route_object_to_project_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    return obj
 
 
 def _build_intersection_tie_slope_surface(

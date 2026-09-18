@@ -239,6 +239,8 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         assert node.end_lineno - node.lineno + 1 <= maximum_lines, name
 
     removed_implementation_names = {
+        # Deleted by M6 chunk 6: the roundabout entry/exit connector preview nothing called after generalization.
+        "_create_corridor_roundabout_entry_exit_connector_surface_preview",
         # Deleted by M5 chunk 8: review helpers that nothing referenced.
         "_intersection_drainage_element_rows",
         "corridor_subassembly_guided_review_summary",

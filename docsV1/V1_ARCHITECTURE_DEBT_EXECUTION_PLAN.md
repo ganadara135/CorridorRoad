@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), and M7 complete; M6 in progress; M8 in progress with two families resolved
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 in progress with two families resolved
 Depends on:
 
 - `AGENTS.md`
@@ -1099,6 +1099,26 @@ This used a third generator, which takes any command function and a range of its
 Validation: compile, flake8, 9 architecture tests, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
 
 Preview functions above 150 lines that remain: `create_corridor_daylight_surface_preview` at 242, `create_corridor_design_surface_preview` at 177, `_create_corridor_roundabout_slope_face_surface_preview` at 181, `_create_corridor_roundabout_subgrade_surface_preview` at 166, and `_create_corridor_roundabout_entry_exit_connector_surface_preview` at 151. The daylight and design surface previews are not covered by the current dump selection, so that selection needs widening before they are touched.
+
+### M6 chunk 6 on 2026-09-18: the remaining preview functions, and a generator defect worth recording
+
+The note in chunk 5 that the daylight and design previews are outside the dump selection was wrong, and is corrected here: the dump already covers them. The 74 tests it runs close 44 documents holding 8 daylight, 5 design, 3 subgrade, and 13 of each roundabout surface preview, so the same comparison applies to every function in this chunk.
+
+`_create_corridor_roundabout_entry_exit_connector_surface_preview`, 153 lines, is called from nowhere in the repository. The roundabout generalization disabled that output, and the branch that used to create it now only removes the object and records `not_applicable`. It was deleted and its name added to `removed_implementation_names`.
+
+Four functions lost their metadata and surface-preparation runs to helpers, each keeping every line and one less level of indentation: the daylight preview lost its 63-line preview metadata block, the 43-line shared breakline chain, and the 45-line intersection clip, suppress, and trim chain; the design preview lost its 42-line metadata block; and the roundabout slope face and subgrade previews each lost their metadata block, 90 and 75 lines. Sizes: daylight 242 to 122, design 177 to 149, roundabout slope face 181 to 97, roundabout subgrade 166 to 97. No preview function is now above 169 lines, the intersection surface preview from chunk 4, and the 20 of them total 1,896 lines, from 3,157 at the start of M6.
+
+The generator had a defect that this chunk exposed twice, and the second form is the instructive one.
+
+Its parameter rule was "names the run reads, minus names the run assigns". For `tin_surface = f(tin_surface)` that drops `tin_surface`, and because the generator also initialises returned names to None, the helper then clipped a surface that was None instead of the built one. flake8 and the contract suite passed; the preview dump caught it, with the daylight preview replaced by an error diagnostic reading "replace() should be called on dataclass instances" in four tests. The rule is now flow-sensitive: walking the run in source order, a name read before the run binds it is a parameter, and a parameter that is also returned is not re-initialised.
+
+The first fix of that rule went too far the other way. Treating each top-level statement as one unit made names that a nested `try` binds and then reads inside itself look free, so the helper asked for `slope_intersection_model` and `slope_prerequisite`, which the caller does not have; flake8 caught that one. The walk now steps into the bodies of `if`, `for`, `while`, `with`, and `try` in source order.
+
+Because chunks 2 to 5 used the earlier rules, the whole module was audited afterwards for the same defect: every top-level function walked in source order, reporting any name read before it is bound that is neither a parameter nor a module-level name. Across 678 functions there are none.
+
+One deliberate move came out of that: the daylight preview initialised `general_shared_breakline_result`, `region_shared_breakline_result`, and `intersection_shared_breakline_result` to None before the try, and the lifted helper binds them only inside its own nested try. Those three initialisations moved into the helper, where they belong, rather than being deleted.
+
+Validation: compile, flake8, 9 architecture tests, the module-wide free-name audit, the preview dump over 74 tests identical to the pre-M6 baseline with the same failing set, the contract suite in three chunks with the Qt runner totalling 1,433 tests and matching the 52-failure baseline, 19 + 19 + 14, and 26 smoke scripts at exit code 0.
 
 ## 11. Open Decisions
 
