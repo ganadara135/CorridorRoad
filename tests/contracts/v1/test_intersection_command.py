@@ -5,7 +5,17 @@ from types import SimpleNamespace
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, V1_TREE_INTERSECTIONS, ensure_project_tree, find_project
+from freecad.Corridor_Road.objects.obj_project import (
+    CorridorRoadProject,
+    V1_TREE_DRAINAGE,
+    V1_TREE_INTERSECTIONS,
+    V1_TREE_PROFILES,
+    V1_TREE_REGIONS,
+    V1_TREE_STATIONS,
+    V1_TREE_SUPERELEVATION,
+    ensure_project_tree,
+    find_project,
+)
 from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
     INTERSECTION_COMMAND_ID,
     INTERSECTION_SOURCE_MODES,
@@ -1115,8 +1125,8 @@ def test_intersection_control_area_result_marks_missing_alignment_and_station_ra
     assert "error:control_area_station_ranges_missing:control-area:blocking-source" in topology.diagnostic_rows
 
 
-def test_intersection_curb_return_edge_reports_corner_source_validation() -> None:
-    model = IntersectionModel(
+def _corner_source_validation_model(curb_return_policy_ref: str) -> IntersectionModel:
+    return IntersectionModel(
         schema_version=1,
         project_id="corridorroad-v1",
         intersection_model_id="intersections:corner-source-validation",
@@ -1183,7 +1193,7 @@ def test_intersection_curb_return_edge_reports_corner_source_validation() -> Non
                 from_leg_ref="leg:main",
                 to_leg_ref="leg:side",
                 side="",
-                curb_return_policy_ref="curb-return:other",
+                curb_return_policy_ref=curb_return_policy_ref,
                 source_method="mesh_repaired",
                 approval_status="auto_accepted",
             )
@@ -1198,6 +1208,10 @@ def test_intersection_curb_return_edge_reports_corner_source_validation() -> Non
             )
         ],
     )
+
+
+def test_intersection_curb_return_edge_reports_corner_source_validation() -> None:
+    model = _corner_source_validation_model("curb-return:corner-source-validation")
 
     service = IntersectionEvaluationService()
     topology = service.evaluate_topology(model)
@@ -1216,14 +1230,31 @@ def test_intersection_curb_return_edge_reports_corner_source_validation() -> Non
     assert "source_corner_approval_pending" in corner_edge.source_diagnostic_rows
     assert "source_corner_control_area_ref_missing" in corner_edge.source_diagnostic_rows
     assert "source_corner_side_ref_missing" in corner_edge.source_diagnostic_rows
-    assert "source_corner_curb_return_policy_ref_mismatch" in corner_edge.source_diagnostic_rows
     assert "warning:source_corner_method_unknown:corner:unknown-source:mesh_repaired" in edge_network.diagnostic_rows
-    assert "warning:source_corner_approval_status_unknown:corner:unknown-source:auto_accepted" in edge_network.diagnostic_rows
     assert (
-        "error:source_corner_curb_return_policy_ref_mismatch:"
-        "corner:unknown-source:curb-return:other:curb-return:corner-source-validation"
+        "warning:source_corner_approval_status_unknown:corner:unknown-source:auto_accepted"
         in edge_network.diagnostic_rows
     )
+    assert "error:source_corner_control_area_ref_missing:corner:unknown-source" in edge_network.diagnostic_rows
+    assert "error:source_corner_side_ref_missing:corner:unknown-source" in edge_network.diagnostic_rows
+
+
+def test_intersection_curb_return_policy_ref_unresolved_stops_the_edge_network() -> None:
+    # a corner pointing at a policy that is not in the model leaves the corner graph
+    # without a curb return, and the edge network builds nothing on an error topology
+    model = _corner_source_validation_model("curb-return:other")
+
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(model)
+    edge_network = service.evaluate_edge_network(model, topology)
+
+    assert topology.status == "error"
+    assert (
+        "error:intersection_corner_graph_curb_return_policy_missing:leg:main:leg:side"
+        in topology.diagnostic_rows
+    )
+    assert edge_network.status == "error"
+    assert edge_network.edge_rows == []
 
 
 def test_intersection_edge_network_rows_report_source_policy_status() -> None:
@@ -1248,7 +1279,18 @@ def test_intersection_edge_network_rows_report_source_policy_status() -> None:
                         approach_station_start=10.0,
                         approach_station_end=40.0,
                         edge_policy_refs=["edge-policy:intersection:edge-source-status:missing"],
-                    )
+                    ),
+                    IntersectionLegRow(
+                        leg_id="intersection:edge-source-status:leg:02",
+                        leg_role="side_approach",
+                        alignment_ref="alignment:side",
+                        intersection_id="intersection:edge-source-status",
+                        profile_ref="profile:side",
+                        centerline3d_ref="centerline:side",
+                        region_ref="region:main",
+                        approach_station_start=0.0,
+                        approach_station_end=25.0,
+                    ),
                 ],
             )
         ],
@@ -1259,6 +1301,30 @@ def test_intersection_edge_network_rows_report_source_policy_status() -> None:
                 alignment_ref="alignment:main",
                 station_ranges=[(10.0, 40.0)],
                 control_region_refs=["region:main"],
+            )
+        ],
+        anchor_rows=[
+            IntersectionAnchorRow(
+                anchor_id="anchor:accepted",
+                intersection_id="intersection:edge-source-status",
+                source_method="manual",
+                approval_status="locked",
+                primary_alignment_ref="alignment:main",
+                primary_station=25.0,
+                secondary_station_refs={"alignment:side": 12.5},
+                point_x=25.0,
+                point_y=0.0,
+                tolerance=0.01,
+            )
+        ],
+        # the corner graph needs two approach legs and a curb return policy before
+        # the network builds any edge, so the source checks below are reachable
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:edge-source-status",
+                intersection_id="intersection:edge-source-status",
+                radius=10.0,
+                approach_leg_refs=["intersection:edge-source-status:leg:01", "intersection:edge-source-status:leg:02"],
             )
         ],
     )
@@ -1301,7 +1367,18 @@ def test_intersection_edge_network_reports_unknown_edge_family_source_policy() -
                         approach_station_start=10.0,
                         approach_station_end=40.0,
                         edge_policy_refs=["edge-policy:unknown-family"],
-                    )
+                    ),
+                    IntersectionLegRow(
+                        leg_id="leg:side",
+                        leg_role="side_approach",
+                        alignment_ref="alignment:side",
+                        intersection_id="intersection:edge-family-source-validation",
+                        profile_ref="profile:side",
+                        centerline3d_ref="centerline:side",
+                        region_ref="region:main",
+                        approach_station_start=0.0,
+                        approach_station_end=25.0,
+                    ),
                 ],
             )
         ],
@@ -1340,6 +1417,16 @@ def test_intersection_edge_network_reports_unknown_edge_family_source_policy() -
                 approval_status="auto_accepted",
                 source_policy_ref="",
                 subassembly_kind="side_slope",
+            )
+        ],
+        # the corner graph needs two approach legs and a curb return policy before
+        # the network builds any edge, so the source checks below are reachable
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:edge-family-source-validation",
+                intersection_id="intersection:edge-family-source-validation",
+                radius=10.0,
+                approach_leg_refs=["leg:main", "leg:side"],
             )
         ],
     )
@@ -1386,7 +1473,18 @@ def test_intersection_edge_network_marks_subassembly_edge_family_lineage_breaks_
                         approach_station_start=10.0,
                         approach_station_end=40.0,
                         edge_policy_refs=["edge-policy:blocking-subassembly"],
-                    )
+                    ),
+                    IntersectionLegRow(
+                        leg_id="leg:side",
+                        leg_role="side_approach",
+                        alignment_ref="alignment:side",
+                        intersection_id="intersection:edge-family-blocking-source",
+                        profile_ref="profile:side",
+                        centerline3d_ref="centerline:side",
+                        region_ref="region:main",
+                        approach_station_start=0.0,
+                        approach_station_end=25.0,
+                    ),
                 ],
             )
         ],
@@ -1425,6 +1523,16 @@ def test_intersection_edge_network_marks_subassembly_edge_family_lineage_breaks_
                 approval_status="locked",
                 source_policy_ref="",
                 subassembly_kind="side_slope",
+            )
+        ],
+        # the corner graph needs two approach legs and a curb return policy before
+        # the network builds any edge, so the source checks below are reachable
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:edge-family-blocking-source",
+                intersection_id="intersection:edge-family-blocking-source",
+                radius=10.0,
+                approach_leg_refs=["leg:main", "leg:side"],
             )
         ],
     )
@@ -1667,12 +1775,34 @@ def test_intersection_preset_options_are_reflected_in_edge_network_preview() -> 
         assert model.curb_return_policy_rows[0].corner_refs == [row.corner_id for row in model.corner_rows]
         assert model.grading_policy_rows[0].mode == "keep_primary_crown"
         assert model.drainage_policy_rows[0].capture_mode == "outside_gutter"
-        assert model.control_areas
+        assert model.control_area_rows
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_intersection_preset_sources_route_to_intersections_tree_folder() -> None:
+# the preset routes each source into the project-tree folder for its kind
+_INTERSECTION_PRESET_TREE_PLACEMENT = {
+    "Intersection Main Road FG Profile": V1_TREE_PROFILES,
+    "Intersection Main Road Stations": V1_TREE_STATIONS,
+    "Intersection Main Road Regions": V1_TREE_REGIONS,
+    "Intersection Side Road FG Profile": V1_TREE_PROFILES,
+    "Intersection Side Road Stations": V1_TREE_STATIONS,
+    "Intersection Side Road Regions": V1_TREE_REGIONS,
+    "Intersection Preset Superelevation": V1_TREE_SUPERELEVATION,
+    "Intersection Preset Drainage": V1_TREE_DRAINAGE,
+}
+
+
+def _tree_folder_labels(tree, tree_key) -> set:
+    folder = tree[tree_key]
+    return {str(getattr(obj, "Label", "") or "") for obj in list(getattr(folder, "Group", []) or [])}
+
+
+def _document_root_labels(doc) -> set:
+    return {str(getattr(obj, "Label", "") or "") for obj in list(getattr(doc, "RootObjects", []) or [])}
+
+
+def test_intersection_preset_sources_route_to_project_tree_folders_by_kind() -> None:
     doc = App.newDocument("CRV1IntersectionPresetTreeRouting")
     try:
         project = doc.addObject("App::FeaturePython", "CorridorRoadProject")
@@ -1681,17 +1811,15 @@ def test_intersection_preset_sources_route_to_intersections_tree_folder() -> Non
 
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
 
-        labels = {
-            str(getattr(obj, "Label", "") or "")
-            for obj in list(getattr(tree[V1_TREE_INTERSECTIONS], "Group", []) or [])
-        }
-        assert any(label.startswith("Intersections") for label in labels)
-        assert "Intersection Main Road FG Profile" in labels
-        assert "Intersection Main Road Stations" in labels
-        assert "Intersection Side Road FG Profile" in labels
-        assert "Intersection Side Road Stations" in labels
-        assert "Intersection Preset Superelevation" in labels
-        assert "Intersection Preset Drainage" in labels
+        root_labels = _document_root_labels(doc)
+        for label, tree_key in _INTERSECTION_PRESET_TREE_PLACEMENT.items():
+            assert label in _tree_folder_labels(tree, tree_key)
+            assert label not in root_labels
+        # the intersection model itself is what the Intersections folder holds
+        assert any(
+            label.startswith("Intersections")
+            for label in _tree_folder_labels(tree, V1_TREE_INTERSECTIONS)
+        )
     finally:
         App.closeDocument(doc.Name)
 
@@ -1702,36 +1830,56 @@ def test_intersection_preset_tree_cleanup_routes_existing_root_leftovers() -> No
         project = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(project)
         tree = ensure_project_tree(project, include_references=False)
+        # leftovers carry the names an earlier preset run gave them, because the tree
+        # policy classifies profiles and stations by name and the rest by record kind
+        specs = [
+            ("V1Profile", "Intersection Main Road FG Profile", V1_TREE_PROFILES, ()),
+            ("V1Stationing", "Intersection Main Road Stations", V1_TREE_STATIONS, ()),
+            (
+                "V1IntersectionModel",
+                "Intersections001",
+                V1_TREE_INTERSECTIONS,
+                (("CRRecordKind", "v1_intersection_model"),),
+            ),
+            (
+                "V1IntersectionPresetSuperelevation",
+                "Intersection Preset Superelevation",
+                V1_TREE_SUPERELEVATION,
+                (
+                    ("CRRecordKind", "v1_superelevation_source"),
+                    ("SuperelevationKind", "intersection_superelevation_handoff"),
+                ),
+            ),
+            (
+                "V1IntersectionPresetDrainage",
+                "Intersection Preset Drainage",
+                V1_TREE_DRAINAGE,
+                (
+                    ("CRRecordKind", "v1_drainage_model"),
+                    ("DrainageModelId", "drainage:intersection-preset-t-intersection"),
+                ),
+            ),
+        ]
         leftovers = []
-        for name, label in [
-            ("LegacyIntersectionProfile", "Intersection Main Road FG Profile"),
-            ("LegacyIntersectionStations", "Intersection Main Road Stations"),
-            ("LegacyIntersectionModel", "Intersections001"),
-            ("LegacyIntersectionSuperelevation", "Intersection Preset Superelevation"),
-            ("LegacyIntersectionDrainage", "Intersection Preset Drainage"),
-        ]:
+        for name, label, tree_key, properties in specs:
             obj = doc.addObject("App::FeaturePython", name)
             obj.Label = label
-            leftovers.append(obj)
-        leftovers[2].addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
-        leftovers[2].CRRecordKind = "v1_intersection_model"
-        leftovers[3].addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
-        leftovers[3].addProperty("App::PropertyString", "SuperelevationKind", "CorridorRoad", "")
-        leftovers[3].CRRecordKind = "v1_superelevation_source"
-        leftovers[3].SuperelevationKind = "intersection_superelevation_handoff"
-        leftovers[4].addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
-        leftovers[4].addProperty("App::PropertyString", "DrainageModelId", "CorridorRoad", "")
-        leftovers[4].CRRecordKind = "v1_drainage_model"
-        leftovers[4].DrainageModelId = "drainage:intersection-preset-t-intersection"
+            for property_name, value in properties:
+                obj.addProperty("App::PropertyString", property_name, "CorridorRoad", "")
+                setattr(obj, property_name, value)
+            leftovers.append((obj, tree_key))
+
         _route_intersection_preset_objects(doc, project=project)
 
-        intersection_names = {
-            str(getattr(obj, "Name", "") or "")
-            for obj in list(getattr(tree[V1_TREE_INTERSECTIONS], "Group", []) or [])
+        root_names = {
+            str(getattr(obj, "Name", "") or "") for obj in list(getattr(doc, "RootObjects", []) or [])
         }
-        root_names = {str(getattr(obj, "Name", "") or "") for obj in list(getattr(doc, "RootObjects", []) or [])}
-        for obj in leftovers:
-            assert obj.Name in intersection_names
+        for obj, tree_key in leftovers:
+            folder_names = {
+                str(getattr(child, "Name", "") or "")
+                for child in list(getattr(tree[tree_key], "Group", []) or [])
+            }
+            assert obj.Name in folder_names
             assert obj.Name not in root_names
     finally:
         App.closeDocument(doc.Name)
@@ -1748,22 +1896,14 @@ def test_intersection_preset_sources_find_parametric_road_project_by_label() -> 
 
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
 
-        root_labels = {str(getattr(obj, "Label", "") or "") for obj in list(getattr(doc, "RootObjects", []) or [])}
-        intersection_labels = {
-            str(getattr(obj, "Label", "") or "")
-            for obj in list(getattr(tree[V1_TREE_INTERSECTIONS], "Group", []) or [])
-        }
-        for label in {
-            "Intersection Main Road FG Profile",
-            "Intersection Main Road Stations",
-            "Intersection Side Road FG Profile",
-            "Intersection Side Road Stations",
-            "Intersection Preset Superelevation",
-            "Intersection Preset Drainage",
-        }:
-            assert label in intersection_labels
+        root_labels = _document_root_labels(doc)
+        for label, tree_key in _INTERSECTION_PRESET_TREE_PLACEMENT.items():
+            assert label in _tree_folder_labels(tree, tree_key)
             assert label not in root_labels
-        assert any(label.startswith("Intersections") for label in intersection_labels)
+        assert any(
+            label.startswith("Intersections")
+            for label in _tree_folder_labels(tree, V1_TREE_INTERSECTIONS)
+        )
     finally:
         App.closeDocument(doc.Name)
 

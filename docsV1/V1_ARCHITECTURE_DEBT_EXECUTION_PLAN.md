@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 in progress, contract baseline 52 to 32
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 in progress, contract baseline 52 to 21
 Depends on:
 
 - `AGENTS.md`
@@ -1139,6 +1139,24 @@ Validation: the contract suite in three chunks with the Qt runner, 1,433 tests, 
 The 32 that remain are not drift of this kind and are taken next: 19 in `test_build_corridor_command.py`, 12 in `test_intersection_command.py`, and the boundary loop question below.
 
 Open question for the maintainer, not decided here. `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` builds a ready loop through the curb-return envelope path, closed, 32 points, area 312, and yet `result.status == "error"` because of `error:intersection_boundary_authoritative_source_edges_missing`. That rule landed on 2026-07-02, the envelope feature and this test on 2026-07-06, so the rule predates what it now rejects. A sibling test locks error and no loops for the case with no envelope, so the rule itself is wanted; the question is whether a complete envelope loop should satisfy it.
+
+### M8 batch 2 on 2026-09-18: the intersection command module, and two product defects behind it
+
+Eleven of the twelve `test_intersection_command.py` failures are resolved. Three of them were not test drift: the tests were reading real defects, and the defects are fixed here.
+
+The first defect makes every roundabout clip run without its boundary. `_clip_tin_surface_by_roundabout_ownership` resolved the boundary loop result and then passed that result to `_roundabout_clip_boundary_contract_summary` and `_roundabout_clip_boundary_polygons`, whose first parameter is the document. Both helpers re-resolve the loops from the document themselves, so they received a dataclass where they expected a document, found no intersection model in it, and reported `status="missing"` with `roundabout_clip_missing_boundary`. Every roundabout surface then fell back to circle clipping with `RoundaboutClipBoundaryStatus="missing"` and zero approach legs. Passing the document gives `ready` with four approach clip loops. The service reads the result only to derive those two values, so the call now passes none.
+
+The second defect hides a whole contract family from the review table for roundabouts. `corridor_intersection_contract_review_rows` sourced the shared boundary graph audit rows from the Intersection Slope Face preview, which a roundabout deliberately never creates: the roundabout branch removes it and points at the dedicated Roundabout Slope Face surface instead. The 186 graph audit rows are written on the intersection surface preview, so the table showed none of them and the highlight could not be focused. The lookup now falls back to the intersection surface preview. The highlight geometry itself always came from the graph result, not from the preview, so only the listing was affected.
+
+The third group is the edge network. `evaluate_edge_network` returns no rows at all when the topology is in error, and the corner graph needs two approach legs and a curb return policy, so three source-validation tests built a one-leg model and asserted about rows that could not exist. Each fixture gains the second approach leg and the policy; the defect each test injects, and every assertion about it, is unchanged. The curb return test went further: its corner pointed at a policy the model does not contain, which is now itself a corner graph error, so the test could never reach the curb return edge it was asserting about. Its model became a helper taking the policy ref and the two contracts are stated apart, with the policy resolved and with it unresolved.
+
+That leaves `source_corner_curb_return_policy_ref_mismatch` with no test on purpose, and it is a question for the maintainer rather than something to paper over: the mismatch that would raise it now stops the network first, so the diagnostic is unreachable.
+
+The remaining drift was ordinary. The three preset source tests expected every created object in the Intersections folder; the tree policy routes by kind, so profiles go to Profiles, stations to Stations, regions to Regions, superelevation to Superelevation, drainage to 05_Drainage, and only the intersection model to Intersections. The cleanup test's leftovers now carry the names an earlier preset run gives them, because profiles and stations are classified by name rather than by record kind. One test read `model.control_areas`, which is `control_area_rows`.
+
+One failure in the module is left: `test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_preview` expects 36 shared breaklines and the preset now produces 49. The relationships it protects, consumed equal to count and zero geometry, mesh, and reversed mismatches, are unaffected; the snapshot numbers and the material and role summaries need re-deriving, which is the next step.
+
+Validation: 9 architecture tests, the contract suite in three chunks with the Qt runner, 21 failures against the 32 the previous batch left, a strict subset with 11 resolved and none new, and 26 smoke scripts at exit code 0.
 
 ## 11. Open Decisions
 

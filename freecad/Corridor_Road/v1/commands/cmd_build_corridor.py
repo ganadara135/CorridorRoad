@@ -1899,7 +1899,9 @@ def corridor_intersection_contract_review_rows(document=None, *, include_interna
     surface_boundary_mode = str(getattr(intersection_preview, "IntersectionSurfaceBoundaryMode", "") or "")
     surface_boundary_loop = str(getattr(intersection_preview, "IntersectionSurfaceBoundaryLoopKind", "") or "")
     surface_boundary_fallback = str(getattr(intersection_preview, "IntersectionSurfaceBoundaryFallbackReason", "") or "")
-    intersection_preview_object = _corridor_build_preview_object(doc, "intersection_slope")
+    # a roundabout has no Intersection Slope Face preview by design, and its shared
+    # boundary graph audit rows are written on the intersection surface preview instead
+    intersection_preview_object = _corridor_build_preview_object(doc, "intersection_slope") or intersection_preview
     return intersection_contract_review_rows(
         topology=topology,
         tie_slope_result=tie_slope_result,
@@ -13703,20 +13705,20 @@ def _clip_tin_surface_by_roundabout_ownership(
 ) -> TINSurface | None:
     """Resolve source context and invoke the typed roundabout TIN clip service."""
 
-    boundary_loop_result = _roundabout_boundary_loop_result_for_clipping(
-        document,
-        applied_section_set=applied_section_set,
-    )
+    # both helpers resolve the boundary loops from the document themselves, and the
+    # service reads the result only to derive the two of them, so it needs none here
     return clip_tin_surface_by_roundabout_ownership(
         tin_surface,
         ownership_spec=_roundabout_ownership_boundary_spec(document),
-        boundary_loop_result=boundary_loop_result,
+        boundary_loop_result=None,
         boundary_summary=_roundabout_clip_boundary_contract_summary(
-            boundary_loop_result,
+            document,
+            applied_section_set=applied_section_set,
             surface_role=surface_role,
         ),
         boundary_clip_polygons=_roundabout_clip_boundary_polygons(
-            boundary_loop_result,
+            document,
+            applied_section_set=applied_section_set,
             surface_role=surface_role,
         ),
         surface_role=surface_role,
