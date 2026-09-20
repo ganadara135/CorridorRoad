@@ -1535,12 +1535,22 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
     if record_kind == "v1_surface_transition_model":
         return tree.get(V1_TREE_REGIONS, None)
-    if record_kind == "v1_review_issue":
+    # the aggregate slope-face markers are review diagnostics and the per-issue ones
+    # review issues; both belong beside the surfaces they annotate
+    if record_kind in {"v1_review_issue", "v1_review_diagnostic"}:
         issue_kind = str(getattr(child, "IssueKind", "") or "")
         name = _name(child)
-        if issue_kind in {"slope_face_tie_in", "surface_transition_span", "drainage_flow", "drainage_station", "subassembly_kind"}:
+        if issue_kind in {
+            "slope_face_tie_in",
+            "slope_face_tie_in_diagnostic",
+            "slope_face_fallback",
+            "surface_transition_span",
+            "drainage_flow",
+            "drainage_station",
+            "subassembly_kind",
+        }:
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
-        if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage")):
+        if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage", "ReviewDiagnosticSlopeFace")):
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
     if record_kind in {
         "v1_centerline3d_review",

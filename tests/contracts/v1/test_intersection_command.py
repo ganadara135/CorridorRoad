@@ -366,8 +366,8 @@ def test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_prev
         assert slope_preview is not None
         assert preview.SharedBreaklineResultId == "shared-breakline:intersection:intersection:starter-t_intersection"
         assert preview.SharedBreaklineAuditStatus == "ready"
-        assert int(preview.SharedBreaklineCount) == 36
-        assert int(preview.SharedBreaklineConsumedCount) == 36
+        assert int(preview.SharedBreaklineCount) == 49
+        assert int(preview.SharedBreaklineConsumedCount) == int(preview.SharedBreaklineCount)
         assert int(preview.SharedBreaklineGeometryMismatchCount) == 0
         assert int(preview.SharedBreaklineMeshMismatchCount) == 0
         assert int(preview.SharedBreaklineReversedEdgeCount) == 0
@@ -381,17 +381,20 @@ def test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_prev
         assert any("control_area_exit" in ref for ref in list(preview.SharedBreaklineRefs))
         assert any("intersection_gutter_handoff" in ref for ref in list(preview.SharedBreaklineRefs))
         assert any("low_point_flow_split" in ref for ref in list(preview.SharedBreaklineRefs))
-        assert preview.SharedBreaklineMaterialSummary == "curb_return=4, design_surface=4, drainage_surface=6, pavement=8, shoulder=5, side_slope=5, slope_face_surface=4"
-        assert "control_area_entry=4" in preview.SharedBreaklineRoleSummary
-        assert "control_area_exit=4" in preview.SharedBreaklineRoleSummary
+        assert preview.SharedBreaklineMaterialSummary == (
+            "curb_return=4, design_surface=4, drainage_surface=6, pavement=8, shoulder=8,"
+            " side_slope=13, slope_face_surface=6"
+        )
+        assert "control_area_entry=5" in preview.SharedBreaklineRoleSummary
+        assert "control_area_exit=5" in preview.SharedBreaklineRoleSummary
         assert "patch_to_design_pavement_tie_in=2" in preview.SharedBreaklineRoleSummary
         assert "patch_to_design_stem_tie_in=2" in preview.SharedBreaklineRoleSummary
-        assert "shared_breakline=ready consumed=36/36" in intersection_row["notes"]
-        assert "audit=ready geometry=36/36 mesh=36/36" in intersection_row["notes"]
+        assert "shared_breakline=ready consumed=49/49" in intersection_row["notes"]
+        assert "audit=ready geometry=49/49 mesh=49/49" in intersection_row["notes"]
         assert any("curb-return-to-pavement" in ref for ref in list(design_preview.SharedBreaklineRefs))
         assert any("curb-return-to-shoulder" in ref for ref in list(design_preview.SharedBreaklineRefs))
         assert "pavement=8" in design_preview.SharedBreaklineMaterialSummary
-        assert "shoulder=6" in design_preview.SharedBreaklineMaterialSummary
+        assert "shoulder=13" in design_preview.SharedBreaklineMaterialSummary
         assert "design_surface=34" in design_preview.SharedBreaklineMaterialSummary
         assert "control_area_entry=2" in design_preview.SharedBreaklineRoleSummary
         assert "control_area_exit=2" in design_preview.SharedBreaklineRoleSummary
@@ -401,11 +404,11 @@ def test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_prev
         assert int(design_preview.SharedBreaklineMeshMismatchCount) == 0
         assert "audit=ready" in design_row["notes"]
         assert any("curb-return-to-slope-face" in ref for ref in list(slope_preview.SharedBreaklineRefs))
-        assert "side_slope=5" in slope_preview.SharedBreaklineMaterialSummary
-        assert "slope_face_surface=31" in slope_preview.SharedBreaklineMaterialSummary
-        assert "shoulder=1" in slope_preview.SharedBreaklineMaterialSummary
-        assert "control_area_entry=2" in slope_preview.SharedBreaklineRoleSummary
-        assert "control_area_exit=2" in slope_preview.SharedBreaklineRoleSummary
+        assert "side_slope=9" in slope_preview.SharedBreaklineMaterialSummary
+        assert "slope_face_surface=24" in slope_preview.SharedBreaklineMaterialSummary
+        assert "shoulder=4" in slope_preview.SharedBreaklineMaterialSummary
+        assert "control_area_entry=3" in slope_preview.SharedBreaklineRoleSummary
+        assert "control_area_exit=3" in slope_preview.SharedBreaklineRoleSummary
         assert int(slope_preview.SharedBreaklineGeometryMismatchCount) == 0
         assert int(slope_preview.SharedBreaklineMeshMismatchCount) == 0
         assert "audit=ready" in slope_row["notes"]

@@ -1466,7 +1466,9 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                 row_index = -1
         if row_index < 0:
             return ""
-        item = table.item(row_index, 0)
+        # the region id is in the second column, behind Alignment, and carries the
+        # unabbreviated id as user data
+        item = table.item(row_index, 1)
         if item is None:
             return ""
         try:

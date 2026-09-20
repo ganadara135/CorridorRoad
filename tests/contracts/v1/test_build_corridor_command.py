@@ -993,11 +993,12 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert preview.SurfaceModelId == "surface:main"
         assert preview.AppliedSectionSetRef == "sections:main"
         assert preview.PreviewStatus == "ready"
-        assert int(preview.PreviewFacetCount) == 8
+        # one strip between the two stations; supplemental sampling no longer adds frames
+        assert int(preview.PreviewFacetCount) == 2
         assert "surface:main" in list(preview.SourceRefs)
         assert "sections:main" in list(preview.SourceRefs)
-        assert int(preview.VertexCount) == 10
-        assert int(preview.TriangleCount) == 8
+        assert int(preview.VertexCount) == 4
+        assert int(preview.TriangleCount) == 2
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
         assert centerline is None
         subgrade_preview = doc.getObject("V1CorridorSubgradeSurfacePreview")
@@ -1007,8 +1008,8 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert subgrade_preview.SurfaceKind == "subgrade_surface"
         assert subgrade_preview.PreviewStatus == "ready"
         assert subgrade_preview.AppliedSectionSetRef == "sections:main"
-        assert int(subgrade_preview.VertexCount) == 10
-        assert int(subgrade_preview.TriangleCount) == 8
+        assert int(subgrade_preview.VertexCount) == 4
+        assert int(subgrade_preview.TriangleCount) == 2
         daylight_preview = doc.getObject("V1CorridorDaylightSurfacePreview")
         assert daylight_preview is not None
         assert daylight_preview.CRRecordKind == "v1_corridor_surface_preview"
@@ -1016,30 +1017,31 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert daylight_preview.SurfaceKind == "daylight_surface"
         assert daylight_preview.PreviewStatus == "ready"
         assert daylight_preview.AppliedSectionSetRef == "sections:main"
-        assert int(daylight_preview.VertexCount) == 20
-        assert int(daylight_preview.TriangleCount) == 16
+        assert int(daylight_preview.VertexCount) == 8
+        assert int(daylight_preview.TriangleCount) == 4
         assert int(daylight_preview.EGIntersectionCount) == 0
         assert int(daylight_preview.EGTieInHitCount) == 0
-        assert int(daylight_preview.SlopeFaceFallbackCount) == 10
-        assert int(daylight_preview.SlopeFaceNoExistingGroundCount) == 10
+        assert int(daylight_preview.SlopeFaceFallbackCount) == 4
+        assert int(daylight_preview.SlopeFaceNoExistingGroundCount) == 4
         assert int(daylight_preview.SlopeFaceNoEGHitCount) == 0
-        assert "fallbacks: 10" in daylight_preview.SlopeFaceDiagnosticSummary
-        assert "no EG TIN: 10" in daylight_preview.SlopeFaceDiagnosticSummary
+        assert "fallbacks: 4" in daylight_preview.SlopeFaceDiagnosticSummary
+        assert "no EG TIN: 4" in daylight_preview.SlopeFaceDiagnosticSummary
         assert "STA 0.000 L no EG TIN" in daylight_preview.SlopeFaceIssueStations
         assert "STA 20.000 R no EG TIN" in daylight_preview.SlopeFaceIssueStations
-        assert len(list(daylight_preview.SlopeFaceIssueRows)) == 10
+        assert len(list(daylight_preview.SlopeFaceIssueRows)) == 4
         issue_rows = corridor_slope_face_issue_rows(doc)
         assert issue_rows[0]["station_label"] == "STA 0.000"
         assert issue_rows[0]["side"] == "L"
         assert issue_rows[0]["reason"] == "no EG TIN"
         assert issue_rows[0]["marker_object"] == "ReviewIssueSlopeFaceIssue001L"
-        assert issue_rows[-1]["station_label"] == "row 5"
+        assert issue_rows[-1]["station_label"] == "STA 20.000"
         assert issue_rows[-1]["side"] == "R"
-        fallback_markers = doc.getObject("ReviewIssueSlopeFaceFallbackMarkers")
+        # the aggregate marker is a ReviewDiagnostic; the per-issue markers stay ReviewIssue
+        fallback_markers = doc.getObject("ReviewDiagnosticSlopeFaceFallbackMarkers")
         assert fallback_markers is not None
-        assert fallback_markers.V1ObjectType == "ReviewIssue"
-        assert fallback_markers.IssueKind == "slope_face_tie_in"
-        assert int(fallback_markers.MarkerCount) == 10
+        assert fallback_markers.V1ObjectType == "ReviewDiagnostic"
+        assert fallback_markers.IssueKind == "slope_face_tie_in_diagnostic"
+        assert int(fallback_markers.MarkerCount) == 4
         first_issue_marker = doc.getObject("ReviewIssueSlopeFaceIssue001L")
         assert first_issue_marker is not None
         assert first_issue_marker.V1ObjectType == "ReviewIssue"
@@ -1058,7 +1060,7 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert first_issue_marker.Name in build_output_names
         assert progress_events[0] == (40, "Preparing project tree...")
         assert any(text == "Building corridor surfaces..." for _value, text in progress_events)
-        assert progress_events[-1] == (94, "Recomputing document...")
+        assert progress_events[-1] == (94, "Finalizing document transaction...")
     finally:
         App.closeDocument(doc.Name)
 
@@ -1369,7 +1371,8 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
         summary = corridor_intersection_contract_review_summary(doc)
         internal_summary = corridor_intersection_contract_review_summary(doc, include_internal=True)
 
-        assert summary["status"] == "ready"
+        # the tie slope window row is a warning, so the summary rolls up to warning
+        assert summary["status"] == "warning"
         assert summary["row_count"] == len([row for row in rows if row.get("row_id")])
         assert "topology=1" in summary["notes"]
         assert "edge_network=" not in summary["notes"]
@@ -1381,7 +1384,12 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
         assert "corridor_clip=4" in summary["notes"]
         assert "drainage_hint=5" in internal_summary["notes"]
         assert all(
-            row["output_path"] in {"contract_consumed", "intersection_boundary_loop_result"}
+            row["output_path"]
+            in {
+                "contract_consumed",
+                "intersection_boundary_loop_result",
+                "intersection_tie_slope_window_candidates",
+            }
             for row in rows
         )
         assert not any(
@@ -1389,7 +1397,7 @@ def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clippi
             for row in rows
         )
         assert rows[0]["contract_family"] == "topology"
-        assert rows[0]["status"] == "ready"
+        assert rows[0]["status"] == "warning"
         assert rows[0]["source_status"] == "accepted"
         assert "lane connections=0" in rows[0]["notes"]
 
@@ -1507,12 +1515,15 @@ def test_intersection_slope_face_cell_rows_are_visible_in_results_and_contracts(
         assert "missing_edges=1" in str(cell_rows[1]["notes"])
         assert "intersection_slope_face_cell_edge_missing:curb_return" in str(cell_rows[1]["source_diagnostics"])
         assert "slope_face_cell=2" in str(summary["notes"])
-        assert "output paths=contract_consumed=25, intersection_slope_face_cell_result=2" in str(summary["notes"])
+        assert (
+            "output paths=contract_consumed=12, intersection_boundary_loop_result=1, "
+            "intersection_slope_face_cell_result=2, intersection_tie_slope_window_candidates=1"
+        ) in str(summary["notes"])
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_focus_corridor_intersection_contract_review_row_creates_contract_highlight() -> None:
+def test_focus_corridor_intersection_boundary_loop_row_falls_back_to_the_intersection_preview() -> None:
     doc, project = _new_project_doc()
     original_centerline_result_builder = build_corridor_command._build_corridor_centerline3d_result
     try:
@@ -1550,17 +1561,17 @@ def test_focus_corridor_intersection_contract_review_row_creates_contract_highli
                 Centerline3DPointRow(20.0, 3010.0, 4010.0, 80.0, source_alignment_ref="alignment:side"),
             ),
         )
+        # only the corridor clip and shared boundary graph families draw a highlight;
+        # a boundary loop row selects the built Intersection Surface preview instead
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        preview.Label = "Intersection Surface"
         rows = corridor_intersection_contract_review_rows(doc)
         boundary_index = next(index for index, row in enumerate(rows) if row["contract_family"] == "boundary_loop")
 
         focused = focus_corridor_intersection_contract_review_row(doc, boundary_index)
 
         assert focused.Name == "V1CorridorIntersectionSurfacePreview"
-        assert focused.PatchBoundarySource == "authoritative_boundary_loop"
         assert doc.getObject("ReviewIntersectionContractHighlight") is None
-        assert focused.Shape.BoundBox.XMin > 2900.0
-        assert focused.Shape.BoundBox.YMin > 3900.0
-        assert focused.Shape.BoundBox.ZMin > 49.0
     finally:
         build_corridor_command._build_corridor_centerline3d_result = original_centerline_result_builder
         App.closeDocument(doc.Name)
@@ -1618,11 +1629,16 @@ def test_build_corridor_panel_populates_intersection_contract_table() -> None:
         )
 
         panel = V1BuildCorridorTaskPanel(document=doc)
+        # the panel fills each review tab on demand, the way opening it does
+        panel._load_review_tab("intersections")
 
-        assert panel._intersection_contract_table.rowCount() == 25
+        # the tab shows the user-facing contract rows, not the internal ones
+        assert panel._intersection_contract_table.rowCount() == len(
+            corridor_intersection_contract_review_rows(doc)
+        )
         assert panel._intersection_contract_table.columnCount() == 10
         assert panel._intersection_contract_table.item(0, 0).text() == "topology"
-        assert panel._intersection_contract_table.item(0, 1).text() == "ready"
+        assert panel._intersection_contract_table.item(0, 1).text() == "warning"
         assert panel._intersection_contract_table.item(0, 2).text() == "accepted"
         assert panel._intersection_contract_table.item(0, 3).text() == "contract_consumed"
     finally:
@@ -2042,19 +2058,22 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert int(preview.ControlRegionCount) == 2
         assert int(preview.PatchBoundaryPointCount) >= 4
         assert int(preview.TriangleCount) > 0
-        assert preview.PatchTriangulationMode == "structured_strip_curb_return_blend"
-        assert preview.PatchSurfaceBoundaryStrategy == "structured_strip_curb_return_blend"
-        assert int(preview.PatchStructuredStripCount) == 2
-        assert int(preview.PatchCurbReturnSurfaceEdgeCount) == 2
-        assert int(preview.PatchCurbReturnArcCount) == 2
-        assert int(preview.PatchCurbReturnArcSampleCount) >= 11
-        assert int(preview.PatchCurbReturnArcSegmentCount) >= 20
-        assert int(preview.PatchEdgeBlendFaceCount) >= 20
-        assert preview.PatchBoundaryRoleSummary == "pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2"
-        assert int(preview.PatchPavementTieInEdgeCount) == 2
-        assert int(preview.PatchStemTieInEdgeCount) == 2
-        assert int(preview.PatchOverlapCutEdgeCount) == 1
-        assert int(preview.PatchCurbReturnEdgeCount) == 2
+        # the patch is built from the authoritative curb return envelope loop, an ordered
+        # polygon, so the structured strip and its per-edge role counts no longer apply
+        assert preview.IntersectionSurfaceBoundaryLoopKind == "authoritative_curb_return_envelope"
+        assert preview.PatchTriangulationMode == "ear_clip"
+        assert preview.PatchSurfaceBoundaryStrategy == "ordered_polygon"
+        assert int(preview.PatchStructuredStripCount) == 0
+        assert int(preview.PatchCurbReturnSurfaceEdgeCount) == 0
+        assert int(preview.PatchCurbReturnArcCount) == 0
+        assert int(preview.PatchCurbReturnArcSampleCount) == 0
+        assert int(preview.PatchCurbReturnArcSegmentCount) == 0
+        assert int(preview.PatchEdgeBlendFaceCount) == 0
+        assert preview.PatchBoundaryRoleSummary == ""
+        assert int(preview.PatchPavementTieInEdgeCount) == 0
+        assert int(preview.PatchStemTieInEdgeCount) == 0
+        assert int(preview.PatchOverlapCutEdgeCount) == 0
+        assert int(preview.PatchCurbReturnEdgeCount) == 0
         assert preview.IntersectionImplementationMode == "legacy_patch_frozen"
         assert preview.IntersectionRedesignPath == "edge_network_first"
         assert preview.IntersectionOutputPath == "legacy_output"
@@ -2127,7 +2146,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "slope_face_loop=" in preview.ConsumedIntersectionContractSummary
         assert int(preview.ConsumedIntersectionContractCount) == 6
         assert preview.IntersectionSurfacePatchResultId == "intersection-surface-patch:intersection-t-01"
-        assert preview.IntersectionSurfacePatchStatus == "warning"
+        # the envelope loop triangulates cleanly, so the quality row is ready
+        assert preview.IntersectionSurfacePatchStatus == "ready"
         assert preview.IntersectionSurfacePatchOutputPath == "legacy_output"
         assert preview.IntersectionSurfacePatchOutputContractStatus == "transitional_normalized"
         assert preview.IntersectionSurfacePatchDigitalTwinHandoff == "review_required"
@@ -2141,18 +2161,19 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert list(preview.IntersectionSurfacePatchQualityRowRefs) == ["intersection-surface-patch-quality:intersection-t-01"]
         assert list(preview.IntersectionSurfacePatchBoundaryRowStatuses) == ["intersection-surface-patch-boundary:intersection-t-01:ready"]
         assert list(preview.IntersectionSurfacePatchTriangulationRowStatuses) == ["intersection-surface-patch-triangulation:intersection-t-01:ready"]
-        assert list(preview.IntersectionSurfacePatchQualityRowStatuses) == ["intersection-surface-patch-quality:intersection-t-01:warning"]
-        assert any("quality:intersection-surface-patch-quality:intersection-t-01:" in row for row in list(preview.IntersectionSurfacePatchRowDiagnostics))
+        assert list(preview.IntersectionSurfacePatchQualityRowStatuses) == ["intersection-surface-patch-quality:intersection-t-01:ready"]
+        assert list(preview.IntersectionSurfacePatchRowDiagnostics) == []
         assert "boundary=ready" in preview.IntersectionSurfacePatchSummary
-        assert "triangulation=structured_strip_curb_return_blend" in preview.IntersectionSurfacePatchSummary
-        assert "quality=warning" in preview.IntersectionSurfacePatchSummary
+        assert "triangulation=ear_clip" in preview.IntersectionSurfacePatchSummary
+        assert "quality=ready" in preview.IntersectionSurfacePatchSummary
         assert "points=" in preview.IntersectionSurfacePatchFootprintSummary
         assert "rings=" in preview.IntersectionSurfacePatchFootprintSummary
         assert "area=" in preview.IntersectionSurfacePatchFootprintSummary
         assert "bbox=" in preview.IntersectionSurfacePatchFootprintSummary
-        assert "curb_return_edges=2" in preview.IntersectionSurfacePatchFootprintSummary
-        assert "curb_return_arcs=2" in preview.IntersectionSurfacePatchFootprintSummary
-        assert "tie_in_edges=4" in preview.IntersectionSurfacePatchFootprintSummary
+        # the envelope loop carries no curb return or tie-in edge roles of its own
+        assert "curb_return_edges=0" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "curb_return_arcs=0" in preview.IntersectionSurfacePatchFootprintSummary
+        assert "tie_in_edges=0" in preview.IntersectionSurfacePatchFootprintSummary
         assert list(preview.IntersectionSurfacePatchConsumedContractRefs) == list(preview.ConsumedIntersectionContractRefs)
         assert preview.IntersectionLegacyPatchReviewVisibility == "metadata_only"
         assert int(preview.IntersectionLegacyPatchCompatibilityPropertyCount) >= 5
@@ -2160,7 +2181,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "property_only:PatchBoundaryPointCount->IntersectionSurfacePatchBoundaryRowCount:normalized_available" in legacy_patch_audit
         assert "property_only:PatchTriangulationMode->IntersectionSurfacePatchSummary:normalized_available" in legacy_patch_audit
         assert "property_only:PatchSurfaceBoundaryStrategy->IntersectionSurfacePatchSummary:normalized_available" in legacy_patch_audit
-        assert "property_only:PatchBoundaryRoleSummary->IntersectionSurfacePatchBoundaryRowRefs:normalized_available" in legacy_patch_audit
+        # PatchBoundaryRoleSummary is empty on the envelope path, so the audit leaves it out
+        assert "property_only:IntersectionPatchBoundaryStatus->IntersectionSurfacePatchBoundaryRowStatuses:normalized_available" in legacy_patch_audit
         assert "review_visibility=metadata_only" in preview.IntersectionLegacyPatchCompatibilityAuditSummary
         assert "Frozen first-slice patch path" in preview.IntersectionImplementationStatus
         assert "legacy_patch_review=metadata_only" in preview.IntersectionReviewSummary
@@ -2174,8 +2196,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "consumed_contracts=topology=" in preview.IntersectionReviewSummary
         assert "surface_patch_result=intersection-surface-patch:intersection-t-01" in preview.IntersectionReviewSummary
         assert "surface_patch_footprint=points=" in preview.IntersectionReviewSummary
-        assert "curb_return_edges=2" in preview.IntersectionReviewSummary
-        assert "tie_in_edges=4" in preview.IntersectionReviewSummary
+        assert "curb_return_edges=0" in preview.IntersectionReviewSummary
+        assert "tie_in_edges=0" in preview.IntersectionReviewSummary
         assert "surface_zone_output=status=" in preview.IntersectionReviewSummary
         assert "surface_zone_output_contract=accepted_surface_zone" in preview.IntersectionReviewSummary
         assert "surface_zone_output_handoff=accepted_zone_candidate" in preview.IntersectionReviewSummary
@@ -2185,8 +2207,9 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "surface_patch_handoff=review_required" in preview.IntersectionReviewSummary
         assert "surface_patch_transitional_reason=legacy_patch_surface_output" in preview.IntersectionReviewSummary
         assert "surface_patch_replacement=accepted_intersection_surface_zone_output" in preview.IntersectionReviewSummary
-        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=warning" in preview.IntersectionReviewSummary
-        assert "surface_patch_row_diagnostics=1" in preview.IntersectionReviewSummary
+        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=ready" in preview.IntersectionReviewSummary
+        # every patch row is ready, so the summary carries no row diagnostics
+        assert "surface_patch_row_diagnostics=" not in preview.IntersectionReviewSummary
         assert float(preview.PatchBoundaryBBoxAspectRatio) >= 1.0
         assert float(preview.PatchTriangleMinQuality) > 0.0
         assert int(preview.PatchTriangleSkinnyCount) >= 0
@@ -2230,8 +2253,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "surface_replacement_gate=blocked" in intersection_row["notes"]
         assert "surface_patch_contract=transitional_normalized" in intersection_row["notes"]
         assert "surface_patch_handoff=review_required" in intersection_row["notes"]
-        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=warning" in intersection_row["notes"]
-        assert "surface_patch_row_diagnostics=1" in intersection_row["notes"]
+        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=ready" in intersection_row["notes"]
+        assert "surface_patch_row_diagnostics=" not in intersection_row["notes"]
         assert "grading policy=intersection:t-01:default, mode=flatten_intersection" in intersection_step["notes"]
         assert "superelevation sources=1, transitions=2" in intersection_step["notes"]
         assert "surface_patch_contract=transitional_normalized" in intersection_step["notes"]
@@ -2240,8 +2263,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "surface_zone_output_contract=accepted_surface_zone" in intersection_step["notes"]
         assert "surface_zone_output_handoff=accepted_zone_candidate" in intersection_step["notes"]
         assert "surface_replacement_gate=blocked" in intersection_step["notes"]
-        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=warning" in intersection_step["notes"]
-        assert "surface_patch_row_diagnostics=1" in intersection_step["notes"]
+        assert "surface_patch_rows=boundary=ready, triangulation=ready, quality=ready" in intersection_step["notes"]
+        assert "surface_patch_row_diagnostics=" not in intersection_step["notes"]
         assert "structured strips=2" not in intersection_step["notes"]
         assert "curb-return arcs=2" not in intersection_step["notes"]
         guided_focus = focus_corridor_build_guided_review_step(doc, "intersections")
@@ -2466,6 +2489,8 @@ def test_intersection_slope_face_loop_highlight_style_distinguishes_debug_states
         point_count=4,
         surface_generation_role="surface_candidate",
         surface_generation_status="ready",
+        # a dedicated surface is generated only from an intersection-owned perimeter
+        boundary_edge_refs=("intersection-edge:curb-return-to-slope-face:01",),
         status="ready",
     )
     open_loop = IntersectionSlopeFaceLoopRow(
@@ -3014,12 +3039,16 @@ def test_intersection_consumed_contract_metadata_preserves_row_source_diagnostic
 
         diagnostics = list(preview.ConsumedIntersectionContractDiagnostics)
 
+        # the slope face loop family carries its readiness tally and next action
         assert preview.ConsumedIntersectionContractSummary == (
             "edge_network=warning rows=1; "
             "surface_zone=warning rows=1; "
             "grading_context=warning rows=1; "
             "drainage_hint=warning rows=1; "
-            "slope_face_loop=warning rows=1"
+            "slope_face_loop=warning rows=1 "
+            "(ready=0/0 warning=0 error=0 blocking=source_edge_network,source_warning,"
+            "surface_zone_warning,edge_network_warning action=Review Intersection source "
+            "diagnostics, edge policies, and surface-zone lineage)"
         )
         assert "edge_network:warning:edge_network_result_warning" in diagnostics
         assert "edge_network:edge:test:warning:source_status=warning" in diagnostics
@@ -5261,13 +5290,15 @@ def test_intersection_shared_breakline_contract_is_consumed_by_patch_and_slope_s
     )
 
     assert shared.domain_kind == "intersection"
-    assert shared.breakline_count == 4
-    assert {row.breakline_role for row in shared.breakline_rows} == {
+    assert shared.breakline_count == len(shared.breakline_rows)
+    # the contract carries many more roles now; these four are the ones this test
+    # follows from the result into the surfaces that share them
+    assert {
         "patch_to_design",
         "patch_to_shoulder",
         "patch_to_slope_face",
         "shoulder_to_slope_face",
-    }
+    } <= {row.breakline_role for row in shared.breakline_rows}
     assert all("profile:primary" in row.source_contract_refs for row in shared.breakline_rows)
     assert all("profile:side" in row.source_contract_refs for row in shared.breakline_rows)
     assert all("grading:intersection:t-01:default" in row.source_contract_refs for row in shared.breakline_rows)
@@ -5281,11 +5312,11 @@ def test_intersection_shared_breakline_contract_is_consumed_by_patch_and_slope_s
     assert shoulder_to_slope in design_surface.boundary_refs
     assert shoulder_to_slope in slope_surface.boundary_refs
     assert build_corridor_command._tin_quality_text(slope_surface, "shared_breakline_result_id") == "shared-breakline:intersection:intersection:t-01"
-    assert build_corridor_command._tin_quality_float(slope_surface, "shared_breakline_consumed_count") == 2
+    assert build_corridor_command._tin_quality_float(slope_surface, "shared_breakline_consumed_count") == 11
     assert audit["status"] == "ready"
-    assert audit["geometry_match_count"] == 8
+    assert audit["geometry_match_count"] == 46
     assert audit["geometry_mismatch_count"] == 0
-    assert audit["mesh_match_count"] == 8
+    assert audit["mesh_match_count"] == 46
     assert audit["mesh_mismatch_count"] == 0
 
 
@@ -5525,7 +5556,12 @@ def test_intersection_shared_breakline_result_includes_curb_return_outer_rows() 
     assert all(len(row.point_refs) == 2 for row in shoulder_rows)
     assert len(slope_face_rows) == 2
     assert {row.material_role for row in slope_face_rows} == {"side_slope"}
-    assert all(row.consumer_refs == ("intersection_surface", "slope_face_surface") for row in slope_face_rows)
+    # the intersection-owned slope face consumes the curb return tie too
+    assert all(
+        row.consumer_refs
+        == ("intersection_surface", "slope_face_surface", "intersection_slope_face_surface")
+        for row in slope_face_rows
+    )
     assert all(len(row.point_refs) == 2 for row in slope_face_rows)
 
 
@@ -5824,12 +5860,14 @@ def test_shared_breakline_audit_prefers_surface_constraint_contract() -> None:
 
     audit = build_corridor_command.shared_breakline_audit(shared, {"intersection_surface": surface})
 
-    assert audit["status"] == "warning"
+    # the surface declares a constraint segment for the breakline, so the 0.4 m offset
+    # is covered by the contract rather than reported as mesh drift
+    assert audit["status"] == "ready"
     assert audit["geometry_match_count"] == 1
     assert audit["geometry_mismatch_count"] == 0
-    assert audit["mesh_match_count"] == 0
-    assert audit["mesh_mismatch_count"] == 1
-    assert "mesh_drift:intersection_surface" in audit["notes"]
+    assert audit["mesh_match_count"] == 1
+    assert audit["mesh_mismatch_count"] == 0
+    assert "mesh_constraint_covered:intersection_surface" in audit["notes"]
     assert "shared-breakline:intersection:intersection:t-01:patch-to-design" in build_corridor_command._tin_quality_text(
         surface,
         "shared_breakline_constraint_segment_rows",
@@ -8727,11 +8765,15 @@ def test_build_corridor_panel_has_region_boundaries_table() -> None:
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
         panel = V1BuildCorridorTaskPanel(document=doc)
+        # the panel fills each review tab on demand, the way opening it does
+        panel._load_review_tab("regions")
 
         assert panel._region_table.rowCount() == 2
-        assert panel._region_table.item(0, 0).text() == "region:rural"
-        assert panel._region_table.item(1, 0).text() == "region:urban"
-        assert panel._region_table.item(0, 7).text() == "warn"
+        # Alignment leads the row, then the region id, and Boundary is the tenth column
+        assert panel._region_table.item(0, 0).text() == "main"
+        assert panel._region_table.item(0, 1).text() == "region:rural"
+        assert panel._region_table.item(1, 1).text() == "region:urban"
+        assert panel._region_table.item(0, 9).text() == "warn"
     finally:
         App.closeDocument(doc.Name)
 
@@ -8742,6 +8784,8 @@ def test_build_corridor_panel_creates_surface_transition_from_selected_region() 
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
         panel = V1BuildCorridorTaskPanel(document=doc)
+        # the panel fills each review tab on demand, the way opening it does
+        panel._load_review_tab("regions")
 
         assert hasattr(panel, "_surface_transition_table")
         assert panel._surface_transition_table.rowCount() == 0
@@ -8777,6 +8821,8 @@ def test_build_corridor_panel_updates_selected_surface_transition_spacing() -> N
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
         create_corridor_surface_transition_from_region_boundary(doc, 0)
         panel = V1BuildCorridorTaskPanel(document=doc)
+        # the panel fills each review tab on demand, the way opening it does
+        panel._load_review_tab("regions")
 
         panel._surface_transition_boundary_combo.setCurrentIndex(1)
         panel._surface_transition_spacing_combo.setCurrentIndex(3)
@@ -8923,27 +8969,51 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
 
+        build_review_roles = [
+            "centerline",
+            "design",
+            "intersection",
+            "subgrade",
+            "daylight",
+            "intersection_slope",
+            "intersection_tie_slope",
+            "drainage",
+        ]
         missing_rows = corridor_build_review_rows(doc)
-        assert [row["status"] for row in missing_rows] == ["missing", "missing", "missing", "missing", "missing"]
+        assert [row["role"] for row in missing_rows] == build_review_roles
+        assert {row["status"] for row in missing_rows} == {"missing"}
         assert "2 STA" in str(missing_rows[0]["applied_section_summary"])
-        assert missing_rows[0]["applied_section_diagnostics"] == "ok"
+        assert missing_rows[0]["applied_section_diagnostics"] == "2 diagnostic(s)"
 
         apply_v1_corridor_model(document=doc, project=project)
         rows = corridor_build_review_rows(doc)
 
-        assert [row["role"] for row in rows] == ["centerline", "design", "subgrade", "daylight", "drainage"]
-        assert [row["status"] for row in rows] == ["missing", "ready", "ready", "ready", "missing"]
-        assert rows[0]["triangle_or_point_count"] == ""
-        assert rows[1]["vertex_count"] == 10
-        assert rows[1]["triangle_or_point_count"] == 8
-        assert "2 STA" in str(rows[1]["applied_section_summary"])
-        assert rows[1]["applied_section_diagnostics"] == "ok"
-        assert "fallbacks: 10" in str(rows[3]["notes"])
-        assert "no EG TIN: 10" in str(rows[3]["notes"])
-        assert "STA 0.000 L no EG TIN" in str(rows[3]["notes"])
-        assert "STA 20.000 R no EG TIN" in str(rows[3]["notes"])
-        assert "no drainage_surface row exists" in str(rows[4]["notes"])
-        assert preferred_corridor_build_review_row_index(rows) == 1
+        rows_by_role = {str(row["role"]): row for row in rows}
+        assert [row["role"] for row in rows] == build_review_roles
+        # the applied sections carry an overlap clip and a daylight fallback, so the
+        # surfaces that read them are warnings rather than ready
+        assert [row["status"] for row in rows] == [
+            "missing",
+            "warning",
+            "missing",
+            "warning",
+            "warning",
+            "missing",
+            "missing",
+            "missing",
+        ]
+        assert rows_by_role["centerline"]["triangle_or_point_count"] == ""
+        assert rows_by_role["design"]["vertex_count"] == 4
+        assert rows_by_role["design"]["triangle_or_point_count"] == 2
+        assert "2 STA" in str(rows_by_role["design"]["applied_section_summary"])
+        assert rows_by_role["design"]["applied_section_diagnostics"] == "2 diagnostic(s)"
+        assert "fallbacks: 4" in str(rows_by_role["daylight"]["notes"])
+        assert "no EG TIN: 4" in str(rows_by_role["daylight"]["notes"])
+        assert "STA 0.000 L no EG TIN" in str(rows_by_role["daylight"]["notes"])
+        assert "STA 20.000 R no EG TIN" in str(rows_by_role["daylight"]["notes"])
+        assert "no drainage_surface row exists" in str(rows_by_role["drainage"]["notes"])
+        # no surface reaches ready here, so no row is preferred for review
+        assert preferred_corridor_build_review_row_index(rows) is None
 
         shown = show_corridor_build_review_object(doc, 1)
         assert shown.Name == "V1CorridorDesignSurfacePreview"
@@ -9097,7 +9167,8 @@ def test_slope_face_markers_include_daylight_contact_vertices() -> None:
             show_daylight_contact_markers=False,
         )
 
-        marker = doc.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
+        # the daylight contact markers are review diagnostics
+        marker = doc.getObject("ReviewDiagnosticSlopeFaceIntersectionMarkers")
         assert marker is None
         assert created == []
         assert set_corridor_build_daylight_contact_marker_visibility(doc, True) is None
@@ -9109,7 +9180,7 @@ def test_slope_face_markers_include_daylight_contact_vertices() -> None:
             show_daylight_contact_markers=True,
         )
 
-        marker = doc.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
+        marker = doc.getObject("ReviewDiagnosticSlopeFaceIntersectionMarkers")
         assert marker is not None
         assert marker.Label == "Slope Face Daylight / EG Intersections"
         assert int(marker.MarkerCount) == 2
@@ -9327,8 +9398,8 @@ def test_apply_v1_corridor_model_records_drainage_surface_diagnostic_without_dit
         assert diagnostic.SurfaceRole == "drainage"
         assert diagnostic.PreviewStatus == "missing"
         assert "ditch_surface" in diagnostic.PreviewDiagnostic
-        assert rows[4]["role"] == "drainage"
-        assert rows[4]["status"] == "missing"
+        drainage_row = next(row for row in rows if row["role"] == "drainage")
+        assert drainage_row["status"] == "missing"
     finally:
         App.closeDocument(doc.Name)
 
@@ -9729,7 +9800,8 @@ def test_corridor_preview_visibility_helpers_target_roles_and_markers() -> None:
     assert set_corridor_build_preview_visibility(doc, "drainage", False) is None
 
     changed = set_all_corridor_build_preview_visibility(doc, True, include_issue_markers=True)
-    assert changed == 11
+    # every object in the document is toggled exactly once
+    assert changed == len(doc.Objects)
     assert doc.getObject("V1CorridorRegionSurface_region_rural").ViewObject.Visibility is False
     assert all(
         obj.ViewObject.Visibility is True
@@ -9965,18 +10037,25 @@ def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exis
         assert drainage_preview.SurfaceModelId == "surface:main"
         assert drainage_preview.AppliedSectionSetRef == "sections:ditch"
         assert drainage_preview.PreviewStatus == "ready"
-        assert int(drainage_preview.PreviewFacetCount) == 16
+        assert int(drainage_preview.PreviewFacetCount) == 4
         assert "surface:main" in list(drainage_preview.SourceRefs)
         assert "sections:ditch" in list(drainage_preview.SourceRefs)
-        assert int(drainage_preview.VertexCount) == 20
-        assert int(drainage_preview.TriangleCount) == 16
+        assert int(drainage_preview.VertexCount) == 8
+        assert int(drainage_preview.TriangleCount) == 4
         build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
         assert drainage_preview.Name in _group_names(build_outputs)
         rows = corridor_build_review_rows(doc)
-        assert rows[3]["status"] == "error"
-        assert "Slope Face Surface preview was not created" in str(rows[3]["notes"])
-        assert rows[4]["status"] == "ready"
-        assert rows[4]["vertex_count"] == 20
+        rows_by_role = {str(row["role"]): row for row in rows}
+        assert rows_by_role["daylight"]["status"] == "error"
+        assert "Slope Face Surface preview was not created" in str(rows_by_role["daylight"]["notes"])
+        # the sections carry ditch points but declare no drainage surface role, so the
+        # surface is built through the inferred fallback and the row says so
+        assert rows_by_role["drainage"]["status"] == "warning"
+        assert rows_by_role["drainage"]["output_path"] == "inferred_fallback"
+        assert "surface role contract=missing; expected=drainage_surface" in str(
+            rows_by_role["drainage"]["notes"]
+        )
+        assert rows_by_role["drainage"]["vertex_count"] == 8
     finally:
         App.closeDocument(doc.Name)
 

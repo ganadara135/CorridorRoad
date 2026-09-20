@@ -20025,11 +20025,12 @@ def _corridor_build_preview_object(document, role: str):
 def _corridor_build_auxiliary_preview_objects(document) -> list[object]:
     if document is None:
         return []
+    # the Intersection Slope Face surface has its own review role, so the role sweep
+    # already covers it and listing it here would toggle and count it twice
     names = (
         "V1CorridorIntersectionTieInEdgePreview",
         "V1CorridorIntersectionBoundarySegmentPreview",
         "V1CorridorIntersectionExclusionZonePreview",
-        "V1CorridorIntersectionSlopeFaceSurfacePreview",
         "V1CorridorIntersectionSlopeFaceOverlapPreview",
         "V1CorridorSupplementalFrameMarkers",
     )

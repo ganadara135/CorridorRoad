@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 in progress, contract baseline 52 to 21
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 at one contract failure, which is an open product question
 Depends on:
 
 - `AGENTS.md`
@@ -1157,6 +1157,29 @@ The remaining drift was ordinary. The three preset source tests expected every c
 One failure in the module is left: `test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_preview` expects 36 shared breaklines and the preset now produces 49. The relationships it protects, consumed equal to count and zero geometry, mesh, and reversed mismatches, are unaffected; the snapshot numbers and the material and role summaries need re-deriving, which is the next step.
 
 Validation: 9 architecture tests, the contract suite in three chunks with the Qt runner, 21 failures against the 32 the previous batch left, a strict subset with 11 resolved and none new, and 26 smoke scripts at exit code 0.
+
+### M8 batch 3 on 2026-09-20: the build corridor module, and three more product defects
+
+All nineteen `test_build_corridor_command.py` failures are resolved and the module passes at 192 tests. Three of them were reading real defects.
+
+Selecting a region in the Regions tab produced no transition boundary options at all, so no surface transition could be created from the panel. `_set_region_boundary_rows` stores the region id as user data on the second column, behind Alignment, and `_selected_region_id` still read the first, returning the alignment name; the boundary options were then filtered by a region that does not exist. It reads the second column now, and the combo fills with the two boundaries the tests expect.
+
+The aggregate slope-face markers were left at the document root. They became review diagnostics rather than review issues, and `resolve_v1_target_container` has a rule for `v1_review_issue` only, so `route_to_v1_tree` could not classify them and did nothing. The rule now covers both record kinds and the diagnostic names, and the markers land in Build Parametric Outputs beside the per-issue ones.
+
+`V1CorridorIntersectionSlopeFaceSurfacePreview` was listed both as a review role and in the auxiliary preview list, so `set_all_corridor_build_preview_visibility` toggled and counted it twice. It is out of the auxiliary list, and the test now states that each object is toggled exactly once rather than repeating a literal.
+
+The rest was drift, and four causes explain most of it.
+
+- Supplemental sampling is gone, so a two-station width-only section set makes one strip per surface. Design and subgrade are 4 vertices and 2 triangles, daylight and drainage 8 and 4, and the slope-face fallback issues are 4 rather than 10. The review rows also went from 5 roles to 8, which broke every index-based row lookup; those now key on the role, which is what each assertion is about.
+- The marker objects were renamed from `ReviewIssue*` to `ReviewDiagnostic*`, with `slope_face_tie_in_diagnostic` as the issue kind.
+- The intersection patch is built from the authoritative curb return envelope loop now, an ordered polygon triangulated with ear clipping, so the structured strip mode, its two curb return arcs, and the per-edge role counts are all zero and the quality row is ready rather than warning.
+- The shared breakline contract grew from 4 roles to 35, and the intersection-owned slope face joined the consumers of the curb return tie. The test that follows four of those roles into their surfaces now states them as a subset rather than as the whole set.
+
+Two smaller ones are worth naming. The shared breakline audit now reports `mesh_constraint_covered` where it used to report `mesh_drift`, which is what that test's own name always claimed; and a slope-face loop only counts as ready when it has a dedicated intersection-owned perimeter source, which the fixture's ready loop did not declare.
+
+Validation: 9 architecture tests, the contract suite in three chunks with the Qt runner, 1 failure against the 21 the previous batch left, a strict subset with 20 resolved and none new, and 26 smoke scripts at exit code 0. flake8 reports only the two F841 warnings that are already on HEAD.
+
+The one remaining contract failure is the boundary loop question recorded in batch 1, which needs a product decision rather than a test change.
 
 ## 11. Open Decisions
 
