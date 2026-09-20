@@ -239,6 +239,26 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         assert node.end_lineno - node.lineno + 1 <= maximum_lines, name
 
     removed_implementation_names = {
+        # Moved on 2026-09-20: the region boundary continuity rule, now owned by
+        # services/evaluation/region_boundary_continuity_evaluation_service, and the pure
+        # model-row readers it shares with the command in common/model_fields.
+        "_region_boundary_diagnostic",
+        "_region_boundary_diagnostics",
+        "_region_boundary_status",
+        "_region_boundary_diagnostic_summary",
+        "_region_source_range_diagnostics",
+        "_region_sample_coverage_diagnostics",
+        "_region_intersection_context_diagnostics",
+        "_intersection_model_mentions_region",
+        "_intersection_row_by_id",
+        "_section_station",
+        "_section_region_id",
+        "_section_structure_values",
+        "_surface_point_role_counts",
+        "_role_count_summary",
+        "_float_attr",
+        "_unique_join",
+        "_unique_refs",
         # Moved by the M5 follow-up: the preview audit row serializers, now owned by
         # services/mapping/preview_audit_row_mapper and shared with two builders.
         "_audit_field",

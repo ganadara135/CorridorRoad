@@ -15,6 +15,16 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree, find_project
+from ..common.model_fields import (
+    intersection_row_by_id,
+    section_float_attr,
+    section_region_id,
+    section_station,
+    section_structure_values,
+    surface_point_role_counts,
+    unique_join,
+    unique_refs,
+)
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
@@ -106,6 +116,14 @@ from ..services.builders.corridor_surface_geometry_service import (
 )
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService, IntersectionPatchPrerequisiteResult
+from ..services.evaluation.region_boundary_continuity_evaluation_service import (
+    region_boundary_diagnostic_summary,
+    region_boundary_diagnostics,
+    region_boundary_status,
+    region_intersection_context_diagnostics,
+    region_sample_coverage_diagnostics,
+    region_source_range_diagnostics,
+)
 from ..services.evaluation.station_context_resolver import StationContextResolver
 from ..services.evaluation.shared_breakline_audit_service import SharedBreaklineAuditService
 from ..services.evaluation.intersection_patch_grading_service import (
@@ -322,10 +340,6 @@ CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
 )
 BUILD_CORRIDOR_PANEL_MIN_WIDTH = 420
 BUILD_CORRIDOR_PANEL_MAX_WIDTH = 16777215
-REGION_BOUNDARY_WIDTH_JUMP_THRESHOLD = 1.0
-REGION_BOUNDARY_SUBGRADE_JUMP_THRESHOLD = 0.15
-REGION_BOUNDARY_DAYLIGHT_WIDTH_JUMP_THRESHOLD = 1.0
-REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD = 0.05
 SURFACE_TRANSITION_DEFAULT_HALF_LENGTH = 5.0
 REGION_SURFACE_DISPLAY_Z_OFFSET = 0.25
 SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL = 2.5
@@ -3322,16 +3336,16 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
         last = group_sections[-1]
         diagnostics: list[dict[str, str]] = []
         if index > 0:
-            diagnostics.extend(_region_boundary_diagnostics(groups[index - 1]["sections"][-1], first, boundary_side="start"))
+            diagnostics.extend(region_boundary_diagnostics(groups[index - 1]["sections"][-1], first, boundary_side="start"))
         if index < len(groups) - 1:
-            diagnostics.extend(_region_boundary_diagnostics(last, groups[index + 1]["sections"][0], boundary_side="end"))
-        boundary_status = _region_boundary_status(diagnostics)
+            diagnostics.extend(region_boundary_diagnostics(last, groups[index + 1]["sections"][0], boundary_side="end"))
+        boundary_status = region_boundary_status(diagnostics)
         row = {
-            "alignment_id": _unique_join(_section_text_values(group_sections, "alignment_id")),
+            "alignment_id": unique_join(_section_text_values(group_sections, "alignment_id")),
             "region_id": str(group.get("region_id", "") or ""),
             "station_start": float(group.get("station_start", 0.0) or 0.0),
             "station_end": float(group.get("station_end", 0.0) or 0.0),
-            "assembly": _unique_join(_section_text_values(group_sections, "assembly_id")),
+            "assembly": unique_join(_section_text_values(group_sections, "assembly_id")),
             "structure": _region_group_structure_summary(
                 group_sections,
                 region_model=region_model,
@@ -3345,7 +3359,7 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
             "intersection": _region_group_intersection_summary(None, group_sections, intersection_model=intersection_model),
             "surface_status": _region_group_surface_status(group_sections),
             "boundary_status": boundary_status,
-            "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
+            "diagnostics": region_boundary_diagnostic_summary(diagnostics),
             "diagnostic_count": len(diagnostics),
         }
         row.update(_region_generated_object_summary(doc, row))
@@ -3446,7 +3460,7 @@ def corridor_surface_transition_rows(document=None) -> list[dict[str, object]]:
                 "to_region_ref": str(getattr(transition, "to_region_ref", "") or ""),
                 "from_surface": region_surface_contexts.get(str(getattr(transition, "from_region_ref", "") or ""), ""),
                 "to_surface": region_surface_contexts.get(str(getattr(transition, "to_region_ref", "") or ""), ""),
-                "target_surfaces": _unique_join(list(getattr(transition, "target_surface_kinds", []) or [])),
+                "target_surfaces": unique_join(list(getattr(transition, "target_surface_kinds", []) or [])),
                 "transition_mode": str(getattr(transition, "transition_mode", "") or ""),
                 "approval_status": str(getattr(transition, "approval_status", "") or ""),
                 "status": row_status,
@@ -3468,9 +3482,9 @@ def corridor_surface_transition_boundary_options(document=None, region_id: str =
     sections = _station_ordered_applied_sections(applied)
     selected_region = str(region_id or "").strip()
     if selected_region:
-        sections = [section for section in sections if _section_region_id(section) == selected_region]
+        sections = [section for section in sections if section_region_id(section) == selected_region]
     station_candidates = [
-        (_section_station(section), _section_region_id(section))
+        (section_station(section), section_region_id(section))
         for section in sections
     ]
     station_candidates.extend(_region_boundary_station_candidates(region_rows, selected_region))
@@ -9192,20 +9206,20 @@ def _station_ordered_applied_sections(applied_section_set) -> list[object]:
             output.append(section)
     if output:
         return output
-    return sorted(list(getattr(applied_section_set, "sections", []) or []), key=lambda section: _section_station(section))
+    return sorted(list(getattr(applied_section_set, "sections", []) or []), key=lambda section: section_station(section))
 
 
 def _contiguous_region_groups(sections: list[object]) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     for section in list(sections or []):
-        region_id = _section_region_id(section)
+        region_id = section_region_id(section)
         if not groups or str(groups[-1].get("region_id", "") or "") != region_id:
             groups.append({"region_id": region_id, "sections": [section]})
         else:
             groups[-1]["sections"].append(section)
     for group in groups:
         group_sections = list(group.get("sections", []) or [])
-        stations = [_section_station(section) for section in group_sections]
+        stations = [section_station(section) for section in group_sections]
         group["station_start"] = min(stations) if stations else 0.0
         group["station_end"] = max(stations) if stations else 0.0
     return groups
@@ -9281,9 +9295,9 @@ def _region_boundary_rows_from_source_regions(
         first = group_sections[0] if group_sections else None
         last = group_sections[-1] if group_sections else None
         diagnostics: list[dict[str, str]] = []
-        diagnostics.extend(_region_source_range_diagnostics(source_rows, index))
-        diagnostics.extend(_region_sample_coverage_diagnostics(source_row, group_sections))
-        intersection_diagnostics = _region_intersection_context_diagnostics(
+        diagnostics.extend(region_source_range_diagnostics(source_rows, index))
+        diagnostics.extend(region_sample_coverage_diagnostics(source_row, group_sections))
+        intersection_diagnostics = region_intersection_context_diagnostics(
             source_row,
             group_sections,
             intersection_model=intersection_model,
@@ -9291,17 +9305,17 @@ def _region_boundary_rows_from_source_regions(
         diagnostics.extend(intersection_diagnostics)
         if index > 0:
             previous_last = section_groups[index - 1][-1] if section_groups[index - 1] else None
-            diagnostics.extend(_region_boundary_diagnostics(previous_last, first, boundary_side="start"))
+            diagnostics.extend(region_boundary_diagnostics(previous_last, first, boundary_side="start"))
         if index < len(source_rows) - 1:
             next_first = section_groups[index + 1][0] if section_groups[index + 1] else None
-            diagnostics.extend(_region_boundary_diagnostics(last, next_first, boundary_side="end"))
-        boundary_status = _region_boundary_status(diagnostics)
+            diagnostics.extend(region_boundary_diagnostics(last, next_first, boundary_side="end"))
+        boundary_status = region_boundary_status(diagnostics)
         row = {
             "alignment_id": str(getattr(region_model, "alignment_id", "") or ""),
             "region_id": str(getattr(source_row, "region_id", "") or ""),
             "station_start": float(getattr(source_row, "station_start", 0.0) or 0.0),
             "station_end": float(getattr(source_row, "station_end", 0.0) or 0.0),
-            "assembly": str(getattr(source_row, "assembly_ref", "") or "") or _unique_join(_section_text_values(group_sections, "assembly_id")),
+            "assembly": str(getattr(source_row, "assembly_ref", "") or "") or unique_join(_section_text_values(group_sections, "assembly_id")),
             "structure": _region_group_structure_summary(
                 group_sections,
                 region_model=region_model,
@@ -9319,7 +9333,7 @@ def _region_boundary_rows_from_source_regions(
             ),
             "surface_status": _region_group_surface_status(group_sections),
             "boundary_status": boundary_status,
-            "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
+            "diagnostics": region_boundary_diagnostic_summary(diagnostics),
             "diagnostic_count": len(diagnostics),
             "intersection_diagnostic_count": len(intersection_diagnostics),
         }
@@ -9342,119 +9356,10 @@ def _sections_for_source_region_row(sections: list[object], source_row) -> list[
     rows = [
         section
         for section in list(sections or [])
-        if _section_region_id(section) == region_id
-        and low - tolerance <= _section_station(section) <= high + tolerance
+        if section_region_id(section) == region_id
+        and low - tolerance <= section_station(section) <= high + tolerance
     ]
-    return sorted(rows, key=lambda section: _section_station(section))
-
-
-def _region_source_range_diagnostics(source_rows: list[object], row_index: int) -> list[dict[str, str]]:
-    rows = list(source_rows or [])
-    if row_index < 0 or row_index >= len(rows):
-        return []
-    diagnostics: list[dict[str, str]] = []
-    current = rows[row_index]
-    start = float(getattr(current, "station_start", 0.0) or 0.0)
-    end = float(getattr(current, "station_end", 0.0) or 0.0)
-    tolerance = 1.0e-6
-    if row_index > 0:
-        previous = rows[row_index - 1]
-        previous_end = float(getattr(previous, "station_end", 0.0) or 0.0)
-        if previous_end < start - tolerance:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "region_source_gap_before",
-                    f"STA {previous_end:.3f}->{start:.3f}: source Region gap before this row.",
-                    "start",
-                )
-            )
-        elif previous_end > start + tolerance:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "region_source_overlap_before",
-                    f"STA {start:.3f}->{previous_end:.3f}: source Region rows overlap before this row.",
-                    "start",
-                )
-            )
-    if row_index < len(rows) - 1:
-        next_row = rows[row_index + 1]
-        next_start = float(getattr(next_row, "station_start", 0.0) or 0.0)
-        if end < next_start - tolerance:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "region_source_gap_after",
-                    f"STA {end:.3f}->{next_start:.3f}: source Region gap after this row.",
-                    "end",
-                )
-            )
-        elif end > next_start + tolerance:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "region_source_overlap_after",
-                    f"STA {next_start:.3f}->{end:.3f}: source Region rows overlap after this row.",
-                    "end",
-                )
-            )
-    return diagnostics
-
-
-def _region_sample_coverage_diagnostics(source_row, sections: list[object]) -> list[dict[str, str]]:
-    start = float(getattr(source_row, "station_start", 0.0) or 0.0)
-    end = float(getattr(source_row, "station_end", 0.0) or 0.0)
-    low = min(start, end)
-    high = max(start, end)
-    ordered = sorted(list(sections or []), key=lambda section: _section_station(section))
-    if not ordered:
-        return [
-            _region_boundary_diagnostic(
-                "warning",
-                "region_sample_missing",
-                f"STA {low:.3f}->{high:.3f}: no Applied Section samples exist inside this Region.",
-                "range",
-            )
-        ]
-    diagnostics: list[dict[str, str]] = []
-    first_station = _section_station(ordered[0])
-    last_station = _section_station(ordered[-1])
-    tolerance = 1.0e-6
-    if first_station > low + tolerance:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "warning",
-                "region_sample_start_gap",
-                f"STA {low:.3f}->{first_station:.3f}: Applied Section samples are missing at the Region start.",
-                "start",
-            )
-        )
-    if last_station < high - tolerance:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "warning",
-                "region_sample_end_gap",
-                f"STA {last_station:.3f}->{high:.3f}: Applied Section samples are missing at the Region end.",
-                "end",
-            )
-        )
-    return diagnostics
-
-
-def _section_region_id(section) -> str:
-    return str(getattr(section, "region_id", "") or "(unassigned)")
-
-
-def _section_station(section) -> float:
-    frame = getattr(section, "frame", None)
-    try:
-        return float(getattr(frame, "station", getattr(section, "station", 0.0)) or 0.0)
-    except Exception:
-        try:
-            return float(getattr(section, "station", 0.0) or 0.0)
-        except Exception:
-            return 0.0
+    return sorted(rows, key=lambda section: section_station(section))
 
 
 def _section_text_values(sections: list[object], attr: str) -> list[str]:
@@ -9466,19 +9371,8 @@ def _section_text_values(sections: list[object], attr: str) -> list[str]:
     return values
 
 
-def _section_structure_values(sections: list[object]) -> list[str]:
-    values: list[str] = []
-    for section in list(sections or []):
-        values.extend(
-            str(value or "").strip()
-            for value in list(getattr(section, "active_structure_ids", []) or [])
-            if str(value or "").strip()
-        )
-    return values
-
-
 def _region_group_structure_summary(sections: list[object], *, region_model=None, structure_model=None) -> str:
-    values = list(_section_structure_values(sections))
+    values = list(section_structure_values(sections))
     if region_model is not None and structure_model is not None:
         for context in _region_group_station_contexts(
             sections,
@@ -9491,7 +9385,7 @@ def _region_group_structure_summary(sections: list[object], *, region_model=None
                 for value in list(getattr(result, "active_structure_ids", []) or [])
                 if str(value or "").strip()
             )
-    return _unique_join(values) or "-"
+    return unique_join(values) or "-"
 
 
 def _region_group_station_contexts(
@@ -9511,11 +9405,11 @@ def _region_group_station_contexts(
                 region_model=region_model,
                 structure_model=structure_model,
                 drainage_model=drainage_model,
-                station=_section_station(section),
+                station=section_station(section),
             )
         except Exception:
             continue
-        section_region = _section_region_id(section)
+        section_region = section_region_id(section)
         context_region = str(getattr(getattr(context, "region_context", None), "region_id", "") or "")
         if section_region and context_region and section_region != context_region:
             continue
@@ -9523,41 +9417,12 @@ def _region_group_station_contexts(
     return contexts
 
 
-def _unique_join(values: list[str], *, max_items: int = 3) -> str:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    if not output:
-        return ""
-    clipped = output[: max(1, int(max_items))]
-    if len(output) > len(clipped):
-        clipped.append(f"+{len(output) - len(clipped)}")
-    return ", ".join(clipped)
-
-
-def _unique_refs(values: list[str]) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
-
-
 def _surface_transition_region_surface_contexts(applied_section_set) -> dict[str, str]:
     if applied_section_set is None:
         return {}
     groups: dict[str, list[object]] = {}
     for section in _station_ordered_applied_sections(applied_section_set):
-        region_id = _section_region_id(section)
+        region_id = section_region_id(section)
         if not region_id:
             continue
         groups.setdefault(region_id, []).append(section)
@@ -9567,25 +9432,25 @@ def _surface_transition_region_surface_contexts(applied_section_set) -> dict[str
 def _region_surface_context_summary(sections: list[object]) -> str:
     if not sections:
         return "surface:missing"
-    left_values = [_float_attr(section, "surface_left_width") for section in sections]
-    right_values = [_float_attr(section, "surface_right_width") for section in sections]
-    subgrade_values = [_float_attr(section, "subgrade_depth") for section in sections]
+    left_values = [section_float_attr(section, "surface_left_width") for section in sections]
+    right_values = [section_float_attr(section, "surface_right_width") for section in sections]
+    subgrade_values = [section_float_attr(section, "subgrade_depth") for section in sections]
     daylight_values = [
-        max(_float_attr(section, "daylight_left_width"), _float_attr(section, "daylight_right_width"))
+        max(section_float_attr(section, "daylight_left_width"), section_float_attr(section, "daylight_right_width"))
         for section in sections
     ]
     role_names = sorted(
         {
             role
             for section in sections
-            for role, count in _surface_point_role_counts(section).items()
+            for role, count in surface_point_role_counts(section).items()
             if count
         }
     )
     return (
         f"FG L {_range_summary(left_values)} / R {_range_summary(right_values)}; "
         f"SG {_range_summary(subgrade_values)}; DL {_range_summary(daylight_values)}; "
-        f"roles {_unique_join(role_names, max_items=2) or '-'}"
+        f"roles {unique_join(role_names, max_items=2) or '-'}"
     )
 
 
@@ -9851,16 +9716,16 @@ def _surface_transition_span_marker_metadata(surface_model, transition_model) ->
 def _surface_transition_span_marker_point(sections: list[object], station: float, *, z_offset: float = 0.75) -> tuple[float, float, float] | None:
     if not sections:
         return None
-    ordered = sorted(list(sections or []), key=lambda section: _section_station(section))
+    ordered = sorted(list(sections or []), key=lambda section: section_station(section))
     for index in range(len(ordered) - 1):
         first = ordered[index]
         second = ordered[index + 1]
-        first_station = _section_station(first)
-        second_station = _section_station(second)
+        first_station = section_station(first)
+        second_station = section_station(second)
         if min(first_station, second_station) - 1.0e-9 <= float(station) <= max(first_station, second_station) + 1.0e-9:
             ratio = 0.0 if abs(second_station - first_station) <= 1.0e-9 else (float(station) - first_station) / (second_station - first_station)
             return _interpolate_section_frame_point(getattr(first, "frame", None), getattr(second, "frame", None), ratio, z_offset=z_offset)
-    nearest = min(ordered, key=lambda section: abs(_section_station(section) - float(station)))
+    nearest = min(ordered, key=lambda section: abs(section_station(section) - float(station)))
     frame = getattr(nearest, "frame", None)
     if frame is None:
         return None
@@ -9916,8 +9781,8 @@ def _region_group_drainage_summary(sections: list[object], *, region_model=None,
         if str(getattr(point, "point_role", "") or "") == "ditch_surface"
     )
     summary_parts: list[str] = []
-    drainage_summary = _unique_join(drainage_refs)
-    route_summary = _unique_join(flow_route_refs)
+    drainage_summary = unique_join(drainage_refs)
+    route_summary = unique_join(flow_route_refs)
     if drainage_summary:
         summary_parts.append(drainage_summary)
     if route_summary:
@@ -9929,14 +9794,14 @@ def _region_group_drainage_summary(sections: list[object], *, region_model=None,
 
 def _region_group_intersection_summary(source_row, sections: list[object], *, intersection_model=None) -> str:
     source_ref = str(getattr(source_row, "intersection_ref", "") or "").strip() if source_row is not None else ""
-    active_refs = _unique_refs(
+    active_refs = unique_refs(
         [
             str(getattr(section, "active_intersection_id", "") or "")
             for section in list(sections or [])
             if str(getattr(section, "active_intersection_id", "") or "").strip()
         ]
     )
-    leg_roles = _unique_refs(
+    leg_roles = unique_refs(
         [
             str(getattr(section, "active_intersection_leg_role", "") or "")
             for section in list(sections or [])
@@ -9950,243 +9815,15 @@ def _region_group_intersection_summary(source_row, sections: list[object], *, in
         parts.extend(_display_source_id(ref, "intersection:") for ref in active_refs)
     if leg_roles:
         parts.append("/".join(leg_roles))
-    if source_ref and intersection_model is not None and _intersection_row_by_id(intersection_model, source_ref) is None:
+    if source_ref and intersection_model is not None and intersection_row_by_id(intersection_model, source_ref) is None:
         parts.append("unlinked")
     return " | ".join(part for part in parts if part) or "-"
-
-
-def _region_intersection_context_diagnostics(source_row, sections: list[object], *, intersection_model=None) -> list[dict[str, str]]:
-    source_ref = str(getattr(source_row, "intersection_ref", "") or "").strip()
-    region_id = str(getattr(source_row, "region_id", "") or "").strip()
-    active_refs = _unique_refs(
-        [
-            str(getattr(section, "active_intersection_id", "") or "")
-            for section in list(sections or [])
-            if str(getattr(section, "active_intersection_id", "") or "").strip()
-        ]
-    )
-    diagnostics: list[dict[str, str]] = []
-    if source_ref:
-        if intersection_model is None:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "intersection_model_missing",
-                    f"{source_ref}: Region is tagged as intersection-controlled but no IntersectionModel is available.",
-                    "range",
-                )
-            )
-        elif _intersection_row_by_id(intersection_model, source_ref) is None:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "intersection_ref_missing_in_model",
-                    f"{source_ref}: Region intersection_ref is not present in IntersectionModel.",
-                    "range",
-                )
-            )
-        if sections and source_ref not in active_refs:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "intersection_context_not_reflected_in_applied_sections",
-                    f"{source_ref}: Applied Sections inside this Region do not carry the expected active intersection.",
-                    "range",
-                )
-            )
-        if intersection_model is not None and not _intersection_model_mentions_region(intersection_model, source_ref, region_id):
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    "intersection_control_region_missing",
-                    f"{source_ref}: IntersectionModel does not list this Region as a control Region.",
-                    "range",
-                )
-            )
-    elif active_refs:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "warning",
-                "intersection_context_without_region_source_ref",
-                f"{', '.join(active_refs)}: Applied Sections carry intersection context, but Region source has no intersection_ref.",
-                "range",
-            )
-        )
-    if len(active_refs) > 1:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "warning",
-                "intersection_context_overlap",
-                f"Multiple active intersections are present in this Region: {', '.join(active_refs)}.",
-                "range",
-            )
-        )
-    return diagnostics
-
-
-def _intersection_row_by_id(intersection_model, intersection_id: str):
-    target = str(intersection_id or "").strip()
-    if intersection_model is None or not target:
-        return None
-    for row in list(getattr(intersection_model, "intersection_rows", []) or []):
-        if str(getattr(row, "intersection_id", "") or "").strip() == target:
-            return row
-    return None
-
-
-def _intersection_model_mentions_region(intersection_model, intersection_id: str, region_id: str) -> bool:
-    target_region = str(region_id or "").strip()
-    if not target_region:
-        return True
-    refs: list[str] = []
-    row = _intersection_row_by_id(intersection_model, intersection_id)
-    if row is not None:
-        refs.extend(str(value or "") for value in list(getattr(row, "control_region_refs", []) or []))
-        refs.extend(str(getattr(leg, "region_ref", "") or "") for leg in list(getattr(row, "leg_rows", []) or []))
-    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
-        if str(getattr(area, "intersection_id", "") or "").strip() == str(intersection_id or "").strip():
-            refs.extend(str(value or "") for value in list(getattr(area, "control_region_refs", []) or []))
-    return any(ref == target_region or ref.endswith(f"/{target_region}") for ref in refs if ref)
 
 
 def _region_group_surface_status(sections: list[object]) -> str:
     if not sections:
         return "missing"
     return "ready" if all(getattr(section, "frame", None) is not None for section in sections) else "warn"
-
-
-def _region_boundary_diagnostics(left, right, *, boundary_side: str) -> list[dict[str, str]]:
-    if left is None or right is None:
-        return []
-    diagnostics: list[dict[str, str]] = []
-    left_station = _section_station(left)
-    right_station = _section_station(right)
-    station_text = f"STA {left_station:.3f}->{right_station:.3f}"
-    left_region = _section_region_id(left)
-    right_region = _section_region_id(right)
-    if left_region != right_region:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "info",
-                "region_context_change",
-                f"{station_text}: {left_region} -> {right_region}.",
-                boundary_side,
-            )
-        )
-    for attr, label, threshold, kind in (
-        ("surface_left_width", "left design width", REGION_BOUNDARY_WIDTH_JUMP_THRESHOLD, "region_boundary_width_jump"),
-        ("surface_right_width", "right design width", REGION_BOUNDARY_WIDTH_JUMP_THRESHOLD, "region_boundary_width_jump"),
-        ("subgrade_depth", "subgrade depth", REGION_BOUNDARY_SUBGRADE_JUMP_THRESHOLD, "region_boundary_subgrade_jump"),
-        ("daylight_left_width", "left daylight width", REGION_BOUNDARY_DAYLIGHT_WIDTH_JUMP_THRESHOLD, "region_boundary_daylight_width_jump"),
-        ("daylight_right_width", "right daylight width", REGION_BOUNDARY_DAYLIGHT_WIDTH_JUMP_THRESHOLD, "region_boundary_daylight_width_jump"),
-        ("daylight_left_slope", "left daylight slope", REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD, "region_boundary_daylight_slope_jump"),
-        ("daylight_right_slope", "right daylight slope", REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD, "region_boundary_daylight_slope_jump"),
-    ):
-        delta = abs(_float_attr(right, attr) - _float_attr(left, attr))
-        if delta > threshold + 1.0e-9:
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    kind,
-                    f"{station_text}: {label} changes by {delta:.3f}.",
-                    boundary_side,
-                )
-            )
-    left_roles = _surface_point_role_counts(left)
-    right_roles = _surface_point_role_counts(right)
-    if left_roles != right_roles:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "warning",
-                "region_boundary_point_role_mismatch",
-                f"{station_text}: surface point roles differ ({_role_count_summary(left_roles)} -> {_role_count_summary(right_roles)}).",
-                boundary_side,
-            )
-        )
-    for role, kind, label in (
-        ("ditch_surface", "region_boundary_ditch_mismatch", "ditch"),
-        ("bench_surface", "region_boundary_bench_mismatch", "bench"),
-    ):
-        left_count = left_roles.get(role, 0)
-        right_count = right_roles.get(role, 0)
-        if bool(left_count) != bool(right_count):
-            diagnostics.append(
-                _region_boundary_diagnostic(
-                    "warning",
-                    kind,
-                    f"{station_text}: {label} rows exist on one side only ({left_count} -> {right_count}).",
-                    boundary_side,
-                )
-            )
-    left_structures = set(_section_structure_values([left]))
-    right_structures = set(_section_structure_values([right]))
-    if left_structures != right_structures:
-        diagnostics.append(
-            _region_boundary_diagnostic(
-                "info",
-                "region_boundary_structure_context_change",
-                f"{station_text}: structure context changes ({_unique_join(sorted(left_structures)) or '-'} -> {_unique_join(sorted(right_structures)) or '-'}).",
-                boundary_side,
-            )
-        )
-    return diagnostics
-
-
-def _region_boundary_diagnostic(severity: str, kind: str, message: str, boundary_side: str) -> dict[str, str]:
-    return {
-        "severity": str(severity or ""),
-        "kind": str(kind or ""),
-        "message": str(message or ""),
-        "boundary_side": str(boundary_side or ""),
-    }
-
-
-def _float_attr(obj, attr: str) -> float:
-    try:
-        return float(getattr(obj, attr, 0.0) or 0.0)
-    except Exception:
-        return 0.0
-
-
-def _surface_point_role_counts(section) -> dict[str, int]:
-    roles = {"fg_surface", "subgrade_surface", "ditch_surface", "side_slope_surface", "bench_surface", "daylight_marker"}
-    counts = {role: 0 for role in roles}
-    for point in list(getattr(section, "point_rows", []) or []):
-        role = str(getattr(point, "point_role", "") or "")
-        if role in counts:
-            counts[role] += 1
-    return {role: count for role, count in counts.items() if count}
-
-
-def _role_count_summary(counts: dict[str, int]) -> str:
-    if not counts:
-        return "none"
-    return ", ".join(f"{role}:{count}" for role, count in sorted(counts.items()))
-
-
-def _region_boundary_status(diagnostics: list[dict[str, str]]) -> str:
-    severities = {str(row.get("severity", "") or "") for row in list(diagnostics or [])}
-    if "error" in severities:
-        return "error"
-    if "warning" in severities:
-        return "warn"
-    return "ready"
-
-
-def _region_boundary_diagnostic_summary(diagnostics: list[dict[str, str]], *, max_items: int = 2) -> str:
-    if not diagnostics:
-        return "ok"
-    warning_count = sum(1 for row in diagnostics if str(row.get("severity", "") or "") == "warning")
-    info_count = sum(1 for row in diagnostics if str(row.get("severity", "") or "") == "info")
-    messages = [str(row.get("message", "") or "") for row in diagnostics if str(row.get("severity", "") or "") != "info"]
-    if not messages:
-        messages = [str(row.get("message", "") or "") for row in diagnostics]
-    clipped = [message for message in messages if message][: max(1, int(max_items))]
-    suffix = ""
-    if len(messages) > len(clipped):
-        suffix = f"; +{len(messages) - len(clipped)} more"
-    prefix = f"{warning_count} warning(s), {info_count} info"
-    return f"{prefix}: {'; '.join(clipped)}{suffix}"
 
 
 def _region_boundary_display_diagnostics(row: dict[str, object]) -> str:
@@ -10227,8 +9864,8 @@ def _create_or_update_region_preview_objects(
     region_sections = [
         section
         for section in all_sections
-        if _section_region_id(section) == region_id
-        and start - 1.0e-6 <= _section_station(section) <= end + 1.0e-6
+        if section_region_id(section) == region_id
+        and start - 1.0e-6 <= section_station(section) <= end + 1.0e-6
     ]
     build_sections = _region_surface_build_sections(
         region_sections,
@@ -10405,7 +10042,7 @@ def _applied_section_set_with_intersection_tie_in_sections(applied_section_set, 
         return applied_section_set
     generated: list[object] = []
     seen = {
-        (str(getattr(section, "alignment_id", "") or ""), round(_section_station(section), 6))
+        (str(getattr(section, "alignment_id", "") or ""), round(section_station(section), 6))
         for section in sections
     }
     arc_points: list[tuple[float, float, float]] = []
@@ -10433,7 +10070,7 @@ def _applied_section_set_with_intersection_tie_in_sections(applied_section_set, 
         )
         if candidate is None:
             continue
-        key = (str(getattr(candidate, "alignment_id", "") or ""), round(_section_station(candidate), 6))
+        key = (str(getattr(candidate, "alignment_id", "") or ""), round(section_station(candidate), 6))
         if key in seen:
             continue
         seen.add(key)
@@ -10454,7 +10091,7 @@ def _applied_section_set_with_intersection_tie_in_sections(applied_section_set, 
             station_rows.append(
                 replace(
                     source_row,
-                    station=float(_section_station(section)),
+                    station=float(section_station(section)),
                     applied_section_id=section_id,
                 )
             )
@@ -10462,7 +10099,7 @@ def _applied_section_set_with_intersection_tie_in_sections(applied_section_set, 
         station_rows.append(
             AppliedSectionStationRow(
                 f"{section_id or 'section'}:{index}:station-row",
-                _section_station(section),
+                section_station(section),
                 section_id,
                 "intersection_tie_in_generated",
             )
@@ -10484,7 +10121,7 @@ def _intersection_tie_in_generated_section_for_point(
 ):
     best: tuple[float, object, object, float, str] | None = None
     for alignment_id, rows in grouped_sections.items():
-        ordered = sorted([section for section in list(rows or []) if getattr(section, "frame", None) is not None], key=_section_station)
+        ordered = sorted([section for section in list(rows or []) if getattr(section, "frame", None) is not None], key=section_station)
         for index in range(len(ordered) - 1):
             first = ordered[index]
             second = ordered[index + 1]
@@ -10499,7 +10136,7 @@ def _intersection_tie_in_generated_section_for_point(
     if best is None:
         return None
     _distance, first, second, ratio, alignment_id = best
-    station = _section_station(first) + (_section_station(second) - _section_station(first)) * ratio
+    station = section_station(first) + (section_station(second) - section_station(first)) * ratio
     section = _interpolate_region_boundary_section(
         first,
         second,
@@ -10534,8 +10171,8 @@ def _intersection_tie_in_generated_section_for_point(
 
 def _unique_sections_by_alignment_station(sections: list[object]) -> list[object]:
     rows: dict[tuple[str, float], object] = {}
-    for section in sorted(list(sections or []), key=lambda item: (str(getattr(item, "alignment_id", "") or ""), _section_station(item), str(getattr(item, "applied_section_id", "") or ""))):
-        key = (str(getattr(section, "alignment_id", "") or ""), round(_section_station(section), 6))
+    for section in sorted(list(sections or []), key=lambda item: (str(getattr(item, "alignment_id", "") or ""), section_station(item), str(getattr(item, "applied_section_id", "") or ""))):
+        key = (str(getattr(section, "alignment_id", "") or ""), round(section_station(section), 6))
         existing = rows.get(key)
         if existing is None or str(getattr(section, "applied_section_id", "") or "").startswith("section:intersection-tie-in:"):
             rows[key] = section
@@ -10550,8 +10187,8 @@ def _region_surface_build_sections(
     all_sections: list[object] | None = None,
     region_id: str = "",
 ) -> list[object]:
-    ordered = sorted(list(sections or []), key=_section_station)
-    all_ordered = sorted(list(all_sections or ordered), key=_section_station)
+    ordered = sorted(list(sections or []), key=section_station)
+    all_ordered = sorted(list(all_sections or ordered), key=section_station)
     augmented = list(ordered)
     for boundary_role, station in (("start", float(station_start)), ("end", float(station_end))):
         if not _has_section_at_station(augmented, station):
@@ -10577,7 +10214,7 @@ def _region_surface_build_sections(
         import math as _math
 
         angle_rad = _math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
-        station = float(getattr(frame, "station", _section_station(section)) or _section_station(section)) + length
+        station = float(getattr(frame, "station", section_station(section)) or section_station(section)) + length
         new_frame = replace(
             frame,
             station=station,
@@ -10598,13 +10235,13 @@ def _region_surface_build_sections(
 
 
 def _has_section_at_station(sections: list[object], station: float, *, tolerance: float = 1.0e-6) -> bool:
-    return any(abs(_section_station(section) - float(station)) <= float(tolerance) for section in list(sections or []))
+    return any(abs(section_station(section) - float(station)) <= float(tolerance) for section in list(sections or []))
 
 
 def _unique_sections_by_station(sections: list[object]) -> list[object]:
     rows: dict[float, object] = {}
-    for section in sorted(list(sections or []), key=lambda item: (_section_station(item), str(getattr(item, "applied_section_id", "") or ""))):
-        rows[round(_section_station(section), 6)] = section
+    for section in sorted(list(sections or []), key=lambda item: (section_station(item), str(getattr(item, "applied_section_id", "") or ""))):
+        rows[round(section_station(section), 6)] = section
     return [rows[key] for key in sorted(rows)]
 
 
@@ -10615,21 +10252,21 @@ def _region_boundary_virtual_section(
     region_id: str,
     boundary_role: str,
 ):
-    ordered = sorted([section for section in list(sections or []) if getattr(section, "frame", None) is not None], key=_section_station)
+    ordered = sorted([section for section in list(sections or []) if getattr(section, "frame", None) is not None], key=section_station)
     if not ordered:
         return None
     value = float(station)
     for index in range(len(ordered) - 1):
         first = ordered[index]
         second = ordered[index + 1]
-        first_station = _section_station(first)
-        second_station = _section_station(second)
+        first_station = section_station(first)
+        second_station = section_station(second)
         low = min(first_station, second_station)
         high = max(first_station, second_station)
         if low - 1.0e-6 <= value <= high + 1.0e-6:
             ratio = 0.0 if abs(second_station - first_station) <= 1.0e-9 else (value - first_station) / (second_station - first_station)
             return _interpolate_region_boundary_section(first, second, ratio, station=value, region_id=region_id, boundary_role=boundary_role)
-    nearest = min(ordered, key=lambda section: abs(_section_station(section) - value))
+    nearest = min(ordered, key=lambda section: abs(section_station(section) - value))
     return _project_region_boundary_section(nearest, station=value, region_id=region_id, boundary_role=boundary_role)
 
 
@@ -10660,7 +10297,7 @@ def _project_region_boundary_section(section, *, station: float, region_id: str,
     try:
         import math as _math
 
-        delta = float(station) - _section_station(section)
+        delta = float(station) - section_station(section)
         angle_rad = _math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
         projected_frame = replace(
             frame,
@@ -10686,7 +10323,7 @@ def _region_boundary_context_source(first, second, *, station: float, region_id:
     for section in (first, second):
         if str(getattr(section, "region_id", "") or "") == target:
             return section
-    return first if abs(_section_station(first) - float(station)) <= abs(_section_station(second) - float(station)) else second
+    return first if abs(section_station(first) - float(station)) <= abs(section_station(second) - float(station)) else second
 
 
 def _interpolate_region_boundary_frame(first_frame, second_frame, ratio: float, *, station: float, source_frame=None):
@@ -10871,7 +10508,7 @@ def _style_region_preview_object(obj, *, selected: bool = False) -> None:
 def _region_applied_section_subset(applied_section_set, *, region_id: str, sections: list[object]) -> AppliedSectionSet:
     applied_id = str(getattr(applied_section_set, "applied_section_set_id", "") or "sections:main")
     safe = _safe_region_token(region_id)
-    ordered = sorted(list(sections or []), key=_section_station)
+    ordered = sorted(list(sections or []), key=section_station)
     return AppliedSectionSet(
         schema_version=int(getattr(applied_section_set, "schema_version", 1) or 1),
         project_id=str(getattr(applied_section_set, "project_id", "") or "corridorroad-v1"),
@@ -10881,7 +10518,7 @@ def _region_applied_section_subset(applied_section_set, *, region_id: str, secti
         station_rows=[
             AppliedSectionStationRow(
                 station_row_id=f"{applied_id}:region:{safe}:station:{index + 1}",
-                station=_section_station(section),
+                station=section_station(section),
                 applied_section_id=str(getattr(section, "applied_section_id", "") or f"region-section:{index + 1}"),
                 kind="region_surface_sample",
             )
@@ -11418,7 +11055,7 @@ def _intersection_tie_slope_road_role(
     intersection_model=None,
     intersection_id: str = "",
 ) -> str:
-    source_row = _intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
+    source_row = intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
     primary_ref = str(getattr(source_row, "primary_alignment_ref", "") or "").strip() if source_row is not None else ""
     if primary_ref and str(alignment_ref or "").strip() == primary_ref:
         return "primary"
@@ -11432,7 +11069,7 @@ def _intersection_tie_slope_gap_specs(
     intersection_model=None,
 ) -> list[dict[str, object]]:
     intersection_id = str(getattr(prerequisite, "intersection_id", "") or "").strip()
-    source_row = _intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
+    source_row = intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
     primary_ref = str(getattr(source_row, "primary_alignment_ref", "") or "").strip() if source_row is not None else ""
     alignment_refs = [
         str(value or "").strip()
@@ -11635,7 +11272,7 @@ def _intersection_tie_slope_leg_station_range(
     intersection_id: str,
     alignment_ref: str,
 ) -> tuple[float, float] | None:
-    source_row = _intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
+    source_row = intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
     for leg in list(getattr(source_row, "leg_rows", []) or []):
         if str(alignment_ref or "").strip() and str(getattr(leg, "alignment_ref", "") or "").strip() != str(alignment_ref or "").strip():
             continue
@@ -11652,7 +11289,7 @@ def _intersection_tie_slope_alignment_section_station_range(
     alignment_ref: str,
 ) -> tuple[float, float] | None:
     stations = [
-        _section_station(section)
+        section_station(section)
         for section in _station_ordered_applied_sections(applied_section_set)
         if str(getattr(section, "alignment_id", "") or "").strip() == str(alignment_ref or "").strip()
     ]
@@ -11668,7 +11305,7 @@ def _intersection_tie_slope_applied_intersection_station_range(
     alignment_ref: str,
 ) -> tuple[float, float] | None:
     stations = [
-        _section_station(section)
+        section_station(section)
         for section in _station_ordered_applied_sections(applied_section_set)
         if str(getattr(section, "alignment_id", "") or "").strip() == str(alignment_ref or "").strip()
         and str(getattr(section, "active_intersection_id", "") or "").strip() == str(intersection_id or "").strip()
@@ -11716,9 +11353,9 @@ def _intersection_tie_slope_terminal_section_for_gap(
     ]
     if str(gap_role or "").strip().lower() == "exit":
         preferred = after_or_at
-        return min(preferred or sections, key=lambda section: abs(_section_station(section) - float(target_station)))
+        return min(preferred or sections, key=lambda section: abs(section_station(section) - float(target_station)))
     preferred = before_or_at
-    return min(preferred or sections, key=lambda section: abs(_section_station(section) - float(target_station)))
+    return min(preferred or sections, key=lambda section: abs(section_station(section) - float(target_station)))
 
 
 def _applied_section_kind_map(applied_section_set) -> dict[str, str]:
@@ -11786,11 +11423,11 @@ def _intersection_tie_slope_supplemental_extent_diagnostics(
     diagnostics = [
         (
             "info:intersection_tie_slope_first_active_section:"
-            f"{str(getattr(first_section, 'applied_section_id', '') or '')}:sta={_section_station(first_section):.3f}"
+            f"{str(getattr(first_section, 'applied_section_id', '') or '')}:sta={section_station(first_section):.3f}"
         ),
         (
             "info:intersection_tie_slope_last_active_section:"
-            f"{str(getattr(last_section, 'applied_section_id', '') or '')}:sta={_section_station(last_section):.3f}"
+            f"{str(getattr(last_section, 'applied_section_id', '') or '')}:sta={section_station(last_section):.3f}"
         ),
         f"info:intersection_tie_slope_supplemental_section_count:{len(supplemental_sections)}",
         f"info:intersection_tie_slope_supplemental_pair_index:{int(pair_index or 0)}/{int(pair_count or 0)}",
@@ -11802,7 +11439,7 @@ def _intersection_tie_slope_supplemental_extent_diagnostics(
         diagnostics.append("info:intersection_tie_slope_supplemental_endpoint_pending")
         return tuple(_unique_text_values(diagnostics))
     endpoint_ref = str(getattr(selected_endpoint_section, "applied_section_id", "") or "")
-    endpoint_station = _section_station(selected_endpoint_section)
+    endpoint_station = section_station(selected_endpoint_section)
     diagnostics.append(f"info:intersection_tie_slope_supplemental_endpoint_selected:{endpoint_ref}:sta={endpoint_station:.3f}")
     if not _applied_section_is_supplemental(selected_endpoint_section, kind_by_section_id=kind_by_section_id):
         diagnostics.append(f"intersection_tie_slope_supplemental_endpoint_fallback_non_supplemental:{endpoint_ref}")
@@ -12099,12 +11736,12 @@ def _intersection_tie_slope_applied_section_window_row(
         "supplemental_extent_role": str(supplemental_extent_role or ""),
         "supplemental_endpoint_ref": str(getattr(supplemental_endpoint_section, "applied_section_id", "") or ""),
         "supplemental_endpoint_station": (
-            _section_station(supplemental_endpoint_section)
+            section_station(supplemental_endpoint_section)
             if supplemental_endpoint_section is not None
             else 0.0
         ),
-        "outer_station": _section_station(outer_section) if outer_section is not None else 0.0,
-        "inner_station": _section_station(inner_section) if inner_section is not None else 0.0,
+        "outer_station": section_station(outer_section) if outer_section is not None else 0.0,
+        "inner_station": section_station(inner_section) if inner_section is not None else 0.0,
         "outer_legacy_edge_xyz": tuple(legacy_outer_edge or ()),
         "inner_legacy_edge_xyz": tuple(legacy_inner_edge or ()),
         "outer_tie_boundary_edge_xyz": tuple(outer_edge or ()),
@@ -12256,8 +11893,8 @@ def _intersection_tie_slope_transition_section_pair_for_gap(
     )
     candidates: list[tuple[float, object, object]] = []
     for first, second in zip(sections, sections[1:]):
-        first_station = _section_station(first)
-        second_station = _section_station(second)
+        first_station = section_station(first)
+        second_station = section_station(second)
         pair_start = min(first_station, second_station)
         pair_end = max(first_station, second_station)
         if pair_end < window_start - 1.0e-6 or pair_start > window_end + 1.0e-6:
@@ -12309,8 +11946,8 @@ def _intersection_tie_slope_zero_span_transition_section_pair_for_gap(
         second_is_intersection = str(getattr(second, "active_intersection_id", "") or "").strip() == target_intersection
         if first_is_intersection == second_is_intersection:
             continue
-        first_station = _section_station(first)
-        second_station = _section_station(second)
+        first_station = section_station(first)
+        second_station = section_station(second)
         score = abs(second_station - first_station)
         if str(gap_role or "").strip().lower() == "exit":
             if first_is_intersection and not second_is_intersection:
@@ -12501,7 +12138,7 @@ def _intersection_tie_slope_terminal_road_edge(section, *, side: str) -> tuple[t
 
 
 def _intersection_tie_slope_target_station(intersection_model, intersection_id: str, alignment_ref: str) -> float | None:
-    source_row = _intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
+    source_row = intersection_row_by_id(intersection_model, intersection_id) if intersection_model is not None else None
     alignment_id = str(alignment_ref or "").strip()
     if source_row is None or not alignment_id:
         return None
@@ -12862,7 +12499,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     except Exception:
         return None
     applied = to_applied_section_set(find_v1_applied_section_set(document))
-    sections = sorted(list(getattr(applied, "sections", []) or []), key=lambda section: _section_station(section)) if applied is not None else []
+    sections = sorted(list(getattr(applied, "sections", []) or []), key=lambda section: section_station(section)) if applied is not None else []
     shapes: list[object] = []
     route_refs: list[str] = []
     structure_refs: list[str] = []
@@ -13097,12 +12734,12 @@ def _drainage_connection_point_xyz(
 def _drainage_flow_station_frame(sections: list[object], station: float):
     if not sections:
         return None
-    ordered = sorted(list(sections or []), key=lambda section: _section_station(section))
+    ordered = sorted(list(sections or []), key=lambda section: section_station(section))
     for index in range(len(ordered) - 1):
         first = ordered[index]
         second = ordered[index + 1]
-        first_station = _section_station(first)
-        second_station = _section_station(second)
+        first_station = section_station(first)
+        second_station = section_station(second)
         if min(first_station, second_station) - 1.0e-9 <= float(station) <= max(first_station, second_station) + 1.0e-9:
             first_frame = getattr(first, "frame", None)
             second_frame = getattr(second, "frame", None)
@@ -13123,7 +12760,7 @@ def _drainage_flow_station_frame(sections: list[object], station: float):
                     ratio,
                 ),
             )
-    nearest = min(ordered, key=lambda section: abs(_section_station(section) - float(station)))
+    nearest = min(ordered, key=lambda section: abs(section_station(section) - float(station)))
     return getattr(nearest, "frame", None)
 
 
@@ -13156,7 +12793,7 @@ def _make_drainage_pipe_segment_shape(part_module, app_module, first: tuple[floa
 def _drainage_flow_highlight_points(sections: list[object], station_start: float, station_end: float) -> list[tuple[float, float, float]]:
     stations = [float(station_start)]
     for section in list(sections or []):
-        station = _section_station(section)
+        station = section_station(section)
         if min(station_start, station_end) < station < max(station_start, station_end):
             stations.append(station)
     stations.append(float(station_end))

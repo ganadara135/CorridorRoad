@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 1, the open boundary loop decision, and three items are carried forward
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 1, the open boundary loop decision, and two items are carried forward
 Depends on:
 
 - `AGENTS.md`
@@ -1193,7 +1193,7 @@ Three items are deliberately not part of M8 and are carried forward rather than 
 
 1. The boundary loop decision, recorded in batch 1 and now open decision 6. It is the one remaining contract failure; `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until it is settled, so the baseline is 1, not 0.
 2. Known defects with no owner yet. Three of the four were fixed on 2026-09-20 and are recorded below. What remains is `source_corner_curb_return_policy_ref_mismatch`, unreachable because the mismatch that would raise it now stops the edge network first; whether to delete that branch or keep it against a later change to the corner graph rule is a one-line call nobody has made.
-3. The M5 follow-up recorded on 2026-09-14. Its serializer half was done on 2026-09-20 and is recorded below. What remains is the region boundary continuity evaluation, which still belongs in `services/evaluation`.
+3. Closed on 2026-09-20. The M5 follow-up recorded on 2026-09-14 is done in both halves: the serializers in the morning and the region boundary continuity evaluation afterwards, both recorded below.
 
 ### Three carried-forward defects fixed on 2026-09-20
 
@@ -1215,6 +1215,20 @@ The names had to become public. `test_commands_do_not_add_private_service_import
 
 Validation: flake8, 9 architecture tests with the four names added to `removed_implementation_names`, the contract suite in three chunks at its one known failure with none new, and 26 smoke scripts at exit code 0.
 
+### The region boundary continuity rule moves to services/evaluation, on 2026-09-20
+
+`services/evaluation/region_boundary_continuity_evaluation_service.py` now owns the rule the M5 measurement named: `region_boundary_diagnostics`, which compares adjacent Applied Sections against the four jump thresholds, together with `region_source_range_diagnostics`, `region_sample_coverage_diagnostics`, `region_intersection_context_diagnostics`, the `region_boundary_diagnostic` row constructor the four share, and `region_boundary_status` and `region_boundary_diagnostic_summary`, which read the rows back. The four thresholds moved with them. None of this touches a document, which is why the split the M5 record called a design change turned out to be a move after all: what stayed behind is exactly the document work, `corridor_region_boundary_rows` and the preview object helpers.
+
+A service may not import from a command, so the pure readers underneath the rule went to `common/model_fields.py` first: `section_station`, `section_region_id`, `section_structure_values`, `section_float_attr`, `surface_point_role_counts`, `role_count_summary`, `unique_join`, `unique_refs`, and `intersection_row_by_id`. They are Applied Section field readers and reference formatters with no rule in them, so `common` is where both layers can reach them.
+
+The command falls from 20,738 lines to 20,375, against 109 lines in `common/model_fields.py` and 331 in the new service. Two imports became dead as the last rule left and were dropped: the command no longer constructs a diagnostic row itself.
+
+The move was proved rather than assumed. The pre-move bodies were read out of the command at `1abad47` and executed on their own, then both versions answered 400 randomized Applied Section pairs, source rows, section samples, and intersection models, including the `None` inputs the panel reaches on an unbuilt document. Every one of the seven entry points returned identical rows, across 18 distinct diagnostic kinds, and the four thresholds compared equal.
+
+`_intersection_row_by_id` still has private copies in six services. That duplication predates this work and is wider than the region rule, so it is left for a separate pass.
+
+Validation: flake8, 9 architecture tests with the 17 removed names added to `removed_implementation_names`, the contract suite in three chunks at its one known failure with none new, and 26 smoke scripts at exit code 0.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
@@ -1223,5 +1237,5 @@ These require a decision before the affected milestone starts. None blocks M0.
 2. Resolved on 2026-09-10. Ownership follows the consumer: panel tables to `ui/presentation`, normalized output contracts to `services/mapping`, document discovery staying in the command. The injection in `configure_build_corridor_task_panel_runtime` is what makes the move safe, and the existing `shared_breakline_audit_presentation.py` is the pattern. See the M5 record in section 10.
 3. M0 task 5: what is the target duration for the fast contract tier, and which modules belong to the long-running tier?
 4. M7: is a legacy command with a complete v1 replacement removed from the toolbar in a later task, or retained indefinitely for user familiarity?
-5. Resolved on 2026-09-14. M5 closes at its presentation scope and work continues with M6. Moving the region boundary continuity evaluation to `services/evaluation` and the preview audit serializers to `services/mapping`, replacing the identical copies in `services/builders`, is recorded as follow-up work outside M5. See the M5 record of 2026-09-14 in section 10.
+5. Resolved on 2026-09-14 and carried out on 2026-09-20. M5 closed at its presentation scope and work continued with M6. The follow-up work it deferred, the preview audit serializers into `services/mapping` and the region boundary continuity evaluation into `services/evaluation`, is done and recorded in section 10.
 6. M8: `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` builds a ready loop through the curb return envelope path, closed, 32 points, area 312, and the result is still `error` because of `error:intersection_boundary_authoritative_source_edges_missing`. That rule landed on 2026-07-02 and the envelope feature with this test on 2026-07-06, so the rule predates what it now rejects. A sibling test locks error and no loops for the case with no envelope, so the rule itself is wanted. Keeping the rule means restating this test as error with no loops and the cross intersection envelope path never becoming ready; accepting a complete envelope loop means changing the rule without breaking the sibling.
