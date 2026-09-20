@@ -76,7 +76,6 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_drainage import to_drainage_model
 from freecad.Corridor_Road.v1.objects.obj_intersection import find_v1_intersection_model, to_intersection_model
-from freecad.Corridor_Road.v1.objects.obj_profile import to_profile_model
 from freecad.Corridor_Road.v1.objects.obj_region import to_region_model
 from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
     find_v1_assembly_subassembly_model,
@@ -1258,6 +1257,44 @@ def test_intersection_curb_return_policy_ref_unresolved_stops_the_edge_network()
     )
     assert edge_network.status == "error"
     assert edge_network.edge_rows == []
+
+
+def test_intersection_curb_return_corner_policy_ref_mismatch_is_reported() -> None:
+    # the corner points at a second policy that does exist, so the corner graph finds a
+    # curb return and the edge network runs; the two refs disagreeing is what is wrong
+    model = _corner_source_validation_model("curb-return:second")
+    model = replace(
+        model,
+        curb_return_policy_rows=list(model.curb_return_policy_rows)
+        + [
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:second",
+                intersection_id="intersection:corner-source-validation",
+                radius=10.0,
+                approach_leg_refs=["leg:main", "leg:side"],
+                corner_refs=[],
+            )
+        ],
+    )
+
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(model)
+    edge_network = service.evaluate_edge_network(model, topology)
+
+    assert topology.status == "warning"
+    assert edge_network.status == "error"
+    assert (
+        "error:source_corner_curb_return_policy_ref_mismatch"
+        ":corner:unknown-source:curb-return:second:curb-return:corner-source-validation"
+        in edge_network.diagnostic_rows
+    )
+    corner_row = next(
+        row
+        for row in edge_network.edge_rows
+        if row.edge_family == "curb_return" and "corner-unknown-source" in row.edge_id
+    )
+    assert corner_row.source_status == "error"
+    assert "source_corner_curb_return_policy_ref_mismatch" in list(corner_row.source_diagnostic_rows)
 
 
 def test_intersection_edge_network_rows_report_source_policy_status() -> None:

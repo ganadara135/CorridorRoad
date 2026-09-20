@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 1, the open boundary loop decision, and two items are carried forward
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 1 and the open boundary loop decision is the only item carried forward
 Depends on:
 
 - `AGENTS.md`
@@ -1150,7 +1150,7 @@ The second defect hides a whole contract family from the review table for rounda
 
 The third group is the edge network. `evaluate_edge_network` returns no rows at all when the topology is in error, and the corner graph needs two approach legs and a curb return policy, so three source-validation tests built a one-leg model and asserted about rows that could not exist. Each fixture gains the second approach leg and the policy; the defect each test injects, and every assertion about it, is unchanged. The curb return test went further: its corner pointed at a policy the model does not contain, which is now itself a corner graph error, so the test could never reach the curb return edge it was asserting about. Its model became a helper taking the policy ref and the two contracts are stated apart, with the policy resolved and with it unresolved.
 
-That leaves `source_corner_curb_return_policy_ref_mismatch` with no test on purpose, and it is a question for the maintainer rather than something to paper over: the mismatch that would raise it now stops the network first, so the diagnostic is unreachable.
+That left `source_corner_curb_return_policy_ref_mismatch` with no test, recorded here as unreachable. That reading was wrong and was corrected on 2026-09-20; see the record below.
 
 The remaining drift was ordinary. The three preset source tests expected every created object in the Intersections folder; the tree policy routes by kind, so profiles go to Profiles, stations to Stations, regions to Regions, superelevation to Superelevation, drainage to 05_Drainage, and only the intersection model to Intersections. The cleanup test's leftovers now carry the names an earlier preset run gives them, because profiles and stations are classified by name rather than by record kind. One test read `model.control_areas`, which is `control_area_rows`.
 
@@ -1189,10 +1189,10 @@ The maintainer confirmed chunks 3, 4, 5, and 6 in the GUI. Every M6 chunk now ha
 
 The three batches took the contract failures from 52 to 1, with no new failure at any step, and found seven product defects along the way: the unsorted leg graph refs, the roundabout clip that ran without its boundary, the shared boundary graph family that was invisible for roundabouts, the region selection that produced no transition boundary options, the review diagnostics left at the document root, and the preview counted twice in the visibility sweep.
 
-Three items are deliberately not part of M8 and are carried forward rather than closed. They are listed here so they stay visible.
+Three items were deliberately not part of M8 and were carried forward rather than closed. Two of them were closed later the same day and their state is updated in place below; the boundary loop decision is still open.
 
 1. The boundary loop decision, recorded in batch 1 and now open decision 6. It is the one remaining contract failure; `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until it is settled, so the baseline is 1, not 0.
-2. Known defects with no owner yet. Three of the four were fixed on 2026-09-20 and are recorded below. What remains is `source_corner_curb_return_policy_ref_mismatch`, unreachable because the mismatch that would raise it now stops the edge network first; whether to delete that branch or keep it against a later change to the corner graph rule is a one-line call nobody has made.
+2. Closed on 2026-09-20. Three of the four defects were fixed in the morning and are recorded below. The fourth, `source_corner_curb_return_policy_ref_mismatch`, turned out to be reachable rather than dead, so there was no branch to delete and it now has a contract test.
 3. Closed on 2026-09-20. The M5 follow-up recorded on 2026-09-14 is done in both halves: the serializers in the morning and the region boundary continuity evaluation afterwards, both recorded below.
 
 ### Three carried-forward defects fixed on 2026-09-20
@@ -1228,6 +1228,16 @@ The move was proved rather than assumed. The pre-move bodies were read out of th
 `_intersection_row_by_id` still has private copies in six services. That duplication predates this work and is wider than the region rule, so it is left for a separate pass.
 
 Validation: flake8, 9 architecture tests with the 17 removed names added to `removed_implementation_names`, the contract suite in three chunks at its one known failure with none new, and 26 smoke scripts at exit code 0.
+
+### The unreachable curb return mismatch was reachable, on 2026-09-20
+
+M8 recorded `source_corner_curb_return_policy_ref_mismatch` as unreachable, on the evidence that the mismatch stops the edge network first. That evidence came from one case: a corner naming a curb return policy that is not in the model. There the corner graph finds no policy, topology goes to `error`, and the edge network builds nothing, so the branch is indeed never reached.
+
+The other case was never measured. When the corner names a second policy that does exist, while the first policy still lists the corner in `corner_refs`, the corner graph is satisfied, topology stays at `warning`, and the edge network builds its three curb return rows. The mismatch branch fires exactly as written: `error:source_corner_curb_return_policy_ref_mismatch:corner:unknown-source:curb-return:second:curb-return:corner-source-validation`, and the corner's edge row carries it with `source_status` `error`.
+
+So there was no dead branch to delete, and the question of keeping it against a later corner graph change does not arise. What was missing was the test. `test_intersection_curb_return_corner_policy_ref_mismatch_is_reported` builds that model from the existing `_corner_source_validation_model` helper plus the second policy, and locks the diagnostic row, the edge row's status, and its source diagnostics. The sibling test for the missing policy is unchanged and still states that the network stops first.
+
+Validation: flake8, with an unused import dropped from the test module, and the intersection command contract file at 78 passed.
 
 ## 11. Open Decisions
 
