@@ -30,7 +30,7 @@ Post-release tasks:
 
 - [x] `package.xml` version/date updated to `1.1.0` / `2026-09-20`.
 - [x] `CHANGELOG.md` carries the `1.1.0` release section.
-- [ ] Git tag and GitHub Release published.
+- [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
 - [x] Manual smoke QA checklist prepared in `docsV1/V1_1_0_1_MANUAL_SMOKE_QA.md`.
