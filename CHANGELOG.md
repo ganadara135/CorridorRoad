@@ -9,6 +9,25 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-20
+
+### Changed
+- Reorganized the v1 code along the `Source -> Evaluation -> Result -> Output -> Presentation` boundaries. Review row builders moved to `ui/presentation`, engineering rules to `services/evaluation`, and normalized row contracts to `services/mapping`. The Build Parametric command module fell from 24,759 lines to 20,738 with no intended change to its behavior.
+- Gave the preview audit row serializers one owner in `services/mapping/preview_audit_row_mapper.py`, removing four identical copies from the command and two builder services.
+- Replaced the Build Parametric command's service delegation shims with direct service calls.
+
+### Fixed
+- Roundabout surface clipping ran without its boundary. The ownership clip resolved the boundary loops and then passed them where a document was expected, so every roundabout Design, Subgrade, and Slope Face surface fell back to circle clipping with no approach legs.
+- Selecting a region in the Build Parametric Regions tab produced no surface transition boundary options, so no transition could be created from the panel.
+- The shared boundary graph contract family was missing from the Intersections review table for roundabouts.
+- Aggregate slope-face review markers were left at the document root instead of the Build Parametric Outputs folder.
+- The boundary loop graph's filled edge refs were stored in an unstable order, so an unchanged model could save a different document between sessions.
+- Intersection leg graph order refs were stored in row order rather than in graph order.
+- The Build Parametric visibility sweep toggled and counted the Intersection Slope Face preview twice.
+
+### Known issues
+- A cross intersection whose curb return envelope produces a complete closed boundary loop is still reported as an error by the authoritative source edge rule, which predates the envelope path. The contract test `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until that rule question is settled.
+
 ## [1.0.9] - 2026-07-10
 
 ### Added

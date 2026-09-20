@@ -10,7 +10,7 @@ When an older plan, release note, wiki draft, or historical record conflicts wit
 
 | Item | Current value |
 | --- | --- |
-| Public release | Parametric Road `1.0.9` |
+| Public release | Parametric Road `1.1.0` |
 | Package compatibility floor | FreeCAD `1.0.3` from `package.xml` |
 | Recommended FreeCAD | FreeCAD `1.1.1` |
 | Development and validated FreeCAD | FreeCAD `1.1.1` |

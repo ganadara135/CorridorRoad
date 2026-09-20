@@ -1,10 +1,10 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-07-10
-Status: `1.0.9` release prepared
+Date: 2026-09-20
+Status: `1.1.0` release prepared
 Scope: post-`1.0.0` v1 updates
 
-## Development Scope After 1.0.9
+## Development Scope After 1.1.0
 
 - Ramp is removed from the active product and development scope.
 - Watertight Solid behavior shipped in 1.0.9 remains a compatibility surface, but further development is paused.
@@ -15,26 +15,26 @@ Scope: post-`1.0.0` v1 updates
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.9` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.1.0` release.
 
 ## Release Status
 
-- Release version: `1.0.9`
-- Release date: `2026-07-10`
-- Tag: `v1.0.9`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.9
+- Release version: `1.1.0`
+- Release date: `2026-09-20`
+- Tag: `v1.1.0`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.0
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.0.9` / `2026-07-10`.
-- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.9` release section.
-- [x] Git tag and GitHub Release published.
+- [x] `package.xml` version/date updated to `1.1.0` / `2026-09-20`.
+- [x] `CHANGELOG.md` carries the `1.1.0` release section.
+- [ ] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
 - [x] Manual smoke QA checklist prepared in `docsV1/V1_1_0_1_MANUAL_SMOKE_QA.md`.
-- [x] FreeCAD manual smoke QA for the published tag.
+- [ ] FreeCAD manual smoke QA for the published tag.
 - [x] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
 - [x] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
 
@@ -77,8 +77,8 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG `1.0.9` contains the maintained Intersection preset, Cross Intersection Tie Slope, Roundabout ownership/clipping, shared breakline audit, and review cleanup work.
-- [x] README and local Wiki drafts now point to the `1.0.9` release.
+- [x] CHANGELOG `1.1.0` contains the v1 layering reorganization, the preview audit row mapper, and the seven product defect fixes.
+- [x] README and local Wiki drafts now point to the `1.1.0` release.
 
 ## Historical Document Notes
 
@@ -109,7 +109,7 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`Parametric Road 1.0.9 refines the maintained Intersection preset set, improves Cross Intersection Tie Slope behavior, adds Roundabout-specific surface ownership and clipping, keeps low-level diagnostic rows out of normal user review tables, and updates wiki guidance for the current T, Cross, and Roundabout workflows. Advanced hydraulic analysis, automatic pipe sizing, complete drawing-sheet production, and complete exchange coverage remain future work.`
+`Parametric Road 1.1.0 reorganizes the v1 code along the Source -> Evaluation -> Result -> Output -> Presentation boundaries, gives the preview audit row serializers one owner, and fixes seven product defects in roundabout surface clipping, the Regions tab, Intersections review, and preview object routing.`
 
 Suggested highlights:
 
@@ -143,5 +143,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.0.9` and date `2026-07-10`.
-- The intended release tag is `v1.0.9`.
+- `package.xml` declares version `1.1.0` and date `2026-09-20`.
+- The intended release tag is `v1.1.0`.

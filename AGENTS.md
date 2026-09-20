@@ -6,7 +6,7 @@ This repository contains **Parametric Road**, the CorridorRoad Workbench for Fre
 
 Current baseline:
 
-- public release: `1.0.9`
+- public release: `1.1.0`
 - minimum package compatibility: FreeCAD `1.0.3`
 - recommended and validated runtime: FreeCAD `1.1.1`
 - Python: `3.10+`
