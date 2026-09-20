@@ -1193,7 +1193,7 @@ Three items are deliberately not part of M8 and are carried forward rather than 
 
 1. The boundary loop decision, recorded in batch 1 and now open decision 6. It is the one remaining contract failure; `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until it is settled, so the baseline is 1, not 0.
 2. Known defects with no owner yet. Three of the four were fixed on 2026-09-20 and are recorded below. What remains is `source_corner_curb_return_policy_ref_mismatch`, unreachable because the mismatch that would raise it now stops the edge network first; whether to delete that branch or keep it against a later change to the corner graph rule is a one-line call nobody has made.
-3. The M5 follow-up recorded on 2026-09-14: the region boundary continuity evaluation belongs in `services/evaluation`, and the preview audit serializers in `services/mapping`, replacing four identical copies in `services/builders`. This is the same duplication the plan exists to remove, so closing it without doing the work would leave the debt in place.
+3. The M5 follow-up recorded on 2026-09-14. Its serializer half was done on 2026-09-20 and is recorded below. What remains is the region boundary continuity evaluation, which still belongs in `services/evaluation`.
 
 ### Three carried-forward defects fixed on 2026-09-20
 
@@ -1204,6 +1204,16 @@ The boundary loop graph's filled edge refs were built by iterating `filled_refs`
 The two F841 warnings in `test_build_corridor_command.py` came from a test that computed the internal contract rows and summary and asserted nothing about them. Rather than deleting the variables, the test now states what they are for: while the source is missing, the internal view adds nothing, so both match the plain ones.
 
 Validation: 9 architecture tests, the contract suite in three chunks with the Qt runner at its one known failure and no new one, and 26 smoke scripts at exit code 0.
+
+### The preview audit row serializers get one owner, on 2026-09-20
+
+`services/mapping/preview_audit_row_mapper.py` now owns `shared_breakline_segment_rows`, `intersection_shared_boundary_graph_audit_rows`, `intersection_shared_boundary_graph_segment_rows`, and the `audit_field` formatter they share. Each body crossed unchanged apart from its name; the generator renamed the four names and then reversed the rename to prove the result matched the original character for character.
+
+They had four duplicate copies. The command and both `intersection_slope_face_tin_builder_service.py` and `shared_breakline_tin_builder_service.py` held identical definitions, and all three now import the one. The command falls from 20,864 lines to 20,738, the intersection builder from 3,404 to 3,278, and the shared breakline builder from 257 to 212, against 156 lines in the new module.
+
+The names had to become public. `test_commands_do_not_add_private_service_imports` allows no private service import from a command, so keeping the leading underscores would have traded one ratchet violation for the duplication. The 24 test call sites that reached the serializers through the command now import the mapper directly, which is where the contract lives.
+
+Validation: flake8, 9 architecture tests with the four names added to `removed_implementation_names`, the contract suite in three chunks at its one known failure with none new, and 26 smoke scripts at exit code 0.
 
 ## 11. Open Decisions
 

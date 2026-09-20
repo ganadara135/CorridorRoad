@@ -239,6 +239,12 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         assert node.end_lineno - node.lineno + 1 <= maximum_lines, name
 
     removed_implementation_names = {
+        # Moved by the M5 follow-up: the preview audit row serializers, now owned by
+        # services/mapping/preview_audit_row_mapper and shared with two builders.
+        "_audit_field",
+        "_shared_breakline_segment_rows",
+        "_intersection_shared_boundary_graph_audit_rows",
+        "_intersection_shared_boundary_graph_segment_rows",
         # Deleted by M6 chunk 6: the roundabout entry/exit connector preview nothing called after generalization.
         "_create_corridor_roundabout_entry_exit_connector_surface_preview",
         # Deleted by M5 chunk 8: review helpers that nothing referenced.

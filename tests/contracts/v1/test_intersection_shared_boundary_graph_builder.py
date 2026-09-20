@@ -6,6 +6,10 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 from freecad.Corridor_Road.v1.commands import cmd_build_corridor
+from freecad.Corridor_Road.v1.services.mapping.preview_audit_row_mapper import (
+    intersection_shared_boundary_graph_audit_rows,
+    intersection_shared_boundary_graph_segment_rows,
+)
 from freecad.Corridor_Road.v1.models.result.shared_breakline import (
     SharedBreaklinePointRow,
     SharedBreaklineResult,
@@ -459,7 +463,7 @@ def test_intersection_shared_boundary_graph_pair_audit_checks_adjacent_consumers
         _split_upper_cell_breakline_result(),
         intersection_id="starter-t_intersection",
     )
-    audit_rows = cmd_build_corridor._intersection_shared_boundary_graph_audit_rows(graph)
+    audit_rows = intersection_shared_boundary_graph_audit_rows(graph)
     rows = []
     for role, consumer in (
         ("design", "design_surface"),
@@ -511,7 +515,7 @@ def test_intersection_shared_boundary_graph_consumer_audit_reports_foreign_edges
         _split_upper_cell_breakline_result(),
         intersection_id="starter-t_intersection",
     )
-    audit_rows = cmd_build_corridor._intersection_shared_boundary_graph_audit_rows(graph)
+    audit_rows = intersection_shared_boundary_graph_audit_rows(graph)
     rows = [
         {
             "role": "design",
@@ -540,7 +544,7 @@ def test_intersection_shared_boundary_graph_display_rows_carry_highlight_refs_an
         _split_upper_cell_breakline_result(),
         intersection_id="starter-t_intersection",
     )
-    audit_rows = cmd_build_corridor._intersection_shared_boundary_graph_audit_rows(graph)
+    audit_rows = intersection_shared_boundary_graph_audit_rows(graph)
     rows = [
         {
             "role": "intersection_slope",
@@ -565,7 +569,7 @@ def test_intersection_shared_boundary_graph_display_rows_carry_highlight_refs_an
     graph_edge_rows = [row for row in display_rows if row.get("row_kind") == "graph_edge"]
     graph_cell_rows = [row for row in display_rows if row.get("row_kind") == "graph_cell"]
     internal_seam_rows = [row for row in display_rows if row.get("row_kind") == "graph_internal_seam"]
-    segment_rows = cmd_build_corridor._intersection_shared_boundary_graph_segment_rows(graph)
+    segment_rows = intersection_shared_boundary_graph_segment_rows(graph)
     parsed_segment = cmd_build_corridor._parse_intersection_shared_boundary_graph_segment_row(segment_rows[0])
 
     assert graph_edge_rows
@@ -661,7 +665,7 @@ def test_intersection_shared_boundary_graph_internal_seam_highlight_uses_separat
         _split_upper_cell_breakline_result(),
         intersection_id="starter-t_intersection",
     )
-    segment_rows = cmd_build_corridor._intersection_shared_boundary_graph_segment_rows(graph)
+    segment_rows = intersection_shared_boundary_graph_segment_rows(graph)
     source_obj = type(
         "Source",
         (),
@@ -778,7 +782,7 @@ def test_intersection_boundary_loop_graph_edges_are_visible_in_breakline_audit_r
         shared,
         intersection_id="starter-t_intersection",
     )
-    audit_rows = cmd_build_corridor._intersection_shared_boundary_graph_audit_rows(graph)
+    audit_rows = intersection_shared_boundary_graph_audit_rows(graph)
     parsed_edges = [
         cmd_build_corridor._parse_intersection_shared_boundary_graph_audit_row(raw)
         for raw in audit_rows
@@ -859,7 +863,7 @@ def test_intersection_boundary_loop_graph_owner_missing_consumers_are_visible():
                 graph,
                 "intersection_surface",
             ),
-            "graph_audit_rows": cmd_build_corridor._intersection_shared_boundary_graph_audit_rows(graph),
+            "graph_audit_rows": intersection_shared_boundary_graph_audit_rows(graph),
             "graph_status": graph.status,
             "graph_node_count": graph.node_count,
             "graph_edge_count": graph.edge_count,

@@ -8,6 +8,7 @@ from ...models.result.tin_surface import TINQualityRow
 from .intersection_patch_constraint_build_service import (
     IntersectionPatchConstraintBuildService,
 )
+from ..mapping.preview_audit_row_mapper import shared_breakline_segment_rows
 
 
 def _unique_text_values(values: list[str]) -> list[str]:
@@ -65,7 +66,7 @@ def _tin_surface_with_shared_breakline_metadata(surface, shared_result, *, consu
             TINQualityRow(
                 f"{surface_id}:shared_breakline_constraint_segment_rows",
                 "shared_breakline_constraint_segment_rows",
-                ";;".join(_shared_breakline_segment_rows(shared_result, refs)),
+                ";;".join(shared_breakline_segment_rows(shared_result, refs)),
                 "rows",
                 "Surface consumes these SharedBreaklineResult segments as normalized constraint edges.",
             ),
@@ -146,53 +147,6 @@ def _tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, 
         ]
     )
     return replace(surface, vertex_rows=vertices, triangle_rows=triangles, quality_rows=filtered_quality)
-
-
-def _shared_breakline_segment_rows(shared_result, refs: list[str] | None = None) -> list[str]:
-    """Serialize breakline segment geometry for presentation-only 3D audit highlights."""
-
-    if shared_result is None:
-        return []
-    wanted = {str(ref or "") for ref in list(refs or []) if str(ref or "")}
-    point_by_ref: dict[str, list[object]] = {}
-    for point in list(getattr(shared_result, "point_rows", []) or []):
-        ref = str(getattr(point, "breakline_ref", "") or "")
-        if not ref:
-            continue
-        point_by_ref.setdefault(ref, []).append(point)
-    rows: list[str] = []
-    for breakline in list(getattr(shared_result, "breakline_rows", []) or []):
-        breakline_id = str(getattr(breakline, "breakline_id", "") or "")
-        if not breakline_id or (wanted and breakline_id not in wanted):
-            continue
-        points = sorted(point_by_ref.get(breakline_id, []), key=lambda point: int(getattr(point, "sequence", 0) or 0))
-        if len(points) < 2:
-            continue
-        role = str(getattr(breakline, "breakline_role", "") or "")
-        material = str(getattr(breakline, "material_role", "") or "") or role
-        status = str(getattr(breakline, "source_status", "") or "")
-        consumer_refs = ",".join(str(value or "") for value in tuple(getattr(breakline, "consumer_refs", ()) or ()) if str(value or ""))
-        for index, (start, end) in enumerate(zip(points[:-1], points[1:])):
-            try:
-                values = [
-                    breakline_id,
-                    role,
-                    status,
-                    str(index),
-                    f"{float(getattr(start, 'x', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(start, 'y', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(start, 'z', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(end, 'x', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(end, 'y', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(end, 'z', 0.0) or 0.0):.9g}",
-                    material,
-                ]
-                if consumer_refs:
-                    values.append(consumer_refs)
-                rows.append("|".join(value.replace("|", "_") for value in values))
-            except Exception:
-                continue
-    return rows
 
 
 def _intersection_surface_tin_with_shared_breakline_constraint_edges(

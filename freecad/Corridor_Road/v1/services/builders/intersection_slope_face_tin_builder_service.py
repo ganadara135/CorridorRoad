@@ -47,6 +47,12 @@ from ..evaluation.intersection_slope_face_cell_evaluation_service import (
     IntersectionSlopeFaceCellEvaluationRequest,
     IntersectionSlopeFaceCellEvaluationService,
 )
+from ..mapping.preview_audit_row_mapper import (
+    audit_field,
+    intersection_shared_boundary_graph_audit_rows,
+    intersection_shared_boundary_graph_segment_rows,
+    shared_breakline_segment_rows,
+)
 
 
 _INTERSECTION_BOUNDARY_LOOP_AUDIT_CONSUMERS = (
@@ -1088,9 +1094,9 @@ def _intersection_slope_face_cell_audit_rows(cell_result: IntersectionSlopeFaceC
         rows.append(
             "|".join(
                 [
-                    _audit_field(cell_id),
-                    _audit_field(str(getattr(row, "cell_role", "") or "")),
-                    _audit_field(str(getattr(row, "status", "") or "")),
+                    audit_field(cell_id),
+                    audit_field(str(getattr(row, "cell_role", "") or "")),
+                    audit_field(str(getattr(row, "status", "") or "")),
                     "0" if bool(getattr(row, "closed_xy", False)) else "1",
                     str(
                         sum(
@@ -1100,61 +1106,12 @@ def _intersection_slope_face_cell_audit_rows(cell_result: IntersectionSlopeFaceC
                         )
                     ),
                     str(int(getattr(row, "point_count", 0) or 0)),
-                    _audit_field(boundary_refs),
-                    _audit_field(diagnostics),
+                    audit_field(boundary_refs),
+                    audit_field(diagnostics),
                 ]
             )
         )
     return rows
-
-
-def _intersection_shared_boundary_graph_audit_rows(graph_result: IntersectionSharedBoundaryGraphResult | None) -> list[str]:
-    if graph_result is None:
-        return []
-    rows: list[str] = []
-    graph_audit = intersection_shared_boundary_graph_audit(graph_result)
-    for edge in list(getattr(graph_result, "edge_rows", []) or []):
-        diagnostics = ",".join(str(value or "") for value in tuple(getattr(edge, "diagnostics", ()) or ()) if str(value or ""))
-        consumers = ",".join(str(value or "") for value in tuple(getattr(edge, "consumer_refs", ()) or ()) if str(value or ""))
-        source_refs = ",".join(str(value or "") for value in tuple(getattr(edge, "source_refs", ()) or ()) if str(value or ""))
-        rows.append(
-            "|".join(
-                [
-                    "edge",
-                    _audit_field(str(getattr(edge, "edge_id", "") or "")),
-                    _audit_field(str(getattr(edge, "edge_role", "") or "")),
-                    _audit_field(str(getattr(edge, "from_node_ref", "") or "")),
-                    _audit_field(str(getattr(edge, "to_node_ref", "") or "")),
-                    _audit_field(consumers),
-                    _audit_field(diagnostics),
-                    _audit_field(source_refs),
-                ]
-            )
-        )
-    for cell in list(getattr(graph_result, "cell_rows", []) or []):
-        diagnostics = ",".join(str(value or "") for value in tuple(getattr(cell, "diagnostics", ()) or ()) if str(value or ""))
-        boundary_refs = ",".join(str(value or "") for value in tuple(getattr(cell, "boundary_edge_refs", ()) or ()) if str(value or ""))
-        rows.append(
-            "|".join(
-                [
-                    "cell",
-                    _audit_field(str(getattr(cell, "cell_id", "") or "")),
-                    _audit_field(str(getattr(cell, "cell_role", "") or "")),
-                    "1" if bool(getattr(cell, "closed", False)) else "0",
-                    _audit_field(str(getattr(cell, "owner_surface_ref", "") or "")),
-                    _audit_field(boundary_refs),
-                    _audit_field(diagnostics),
-                    "",
-                ]
-            )
-        )
-    for diagnostic in list(graph_audit.get("diagnostic_rows", []) or []):
-        rows.append("|".join(["graph", _audit_field(str(diagnostic or "")), "", "", "", "", ""]))
-    return rows
-
-
-def _audit_field(value: object) -> str:
-    return str(value or "").replace("|", "/").replace(";;", ";").strip()
 
 
 def _intersection_boundary_loop_source_refs(source_refs: str) -> list[str]:
@@ -1167,43 +1124,6 @@ def _intersection_boundary_loop_source_refs(source_refs: str) -> list[str]:
             or "intersection-boundary-loops" in value.strip()
         )
     ]
-
-
-def _intersection_shared_boundary_graph_segment_rows(graph_result: IntersectionSharedBoundaryGraphResult | None) -> list[str]:
-    if graph_result is None:
-        return []
-    node_by_id = {
-        str(getattr(node, "node_id", "") or ""): node
-        for node in list(getattr(graph_result, "node_rows", []) or [])
-        if str(getattr(node, "node_id", "") or "")
-    }
-    rows: list[str] = []
-    for edge in list(getattr(graph_result, "edge_rows", []) or []):
-        from_ref = str(getattr(edge, "from_node_ref", "") or "")
-        to_ref = str(getattr(edge, "to_node_ref", "") or "")
-        from_node = node_by_id.get(from_ref)
-        to_node = node_by_id.get(to_ref)
-        if from_node is None or to_node is None:
-            continue
-        consumers = ",".join(str(value or "") for value in tuple(getattr(edge, "consumer_refs", ()) or ()) if str(value or ""))
-        rows.append(
-            "|".join(
-                [
-                    _audit_field(str(getattr(edge, "edge_id", "") or "")),
-                    _audit_field(str(getattr(edge, "edge_role", "") or "")),
-                    _audit_field(from_ref),
-                    _audit_field(to_ref),
-                    f"{float(getattr(from_node, 'x', 0.0) or 0.0):.9f}",
-                    f"{float(getattr(from_node, 'y', 0.0) or 0.0):.9f}",
-                    f"{float(getattr(from_node, 'z', 0.0) or 0.0):.9f}",
-                    f"{float(getattr(to_node, 'x', 0.0) or 0.0):.9f}",
-                    f"{float(getattr(to_node, 'y', 0.0) or 0.0):.9f}",
-                    f"{float(getattr(to_node, 'z', 0.0) or 0.0):.9f}",
-                    _audit_field(consumers),
-                ]
-            )
-        )
-    return rows
 
 
 def _intersection_slope_face_loop_has_dedicated_perimeter_source(row) -> bool:
@@ -2179,15 +2099,15 @@ def _intersection_upper_slope_face_panel_candidate_audit_rows(rows: list[dict[st
         output.append(
             "|".join(
                 [
-                    _audit_field(str(row.get("candidate_id", "") or "")),
-                    _audit_field(str(row.get("status", "") or "")),
-                    _audit_field(str(row.get("alignment_ref", "") or "")),
-                    _audit_field(str(row.get("side", "") or "")),
+                    audit_field(str(row.get("candidate_id", "") or "")),
+                    audit_field(str(row.get("status", "") or "")),
+                    audit_field(str(row.get("alignment_ref", "") or "")),
+                    audit_field(str(row.get("side", "") or "")),
                     f"{float(row.get('loop_area_xy', 0.0) or 0.0):.3f}",
-                    _audit_field(str(row.get("inner_edge_ref", "") or "")),
-                    _audit_field(str(row.get("outer_edge_ref", "") or "")),
-                    _audit_field(str(row.get("left_cap_ref", "") or "")),
-                    _audit_field(str(row.get("right_cap_ref", "") or "")),
+                    audit_field(str(row.get("inner_edge_ref", "") or "")),
+                    audit_field(str(row.get("outer_edge_ref", "") or "")),
+                    audit_field(str(row.get("left_cap_ref", "") or "")),
+                    audit_field(str(row.get("right_cap_ref", "") or "")),
                     f"inner_len={float(row.get('inner_edge_length', 0.0) or 0.0):.3f}",
                     f"outer_len={float(row.get('outer_edge_length', 0.0) or 0.0):.3f}",
                     f"caps={float(row.get('left_cap_length', 0.0) or 0.0):.3f}/{float(row.get('right_cap_length', 0.0) or 0.0):.3f}",
@@ -2195,8 +2115,8 @@ def _intersection_upper_slope_face_panel_candidate_audit_rows(rows: list[dict[st
                     f"bbox_aspect={float(row.get('bbox_aspect', 0.0) or 0.0):.3f}",
                     f"bbox_fill={float(row.get('bbox_fill_ratio', 0.0) or 0.0):.3f}",
                     f"match={str(row.get('outer_match_mode', '') or '-')}/{str(row.get('design_match_mode', '') or '-')}",
-                    _audit_field(refs),
-                    _audit_field(diagnostics),
+                    audit_field(refs),
+                    audit_field(diagnostics),
                 ]
             )
         )
@@ -2461,7 +2381,7 @@ def _tin_surface_with_shared_breakline_metadata(surface, shared_result, *, consu
             TINQualityRow(
                 f"{surface_id}:shared_breakline_constraint_segment_rows",
                 "shared_breakline_constraint_segment_rows",
-                ";;".join(_shared_breakline_segment_rows(shared_result, refs)),
+                ";;".join(shared_breakline_segment_rows(shared_result, refs)),
                 "rows",
                 "Surface consumes these SharedBreaklineResult segments as normalized constraint edges.",
             ),
@@ -2499,53 +2419,6 @@ def _intersection_shared_boundary_graph_internal_seam_refs(
         and target in {str(value or "").strip() for value in tuple(getattr(row, "consumer_refs", ()) or ())}
         and str(getattr(row, "edge_id", "") or "")
     ]
-
-
-def _shared_breakline_segment_rows(shared_result, refs: list[str] | None = None) -> list[str]:
-    """Serialize breakline segment geometry for presentation-only 3D audit highlights."""
-
-    if shared_result is None:
-        return []
-    wanted = {str(ref or "") for ref in list(refs or []) if str(ref or "")}
-    point_by_ref: dict[str, list[object]] = {}
-    for point in list(getattr(shared_result, "point_rows", []) or []):
-        ref = str(getattr(point, "breakline_ref", "") or "")
-        if not ref:
-            continue
-        point_by_ref.setdefault(ref, []).append(point)
-    rows: list[str] = []
-    for breakline in list(getattr(shared_result, "breakline_rows", []) or []):
-        breakline_id = str(getattr(breakline, "breakline_id", "") or "")
-        if not breakline_id or (wanted and breakline_id not in wanted):
-            continue
-        points = sorted(point_by_ref.get(breakline_id, []), key=lambda point: int(getattr(point, "sequence", 0) or 0))
-        if len(points) < 2:
-            continue
-        role = str(getattr(breakline, "breakline_role", "") or "")
-        material = str(getattr(breakline, "material_role", "") or "") or role
-        status = str(getattr(breakline, "source_status", "") or "")
-        consumer_refs = ",".join(str(value or "") for value in tuple(getattr(breakline, "consumer_refs", ()) or ()) if str(value or ""))
-        for index, (start, end) in enumerate(zip(points[:-1], points[1:])):
-            try:
-                values = [
-                    breakline_id,
-                    role,
-                    status,
-                    str(index),
-                    f"{float(getattr(start, 'x', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(start, 'y', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(start, 'z', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(end, 'x', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(end, 'y', 0.0) or 0.0):.9g}",
-                    f"{float(getattr(end, 'z', 0.0) or 0.0):.9g}",
-                    material,
-                ]
-                if consumer_refs:
-                    values.append(consumer_refs)
-                rows.append("|".join(value.replace("|", "_") for value in values))
-            except Exception:
-                continue
-    return rows
 
 
 def _row_xyz_tuple(row) -> tuple[float, float, float]:
@@ -3067,13 +2940,13 @@ def build_intersection_slope_face_surface_from_ready_loops(
             TINQualityRow(
                 f"{surface_id}:intersection_shared_boundary_graph_audit_rows",
                 "intersection_shared_boundary_graph_audit_rows",
-                ";;".join(_intersection_shared_boundary_graph_audit_rows(graph_result)),
+                ";;".join(intersection_shared_boundary_graph_audit_rows(graph_result)),
             ),
             TINQualityRow(
                 f"{surface_id}:intersection_shared_boundary_graph_segment_rows",
                 "intersection_shared_boundary_graph_segment_rows",
 
-                ";;".join(_intersection_shared_boundary_graph_segment_rows(graph_result)),
+                ";;".join(intersection_shared_boundary_graph_segment_rows(graph_result)),
             ),
             TINQualityRow(
                 f"{surface_id}:intersection_shared_boundary_graph_surface_generation_mode",
