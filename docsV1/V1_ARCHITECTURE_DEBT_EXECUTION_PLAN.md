@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, and M7 complete; M8 at one contract failure, which is an open product question
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 1, the open boundary loop decision, and three items are carried forward
 Depends on:
 
 - `AGENTS.md`
@@ -1181,6 +1181,20 @@ Validation: 9 architecture tests, the contract suite in three chunks with the Qt
 
 The one remaining contract failure is the boundary loop question recorded in batch 1, which needs a product decision rather than a test change.
 
+### Level 7 manual confirmation of M6 chunks 3 to 6, on 2026-09-20
+
+The maintainer confirmed chunks 3, 4, 5, and 6 in the GUI. Every M6 chunk now has its manual confirmation recorded: chunk 2 on 2026-09-18 and chunks 3 to 6 here.
+
+### M8 closes on 2026-09-20 with three items carried forward
+
+The three batches took the contract failures from 52 to 1, with no new failure at any step, and found seven product defects along the way: the unsorted leg graph refs, the roundabout clip that ran without its boundary, the shared boundary graph family that was invisible for roundabouts, the region selection that produced no transition boundary options, the review diagnostics left at the document root, and the preview counted twice in the visibility sweep.
+
+Three items are deliberately not part of M8 and are carried forward rather than closed. They are listed here so they stay visible.
+
+1. The boundary loop decision, recorded in batch 1 and now open decision 6. It is the one remaining contract failure; `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until it is settled, so the baseline is 1, not 0.
+2. Known defects with no owner yet. `IntersectionBoundaryLoopGraphFilledEdgeRefs` is built in string-hash order, so the saved property can differ between sessions on an unchanged model, which shows up as a document diff nobody made; a sort fixes it. `source_corner_curb_return_policy_ref_mismatch` is unreachable, because the mismatch that would raise it now stops the edge network first. The structure editor test's `_show_message` patch is ineffective, since the editor holds its own injected reference, which is how a modal dialog once blocked a run. `test_build_corridor_command.py` carries two F841 warnings.
+3. The M5 follow-up recorded on 2026-09-14: the region boundary continuity evaluation belongs in `services/evaluation`, and the preview audit serializers in `services/mapping`, replacing four identical copies in `services/builders`. This is the same duplication the plan exists to remove, so closing it without doing the work would leave the debt in place.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
@@ -1190,3 +1204,4 @@ These require a decision before the affected milestone starts. None blocks M0.
 3. M0 task 5: what is the target duration for the fast contract tier, and which modules belong to the long-running tier?
 4. M7: is a legacy command with a complete v1 replacement removed from the toolbar in a later task, or retained indefinitely for user familiarity?
 5. Resolved on 2026-09-14. M5 closes at its presentation scope and work continues with M6. Moving the region boundary continuity evaluation to `services/evaluation` and the preview audit serializers to `services/mapping`, replacing the identical copies in `services/builders`, is recorded as follow-up work outside M5. See the M5 record of 2026-09-14 in section 10.
+6. M8: `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` builds a ready loop through the curb return envelope path, closed, 32 points, area 312, and the result is still `error` because of `error:intersection_boundary_authoritative_source_edges_missing`. That rule landed on 2026-07-02 and the envelope feature with this test on 2026-07-06, so the rule predates what it now rejects. A sibling test locks error and no loops for the case with no envelope, so the rule itself is wanted. Keeping the rule means restating this test as error with no loops and the cross intersection envelope path never becoming ready; accepting a complete envelope loop means changing the rule without breaking the sibling.
