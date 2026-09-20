@@ -1353,6 +1353,9 @@ def test_corridor_intersection_contract_review_rows_label_missing_source_path() 
         assert "IntersectionModel is required" in rows[0]["notes"]
         assert "source status=missing=1" in summary["notes"]
         assert "output paths=missing_source=1" in summary["notes"]
+        # the internal view has nothing to add while the source itself is missing
+        assert internal_rows == rows
+        assert internal_summary == summary
     finally:
         App.closeDocument(doc.Name)
 

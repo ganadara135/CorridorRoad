@@ -487,14 +487,16 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
         panel._load_selected_detail()
         panel._common_width_field.setText("1.700")
 
-        import freecad.Corridor_Road.v1.commands.cmd_structure_editor as structure_editor_command
+        # the panel calls the editor module's own injected binding, so patching the
+        # command module would leave a real modal dialog in the way
+        import freecad.Corridor_Road.v1.ui.editors.structure_editor as structure_editor_view
 
-        original_show_message = structure_editor_command._show_message
-        structure_editor_command._show_message = lambda *_args, **_kwargs: None
+        original_show_message = structure_editor_view._show_message
+        structure_editor_view._show_message = lambda *_args, **_kwargs: None
         try:
             assert panel._apply(close_after=False, show_preview=False) is True
         finally:
-            structure_editor_command._show_message = original_show_message
+            structure_editor_view._show_message = original_show_message
 
         assert panel._table.rowCount() == 5
         assert panel._table.currentRow() == 4

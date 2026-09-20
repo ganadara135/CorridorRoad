@@ -962,7 +962,9 @@ def _intersection_boundary_loop_graph_fill_coverage(
             }
             if edge_id and edge_source_refs.intersection(transition_source_refs):
                 filled_refs.add(edge_id)
-    filled_edge_refs = _unique_text_values(ref for ref in filled_refs if ref in set(boundary_loop_edge_refs))
+    # walk the graph edge order rather than the filled set: a set of strings iterates
+    # in an order that varies between processes, and this list is saved on the object
+    filled_edge_refs = _unique_text_values(ref for ref in boundary_loop_edge_refs if ref in filled_refs)
     missing_edge_refs = _unique_text_values(ref for ref in consumer_edge_refs if ref not in set(filled_edge_refs))
     consumer_coverage = _intersection_boundary_loop_consumer_coverage_summary(
         boundary_loop_edges,

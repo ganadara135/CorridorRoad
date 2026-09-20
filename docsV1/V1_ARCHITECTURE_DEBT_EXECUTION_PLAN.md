@@ -1192,8 +1192,18 @@ The three batches took the contract failures from 52 to 1, with no new failure a
 Three items are deliberately not part of M8 and are carried forward rather than closed. They are listed here so they stay visible.
 
 1. The boundary loop decision, recorded in batch 1 and now open decision 6. It is the one remaining contract failure; `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until it is settled, so the baseline is 1, not 0.
-2. Known defects with no owner yet. `IntersectionBoundaryLoopGraphFilledEdgeRefs` is built in string-hash order, so the saved property can differ between sessions on an unchanged model, which shows up as a document diff nobody made; a sort fixes it. `source_corner_curb_return_policy_ref_mismatch` is unreachable, because the mismatch that would raise it now stops the edge network first. The structure editor test's `_show_message` patch is ineffective, since the editor holds its own injected reference, which is how a modal dialog once blocked a run. `test_build_corridor_command.py` carries two F841 warnings.
+2. Known defects with no owner yet. Three of the four were fixed on 2026-09-20 and are recorded below. What remains is `source_corner_curb_return_policy_ref_mismatch`, unreachable because the mismatch that would raise it now stops the edge network first; whether to delete that branch or keep it against a later change to the corner graph rule is a one-line call nobody has made.
 3. The M5 follow-up recorded on 2026-09-14: the region boundary continuity evaluation belongs in `services/evaluation`, and the preview audit serializers in `services/mapping`, replacing four identical copies in `services/builders`. This is the same duplication the plan exists to remove, so closing it without doing the work would leave the debt in place.
+
+### Three carried-forward defects fixed on 2026-09-20
+
+The boundary loop graph's filled edge refs were built by iterating `filled_refs`, a set of strings, so their order followed the process hash seed and landed in `IntersectionBoundaryLoopGraphFilledEdgeRefs`, a saved property. The same model saved twice could differ. The loop now walks the graph's own edge order and keeps the refs that are filled, which is both deterministic and the order the property reads as. The defect and the fix were each demonstrated: with the old code the same synthetic graph produced three different orders under hash seeds 0, 1, and 999, and with the new code all three are identical.
+
+`test_structure_editor_command.py` patched `cmd_structure_editor._show_message`, but the panel calls the binding injected into `ui/editors/structure_editor`, so a real `QMessageBox` was one behaviour change away from blocking the run. This is the mechanism behind the intermittent hang recorded in M5. The test patches the editor module now, and the module's 37 tests pass.
+
+The two F841 warnings in `test_build_corridor_command.py` came from a test that computed the internal contract rows and summary and asserted nothing about them. Rather than deleting the variables, the test now states what they are for: while the source is missing, the internal view adds nothing, so both match the plain ones.
+
+Validation: 9 architecture tests, the contract suite in three chunks with the Qt runner at its one known failure and no new one, and 26 smoke scripts at exit code 0.
 
 ## 11. Open Decisions
 
