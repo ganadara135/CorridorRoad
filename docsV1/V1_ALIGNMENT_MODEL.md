@@ -138,7 +138,7 @@ Current editor rule:
 
 Current stationing rule:
 
-- `V1Stationing` belongs under `02_Alignment & Profile / Stations`
+- `V1Stationing` belongs under `03_Alignment & Profile / Stations`
 - `Stations` opens without generating stations; the panel `Apply` action creates a sample `V1Alignment` first when no v1 alignment exists
 - station rows store `StationValues`, `StationLabels`, `XValues`, `YValues`, `TangentDirections`, `ActiveElementIds`, `ActiveElementKinds`, and `SourceReasons`
 - station rows now also store review strings plus source alignment label, source geometry signature, active-element kind summary, tangent/curve/transition station counts, and stale-source notes when a previous stationing object was based on older alignment geometry

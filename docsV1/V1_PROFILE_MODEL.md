@@ -70,7 +70,7 @@ Current implementation note:
 
 - `Plan/Profile Review` exposes bridge diagnostic rows that confirm a v0 `VerticalAlignment` became a v1 `ProfileModel`, that `ProfileModel.alignment_id` matches the active `AlignmentModel.alignment_id`, and that profile control stations fit inside the alignment station range
 - `V1Profile` document objects now provide the preferred v1-native profile source path before legacy vertical alignment fallback is used
-- the sample v1 profile command creates or reuses a `V1Alignment`, stores profile controls and vertical-curve rows on a `V1Profile`, and routes it to `02_Alignment & Profile / Profiles`
+- the sample v1 profile command creates or reuses a `V1Alignment`, stores profile controls and vertical-curve rows on a `V1Profile`, and routes it to `03_Alignment & Profile / Profiles`
 - `Profile` provides the first v1-native tabbed profile editor for FG PVI rows, preset data loading, CSV import/export, editable vertical curve rows, EG reference status, and station-link checks
 - `Profile` opens without immediately changing the document when no `V1Profile` exists; `Apply` creates or updates the source object and reports completion to the user
 - `Plan/Profile Review` now prefers `V1Alignment` plus `V1Profile` sources when both exist, then falls back to legacy adapter sources only when native v1 sources are absent
@@ -170,7 +170,7 @@ It stores the durable authoring fields needed to rebuild a `ProfileModel`:
 
 Current routing rule:
 
-- `V1Profile` belongs under `02_Alignment & Profile / Profiles`
+- `V1Profile` belongs under `03_Alignment & Profile / Profiles`
 - if a sample profile is created without an alignment, the command creates a matching `V1Alignment` first
 - downstream review converts `V1Profile` into `ProfileModel` through the v1 object adapter before using legacy profile adapters
 

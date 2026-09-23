@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Changed
+- Swapped the first two v1 project tree roots: Surfaces is now `02_Surfaces` and alignment work is `03_Alignment & Profile`. Existing documents keep their folders and are relabeled and reordered the next time the project tree is ensured.
+
 ## [1.1.0] - 2026-09-20
 
 ### Changed

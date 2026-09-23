@@ -15,7 +15,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_ASSEMBLIES,
     V1_TREE_BOOKMARKS,
     V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
-    V1_TREE_CENTERLINE3D,
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DRAINAGE,
     V1_TREE_DXF,
@@ -179,8 +178,49 @@ def test_ensure_project_tree_uses_v1_only_root_groups() -> None:
         assert "02_Alignments" not in labels
         assert "04_Analysis" not in labels
         assert tree[V1_TREE_SOURCE_DATA].Label == "01_Source Data"
-        assert tree[V1_TREE_SURFACES].Label == "03_Surfaces"
+        assert tree[V1_TREE_SURFACES].Label == "02_Surfaces"
         assert tree[V1_TREE_CORRIDOR_MODEL].Label == "04_Parametric Model"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_root_tree_orders_surfaces_before_alignment_profile() -> None:
+    doc, project = _new_project_doc()
+    try:
+        ensure_project_tree(project, include_references=False)
+        labels = [str(getattr(obj, "Label", "") or "") for obj in list(getattr(project, "Group", []) or [])]
+
+        assert labels[:4] == [
+            "00_Project Setup",
+            "01_Source Data",
+            "02_Surfaces",
+            "03_Alignment & Profile",
+        ]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_ensure_project_tree_repairs_the_earlier_surface_alignment_order() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        # a document saved before the swap: the old labels, and the old order under the project
+        tree[V1_TREE_ALIGNMENT_PROFILE].Label = "02_Alignment & Profile"
+        tree[V1_TREE_SURFACES].Label = "03_Surfaces"
+        project.Group = [tree[V1_TREE_ALIGNMENT_PROFILE], tree[V1_TREE_SURFACES]] + [
+            obj
+            for obj in list(getattr(project, "Group", []) or [])
+            if obj not in (tree[V1_TREE_ALIGNMENT_PROFILE], tree[V1_TREE_SURFACES])
+        ]
+
+        repaired = ensure_project_tree(project, include_references=False)
+
+        assert repaired[V1_TREE_SURFACES].Label == "02_Surfaces"
+        assert repaired[V1_TREE_SURFACES].Name == "CRV1_03_Surfaces"
+        assert repaired[V1_TREE_ALIGNMENT_PROFILE].Label == "03_Alignment & Profile"
+        assert repaired[V1_TREE_ALIGNMENT_PROFILE].Name == "CRV1_02_Alignment_Profile"
+        order = [str(getattr(obj, "Label", "") or "") for obj in list(getattr(project, "Group", []) or [])]
+        assert order.index("02_Surfaces") < order.index("03_Alignment & Profile")
     finally:
         App.closeDocument(doc.Name)
 

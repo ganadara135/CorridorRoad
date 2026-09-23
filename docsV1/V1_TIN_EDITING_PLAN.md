@@ -209,12 +209,12 @@ Existing files likely to update:
 
 Recommended tree placement:
 
-- base source rows under `03_Surfaces / Existing Ground TIN / Source`
-- base TIN result under `03_Surfaces / Existing Ground TIN / TIN Result`
-- edit set under `03_Surfaces / Existing Ground TIN / Source` or `TIN Result`
-- edited result under `03_Surfaces / Existing Ground TIN / TIN Result`
-- mesh preview under `03_Surfaces / Existing Ground TIN / Mesh Preview`
-- diagnostics under `03_Surfaces / Existing Ground TIN / Diagnostics`
+- base source rows under `02_Surfaces / Existing Ground TIN / Source`
+- base TIN result under `02_Surfaces / Existing Ground TIN / TIN Result`
+- edit set under `02_Surfaces / Existing Ground TIN / Source` or `TIN Result`
+- edited result under `02_Surfaces / Existing Ground TIN / TIN Result`
+- mesh preview under `02_Surfaces / Existing Ground TIN / Mesh Preview`
+- diagnostics under `02_Surfaces / Existing Ground TIN / Diagnostics`
 
 The edited result should be visually labeled so users can distinguish:
 

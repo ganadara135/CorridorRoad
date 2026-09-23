@@ -116,8 +116,9 @@ BASE_TREE_DEFS = (
 V1_ROOT_TREE_DEFS = (
     (V1_TREE_PROJECT_SETUP, "00_Project Setup", "CRV1_00_Project_Setup"),
     (V1_TREE_SOURCE_DATA, "01_Source Data", "CRV1_01_Source_Data"),
-    (V1_TREE_ALIGNMENT_PROFILE, "02_Alignment & Profile", "CRV1_02_Alignment_Profile"),
-    (V1_TREE_SURFACES, "03_Surfaces", "CRV1_03_Surfaces"),
+    # the object names keep their original digits so saved documents keep their folders
+    (V1_TREE_SURFACES, "02_Surfaces", "CRV1_03_Surfaces"),
+    (V1_TREE_ALIGNMENT_PROFILE, "03_Alignment & Profile", "CRV1_02_Alignment_Profile"),
     (V1_TREE_CORRIDOR_MODEL, "04_Parametric Model", "CRV1_04_Corridor_Model"),
     (V1_TREE_DRAINAGE, "05_Drainage", "CRV1_05_Drainage"),
     (V1_TREE_STRUCTURES, "06_Structures", "CRV1_06_Structures"),

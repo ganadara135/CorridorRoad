@@ -50,16 +50,16 @@ This was useful for v0/v0.5 transition work, but it is not expressive enough for
 Current implementation note:
 
 - new project trees are now v1-only by default; transition-era roots such as `01_Inputs`, `02_Alignments`, `04_Analysis`, and per-alignment `ALN_* / Horizontal` branches are no longer created
-- `03_Surfaces` now uses the final v1 label because the legacy surface root is no longer created alongside it
-- sample/new horizontal alignment objects route to `02_Alignment & Profile / Alignments`
+- `02_Surfaces` now uses the final v1 label because the legacy surface root is no longer created alongside it
+- sample/new horizontal alignment objects route to `03_Alignment & Profile / Alignments`
 - `V1Alignment` source objects are the preferred alignment objects for new v1 work
-- the legacy `Sample Alignment` command now creates a v1 alignment source object and routes it to `02_Alignment & Profile / Alignments`
-- vertical/profile objects route to `02_Alignment & Profile / Profiles`
+- the legacy `Sample Alignment` command now creates a v1 alignment source object and routes it to `03_Alignment & Profile / Alignments`
+- vertical/profile objects route to `03_Alignment & Profile / Profiles`
 - `V1Profile` source objects are the preferred profile objects for new v1 work
-- the v1 `Create Profile` command creates a matched `V1Profile` and routes it to `02_Alignment & Profile / Profiles`
-- stationing objects route to `02_Alignment & Profile / Stations`
+- the v1 `Create Profile` command creates a matched `V1Profile` and routes it to `03_Alignment & Profile / Profiles`
+- stationing objects route to `03_Alignment & Profile / Stations`
 - `V1Stationing` source/result objects are the preferred station-grid objects for new v1 work
-- the v1 `Generate Stations` command creates a `V1Stationing` object and routes it to `02_Alignment & Profile / Stations`
+- the v1 `Generate Stations` command creates a `V1Stationing` object and routes it to `03_Alignment & Profile / Stations`
 - TIN source, result, diagnostics, and mesh preview records are routed under the v1 tree when a project tree exists
 - v1 corridor-network routing helpers can resolve ramps, intersections, drainage, assemblies, regions, and applied sections to their preferred v1 folders
 - v1 review, output/exchange, and AI assist routing helpers can resolve objects to their preferred v1 folders
@@ -111,12 +111,7 @@ Parametric Road Project
       Existing Alignments
       Existing Structures
       Existing Utilities
-  02_Alignment & Profile
-    Alignments
-    Stations
-    Profiles
-    Superelevation
-  03_Surfaces
+  02_Surfaces
     Existing Ground TIN
       Source
       TIN Result
@@ -129,6 +124,11 @@ Parametric Road Project
     Comparison TIN
       Cut Fill Surface
       Difference Surface
+  03_Alignment & Profile
+    Alignments
+    Stations
+    Profiles
+    Superelevation
   04_Parametric Model
     Assemblies
     Regions
@@ -202,19 +202,7 @@ Important distinction:
 - `Existing Ground TIN` is a surface result
 - `Mesh Preview` is visual output
 
-### 5.3 `02_Alignment & Profile`
-
-Owns horizontal and vertical control.
-
-Examples:
-
-- alignments
-- profiles
-- station equations
-- station markers
-- superelevation source rows
-
-### 5.4 `03_Surfaces`
+### 5.3 `02_Surfaces`
 
 Owns terrain and design surface contracts.
 
@@ -227,7 +215,7 @@ TIN import placement:
   Survey Points
     pointcloud_tin_mountain_valley_plain.csv
 
-03_Surfaces
+02_Surfaces
   Existing Ground TIN
     Source
       pointcloud_tin_mountain_valley_plain.csv reference
@@ -244,6 +232,18 @@ Rules:
 - `TINSurface` is the source of truth for terrain sampling
 - mesh preview must be replaceable and regenerable
 - surface diagnostics should be inspectable without opening exchange tools
+
+### 5.4 `03_Alignment & Profile`
+
+Owns horizontal and vertical control.
+
+Examples:
+
+- alignments
+- profiles
+- station equations
+- station markers
+- superelevation source rows
 
 ### 5.5 `04_Parametric Model`
 
@@ -340,10 +340,10 @@ AI output should be traceable and reviewable; it should not silently become sour
 Recommended routing:
 
 - point-cloud CSV import -> `01_Source Data / Survey Points / Source CSV`
-- `TINSurface` result -> `03_Surfaces / Existing Ground TIN / TIN Result`
-- TIN mesh preview -> `03_Surfaces / Existing Ground TIN / Mesh Preview`
-- TIN diagnostics -> `03_Surfaces / Existing Ground TIN / Diagnostics`
-- alignment/profile source -> `02_Alignment & Profile`
+- `TINSurface` result -> `02_Surfaces / Existing Ground TIN / TIN Result`
+- TIN mesh preview -> `02_Surfaces / Existing Ground TIN / Mesh Preview`
+- TIN diagnostics -> `02_Surfaces / Existing Ground TIN / Diagnostics`
+- alignment/profile source -> `03_Alignment & Profile`
 - applied section set -> `04_Parametric Model / Applied Sections`
 - Build Parametric generated previews and diagnostics -> `04_Parametric Model / Build Parametric Outputs`
 - ramp model -> `04_Parametric Model / Ramps`
@@ -371,12 +371,12 @@ Legacy-to-v1 mapping for old files and code references:
 
 ```text
 01_Inputs        -> 01_Source Data
-02_Alignments    -> 02_Alignment & Profile
-03_Surfaces      -> 03_Surfaces
+02_Alignments    -> 03_Alignment & Profile
+03_Surfaces      -> 02_Surfaces
 04_Analysis      -> 07_Quantities & Earthwork
 05_References    -> 01_Source Data / Existing References
 Inputs/Survey    -> 01_Source Data / Survey Points
-Inputs/Terrains  -> 03_Surfaces / Existing Ground TIN or Source Data / Existing References
+Inputs/Terrains  -> 02_Surfaces / Existing Ground TIN or Source Data / Existing References
 Inputs/Regions   -> 04_Parametric Model / Regions
 Inputs/Structures -> 06_Structures
 ```

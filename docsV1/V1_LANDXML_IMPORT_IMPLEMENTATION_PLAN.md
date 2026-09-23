@@ -192,11 +192,11 @@ The user may still view diagnostics, but `Import Selected` should stay disabled 
 
 Imported objects should be routed to the normal v1 tree:
 
-- alignments -> `02_Alignment & Profile / Alignments`
-- profiles -> `02_Alignment & Profile / Profiles`
+- alignments -> `03_Alignment & Profile / Alignments`
+- profiles -> `03_Alignment & Profile / Profiles`
 - survey points -> `01_Source Data / Survey Points`
-- TIN source data -> `03_Surfaces / Existing Ground TIN / Source`
-- TIN result or preview -> `03_Surfaces / Existing Ground TIN / TIN Result`
+- TIN source data -> `02_Surfaces / Existing Ground TIN / Source`
+- TIN result or preview -> `02_Surfaces / Existing Ground TIN / TIN Result`
 - import diagnostics -> `09_Outputs & Exchange / LandXML` or exchange package diagnostics
 
 If a dedicated `LandXML Imports` group is added later, it should store provenance and diagnostics, not replace the normalized source objects.
