@@ -80,9 +80,7 @@ With an explicit executable path:
 
 ## Maintained Bundles
 
-The maintained practical sample inventory and scenario bundle mapping lives in:
-
-- [PRACTICAL_SAMPLE_SET.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/v1-1/Mod/CorridorRoad/docs/PRACTICAL_SAMPLE_SET.md)
+The sample inventory lives in `tests/samples/`. The v0 document that mapped scenario bundles was removed on 2026-09-24 and is in git history.
 
 The runner scripts are the source of truth for exact smoke membership:
 
@@ -94,3 +92,4 @@ The runner scripts are the source of truth for exact smoke membership:
 - These scripts should fail loudly with `Exception` when a contract breaks.
 - Keep them safe for GUI-less execution.
 - Prefer validating status fields, dependency propagation, and object-link contracts before adding heavier geometry cases.
+- A script no runner names is in no gate. On 2026-09-24, 70 of 106 scripts were in that state and 12 of them had drifted into failing against current behavior; those 12 were removed.
