@@ -30,7 +30,6 @@ Baseline document:
 - [V1_RELEASE_1_0_0_PLAN.md](./V1_RELEASE_1_0_0_PLAN.md)
 - [V1_RELEASE_1_0_0_VALIDATION_RECORD.md](./V1_RELEASE_1_0_0_VALIDATION_RECORD.md)
 - [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
-- [V1_1_0_1_FORUM_ANNOUNCEMENT.md](./V1_1_0_1_FORUM_ANNOUNCEMENT.md)
 - [V1_1_0_1_MANUAL_SMOKE_QA.md](./V1_1_0_1_MANUAL_SMOKE_QA.md)
 - [V1_WIKI_1_0_0_UPDATE_CHECKLIST.md](./V1_WIKI_1_0_0_UPDATE_CHECKLIST.md)
 - [wiki/WIKI_TOC.md](./wiki/WIKI_TOC.md)
@@ -165,7 +164,7 @@ Baseline document:
 Rules:
 
 - use `V1_MASTER_PLAN.md` as the reference baseline for new v1 documents
-- treat `docsV0/` as archived legacy reference material
+- the v0 documents were removed on 2026-09-24; read them from git history if a legacy question needs them
 - record any intentional deviations from the master plan explicitly
 
 Preferred review workflow:

@@ -32,7 +32,7 @@ Post-release tasks:
 - [x] `CHANGELOG.md` carries the `1.1.0` release section.
 - [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
-- [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
+- [x] Forum announcement drafted and published; the posted text is the record, at https://forum.freecad.org/viewtopic.php?t=103783.
 - [x] Manual smoke QA checklist prepared in `docsV1/V1_1_0_1_MANUAL_SMOKE_QA.md`.
 - [ ] FreeCAD manual smoke QA for the published tag.
 - [x] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.

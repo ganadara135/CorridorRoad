@@ -20,7 +20,7 @@ This document is the authoritative baseline for the Parametric Road v1 redesign.
 
 All new documents under `docsV1/` should align with this plan unless they explicitly record and justify a change.
 
-Legacy v0 documents are archived under `docsV0/`. They are reference material only and must not constrain the v1 redesign.
+Legacy v0 documents were removed from the repository on 2026-09-24 and remain in git history. They are reference material only and must not constrain the v1 redesign.
 
 ## 2. Executive Summary
 

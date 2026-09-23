@@ -43,7 +43,7 @@ Project
 
 The project mainly uses Python, the FreeCAD and FeaturePython APIs, Part, Mesh, Draft, Sketcher, Qt/PySide, and versioned JSON-compatible payloads.
 
-Use `docsV1/V1_SUPPORTED_DOMAIN_STATUS.md` for current product scope and `docsV1/V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md` for the active architecture plan. Treat `docsV0/` as archived legacy reference.
+Use `docsV1/V1_SUPPORTED_DOMAIN_STATUS.md` for current product scope and `docsV1/V1_PROJECT_ARCHITECTURE_IMPROVEMENT_IMPLEMENTATION_PLAN.md` for the active architecture plan. The v0 documents were removed on 2026-09-24 and live only in git history.
 
 ## Core Architecture Rule
 
