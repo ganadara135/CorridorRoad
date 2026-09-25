@@ -165,3 +165,26 @@ What is left unreachable is 9 modules and 7,149 lines, and it is load-bearing in
 
 Validation: 9 architecture tests, the contract suite at 1,340 passed, 18 skipped and its one known failure, 78 in the intersection command module, and all three smoke runners.
 
+## 10. Why the Remaining Unreachable Modules Stay, on 2026-09-25
+
+`commands/cmd_import_pointcloud_tin.py` went with its three contract tests. It was the last unregistered legacy command module: `init_gui` never imported it, so `CorridorRoad_ImportPointCloudTIN` was never registered, and the TIN workflow is reached through `CorridorRoad_V1EditTIN`. It held a v1-preferring bridge with a placeholder fallback, and nothing called it.
+
+What remains unreachable is 8 modules and 7,045 lines, and it stays for a reason stronger than the regression gate.
+
+Five of them are entries in `virtual_paths._PROXY_OBJECT_MODULES`:
+
+| Module | Lines |
+| --- | --- |
+| `objects/obj_corridor.py` | 2,974 |
+| `objects/obj_centerline3d_display.py` | 1,216 |
+| `objects/obj_design_terrain.py` | 617 |
+| `objects/obj_pointcloud_dem.py` | 546 |
+| `objects/obj_design_grading_surface.py` | 483 |
+| `objects/obj_stationing.py` | 135 |
+
+A FreeCAD object stores its `Proxy` by module path. `virtual_paths` exists so that a document saved against the v0 layout still resolves those paths on open. Remove one of these modules and every saved document holding that object opens with the proxy unresolved: the properties survive, the behavior does not, and the user sees a broken object. That is data loss in the sense `AGENTS.md` reserves for critical repair, and it applies whatever the retirement decision turns out to be.
+
+`objects/corridor_segment_builder.py` is imported by `obj_corridor`, and `ui/task_corridor.py` is `corridor_compat.PREFERRED_TASK_MODULE` with three maintained gate scripts asserting its path.
+
+The regression gate reason still holds on top of that: 26 of the 36 maintained smoke scripts load these objects. But the restore contract is the binding one. Retiring them needs a migration that rewrites or retires the stored proxies first, not a deletion.
+
