@@ -8,26 +8,6 @@ from .base import OutputModelBase
 
 
 @dataclass(frozen=True)
-class ExchangeSourceRef:
-    """Minimal source reference row for exchange output."""
-
-    ref_id: str
-    source_kind: str
-    source_id: str
-    label: str = ""
-
-
-@dataclass(frozen=True)
-class ExchangeResultRef:
-    """Minimal result reference row for exchange output."""
-
-    ref_id: str
-    result_kind: str
-    result_id: str
-    label: str = ""
-
-
-@dataclass(frozen=True)
 class ExchangeOutputRef:
     """Minimal output reference row for exchange output."""
 

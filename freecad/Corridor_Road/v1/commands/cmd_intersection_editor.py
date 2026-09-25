@@ -17,7 +17,6 @@ try:
 except Exception:  # pragma: no cover - Part is unavailable in plain Python.
     Part = None
 
-from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ..models.source.intersection_model import (
@@ -1338,23 +1337,6 @@ class V1IntersectionEditorTaskPanel:
             return True
         self._update_status(prefix=f"Source stage was not found: {target}")
         return False
-
-
-class CmdV1IntersectionEditor:
-    """Open the v1 Intersection source editor shell."""
-
-    def GetResources(self):
-        return {
-            "Pixmap": icon_path("intersections.svg"),
-            "MenuText": "Intersections",
-            "ToolTip": "Define v1 at-grade intersection type, source mode, and junction source intent",
-        }
-
-    def IsActive(self):
-        return App is not None and getattr(App, "ActiveDocument", None) is not None
-
-    def Activated(self):
-        run_v1_intersection_editor_command()
 
 
 def _populate_alignment_combo(combo, choices: list[tuple[str, str]]) -> None:

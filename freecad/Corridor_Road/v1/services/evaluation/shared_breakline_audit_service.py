@@ -575,21 +575,6 @@ def _point_to_segment_distance(point, start, end):
     return float(_project_to_segment(point, start, end)["distance"])
 
 
-def surface_boundary_edge_matches_shared_breakline(
-    surface,
-    breakline_points,
-    *,
-    tolerance: float = 5.0e-2,
-) -> dict[str, object]:
-    """Expose the typed mesh-boundary audit used by compatibility callers."""
-
-    return _boundary_edge_matches(
-        surface,
-        breakline_points,
-        tolerance=tolerance,
-    )
-
-
 def _project_to_segment(point, start, end):
     vector = tuple(float(end[i]) - float(start[i]) for i in range(3))
     offset = tuple(float(point[i]) - float(start[i]) for i in range(3))

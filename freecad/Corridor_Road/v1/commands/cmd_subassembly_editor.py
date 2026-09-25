@@ -170,45 +170,6 @@ def apply_v1_assembly_subassembly_model(
     return obj
 
 
-def create_or_update_assembly_subassembly_section_preview(
-    *,
-    document=None,
-    assembly_model: AssemblySubassemblyModel,
-    definition_library=None,
-    object_name: str = "V1AssemblySubassemblySectionPreview",
-):
-    """Create a lightweight 3D View cross-section preview from Assembly/Subassembly source rows."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    if doc is None:
-        raise RuntimeError("No active document.")
-    try:
-        import Part  # type: ignore
-    except Exception as exc:
-        raise RuntimeError("FreeCAD Part workbench is required for Assembly/Subassembly section preview.") from exc
-    template = _active_template(assembly_model)
-    rows = [row for row in list(getattr(template, "subassembly_rows", []) or []) if bool(getattr(row, "enabled", True))]
-    wires = _assembly_section_preview_wires(rows, definition_library=definition_library, part_module=Part)
-    if not wires:
-        raise RuntimeError("No enabled Assembly/Subassembly rows are available for preview.")
-    obj = doc.getObject(object_name)
-    if obj is None:
-        obj = doc.addObject("Part::Feature", object_name)
-    obj.Shape = Part.Compound(wires) if len(wires) > 1 else wires[0]
-    obj.Label = "Assembly / Subassembly Section Preview"
-    _set_preview_property(obj, "CRRecordKind", "v1_assembly_subassembly_section_preview")
-    _set_preview_property(obj, "V1ObjectType", "V1AssemblySubassemblySectionPreview")
-    _set_preview_property(obj, "AssemblyId", str(getattr(assembly_model, "assembly_id", "") or ""))
-    _set_preview_property(obj, "TemplateId", str(getattr(template, "template_id", "") or "") if template is not None else "")
-    _set_preview_integer_property(obj, "SubassemblyCount", len(rows))
-    _style_assembly_section_preview_object(obj)
-    try:
-        doc.recompute()
-    except Exception:
-        pass
-    return obj
-
-
 def assembly_subassembly_preset_model_from_document(
     preset_name: str,
     document=None,

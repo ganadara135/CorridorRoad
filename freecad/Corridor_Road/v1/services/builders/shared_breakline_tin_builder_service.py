@@ -205,7 +205,3 @@ def tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, *
 
 def intersection_surface_tin_with_shared_breakline_constraint_edges(*args, **kwargs):
     return _intersection_surface_tin_with_shared_breakline_constraint_edges(*args, **kwargs)
-
-
-def tin_rows_with_shared_breakline_constraint_edges(*args, **kwargs):
-    return _tin_rows_with_shared_breakline_constraint_edges(*args, **kwargs)

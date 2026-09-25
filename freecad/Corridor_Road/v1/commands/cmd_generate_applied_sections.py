@@ -701,36 +701,6 @@ def _remove_applied_section_station_marker_object(document) -> None:
             pass
 
 
-def show_applied_section_station_marker_object(document, section, *, station: float | None = None):
-    """Create or update a clear marker at the selected Applied Section station."""
-
-    if document is None:
-        raise RuntimeError("No active document.")
-    if App is None or Part is None:
-        raise RuntimeError("FreeCAD Part workbench is required for Applied Section station marker.")
-    frame = getattr(section, "frame", None)
-    if frame is None:
-        raise ValueError("Applied Section station marker requires a station frame.")
-    center = App.Vector(float(getattr(frame, "x", 0.0) or 0.0), float(getattr(frame, "y", 0.0) or 0.0), float(getattr(frame, "z", 0.0) or 0.0))
-    radius = _applied_section_station_marker_radius(section)
-    marker = document.getObject("V1AppliedSectionStationMarker")
-    if marker is None:
-        marker = document.addObject("Part::Feature", "V1AppliedSectionStationMarker")
-    active_station = float(station if station is not None else getattr(section, "station", 0.0) or 0.0)
-    marker.Label = f"Applied Section Station - STA {active_station:.3f}"
-    marker.Shape = _applied_section_station_marker_shape(center, radius, frame)
-    _set_preview_string_property(marker, "CRRecordKind", "v1_applied_section_station_marker")
-    _set_preview_string_property(marker, "V1ObjectType", "V1AppliedSectionStationMarker")
-    _set_preview_string_property(marker, "MarkerShape", "target_cross")
-    _set_preview_string_property(marker, "AppliedSectionId", str(getattr(section, "applied_section_id", "") or ""))
-    _set_preview_float_property(marker, "Station", active_station)
-    _set_preview_float_property(marker, "MarkerX", float(center.x))
-    _set_preview_float_property(marker, "MarkerY", float(center.y))
-    _set_preview_float_property(marker, "MarkerZ", float(center.z))
-    _style_applied_section_station_marker(marker)
-    return marker
-
-
 def applied_section_preview_shape(section):
     """Build a visible 3D cross-section preview from one AppliedSection result."""
 

@@ -17,7 +17,6 @@ from ..models.result.applied_section import (
 )
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ..models.result.corridor_model import CorridorModel, CorridorSamplingPolicy
-from ..services.evaluation import LegacyDocumentAdapter
 from ..services.builders import (
     EarthworkBalanceBuildRequest,
     EarthworkBalanceService,
@@ -175,109 +174,6 @@ def build_v1_document_earthwork_report(
             "existing_ground_surface": eg_surface,
         },
         "legacy_objects": {},
-    }
-
-
-def build_legacy_document_earthwork_report(
-    document,
-    *,
-    preferred_section_set=None,
-    preferred_station: float | None = None,
-) -> dict[str, object] | None:
-    """Build the older adapter-backed earthwork report path."""
-
-    adapter = LegacyDocumentAdapter()
-    project = adapter._find_project(document)
-    bundle = adapter.build_preview_bundle(
-        document,
-        preferred_section_set=preferred_section_set,
-    )
-    if bundle is None:
-        return None
-
-    quantity_model = QuantityBuildService().build(
-        QuantityBuildRequest(
-            project_id=bundle.corridor.project_id,
-            corridor=bundle.corridor,
-            applied_section_set=bundle.applied_section_set,
-            quantity_model_id=f"{bundle.corridor.corridor_id}:quantity",
-        )
-    )
-    earthwork_model = bundle.earthwork_model
-    if earthwork_model is None:
-        earthwork_model = EarthworkBalanceService().build(
-            EarthworkBalanceBuildRequest(
-                project_id=bundle.corridor.project_id,
-                corridor=bundle.corridor,
-                applied_section_set=bundle.applied_section_set,
-                quantity_model=quantity_model,
-                earthwork_balance_id=f"{bundle.corridor.corridor_id}:earthwork",
-            )
-        )
-    mass_haul_model = MassHaulService().build(
-        MassHaulBuildRequest(
-            project_id=bundle.corridor.project_id,
-            corridor=bundle.corridor,
-            earthwork_balance_model=earthwork_model,
-            mass_haul_id=f"{bundle.corridor.corridor_id}:masshaul",
-        )
-    )
-
-    quantity_output = QuantityOutputMapper().map_quantity_model(quantity_model)
-    earthwork_mapper = EarthworkOutputMapper()
-    earthwork_output = earthwork_mapper.map_earthwork_balance(earthwork_model)
-    mass_haul_output = earthwork_mapper.map_mass_haul(mass_haul_model)
-    section_set = preferred_section_set or adapter._resolve_section_set(
-        project,
-        document,
-        preferred_section_set=preferred_section_set,
-    )
-    alignment = adapter._resolve_alignment_object(project, document)
-    profile = adapter._resolve_vertical_alignment_object(project, document)
-    cut_fill_calc = adapter._resolve_cut_fill_calc(project, document)
-    station_row = adapter.nearest_station_row(section_set, preferred_station=preferred_station)
-    focus_station = (
-        adapter._safe_float(station_row.get("station", 0.0), 0.0)
-        if station_row is not None
-        else None
-    )
-    focused_balance_row = _nearest_balance_row(earthwork_model.balance_rows, focus_station)
-    focused_haul_zone = _nearest_haul_zone(mass_haul_model.haul_zone_rows, focus_station)
-    station_values = []
-    if section_set is not None:
-        for row in list(adapter.viewer_station_rows(section_set) or []):
-            station_values.append(
-                (
-                    adapter._safe_float(row.get("station", 0.0), 0.0),
-                    str(row.get("label", "") or f"STA {adapter._safe_float(row.get('station', 0.0), 0.0):.3f}"),
-                )
-            )
-    navigation_rows = _build_navigation_station_rows(
-        station_values,
-        current_station=focus_station,
-    )
-
-    return {
-        "corridor": bundle.corridor,
-        "applied_section_set": bundle.applied_section_set,
-        "quantity_model": quantity_model,
-        "earthwork_model": earthwork_model,
-        "mass_haul_model": mass_haul_model,
-        "quantity_output": quantity_output,
-        "earthwork_output": earthwork_output,
-        "mass_haul_output": mass_haul_output,
-        "station_row": station_row,
-        "focused_balance_row": focused_balance_row,
-        "focused_haul_zone": focused_haul_zone,
-        "station_rows": navigation_rows,
-        "key_station_rows": navigation_rows,
-        "legacy_objects": {
-            "project": project,
-            "section_set": section_set,
-            "alignment": alignment,
-            "profile": profile,
-            "cut_fill_calc": cut_fill_calc,
-        },
     }
 
 

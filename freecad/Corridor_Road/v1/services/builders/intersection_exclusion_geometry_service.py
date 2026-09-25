@@ -532,14 +532,6 @@ def intersection_practical_exclusion_polygon_candidate_from_boundary_segments(*a
     return _intersection_practical_exclusion_polygon_candidate_from_boundary_segments(*args, **kwargs)
 
 
-def tin_surface_boundary_edge_rows(surface) -> list[dict[str, object]]:
-    return _tin_surface_boundary_edge_rows(surface)
-
-
-def tin_surface_all_edge_rows(surface) -> list[dict[str, object]]:
-    return _tin_surface_all_edge_rows(surface)
-
-
 def xy_triangle_near_curb_return_arc_protection(*args, **kwargs):
     return _xy_triangle_near_curb_return_arc_protection(*args, **kwargs)
 
