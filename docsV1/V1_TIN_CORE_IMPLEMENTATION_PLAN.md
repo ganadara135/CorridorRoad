@@ -35,7 +35,7 @@ Current implementation state:
 - `tests/contracts/v1/test_tin_sampling_service.py` covers the first sampling contract behavior
 - `freecad/Corridor_Road/v1/commands/cmd_review_tin.py` builds and shows the thin TIN review payload
 - `freecad/Corridor_Road/v1/ui/viewers/tin_review_view.py` provides a minimal review panel with one XY probe
-- `freecad/Corridor_Road/commands/cmd_import_pointcloud_tin.py` remains as a compatibility entry point
+- `freecad/Corridor_Road/commands/cmd_import_pointcloud_tin.py` was the compatibility entry point and was removed on 2026-09-25; `init_gui` never imported it, so its command id was never registered
 - `tests/contracts/v1/test_tin_review_command.py` covers the thin review command behavior
 - `freecad/Corridor_Road/v1/services/builders/tin_build_service.py` builds a first-slice `TINSurface` from CSV point input
 - `tests/samples/pointcloud_utm_realistic_hilly.csv` is used as the first real TIN build sample
@@ -299,7 +299,7 @@ Tasks:
 - default the picker to `tests/samples` when available
 - pass selected `csv_path` into `show_v1_tin_review()`
 - derive a stable `surface_id` from the CSV file name
-- keep the legacy `CorridorRoad_ImportPointCloudTIN` module as compatibility code only
+- keep the legacy `CorridorRoad_ImportPointCloudTIN` module as compatibility code only (done at the time; the module was removed on 2026-09-25 once it was measured to be registered nowhere)
 
 Acceptance criteria:
 
@@ -319,7 +319,6 @@ Recommended focused validation command once tests exist:
 & "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_sampling_service.py', 'r', encoding='utf-8').read())"
 & "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_build_service.py', 'r', encoding='utf-8').read())"
 & "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_review_command.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_pointcloud_tin_main_command.py', 'r', encoding='utf-8').read())"
 ```
 
 If the test is pure Python and the local Python runtime is available, a direct Python run is acceptable, but FreeCADCmd should be preferred for addon-compatible validation.

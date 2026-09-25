@@ -204,7 +204,6 @@ Focused validation commands:
 & "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_section_sampling_service.py', 'r', encoding='utf-8').read())"
 & "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_review_command.py', 'r', encoding='utf-8').read())"
 & "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_tin_mesh_preview_mapper.py', 'r', encoding='utf-8').read())"
-& "D:\Program Files\FreeCAD 1.1\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_pointcloud_tin_main_command.py', 'r', encoding='utf-8').read())"
 ```
 
 Add new focused tests as each phase is implemented.
