@@ -115,7 +115,7 @@ The following are declared frozen read-and-restore compatibility surfaces. They 
 
 `obj_project.py` is frozen in the sense above but is **not** dormant. 23 v1 modules import it, and since milestone M1 the single v1 entry point for project-tree routing, `route_object_to_project_tree`, delegates to `route_to_v1_tree` in this module. Freezing it means no new legacy behavior, not no use.
 
-The whole legacy `objects` package is 31 files and 25,945 lines; legacy `ui` is 21 files and 24,255 lines. Neither is a candidate for removal while `_PROXY_OBJECT_MODULES` and the surfaced v0 panels depend on them.
+The whole legacy `objects` package is 31 files and 25,956 lines and stays: every module in `_PROXY_OBJECT_MODULES` lives there, so removing one would break restore for documents that hold its proxy. Legacy `ui` was 21 files and 24,255 lines when this was first measured; the seven panels that nothing reached were removed on 2026-09-25 and it is now 10 files and 14,367 lines. What remains there is either a surfaced panel or named by a compatibility constant.
 
 ## 7. Retirement Status Summary
 
@@ -136,3 +136,32 @@ Execution plan open decision 4 remains open and is the maintainer's call:
 The measurement above narrows it. The decision applies to the 6 modules in section 4.3 only, it carries no document-restoration risk, and the cost is limited to macros, custom toolbars, and familiarity. The other 7 modules are not part of the question.
 
 A separate and larger question, out of scope here, is whether `cmd_project_setup` should gain a v1 successor so that no surfaced workflow stage is driven by a v0 task panel.
+## 9. Legacy UI Panels Removed, on 2026-09-25
+
+Section 6 said neither legacy package was a candidate for removal while `_PROXY_OBJECT_MODULES` and the surfaced v0 panels depended on them. That held for `objects` and it still does. It did not hold for all of `ui`, because it treated the package as one thing.
+
+Seven panels were reached by nothing at all. Their command modules had already been removed the day before, having never been imported by `init_gui` and therefore never registered, and no surviving module imports the panels, no maintained runner script names them, and no contract test loads them:
+
+| Module | Lines |
+| --- | --- |
+| `ui/task_cross_section_editor.py` | 3,346 |
+| `ui/task_structure_editor.py` | 2,932 |
+| `ui/task_section_generator.py` | 1,464 |
+| `ui/task_design_terrain.py` | 722 |
+| `ui/task_centerline3d.py` | 561 |
+| `ui/task_pointcloud_dem.py` | 373 |
+| `ui/task_station_generator.py` | 276 |
+
+15 regression scripts loaded them and went with them, 2,020 lines. None was named by a runner, so the maintained gate is unchanged.
+
+Two modules were measured as unreachable and deliberately kept, because an import graph does not see a name held as a string:
+
+- `objects/obj_pointcloud_dem.py` is listed in `virtual_paths._PROXY_OBJECT_MODULES`. A document saved with that proxy needs the module present to restore.
+- `ui/task_corridor.py` is named by `corridor_compat.PREFERRED_TASK_MODULE`, and three maintained gate scripts assert its file path exists.
+
+`objects/corridor_segment_builder.py` was kept for the same class of reason: its only importer is `objects/obj_corridor.py`, which 32 contract tests still load.
+
+What is left unreachable is 9 modules and 7,149 lines, and it is load-bearing in a way this residue was not: 26 of the 36 maintained smoke scripts stand on `obj_corridor`, `obj_centerline3d_display`, `obj_design_grading_surface`, `obj_design_terrain`, `obj_stationing`, and `cmd_import_pointcloud_tin`. Removing those means retiring that much of the regression gate, which is a product decision, not a cleanup.
+
+Validation: 9 architecture tests, the contract suite at 1,340 passed, 18 skipped and its one known failure, 78 in the intersection command module, and all three smoke runners.
+

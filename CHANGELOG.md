@@ -12,6 +12,12 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ### Changed
 - Swapped the first two v1 project tree roots: Surfaces is now `02_Surfaces` and alignment work is `03_Alignment & Profile`. Existing documents keep their folders and are relabeled and reordered the next time the project tree is ensured.
 
+### Removed
+- Removed the v0 task panels nothing reached: the Cross Section Editor, Structure Editor, Section Generator, Design Terrain, 3D Centerline, PointCloud DEM, and Station Generator panels. Their command modules were never imported by the workbench, so none of them had a registered command id, and no toolbar, menu, or saved document referred to them.
+- Removed ten legacy command modules the workbench never imported, nine placeholder modules that held only a docstring, `v1/common/schema.py`, thirteen unused module-level names in v1, and two icons no command names.
+- Removed regression scripts that no runner ran: twelve that had drifted into failing against current behavior, and fifteen that only loaded the removed v0 panels. The maintained smoke set is unchanged.
+- The v0 documents under `docsV0/` and the 1.0.1 forum announcement draft were removed; both remain in git history.
+
 ## [1.1.0] - 2026-09-20
 
 ### Changed
