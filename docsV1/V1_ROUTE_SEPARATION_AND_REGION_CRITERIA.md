@@ -80,15 +80,24 @@ intersection references into a single axis.
 | Build Parametric review | `_document_region_models` collects every Region model; `_sections_for_region_model` filters Applied Sections by `alignment_id`. |
 | Cross Section Viewer | filters intersection clip context by the active section's `alignment_id`. |
 
-### 4.4 The single-road bottleneck
+### 4.4 What is and is not alignment-aware
 
-About twenty `find_v1_*(document)` lookups return the first object of their kind
-in the document. The one that decides the workflow is Applied Section
-generation: `cmd_generate_applied_sections` takes one Alignment, one Profile,
-one Region model, and one Stationing, and produces one set. Quantities and the
-design surface models carry no alignment field at all and are document-wide.
+Applied Section generation is alignment-aware, and an earlier revision of this
+document said otherwise. `_applied_section_source_bundles` walks every Alignment
+in the document and pairs it with its own Profile, Region model and Stationing by
+`alignment_id`. An Alignment missing any of those three is skipped without a
+diagnostic. With two or more complete bundles the build loops per Alignment and
+merges the partials into one set labelled `alignment:multiple`; the first-found
+`find_v1_*` path runs only as the single-bundle fallback. Measured on the
+T Intersection preset, the set carries 32 sections across both starter roads.
 
-So the source contracts are alignment-aware and the generation path is not.
+What is not alignment-aware: about twenty `find_v1_*(document)` lookups return
+the first object of their kind, which is what the single-bundle fallback uses and
+what the Assembly, Structure, Drainage and Superelevation models resolve through
+even on the multi-alignment path, so those are shared across roads rather than
+chosen per road. Quantities and the design surface models carry no alignment
+field at all and are document-wide. Incremental rebuild keys its stages on
+`corridor_model` and `surface_model` only, so editing one road restages both.
 
 ## 5. When To Create a Separate Route Document
 
@@ -118,10 +127,11 @@ Use one document with one `AlignmentModel` per road when:
 - they share one existing ground surface, coordinate system, and standards
 - earthwork must balance across them
 
-In that arrangement, keep `alignment_id` filled on every Profile, Stationing, and
-Region model. The multi-road code paths match by that string, and an empty value
-falls back to the first candidate. Create the main road first, because the first
-object found is what the generation path uses.
+In that arrangement, give every road its own Profile, Stationing and Region model,
+and keep `alignment_id` filled on each. That triple is what makes an Alignment a
+complete bundle; one missing piece drops the road out of Applied Sections without
+a diagnostic. The Assembly, Structure, Drainage and Superelevation models are
+still resolved first-found and therefore shared by every road in the document.
 
 ## 7. What a Region Is
 
@@ -267,8 +277,9 @@ several roads end to end:
    Alignment, Profile, and Stations review commands.
 2. `find_v1_*(document, alignment_id=...)` in place of first-match lookup, across
    roughly twenty finders that share one shape.
-3. Applied Section generation looping per Alignment. `cmd_centerline3d` already
-   holds the pattern in `_model_object_for_alignment` and `_stationing_for_alignment`.
+3. Per-road Assembly, Structure, Drainage and Superelevation selection. Applied
+   Section generation already loops per Alignment; these four are still resolved
+   first-found and shared across every road in the document.
 4. Per-road grouping under `03_Alignment & Profile` in the project tree.
 5. `alignment_id` in the incremental rebuild stage key, so editing one road does
    not invalidate the others.
