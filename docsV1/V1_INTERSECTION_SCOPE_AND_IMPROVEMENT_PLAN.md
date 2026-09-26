@@ -156,17 +156,38 @@ Slope Face Surface is finished for T alone.
 Acceptance: a Cross and a Roundabout smoke that assert a dedicated Slope Face
 Surface the way the T smoke does, not a readiness check.
 
-### 5.4 Give the Roundabout a boundary instead of a circle
+### 5.4 Give each roundabout approach its own geometry
 
-Roundabout ownership is a circle: centre plus circulatory outer radius plus
-apron width, from `_roundabout_ownership_boundary_spec`. A real roundabout has
-per-approach entry and exit geometry, and an apron that need not be uniform. The
-1.1.0 fix for clipping that ran without its boundary shows how thin this path
-is.
+An earlier revision of this section asked for a boundary loop that already
+exists, and the correction matters because it changes what the work is.
 
-Acceptance: roundabout ownership comes from a boundary loop like the other two
-kinds, with the circle kept only as the fallback when no loop closes, and the
-existing circle-based smoke still passing against the fallback.
+`clip_tin_surface_by_roundabout_ownership` sets `clip_mode` to
+`roundabout_boundary_loop` and clips against the polygons of the
+`roundabout_outer_ownership_boundary` loop rows whenever they are ready and
+closed. `circle_intersection` is the fallback it takes when they are not, and it
+says so: the surface carries a `roundabout_ownership_clip_mode` quality row and a
+`roundabout_clip_boundary_unavailable` reason. The 1.1.0 fix was not a missing
+boundary but a silently taken fallback, where the loops were resolved and then
+passed where a document was expected.
+
+The circle keeps three jobs, and they are the right ones: the precondition that
+`ownership_radius > 0`, the fallback clip, and the ownership-intrusion guardrail.
+The radius also belongs in the source. A roundabout is circular, so radius-based
+intent is correct and should not become a hand-drawn polyline; what the result
+needs is a discretised loop, which it already builds.
+
+The real limit is upstream of the clip. The source carries four single scalars,
+`roundabout_central_island_radius`, `roundabout_circulatory_outer_radius`,
+`roundabout_outer_apron_width` and `roundabout_slope_face_width`, plus a
+connector length derived as `max(outer_radius * 1.25, 12.0)`. Every approach
+therefore shares one apron width and one outer radius, and no approach has an
+entry or exit radius of its own, so a roundabout with a wider entry on the major
+road cannot be expressed at all.
+
+Acceptance: per-approach policy rows keyed by leg for entry radius, exit radius
+and apron width, consumed by `evaluate_roundabout_approach_legs` so the outer
+ownership loop reflects them, with the single-valued rows kept as the default
+where no per-approach row exists.
 
 ### 5.5 Let each road choose its own Assembly
 
