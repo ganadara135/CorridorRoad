@@ -110,51 +110,87 @@ the data rather than in a comment.
 
 ## 5. Improvements
 
-Ordered by what unblocks the most. None of these is scheduled; each names its
-own acceptance check so it can be picked up alone.
+Every item below was checked against the code after the first draft was written,
+and four of the nine did not survive that check. What follows is the corrected
+set. Items marked **already implemented** are kept, with what was found, so the
+same proposal is not made again.
 
-### 5.1 Diagnose an unsupported intersection kind
+### 5.1 Diagnose an unsupported intersection kind: already implemented
 
-`evaluate_topology` carries `intersection_kind` through without validating it. A
-row holding a removed or misspelled kind silently takes the T-shaped defaults:
-two corners, radius 12, two quadrants.
+The first draft said `evaluate_topology` carries `intersection_kind` through
+without validating it. It does validate it. `IntersectionRow.is_supported_kind`
+tests membership of `INTERSECTION_KIND_PRESETS` in the source model, and topology
+appends `warning:intersection_kind_not_first_slice_supported:<kind>` when it
+fails, or `error:intersection_kind_missing` when the kind is empty. Measured with
+a row holding `banana_intersection`: the warning appears and the kind is carried
+through unchanged.
 
-Add one source diagnostic, `warning:source_intersection_kind_unsupported:<kind>`,
-where the kind is not in `SUPPORTED_INTERSECTION_KINDS`. It must be a warning,
-not an error, so an old document still builds.
+`INTERSECTION_KIND_PRESETS` already held exactly `t_intersection`,
+`cross_intersection` and `roundabout`, which means the four retired starters were
+never in it and always produced that warning. The scope reduction of section 3
+brought the starter builder into line with a list the model layer had already
+settled.
 
-Acceptance: a topology result for an unknown kind reports the diagnostic, keeps
-its other rows, and its status is not worse than `warning`.
+One thing did come out of this check: the `SUPPORTED_INTERSECTION_KINDS` tuple
+added by that scope change restated the three kinds instead of reading them, so
+it was a second source of truth. It now derives with
+`tuple(INTERSECTION_KIND_PRESETS)`.
 
-### 5.2 Settle the Cross boundary loop rule
+### 5.2 Settle the Cross boundary loop rule: confirmed
 
 `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross`
 builds a closed, ready loop of 32 points and area 312 through the curb-return
 envelope path, and the result is `error` because
 `intersection_boundary_authoritative_source_edges_missing` fires. The rule landed
-2026-07-02; the envelope path and this test landed 2026-07-06. This is the only
-reason the contract baseline is 1 and not 0.
+2026-07-02; the envelope path and this test landed 2026-07-06. The sibling test
+asserts the same error for an incomplete edge set, so the rule is doing its job
+there. This is the only reason the contract baseline is 1 and not 0.
 
 Two exits, and the choice is a product decision:
 
 - keep the rule, and restate the test as `error` with no loops, accepting that a
   Cross whose envelope closes will not become `ready`
 - accept a complete envelope loop as authoritative, and change the rule without
-  breaking its sibling test, which asserts that an incomplete edge set stays an
-  error
+  breaking the sibling test
 
 Acceptance: the contract baseline reaches 0 with both tests stating the chosen
 rule explicitly.
 
-### 5.3 Complete the Slope Face Surface for Cross and Roundabout
+### 5.3 Give the panel the review controls the flow requires: partly verified
 
-`tests/regression/smoke_intersection_non_t_slope_face_readiness.py` says in its
-own docstring that it does not claim non-T Slope Face Surface completion; it only
-guards against build errors and misleading `ready` states. So the dedicated
-Slope Face Surface is finished for T alone.
+The first draft framed this as Slope Face Surface completeness for Cross and
+Roundabout, on the strength of the non-T smoke's own docstring, which says it does
+not claim non-T dedicated Slope Face Surface completion and only guards against
+build errors and misleading `ready` states. That docstring is still the evidence,
+and a probe that tried to reproduce the T smoke's preview creation did not produce
+an intersection surface preview for any of the three presets, so **the per-kind
+completeness claim is not independently verified here** and should be measured
+before it is acted on.
 
-Acceptance: a Cross and a Roundabout smoke that assert a dedicated Slope Face
-Surface the way the T smoke does, not a readiness check.
+What the same check did establish is more actionable. The T smoke reaches its
+surface only after `_accept_t_intersection_preset_prerequisites`, which does by
+hand what a review step would do: it sets every leg to `approval_status="accepted"`
+with `span_source="explicit"`, fills each leg's `profile_ref` and
+`centerline3d_ref`, accepts the anchor rows with a tolerance, and accepts the
+control areas with station and influence ranges.
+
+Measured on a T preset with the panel's control length spin set to 24 m: the leg's
+`approach_station_start/end` are filled, at 108 and 132, but `profile_ref` and
+`centerline3d_ref` are empty strings and `approval_status` is `draft`. Topology,
+edge network and surface zones all rest at `warning`, before and after filling the
+refs and accepting the rows.
+
+The Intersection panel offers a source mode combo, a preset combo, a design
+vehicle combo, a radius spin, a control length spin, a grading combo, a drainage
+combo, two alignment combos, and the buttons Create Sources, Refresh Alignments,
+Auto Detect, Apply, Close, Hide and Show Preset Sources. There is no leg table, no
+anchor editor and no control-area editor, so there is no control that sets a leg's
+`profile_ref`, its `centerline3d_ref` or any row's `approval_status`.
+
+Acceptance: a leg, anchor and control-area review surface in the panel that sets
+those fields, so what the T smoke does in code can be done in the document; and,
+separately, a measurement of whether a dedicated Slope Face Surface is reachable
+for Cross and Roundabout once it can.
 
 ### 5.4 Give each roundabout approach its own geometry
 
@@ -189,64 +225,101 @@ and apron width, consumed by `evaluate_roundabout_approach_legs` so the outer
 ownership loop reflects them, with the single-valued rows kept as the default
 where no per-approach row exists.
 
-### 5.5 Let each road choose its own Assembly
+### 5.5 Let the side road have superelevation
 
-Applied Section generation is per Alignment, but the Assembly, Structure,
-Drainage and Superelevation models are still resolved first-found and therefore
-shared by every road in the document. A main road and a side road cannot have
-different standard sections, which is why the preset gives both roads the same
-starter Assembly.
+The first draft said a main road and a side road cannot have different standard
+sections because the Assembly is resolved first-found. That is wrong for the
+Assembly. `AppliedSectionSetService._resolve_assembly_model` and
+`_resolve_subassembly_model` match a Region row's `assembly_ref` against every
+assembly model in the document, and the command passes all of them, so a Region
+row already selects its own Assembly per road. The first-found lookup is only the
+fallback identity when no model matches.
 
-Acceptance: a Region row's `assembly_ref` selects among several Assembly models
-in one document, and a T preset built with a wide main road and a narrow side
-road produces different section widths per road.
+Structure and Drainage are also fine: their rows carry `alignment_id` and
+`alignment_ref`, so one model object serves several roads.
 
-### 5.6 Warn when a road drops out of Applied Sections
+Superelevation is the real limit. `SuperelevationModel.alignment_id` is one value
+for the whole model, `SuperelevationService` raises `missing_alignment_id` when it
+is empty, `find_v1_superelevation_source` returns the first model in the document,
+and the preset writes that model with `alignment_id = primary_alignment_ref`. The
+same model is then handed to every bundle in the per-alignment loop, so the side
+road's sections consume a superelevation model that belongs to the main road, and
+nothing diagnoses the mismatch.
+
+Acceptance: superelevation resolved per alignment, whether by several models keyed
+on `alignment_id` or by per-alignment row groups inside one; a diagnostic when a
+section's alignment does not match the superelevation model it was given; and the
+T preset writing a superelevation source for both starter roads.
+
+### 5.6 Warn when a road drops out of Applied Sections: confirmed
 
 `_applied_section_source_bundles` skips an Alignment that lacks a Profile, a
-Region model or a Stationing, with `continue` and no diagnostic. Deleting the
-side road's Region silently removes its sections, and the intersection then
-evaluates against a half-built document.
+Region model or a Stationing, with `continue` and no diagnostic. Deleting the side
+road's Region silently removes its sections, and the intersection then evaluates
+against a half-built document.
 
-Acceptance: a source-status row naming the Alignment and the missing piece, and
-an intersection topology diagnostic when a participating leg's Alignment has no
+Acceptance: a source-status row naming the Alignment and the missing piece, and an
+intersection topology diagnostic when a participating leg's Alignment has no
 sections.
 
-### 5.7 Cache the intersection evaluation chain
+### 5.7 Cache the intersection evaluation chain: confirmed, with a measured count
 
-`evaluate_topology` is called from seven places in `cmd_build_corridor`, and each
-one re-runs the chain from the model. Incremental rebuild covers two stages,
-`corridor_model` and `surface_model`, so the intersection chain is outside it.
+The first draft said the chain runs seven times per build. Seven is the number of
+call sites in `cmd_build_corridor`, not the number of runtime calls, and the two
+functions that build the corridor and surface models call the chain zero times.
 
-Acceptance: one evaluation per build for an unchanged IntersectionModel, proved
-by a call counter in a focused test, with the same result rows as today.
+Measured on a T preset, over `build_document_corridor_model`,
+`build_document_corridor_surface_model`, `corridor_build_review_rows`,
+`corridor_intersection_contract_review_rows`, `corridor_shared_breakline_audit_rows`
+and the three surface preview builders: `evaluate_topology` 4,
+`evaluate_edge_network` 2, `evaluate_surface_zones` 2, `evaluate_boundary_loops` 2,
+`evaluate_slope_face_loops` 2, `evaluate_corridor_clipping` 1, thirteen calls in
+all. The repetition is in the review-row and preview helpers, each of which
+resolves the chain from the document on its own. Incremental rebuild keys its
+stages on `corridor_model` and `surface_model`, so none of this is cached.
 
-### 5.8 Make the starter geometry usable on a real route
+Acceptance: one chain evaluation per unchanged IntersectionModel across a review
+and preview pass, proved by a call counter in a focused test, with the same result
+rows as today.
+
+### 5.8 Make the starter geometry usable on a real route: confirmed, and wider
 
 The starter alignments are hardcoded straight lines: the T is a 240 m main road
 and a 100 m side road, with no curve, no superelevation and a generated flat
-profile. Any real job goes through `Use Existing Alignments`, and that mode
-leaves the user to create the Region, Superelevation and Drainage sources the
-preset would have made.
+profile. Any real job goes through `Use Existing Alignments`, and that mode is
+thinner than the first draft said.
 
-Acceptance: `Use Existing Alignments` creates the same source set the preset
-does, minus the alignments and profiles it is given.
+`create_intersection_from_existing_alignments` creates the IntersectionModel and
+nothing else: no Region, no Superelevation source, no Drainage source, where the
+preset path creates all three. `build_existing_alignment_intersection_model`
+raises `No intersection-tagged control Regions were found.` unless the user has
+already authored those Region rows by hand, which the Region panel does not do for
+intersections.
 
-### 5.9 Expose the control values the preset guesses
+Acceptance: `Use Existing Alignments` creates the same source set the preset does,
+minus the alignments and profiles it is given, including the intersection-tagged
+Region rows it currently demands as a precondition.
+
+### 5.9 Expose the control values the preset guesses: confirmed
 
 Design vehicle, curb-return radius, control length, grading policy and drainage
-mode all arrive as preset defaults. The panel accepts them, but nothing tells the
-user which of those defaults is load-bearing for the shape they are about to see.
+mode all arrive as preset defaults. The panel's status text lists what was created
+and a generic next-workflow note; it does not name the defaulted values or the
+review refs that will carry them. Its own closing line says that final
+surface-zone and roundabout geometry expansion remain planned follow-up phases,
+which is the only place the user is told the shape may be incomplete.
 
-Acceptance: the preset summary lists each defaulted value with the review ref
-that will carry it, so the review step has a checklist rather than a note.
+Acceptance: the preset summary lists each defaulted value with the review ref that
+will carry it, so the review step has a checklist rather than a note.
 
 ## 6. Order
 
-5.1 and 5.6 are small and make wrong input visible; do them first. 5.2 is the
-only item that changes the contract baseline. 5.3 depends on 5.2 for Cross. 5.4
-and 5.5 are the two that change what the product can express. 5.7 is measurable
-on its own. 5.8 and 5.9 are workflow quality and can follow at any point.
+5.1 needs nothing. 5.6 is small and makes a silent drop-out visible; do it first.
+5.3 is the one that decides whether the flow is completable in the document at all,
+and its first half does not depend on the unverified half. 5.2 is the only item
+that changes the contract baseline. 5.5 and 5.8 are the two that block a real
+route. 5.4 is what the Roundabout needs to be more than a symmetric starter. 5.7
+is measurable on its own and 5.9 is workflow quality.
 
 ## 7. Out of Scope
 

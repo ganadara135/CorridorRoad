@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover - Part is unavailable in plain Python.
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ..models.source.intersection_model import (
+    INTERSECTION_KIND_PRESETS,
     IntersectionAnchorRow,
     IntersectionArmPolicyRow,
     IntersectionControlArea,
@@ -622,10 +623,12 @@ def set_intersection_review_overlay_visible(document, visible: bool):
     return obj
 
 
-# The three kinds the Intersection panel offers. Skewed, Urban Curb/Gutter,
-# Drainage Sag and Y starters were retired on 2026-09-26: the panel never
-# exposed them and only the T path had a completed Slope Face Surface.
-SUPPORTED_INTERSECTION_KINDS = ("t_intersection", "cross_intersection", "roundabout")
+# The kinds the Intersection panel offers. INTERSECTION_KIND_PRESETS in the source
+# model is the single list: IntersectionRow.is_supported_kind reads it, and topology
+# warns with intersection_kind_not_first_slice_supported for anything outside it.
+# Skewed, Urban Curb/Gutter, Drainage Sag and Y starters were retired on 2026-09-26;
+# they had never been in this list, so they always carried that warning.
+SUPPORTED_INTERSECTION_KINDS = tuple(INTERSECTION_KIND_PRESETS)
 
 
 def starter_intersection_source_specs(intersection_kind: str) -> dict[str, object]:
