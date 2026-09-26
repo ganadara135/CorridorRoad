@@ -1002,14 +1002,7 @@ class IntersectionEvaluationService:
             diagnostics.extend(trace_diagnostics)
         hull_points = _intersection_boundary_convex_hull_xyz([point for point, _ref, _sources in candidate_points])
         using_fallback_hull = not traced_points
-        intersection_kind = str(getattr(topology, "intersection_kind", "") or "")
-        using_source_endpoint_hull = (
-            using_fallback_hull
-            and intersection_kind in {"y_intersection", "skewed_intersection"}
-            and len(hull_points) >= 3
-            and bool(candidate_points)
-        )
-        if using_fallback_hull and len(hull_points) >= 3 and not using_source_endpoint_hull:
+        if using_fallback_hull and len(hull_points) >= 3:
             diagnostics.append("warning:intersection_boundary_convex_hull_fallback")
         loop_points = traced_points or hull_points
         loop_rows: list[IntersectionBoundaryLoopRow] = []
@@ -1036,8 +1029,6 @@ class IntersectionEvaluationService:
             loop_diagnostics: list[str] = [
                 "info:intersection_boundary_candidate_source=curb_return_envelope"
                 if using_curb_return_envelope
-                else "info:intersection_boundary_candidate_source=source_endpoint_hull"
-                if using_source_endpoint_hull
                 else "info:intersection_boundary_candidate_source=segment_graph"
                 if not using_fallback_hull
                 else "warning:intersection_boundary_convex_hull_fallback"
@@ -1048,11 +1039,11 @@ class IntersectionEvaluationService:
             if _polyline_self_crosses_xy(closed_points):
                 loop_diagnostics.append("error:intersection_boundary_loop_self_crossing")
                 diagnostics.append(f"error:intersection_boundary_loop_self_crossing:{loop_id}")
-            if using_fallback_hull and not using_source_endpoint_hull:
+            if using_fallback_hull:
                 loop_diagnostics.append("warning:intersection_boundary_loop_not_accepted_from_convex_hull")
             status = (
                 "ready"
-                if (not using_fallback_hull or using_source_endpoint_hull) and not any(item.startswith("error:") for item in loop_diagnostics)
+                if not using_fallback_hull and not any(item.startswith("error:") for item in loop_diagnostics)
                 else "warning"
                 if using_fallback_hull and not any(item.startswith("error:") for item in loop_diagnostics)
                 else "error"
@@ -4847,8 +4838,6 @@ def _curb_return_sides(policy: IntersectionCurbReturnPolicyRow, intersection_kin
     kind = str(intersection_kind or "").strip()
     if kind == "cross_intersection":
         return ("quadrant_01", "quadrant_02", "quadrant_03", "quadrant_04")
-    if kind == "y_intersection":
-        return ("left_branch", "right_branch")
     return ("left", "right")
 
 

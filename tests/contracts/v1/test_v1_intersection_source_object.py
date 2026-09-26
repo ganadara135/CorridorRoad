@@ -321,7 +321,7 @@ def test_intersection_source_object_reopened_document_restores_source_intent_row
             intersection_rows=[
                 IntersectionRow(
                     intersection_id="intersection:reload",
-                    intersection_kind="drainage_sag_intersection",
+                    intersection_kind="cross_intersection",
                     primary_alignment_ref="alignment:main",
                     secondary_alignment_refs=["alignment:side"],
                     control_region_refs=["regions:main/region:intersection"],

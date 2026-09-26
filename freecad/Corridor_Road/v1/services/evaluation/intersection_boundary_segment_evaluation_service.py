@@ -228,8 +228,6 @@ def _curb_return_policy_for(intersection_model, intersection_id: str):
 def _default_radius(intersection_kind: str) -> float:
     if intersection_kind == "cross_intersection":
         return 10.0
-    if intersection_kind == "y_intersection":
-        return 15.0
     return 12.0
 
 
@@ -309,7 +307,6 @@ def _curb_return_quadrants(intersection_kind: str):
             (-1.0, -1.0),
         ),
         "t_intersection": ((1.0, -1.0), (-1.0, -1.0)),
-        "y_intersection": ((1.0, 1.0), (-1.0, 1.0)),
     }.get(intersection_kind, ((1.0, 1.0), (-1.0, 1.0)))
 
 

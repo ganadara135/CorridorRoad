@@ -622,6 +622,12 @@ def set_intersection_review_overlay_visible(document, visible: bool):
     return obj
 
 
+# The three kinds the Intersection panel offers. Skewed, Urban Curb/Gutter,
+# Drainage Sag and Y starters were retired on 2026-09-26: the panel never
+# exposed them and only the T path had a completed Slope Face Surface.
+SUPPORTED_INTERSECTION_KINDS = ("t_intersection", "cross_intersection", "roundabout")
+
+
 def starter_intersection_source_specs(intersection_kind: str) -> dict[str, object]:
     """Return starter source geometry specs for one supported intersection kind."""
 
@@ -642,40 +648,6 @@ def starter_intersection_source_specs(intersection_kind: str) -> dict[str, objec
                 {"role": "secondary", "label": "Cross Road", "points": [(0.0, -120.0), (0.0, 120.0)]},
             ],
         }
-    if kind == "skewed_intersection":
-        return {
-            "kind": kind,
-            "alignments": [
-                {"role": "primary", "label": "Skew Main Road", "points": [(-130.0, 0.0), (130.0, 0.0)]},
-                {"role": "secondary_skew", "label": "Skew Crossing Road", "points": [(-70.0, -120.0), (70.0, 120.0)]},
-            ],
-        }
-    if kind == "urban_curb_gutter_intersection":
-        return {
-            "kind": kind,
-            "alignments": [
-                {"role": "primary", "label": "Urban Main Street", "points": [(-120.0, 0.0), (120.0, 0.0)]},
-                {"role": "secondary", "label": "Urban Side Street", "points": [(0.0, -110.0), (0.0, 110.0)]},
-            ],
-        }
-    if kind == "drainage_sag_intersection":
-        return {
-            "kind": kind,
-            "profile_style": "sag_low_point",
-            "alignments": [
-                {"role": "primary", "label": "Sag Main Road", "points": [(-120.0, 0.0), (120.0, 0.0)]},
-                {"role": "secondary", "label": "Sag Side Road", "points": [(0.0, -110.0), (0.0, 110.0)]},
-            ],
-        }
-    if kind == "y_intersection":
-        return {
-            "kind": kind,
-            "alignments": [
-                {"role": "primary_approach", "label": "Y Main Approach", "points": [(0.0, -120.0), (0.0, 0.0)]},
-                {"role": "left_branch", "label": "Y Left Branch Road", "points": [(0.0, 0.0), (-90.0, 90.0)]},
-                {"role": "right_branch", "label": "Y Right Branch Road", "points": [(0.0, 0.0), (90.0, 90.0)]},
-            ],
-        }
     if kind == "roundabout":
         return {
             "kind": kind,
@@ -684,7 +656,10 @@ def starter_intersection_source_specs(intersection_kind: str) -> dict[str, objec
                 {"role": "secondary", "label": "Roundabout East-West Road", "points": [(-130.0, 0.0), (130.0, 0.0)]},
             ],
         }
-    raise ValueError(f"Unsupported starter intersection kind: {intersection_kind}")
+    supported = ", ".join(SUPPORTED_INTERSECTION_KINDS)
+    raise ValueError(
+        f"Unsupported starter intersection kind: {intersection_kind}. Supported kinds: {supported}."
+    )
 
 
 def create_starter_intersection_sources(document, intersection_kind: str, *, project=None) -> list[str]:
@@ -1851,8 +1826,6 @@ def _default_lane_movement_type(
         return "through"
     if "after" in from_role and "before" in to_role:
         return "through"
-    if str(intersection_kind or "") == "y_intersection":
-        return "diverge" if index == 1 else "merge"
     return "turn"
 
 
@@ -1949,14 +1922,6 @@ def _default_corner_labels(intersection_kind: str) -> tuple[str, ...]:
     kind = str(intersection_kind or "").strip()
     if kind == "cross_intersection":
         return ("quadrant_01", "quadrant_02", "quadrant_03", "quadrant_04")
-    if kind == "urban_curb_gutter_intersection":
-        return ("urban_quadrant_01", "urban_quadrant_02", "urban_quadrant_03", "urban_quadrant_04")
-    if kind == "drainage_sag_intersection":
-        return ("sag_quadrant_01", "sag_quadrant_02", "sag_quadrant_03", "sag_quadrant_04")
-    if kind == "skewed_intersection":
-        return ("skew_quadrant_01", "skew_quadrant_02", "skew_quadrant_03", "skew_quadrant_04")
-    if kind == "y_intersection":
-        return ("left_branch", "right_branch")
     return ("left", "right")
 
 
@@ -1971,14 +1936,6 @@ def _default_curb_return_policy(
     radius = 12.0
     if kind == "cross_intersection":
         radius = 10.0
-    elif kind == "skewed_intersection":
-        radius = 11.0
-    elif kind == "urban_curb_gutter_intersection":
-        radius = 8.0
-    elif kind == "drainage_sag_intersection":
-        radius = 9.0
-    elif kind == "y_intersection":
-        radius = 15.0
     return IntersectionCurbReturnPolicyRow(
         policy_id=f"curb-return:{intersection_id}:default",
         intersection_id=intersection_id,
@@ -2157,11 +2114,7 @@ def _curb_return_preview_shapes(
     secondary_dir = _unit_vector(secondary_dir) or App.Vector(0.0, 1.0, 0.0)
     quadrants = {
         "cross_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
-        "skewed_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
-        "urban_curb_gutter_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
-        "drainage_sag_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
         "t_intersection": ((1.0, -1.0), (-1.0, -1.0)),
-        "y_intersection": ((1.0, 1.0), (-1.0, 1.0)),
     }.get(kind, ((1.0, 1.0), (-1.0, 1.0)))
     shapes: list[object] = []
     diagnostics: list[str] = []
@@ -2199,14 +2152,6 @@ def _positive_radius_or_default(radius: float | None, kind: str) -> float:
         return value
     if kind == "cross_intersection":
         return 10.0
-    if kind == "skewed_intersection":
-        return 11.0
-    if kind == "urban_curb_gutter_intersection":
-        return 8.0
-    if kind == "drainage_sag_intersection":
-        return 9.0
-    if kind == "y_intersection":
-        return 15.0
     return 12.0
 
 

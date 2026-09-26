@@ -632,7 +632,7 @@ def test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cr
     )
 
 
-def test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_for_skew_edges():
+def test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_for_non_orthogonal_edges():
     service = IntersectionEvaluationService()
     edges = [
         _edge(
@@ -671,7 +671,7 @@ def test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_f
             project_id="project:test",
             edge_network_result_id="intersection-edge-network:skew-source",
             intersection_id="starter-t_intersection",
-            intersection_kind="skewed_intersection",
+            intersection_kind="cross_intersection",
             status="ready",
             edge_rows=edges,
         ),
@@ -679,7 +679,7 @@ def test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_f
             schema_version=1,
             project_id="project:test",
             intersection_id="starter-t_intersection",
-            intersection_kind="skewed_intersection",
+            intersection_kind="cross_intersection",
             status="warning",
         ),
     )

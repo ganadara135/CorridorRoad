@@ -24,7 +24,7 @@ The current implementation already includes these first slices:
 | Area | Status | Current behavior |
 | --- | --- | --- |
 | User command | Done | User-facing command is `Intersection`; older workbench-exposed `Intersections` command has been removed from the active workflow. |
-| Preset source creation | Done | T, Cross, Y, Skewed, Urban Curb/Gutter, Drainage-Sensitive Sag, and Roundabout starter workflows create editable source objects and link them into an Intersection model with review lineage. |
+| Preset source creation | Done, scope reduced | T, Cross and Roundabout starter workflows create editable source objects and link them into an Intersection model with review lineage. The Y, Skewed, Urban Curb/Gutter and Drainage-Sensitive Sag starters were built and then removed on 2026-09-26; the panel never exposed them. |
 | Multi-alignment handoff | Done | Intersection starter sources create Region rows per participating Alignment and Applied Sections include intersection supplemental stations. |
 | Topology source diagnostics | Done | Topology rows report missing Profile, 3D Centerline, Region, control Region, and policy source context with row-level source status. |
 | Edge Network source diagnostics | Done | Edge rows report unresolved policy refs, incomplete curb-return policy context, and Assembly/Subassembly edge-family lineage breaks. |

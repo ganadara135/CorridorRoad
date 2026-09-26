@@ -136,7 +136,6 @@ def test_service_maps_tie_ins_and_builds_traceable_curb_return_arcs() -> None:
     (
         ("t_intersection", 12.0, 2),
         ("cross_intersection", 10.0, 4),
-        ("y_intersection", 15.0, 2),
     ),
 )
 def test_service_preserves_intersection_kind_defaults_and_arc_counts(

@@ -2,7 +2,13 @@
 
 Date: 2026-06-09
 Branch: `v1-0503`
-Status: Phase IP1-IP7 first code slice implemented
+Status: Phase IP1-IP7 first code slice implemented; scope reduced to three kinds on 2026-09-26
+
+> Scope change on 2026-09-26: the `skewed_intersection`, `urban_curb_gutter_intersection`,
+> `drainage_sag_intersection` and `y_intersection` starters were removed. The supported kinds are
+> `t_intersection`, `cross_intersection` and `roundabout`. The sections below that describe the four
+> removed kinds are a record of what was built, not a statement of current support. See
+> [V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md](./V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md).
 Depends on:
 
 - [V1_MASTER_PLAN.md](./V1_MASTER_PLAN.md)
@@ -189,7 +195,7 @@ First implemented slice:
 
 - `Skewed Intersection - Basic` is exposed in the Intersection preset panel.
 - Starter sources create non-orthogonal primary and skewed secondary Alignments and Regions.
-- `skewed_intersection` is a supported source kind.
+- `skewed_intersection` was a supported source kind until 2026-09-26.
 - Skew corner and edge-family defaults are marked review-required.
 
 ### 3.4 Y Intersection
@@ -294,7 +300,7 @@ First implemented slice:
 
 - `Urban Curb/Gutter - Basic` is exposed in the Intersection preset panel.
 - Starter sources create urban main/side street Alignments and Regions.
-- `urban_curb_gutter_intersection` is a supported source kind.
+- `urban_curb_gutter_intersection` was a supported source kind until 2026-09-26.
 - Curb, gutter, sidewalk, inlet candidate, and low-point defaults are marked review-required.
 
 ### 3.6 Drainage-Sensitive Sag Intersection
@@ -343,7 +349,7 @@ First implemented slice:
 
 - `Drainage-Sensitive Sag - Basic` is exposed in the Intersection preset panel.
 - Starter sources create sag-oriented Alignments, Profiles, Stationing, and Regions.
-- `drainage_sag_intersection` is a supported source kind.
+- `drainage_sag_intersection` was a supported source kind until 2026-09-26.
 - Sag low-point, inlet, flow-route, hydraulic sizing, and outlet replacement defaults are marked review-required.
 
 ### 3.7 Roundabout
