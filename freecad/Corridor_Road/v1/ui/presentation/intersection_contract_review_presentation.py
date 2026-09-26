@@ -291,9 +291,59 @@ def _intersection_shared_boundary_graph_contract_review_rows_from_preview(obj) -
     return rows
 
 
+def intersection_leg_section_coverage_rows(intersection_model, applied_section_set) -> list[dict[str, object]]:
+    """Return one review row per participating leg whose Alignment has no Applied Sections.
+
+    A leg names an Alignment, and Applied Sections skips an Alignment that has no
+    Profile, Region model or Stationing of its own. When that happens the junction
+    still evaluates, against a road that has no sections, so the gap is reported
+    here rather than left to be noticed as missing geometry.
+    """
+
+    if intersection_model is None or applied_section_set is None:
+        return []
+    covered = {
+        str(getattr(section, "alignment_id", "") or "").strip()
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
+    covered.discard("")
+    if not covered:
+        return []
+    rows: list[dict[str, object]] = []
+    for intersection in list(getattr(intersection_model, "intersection_rows", []) or []):
+        intersection_id = str(getattr(intersection, "intersection_id", "") or "")
+        for leg in list(getattr(intersection, "leg_rows", []) or []):
+            alignment_ref = str(getattr(leg, "alignment_ref", "") or "").strip()
+            if not alignment_ref or alignment_ref in covered:
+                continue
+            leg_id = str(getattr(leg, "leg_id", "") or "")
+            rows.append(
+                {
+                    "contract_family": "leg_section_coverage",
+                    "status": "warning",
+                    "row_id": leg_id or alignment_ref,
+                    "role": str(getattr(leg, "leg_role", "") or ""),
+                    "source_refs": ", ".join(ref for ref in (intersection_id, alignment_ref) if ref),
+                    "boundary_refs": "",
+                    "source_status": "missing",
+                    "output_path": "missing_applied_sections",
+                    "source_diagnostics": f"warning:leg_alignment_has_no_applied_sections:{alignment_ref}",
+                    "focus_object": "",
+                    "notes": (
+                        f"Leg {leg_id or alignment_ref} names Alignment {alignment_ref}, which has no Applied "
+                        "Sections. Give that Alignment a Profile, a Region model and a Stationing, then build "
+                        "Applied Sections again."
+                    ),
+                }
+            )
+    return rows
+
+
 def intersection_contract_review_rows(
     *,
     topology,
+    intersection_model=None,
+    applied_section_set=None,
     tie_slope_result,
     tie_slope_window_rows,
     roundabout_approach_legs,
@@ -528,6 +578,7 @@ def intersection_contract_review_rows(
             for row in rows
             if str(row.get("contract_family", "") or "") not in internal_families
         ]
+    rows.extend(intersection_leg_section_coverage_rows(intersection_model, applied_section_set))
     return rows
 
 

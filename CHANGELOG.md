@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Changed
+- Applied Sections now names the Alignments it skips. An Alignment without a Profile, a Region model or a Stationing was dropped from the build silently; the panel lists it under `Skipped Alignments:` with what it lacks, and Build Parametric adds an intersection review row for a leg whose Alignment has no sections.
 - Swapped the first two v1 project tree roots: Surfaces is now `02_Surfaces` and alignment work is `03_Alignment & Profile`. Existing documents keep their folders and are relabeled and reordered the next time the project tree is ensured.
 
 ### Removed

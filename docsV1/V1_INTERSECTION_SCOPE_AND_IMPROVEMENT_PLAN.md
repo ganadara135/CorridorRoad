@@ -251,16 +251,33 @@ on `alignment_id` or by per-alignment row groups inside one; a diagnostic when a
 section's alignment does not match the superelevation model it was given; and the
 T preset writing a superelevation source for both starter roads.
 
-### 5.6 Warn when a road drops out of Applied Sections: confirmed
+### 5.6 Warn when a road drops out of Applied Sections: done on 2026-09-26
 
 `_applied_section_source_bundles` skips an Alignment that lacks a Profile, a
 Region model or a Stationing, with `continue` and no diagnostic. Deleting the side
 road's Region silently removes its sections, and the intersection then evaluates
 against a half-built document.
 
-Acceptance: a source-status row naming the Alignment and the missing piece, and an
-intersection topology diagnostic when a participating leg's Alignment has no
-sections.
+Done. `_applied_section_alignment_bundles` now resolves one bundle per Alignment,
+complete or not, and records which of Profile, Regions and Stations each one lacks.
+`_applied_section_source_bundles` filters that to the complete bundles, so the build
+and the report read one resolution and cannot drift apart.
+
+`incomplete_alignment_bundle_rows(document)` reports the rest, and the Applied
+Sections panel shows them under `Skipped Alignments:` with the label, the alignment
+id and what is missing. It is deliberately not part of the blocking validation: a
+stray incomplete Alignment should not stop a complete road from building.
+
+On the Build Parametric side,
+`intersection_leg_section_coverage_rows(intersection_model, applied_section_set)` in
+`ui/presentation` adds one review row per participating leg whose Alignment has no
+sections, carrying
+`warning:leg_alignment_has_no_applied_sections:<alignment_ref>`. An empty section set
+reports nothing, because Applied Sections not having run is a different message.
+
+`tests/contracts/v1/test_intersection_leg_section_coverage.py` locks both ends,
+including a T preset whose secondary Region is deleted and which then reports that
+one Alignment as missing `Regions` while the main road still builds.
 
 ### 5.7 Cache the intersection evaluation chain: confirmed, with a measured count
 

@@ -1924,6 +1924,8 @@ def corridor_intersection_contract_review_rows(document=None, *, include_interna
     intersection_preview_object = _corridor_build_preview_object(doc, "intersection_slope") or intersection_preview
     return intersection_contract_review_rows(
         topology=topology,
+        intersection_model=intersection_model,
+        applied_section_set=applied,
         tie_slope_result=tie_slope_result,
         tie_slope_window_rows=tie_slope_window_rows,
         roundabout_approach_legs=roundabout_approach_legs,

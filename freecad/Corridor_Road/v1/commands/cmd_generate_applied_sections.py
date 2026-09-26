@@ -309,8 +309,12 @@ def _build_multi_alignment_applied_section_set(
     )
 
 
-def _applied_section_source_bundles(document) -> list[dict[str, object]]:
-    """Return complete Alignment/Profile/Stationing/Region bundles keyed by alignment id."""
+def _applied_section_alignment_bundles(document) -> list[dict[str, object]]:
+    """Resolve one bundle per Alignment, complete or not, and record what each lacks.
+
+    The build consumes the complete bundles and the review reports the rest, so
+    both read this one resolution instead of each deciding for itself.
+    """
 
     alignments = [(obj, to_alignment_model(obj)) for obj in list(getattr(document, "Objects", []) or [])]
     alignments = [(obj, model) for obj, model in alignments if model is not None]
@@ -334,17 +338,67 @@ def _applied_section_source_bundles(document) -> list[dict[str, object]]:
         region_model = _model_for_alignment(regions, alignment_id)
         stationing_obj = _stationing_for_alignment(stationings, alignment_id)
         stations = _station_values(stationing_obj)
-        if profile is None or region_model is None or not stations:
-            continue
+        missing = [
+            name
+            for name, present in (
+                ("Profile", profile is not None),
+                ("Regions", region_model is not None),
+                ("Stations", bool(stations)),
+            )
+            if not present
+        ]
         output.append(
             {
                 "alignment": alignment,
+                "alignment_id": alignment_id,
+                "alignment_label": str(getattr(alignment_obj, "Label", "") or alignment_id),
                 "profile": profile,
                 "region_model": region_model,
                 "stations": stations,
+                "missing": missing,
+                "complete": not missing,
             }
         )
     return output
+
+
+def _applied_section_source_bundles(document) -> list[dict[str, object]]:
+    """Return complete Alignment/Profile/Stationing/Region bundles keyed by alignment id."""
+
+    return [bundle for bundle in _applied_section_alignment_bundles(document) if bundle["complete"]]
+
+
+def incomplete_alignment_bundle_rows(document) -> list[dict[str, object]]:
+    """Report the Alignments Applied Sections will skip, and what each one lacks.
+
+    An Alignment without a Profile, a Region model or a Stationing is dropped from
+    the build. Deleting a side road's Region therefore removes its sections, and
+    the only sign used to be that the sections were gone.
+    """
+
+    return [
+        {
+            "alignment_id": bundle["alignment_id"],
+            "alignment_label": bundle["alignment_label"],
+            "missing": list(bundle["missing"]),
+            "status": "warn",
+            "notes": "Applied Sections will skip this Alignment until it has " + ", ".join(bundle["missing"]) + ".",
+        }
+        for bundle in _applied_section_alignment_bundles(document)
+        if not bundle["complete"]
+    ]
+
+
+def _incomplete_alignment_summary_lines(document) -> list[str]:
+    """Return panel lines for the Alignments the build will skip, or none when all are complete."""
+
+    rows = incomplete_alignment_bundle_rows(document)
+    if not rows:
+        return []
+    lines = ["", "Skipped Alignments:"]
+    for row in rows:
+        lines.append("- %s (%s): missing %s" % (row["alignment_label"], row["alignment_id"], ", ".join(row["missing"])))
+    return lines
 
 
 def _model_for_alignment(rows: list[tuple[object, object]], alignment_id: str):
@@ -931,6 +985,7 @@ class V1AppliedSectionsTaskPanel:
                 f"Intersections: {_source_status(find_v1_intersection_model(self.document))}",
                 f"Structures: {_source_status(find_v1_structure_model(self.document))}",
                 f"Stations: {station_count} row(s)",
+                *_incomplete_alignment_summary_lines(self.document),
                 "",
                 "Click Build Sections to validate sources and create or update the v1 AppliedSectionSet result.",
             ]
