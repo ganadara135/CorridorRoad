@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Replaced the Build Parametric command's service delegation shims with direct service calls.
 
 ### Fixed
+- Superelevation is now paired with its own Alignment, so a side road no longer consumes the main road's crossfall at its own stations, and the Intersection preset writes one handoff source per participating road. Where two sources claim one Alignment the one carrying crossfall rows wins, so a preset placeholder can no longer shadow an authored source, and the Applied Sections panel lists any source that is not read.
 - The last red contract test was a test that did not supply its inputs. The Cross curb-return envelope boundary loop test derived its edge network from a model that carries no alignment geometry, so four zero-length edges were correctly rejected as non-authoritative. It now supplies the edge network the way every other boundary loop test does, the rule is unchanged, and the contract baseline is 0.
 
 ### Fixed

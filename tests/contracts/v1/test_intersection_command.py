@@ -254,7 +254,7 @@ def test_intersection_preset_source_creation_stores_intersection_model() -> None
         assert model.drainage_policy_rows[0].capture_mode == "outside_gutter"
         assert "preset_drainage_policy_review_required" in model.drainage_policy_rows[0].diagnostic_rows
 
-        superelevation = to_superelevation_model(doc.getObject("V1IntersectionPresetSuperelevation"))
+        superelevation = to_superelevation_model(doc.getObject("V1IntersectionPresetSuperelevationPrimary"))
         drainage = to_drainage_model(doc.getObject("V1IntersectionPresetDrainage"))
         assembly = to_assembly_subassembly_model(find_v1_assembly_subassembly_model(doc))
         region_models = [
@@ -1828,7 +1828,8 @@ _INTERSECTION_PRESET_TREE_PLACEMENT = {
     "Intersection Side Road FG Profile": V1_TREE_PROFILES,
     "Intersection Side Road Stations": V1_TREE_STATIONS,
     "Intersection Side Road Regions": V1_TREE_REGIONS,
-    "Intersection Preset Superelevation": V1_TREE_SUPERELEVATION,
+    "Intersection Preset Superelevation (primary)": V1_TREE_SUPERELEVATION,
+    "Intersection Preset Superelevation (secondary)": V1_TREE_SUPERELEVATION,
     "Intersection Preset Drainage": V1_TREE_DRAINAGE,
 }
 
@@ -1882,8 +1883,8 @@ def test_intersection_preset_tree_cleanup_routes_existing_root_leftovers() -> No
                 (("CRRecordKind", "v1_intersection_model"),),
             ),
             (
-                "V1IntersectionPresetSuperelevation",
-                "Intersection Preset Superelevation",
+                "V1IntersectionPresetSuperelevationPrimary",
+                "Intersection Preset Superelevation (primary)",
                 V1_TREE_SUPERELEVATION,
                 (
                     ("CRRecordKind", "v1_superelevation_source"),

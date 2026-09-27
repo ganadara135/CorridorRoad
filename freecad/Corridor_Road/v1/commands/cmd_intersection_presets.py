@@ -1392,52 +1392,77 @@ def _create_preset_superelevation_source(
 ) -> list[str]:
     """Store a preset-owned Superelevation handoff source without inventing crossfall rows."""
 
-    model = SuperelevationModel(
-        schema_version=1,
-        project_id=_project_id(project),
-        label="Intersection Preset Superelevation",
-        superelevation_id=f"superelevation:intersection-preset-{_safe_id(intersection_kind)}",
-        alignment_id=str(primary_alignment_ref or ""),
-        profile_id="",
-        superelevation_kind="intersection_superelevation_handoff",
-        control_rows=[],
-        transition_rows=[],
-        constraint_rows=[
-            SuperelevationConstraint(
-                constraint_id=f"constraint:intersection:{_safe_id(intersection_kind)}:grading-override",
-                kind="intersection_grading_override",
-                value=str(grading_policy or "intersection_override"),
-                unit="policy",
-                hard_or_soft="soft",
-            ),
-            SuperelevationConstraint(
-                constraint_id=f"constraint:intersection:{_safe_id(intersection_kind)}:auto-calculate",
-                kind="requires_auto_calculate_review",
-                value="true",
-                unit="boolean",
-                hard_or_soft="soft",
-            ),
-        ],
-        source_refs=[
-            str(primary_alignment_ref or ""),
-            str(secondary_alignment_ref or ""),
-            *[str(row.get("control_region_ref", "") or "") for row in control_region_choices],
-        ],
-        diagnostic_rows=[
-            "info:intersection_preset_superelevation_handoff: use Superelevation Auto Calculate before final Build Parametric review."
-        ],
-    )
-    obj = create_or_update_v1_superelevation_source_object(
-        document=document,
-        project=project,
-        superelevation_model=model,
-        object_name="V1IntersectionPresetSuperelevation",
-        label="Intersection Preset Superelevation",
-    )
-    return [
-        f"Superelevation: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {getattr(obj, 'SuperelevationId', '')}",
-        "Superelevation rows: controls=0; transitions=0; constraints=2",
+    # One source per participating road. Applied Sections pairs superelevation by
+    # alignment_id, so a single source keyed on the primary would leave the side road
+    # with no source at all.
+    participating = [
+        ref
+        for ref in (str(primary_alignment_ref or "").strip(), str(secondary_alignment_ref or "").strip())
+        if ref
     ]
+    details: list[str] = []
+    for index, alignment_ref in enumerate(participating, start=1):
+        role = "primary" if index == 1 else "secondary"
+        model = SuperelevationModel(
+            schema_version=1,
+            project_id=_project_id(project),
+            label=f"Intersection Preset Superelevation ({role})",
+            superelevation_id=(
+                f"superelevation:intersection-preset-{_safe_id(intersection_kind)}:{_safe_id(role)}"
+            ),
+            alignment_id=alignment_ref,
+            profile_id="",
+            superelevation_kind="intersection_superelevation_handoff",
+            control_rows=[],
+            transition_rows=[],
+            constraint_rows=[
+                SuperelevationConstraint(
+                    constraint_id=(
+                        f"constraint:intersection:{_safe_id(intersection_kind)}:{_safe_id(role)}:grading-override"
+                    ),
+                    kind="intersection_grading_override",
+                    value=str(grading_policy or "intersection_override"),
+                    unit="policy",
+                    hard_or_soft="soft",
+                ),
+                SuperelevationConstraint(
+                    constraint_id=(
+                        f"constraint:intersection:{_safe_id(intersection_kind)}:{_safe_id(role)}:auto-calculate"
+                    ),
+                    kind="requires_auto_calculate_review",
+                    value="true",
+                    unit="boolean",
+                    hard_or_soft="soft",
+                ),
+            ],
+            source_refs=[
+                alignment_ref,
+                *[str(row.get("control_region_ref", "") or "") for row in control_region_choices],
+            ],
+            diagnostic_rows=[
+                "info:intersection_preset_superelevation_handoff: use Superelevation Auto Calculate before final Build Parametric review."
+            ],
+        )
+        obj = create_or_update_v1_superelevation_source_object(
+            document=document,
+            project=project,
+            superelevation_model=model,
+            object_name=f"V1IntersectionPresetSuperelevation{_safe_id(role).title().replace('-', '')}",
+            label=f"Intersection Preset Superelevation ({role})",
+        )
+        details.append(
+            "Superelevation: %s | %s | alignment=%s"
+            % (
+                getattr(obj, "Label", "") or getattr(obj, "Name", ""),
+                getattr(obj, "SuperelevationId", ""),
+                alignment_ref,
+            )
+        )
+    details.append(
+        "Superelevation rows per road: controls=0; transitions=0; constraints=2 (%d road(s))"
+        % len(participating)
+    )
+    return details
 
 
 def _create_preset_drainage_source(

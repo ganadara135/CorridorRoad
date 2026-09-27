@@ -288,7 +288,7 @@ and apron width, consumed by `evaluate_roundabout_approach_legs` so the outer
 ownership loop reflects them, with the single-valued rows kept as the default
 where no per-approach row exists.
 
-### 5.5 Let the side road have superelevation
+### 5.5 Let the side road have superelevation: done on 2026-09-28
 
 The first draft said a main road and a side road cannot have different standard
 sections because the Assembly is resolved first-found. That is wrong for the
@@ -309,10 +309,35 @@ same model is then handed to every bundle in the per-alignment loop, so the side
 road's sections consume a superelevation model that belongs to the main road, and
 nothing diagnoses the mismatch.
 
-Acceptance: superelevation resolved per alignment, whether by several models keyed
-on `alignment_id` or by per-alignment row groups inside one; a diagnostic when a
-section's alignment does not match the superelevation model it was given; and the
-T preset writing a superelevation source for both starter roads.
+Done. Superelevation is paired by `alignment_id` the way Profile and Region already
+are, through `_superelevation_for_alignment`, and each bundle carries its own model.
+A model belonging to another Alignment is no longer read at this road's stations, so
+the mismatch the acceptance asked to diagnose is now impossible to produce.
+
+The measurement turned up a second defect the item had not named. The Intersection
+preset wrote `V1IntersectionPresetSuperelevation` while the Superelevation editor
+writes `V1SuperelevationSource`, and `find_v1_superelevation_source` returned the
+first in document order, so on a preset document an edit landed in a source nothing
+read. Two sources can still claim one Alignment, and the rule is now explicit: one
+carrying crossfall control rows wins over one without, because the preset's handoff
+placeholder has none and must not shadow something a user authored. When both carry
+rows document order stands and `superelevation_source_rows` reports the one that is
+not read, which the Applied Sections panel lists under `Superelevation sources:`.
+
+The preset now writes one handoff source per participating road, so a T gives
+`V1IntersectionPresetSuperelevationPrimary` and `...Secondary`, each naming its own
+Alignment. Measured on a T preset with a curve authored for the side road: the side
+road reaches -7 and +7 percent at its station 60 and the main road stays at the
+template crossfall.
+
+One attempt inside this item was wrong and is recorded because the mistake is easy to
+repeat. A road with no source used to record 0.0 in `superelevation_left_crossfall`,
+which reads as a flat section, so the service was changed to return the template
+default instead. That result is not merely recorded: the caller feeds it into the
+subassembly template and it becomes geometry, and a 2 percent lane moved to 3 percent,
+which `test_section_preview_consistency` caught. The service returns `None` again.
+An absent source is visible through an empty `active_superelevation_id` and through
+the source report, not by inventing a crossfall.
 
 ### 5.6 Warn when a road drops out of Applied Sections: done on 2026-09-26
 

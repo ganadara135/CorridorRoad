@@ -582,6 +582,10 @@ class AppliedSectionService:
         subassembly_template: SubassemblySectionTemplate | None = None,
     ) -> SuperelevationStationResult | None:
         if superelevation_model is None:
+            # No source applies to this Alignment, so there is no superelevation
+            # contribution to report. Returning a synthetic result instead would not
+            # merely record a value: the caller feeds it into the subassembly template
+            # and it becomes geometry, which moved a 2 percent lane to 3 percent.
             return None
         left_default, right_default = _default_crossfall_percent_by_side(
             template,
