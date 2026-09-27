@@ -136,25 +136,27 @@ added by that scope change restated the three kinds instead of reading them, so
 it was a second source of truth. It now derives with
 `tuple(INTERSECTION_KIND_PRESETS)`.
 
-### 5.2 Settle the Cross boundary loop rule: confirmed
+### 5.2 The Cross boundary loop failure: closed on 2026-09-27, no decision needed
 
-`test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross`
-builds a closed, ready loop of 32 points and area 312 through the curb-return
-envelope path, and the result is `error` because
-`intersection_boundary_authoritative_source_edges_missing` fires. The rule landed
-2026-07-02; the envelope path and this test landed 2026-07-06. The sibling test
-asserts the same error for an incomplete edge set, so the rule is doing its job
-there. This is the only reason the contract baseline is 1 and not 0.
+This was recorded as the one product decision in the plan, between keeping the
+authoritative source edge rule and accepting a complete envelope loop. Both readings
+were wrong. The rule was right and the test did not supply its inputs.
 
-Two exits, and the choice is a product decision:
+The test called `evaluate_boundary_loops(model)` with the model alone, so the edge
+network was derived internally, and an `IntersectionModel` carries no alignment
+geometry. The four curb return edges came out zero-length at the origin with
+`source_status` `error`, all four were excluded, and
+`intersection_boundary_authoritative_source_edges_missing` fired exactly as intended.
+Every other boundary loop test in that file supplies `edge_network_result` explicitly.
 
-- keep the rule, and restate the test as `error` with no loops, accepting that a
-  Cross whose envelope closes will not become `ready`
-- accept a complete envelope loop as authoritative, and change the rule without
-  breaking the sibling test
+Supplying four well-formed pavement edges, with the rule untouched, makes all nine of
+the test's assertions pass: `warning`, `ready_count` 1, a ready closed loop of 32
+points and area 312.1 from `candidate_source=curb_return_envelope`. The loop is
+identical either way, because the envelope is built from the curb return policy radius
+and never from the edges.
 
-Acceptance: the contract baseline reaches 0 with both tests stating the chosen
-rule explicitly.
+The contract baseline is 0. The record is in section 10 of
+`V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md`.
 
 ### 5.3 Give the panel the review controls the flow requires: first half done on 2026-09-27
 

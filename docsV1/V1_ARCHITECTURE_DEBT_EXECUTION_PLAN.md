@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Branch: `ganada_0902`
-Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 1 and the open boundary loop decision is the only item carried forward
+Status: M0, M1, M2, M3, M4, M5 (presentation scope), M6, M7, and M8 complete; the contract baseline is 0 as of 2026-09-27 and nothing is carried forward
 Depends on:
 
 - `AGENTS.md`
@@ -1191,7 +1191,7 @@ The three batches took the contract failures from 52 to 1, with no new failure a
 
 Three items were deliberately not part of M8 and were carried forward rather than closed. Two of them were closed later the same day and their state is updated in place below; the boundary loop decision is still open.
 
-1. The boundary loop decision, recorded in batch 1 and now open decision 6. It is the one remaining contract failure; `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` stays red until it is settled, so the baseline is 1, not 0.
+1. Closed on 2026-09-27, and not by a decision. The boundary loop item was a test that did not supply its inputs, not a rule conflict. See the record below; the baseline is 0.
 2. Closed on 2026-09-20. Three of the four defects were fixed in the morning and are recorded below. The fourth, `source_corner_curb_return_policy_ref_mismatch`, turned out to be reachable rather than dead, so there was no branch to delete and it now has a contract test.
 3. Closed on 2026-09-20. The M5 follow-up recorded on 2026-09-14 is done in both halves: the serializers in the morning and the region boundary continuity evaluation afterwards, both recorded below.
 
@@ -1239,6 +1239,18 @@ So there was no dead branch to delete, and the question of keeping it against a 
 
 Validation: flake8, with an unused import dropped from the test module, and the intersection command contract file at 78 passed.
 
+### The boundary loop failure was a test that did not supply its inputs, on 2026-09-27
+
+The last contract failure was read for weeks as a rule conflict: a curb return envelope produced a closed, ready loop of 32 points and area 312, and `error:intersection_boundary_authoritative_source_edges_missing` made the result an error, so the question looked like which of the rule and the envelope to keep.
+
+Dumping the diagnostics settled it differently. Four curb return edges existed and all four were excluded, `warning:intersection_boundary_candidate_edges_excluded:source_status_error:4`, and reading those edges showed why: each had `start` and `end` at the origin with `status` and `source_status` `error`, under `alignment=missing; control_area=missing; station=0.000-0.000`. `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` called `evaluate_boundary_loops(model)` with the model alone, so the edge network was derived internally, and an `IntersectionModel` carries no alignment geometry with which to place a curb return edge. The rule then did its job: it refused to treat four zero-length error edges as an authoritative boundary.
+
+Every other boundary loop test in that file supplies `edge_network_result` explicitly through the `_edge` helper. This one did not, and that was the whole defect. Supplying four well-formed pavement edges, with the rule untouched, gives `status` `warning`, `ready_count` 1, and a loop that is ready and closed at 32 points and area 312.1 from `candidate_source=curb_return_envelope`. All nine assertions pass. The loop is identical either way, because the envelope comes from the curb return policy radius and never from the edges, so supplying them changes nothing about the envelope and only stops the authority rule from firing on edges that were never placeable.
+
+Fixing it also surfaced a break introduced by the 2026-09-26 scope reduction: that change renamed a test for non-orthogonal edges and did not update the `run()` list at the bottom of the module, which pytest never calls. `flake8` reported the dangling name once the file was edited again. The runner now passes as well.
+
+The contract baseline is 0.
+
 ## 11. Open Decisions
 
 These require a decision before the affected milestone starts. None blocks M0.
@@ -1248,4 +1260,4 @@ These require a decision before the affected milestone starts. None blocks M0.
 3. M0 task 5: what is the target duration for the fast contract tier, and which modules belong to the long-running tier?
 4. M7: is a legacy command with a complete v1 replacement removed from the toolbar in a later task, or retained indefinitely for user familiarity?
 5. Resolved on 2026-09-14 and carried out on 2026-09-20. M5 closed at its presentation scope and work continued with M6. The follow-up work it deferred, the preview audit serializers into `services/mapping` and the region boundary continuity evaluation into `services/evaluation`, is done and recorded in section 10.
-6. M8: `test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross` builds a ready loop through the curb return envelope path, closed, 32 points, area 312, and the result is still `error` because of `error:intersection_boundary_authoritative_source_edges_missing`. That rule landed on 2026-07-02 and the envelope feature with this test on 2026-07-06, so the rule predates what it now rejects. A sibling test locks error and no loops for the case with no envelope, so the rule itself is wanted. Keeping the rule means restating this test as error with no loops and the cross intersection envelope path never becoming ready; accepting a complete envelope loop means changing the rule without breaking the sibling.
+6. Resolved on 2026-09-27, and it was never a decision. The framing above was wrong: it read the failure as the authoritative source edge rule rejecting a good envelope loop, and asked which of the two to keep. The rule was right and the test was incomplete. `evaluate_boundary_loops(model)` was called with the model alone, so the edge network was derived internally, and an `IntersectionModel` carries no alignment geometry; the four curb return edges came out zero-length at the origin with `source_status` `error`, all four were excluded as non-authoritative, and the rule fired exactly as intended. Every other boundary loop test in that file supplies `edge_network_result` explicitly. Supplying it here, with the rule untouched, makes all nine of the test's assertions pass and leaves the loop identical at 32 points and area 312.1, because the envelope is built from the curb return policy radius and never from the edges. See the record in section 10.

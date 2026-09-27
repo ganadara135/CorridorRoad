@@ -29,6 +29,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Replaced the Build Parametric command's service delegation shims with direct service calls.
 
 ### Fixed
+- The last red contract test was a test that did not supply its inputs. The Cross curb-return envelope boundary loop test derived its edge network from a model that carries no alignment geometry, so four zero-length edges were correctly rejected as non-authoritative. It now supplies the edge network the way every other boundary loop test does, the rule is unchanged, and the contract baseline is 0.
+
+### Fixed
 - Roundabout surface clipping ran without its boundary. The ownership clip resolved the boundary loops and then passed them where a document was expected, so every roundabout Design, Subgrade, and Slope Face surface fell back to circle clipping with no approach legs.
 - Selecting a region in the Build Parametric Regions tab produced no surface transition boundary options, so no transition could be created from the panel.
 - The shared boundary graph contract family was missing from the Intersections review table for roundabouts.

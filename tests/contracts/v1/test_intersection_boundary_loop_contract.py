@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionAnchorRow,
     IntersectionControlArea,
@@ -615,7 +617,45 @@ def test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cr
         ],
     )
 
-    result = IntersectionEvaluationService().evaluate_boundary_loops(model)
+    # The edge network is supplied the way every other test in this file supplies it.
+    # Deriving it from the model alone cannot work here: an IntersectionModel carries no
+    # alignment geometry, so the four curb return edges come out zero-length at the origin
+    # with source_status error, every one is excluded as non-authoritative, and
+    # intersection_boundary_authoritative_source_edges_missing fires correctly. The loop
+    # under test is built from the curb return policy radius either way, so supplying the
+    # edges changes nothing about the envelope and only stops the authority rule from
+    # firing on edges that were never placeable.
+    pavement_edges = [
+        replace(
+            _edge(
+                f"intersection-edge:cross:{name}:pavement",
+                start_xyz,
+                end_xyz,
+                role="pavement_edge",
+                leg_ref=leg_ref,
+            ),
+            intersection_id="intersection:cross-01",
+        )
+        for name, start_xyz, end_xyz, leg_ref in (
+            ("leg-01", (-20.0, -10.0, 0.0), (20.0, -10.0, 0.0), "intersection:cross-01:leg-primary-before"),
+            ("leg-02", (20.0, -10.0, 0.0), (20.0, 10.0, 0.0), "intersection:cross-01:leg-secondary-after"),
+            ("leg-03", (20.0, 10.0, 0.0), (-20.0, 10.0, 0.0), "intersection:cross-01:leg-primary-after"),
+            ("leg-04", (-20.0, 10.0, 0.0), (-20.0, -10.0, 0.0), "intersection:cross-01:leg-secondary-before"),
+        )
+    ]
+
+    result = IntersectionEvaluationService().evaluate_boundary_loops(
+        model,
+        edge_network_result=IntersectionEdgeNetworkResult(
+            schema_version=1,
+            project_id="project:test",
+            edge_network_result_id="intersection-edge-network:cross",
+            intersection_id="intersection:cross-01",
+            intersection_kind="cross_intersection",
+            status="ready",
+            edge_rows=pavement_edges,
+        ),
+    )
 
     assert result.status in {"ready", "warning"}
     assert result.ready_count == 1
@@ -773,7 +813,7 @@ def run():
     test_intersection_boundary_loop_contract_rejects_defaulted_edge_network_as_source()
     test_intersection_boundary_loop_contract_consumes_curb_return_arc_points_as_segments()
     test_intersection_boundary_loop_prefers_topology_curb_return_envelope_for_cross()
-    test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_for_skew_edges()
+    test_intersection_boundary_loop_contract_builds_leg_frame_source_perimeter_for_non_orthogonal_edges()
     test_intersection_boundary_loop_contract_rejects_competing_slope_face_loop_components()
     print("[PASS] intersection boundary loop contract tests")
 
