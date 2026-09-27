@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Changed
+- The Intersection panel can now do the source review the flow requires. Preset rows arrive as drafts with each leg's Profile and 3D Centerline refs empty, and filling them used to be possible only in code; the panel lists every leg, anchor and control area with what it still needs and accepts the complete ones, using the refs the document already holds. A row whose ref cannot be resolved stays a draft and says which field is missing.
 - Applied Sections now names the Alignments it skips. An Alignment without a Profile, a Region model or a Stationing was dropped from the build silently; the panel lists it under `Skipped Alignments:` with what it lacks, and Build Parametric adds an intersection review row for a leg whose Alignment has no sections.
 - Swapped the first two v1 project tree roots: Surfaces is now `02_Surfaces` and alignment work is `03_Alignment & Profile`. Existing documents keep their folders and are relabeled and reordered the next time the project tree is ensured.
 

@@ -39,7 +39,7 @@ from ..models.source.intersection_model import (
 )
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_alignment import V1AlignmentObject, ViewProviderV1Alignment
-from ..objects.obj_profile import create_sample_v1_profile
+from ..objects.obj_profile import create_sample_v1_profile, to_profile_model
 from ..objects.obj_intersection import create_or_update_v1_intersection_model_object
 from ..objects.obj_region import create_or_update_v1_region_model_object, to_region_model
 from ..objects.obj_stationing import create_v1_stationing
@@ -663,6 +663,61 @@ def starter_intersection_source_specs(intersection_kind: str) -> dict[str, objec
     raise ValueError(
         f"Unsupported starter intersection kind: {intersection_kind}. Supported kinds: {supported}."
     )
+
+
+def resolve_intersection_review_leg_refs(document, intersection_model) -> dict[str, dict[str, str]]:
+    """Return the Profile and 3D Centerline refs each leg needs, as the document holds them.
+
+    The review service must not invent a ref, so it takes the refs from here. A
+    leg is matched to the Profile whose `alignment_id` is the leg's
+    `alignment_ref`, and to the 3D Centerline object that covers that alignment,
+    whose id may be the shared `centerline3d:multiple` when one preview spans
+    several roads. A leg whose alignment has neither is left out, and the review
+    then reports it as incomplete rather than accepting it.
+    """
+
+    if document is None or intersection_model is None:
+        return {}
+    profile_by_alignment: dict[str, str] = {}
+    for obj in list(getattr(document, "Objects", []) or []):
+        profile = to_profile_model(obj)
+        if profile is None:
+            continue
+        alignment_id = str(getattr(profile, "alignment_id", "") or "").strip()
+        profile_id = str(getattr(profile, "profile_id", "") or "").strip()
+        if alignment_id and profile_id:
+            profile_by_alignment.setdefault(alignment_id, profile_id)
+
+    centerline_by_alignment: dict[str, str] = {}
+    for obj in list(getattr(document, "Objects", []) or []):
+        result_id = str(getattr(obj, "Centerline3DResultId", "") or "").strip()
+        if not result_id:
+            continue
+        covered = [str(value or "").strip() for value in list(getattr(obj, "AlignmentIds", []) or [])]
+        single = str(getattr(obj, "AlignmentId", "") or "").strip()
+        if single and single != "alignment:multiple":
+            covered.append(single)
+        for alignment_id in covered:
+            if alignment_id:
+                centerline_by_alignment.setdefault(alignment_id, result_id)
+
+    output: dict[str, dict[str, str]] = {}
+    for intersection in list(getattr(intersection_model, "intersection_rows", []) or []):
+        for leg in list(getattr(intersection, "leg_rows", []) or []):
+            leg_id = str(getattr(leg, "leg_id", "") or "").strip()
+            alignment_ref = str(getattr(leg, "alignment_ref", "") or "").strip()
+            if not leg_id or not alignment_ref:
+                continue
+            refs = {}
+            profile_ref = profile_by_alignment.get(alignment_ref, "")
+            centerline_ref = centerline_by_alignment.get(alignment_ref, "")
+            if profile_ref:
+                refs["profile_ref"] = profile_ref
+            if centerline_ref:
+                refs["centerline3d_ref"] = centerline_ref
+            if refs:
+                output[leg_id] = refs
+    return output
 
 
 def create_starter_intersection_sources(document, intersection_kind: str, *, project=None) -> list[str]:

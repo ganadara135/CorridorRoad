@@ -31,7 +31,17 @@ from .cmd_intersection_editor import (
     validate_existing_alignment_selection,
 )
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
-from ..objects.obj_intersection import create_or_update_v1_intersection_model_object
+from ..commands.cmd_intersection_editor import resolve_intersection_review_leg_refs
+from ..services.editing import (
+    apply_intersection_review,
+    intersection_review_rows,
+    intersection_review_summary,
+)
+from ..objects.obj_intersection import (
+    create_or_update_v1_intersection_model_object,
+    find_v1_intersection_model,
+    to_intersection_model,
+)
 from ..objects.obj_superelevation import create_or_update_v1_superelevation_source_object
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
@@ -228,6 +238,27 @@ class V1IntersectionPresetsTaskPanel:
         self._status.setMinimumHeight(190)
         layout.addWidget(self._status)
 
+        review_label = QtWidgets.QLabel("Source review (legs, anchors, control areas):")
+        layout.addWidget(review_label)
+        self._review_table = QtWidgets.QTableWidget(0, 5)
+        self._review_table.setHorizontalHeaderLabels(["Row", "Id", "Approval", "Missing", "Note"])
+        self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._review_table.setMinimumHeight(150)
+        layout.addWidget(self._review_table)
+        self._review_summary = QtWidgets.QLabel("")
+        layout.addWidget(self._review_summary)
+
+        review_buttons = QtWidgets.QHBoxLayout()
+        self._refresh_review_button = QtWidgets.QPushButton("Refresh Review")
+        self._refresh_review_button.clicked.connect(self._refresh_review_table)
+        review_buttons.addWidget(self._refresh_review_button)
+        self._accept_review_button = QtWidgets.QPushButton("Accept Reviewed Rows")
+        self._accept_review_button.clicked.connect(self._accept_reviewed_rows)
+        review_buttons.addWidget(self._accept_review_button)
+        review_buttons.addStretch(1)
+        layout.addLayout(review_buttons)
+
         buttons = QtWidgets.QHBoxLayout()
         self._create_button = QtWidgets.QPushButton("Create Sources")
         self._create_button.clicked.connect(self._create_sources)
@@ -257,6 +288,63 @@ class V1IntersectionPresetsTaskPanel:
         source_visibility_buttons.addStretch(1)
         layout.addLayout(source_visibility_buttons)
         return root
+
+    def _refresh_review_table(self) -> None:
+        """Show every leg, anchor and control area row with what it still needs."""
+
+        rows = []
+        try:
+            model = to_intersection_model(find_v1_intersection_model(self.document))
+            rows = intersection_review_rows(model)
+        except Exception as error:
+            self._review_summary.setText(f"Source review unavailable: {error}")
+            self._review_table.setRowCount(0)
+            return
+        self._review_table.setRowCount(len(rows))
+        for index, row in enumerate(rows):
+            values = (
+                row.kind,
+                row.row_id,
+                row.approval_status,
+                ", ".join(row.missing_fields),
+                row.notes,
+            )
+            for column, value in enumerate(values):
+                self._review_table.setItem(index, column, QtWidgets.QTableWidgetItem(str(value)))
+        self._review_summary.setText(intersection_review_summary(rows))
+
+    def _accept_reviewed_rows(self) -> None:
+        """Fill the leg refs the document already holds and accept the complete rows."""
+
+        try:
+            obj = find_v1_intersection_model(self.document)
+            model = to_intersection_model(obj)
+            if model is None:
+                _show_message(self.form, "Intersections", "Create or apply an Intersection source first.")
+                return
+            leg_refs = resolve_intersection_review_leg_refs(self.document, model)
+            prepared = apply_intersection_review(model, leg_refs=leg_refs)
+            create_or_update_v1_intersection_model_object(
+                self.document,
+                intersection_model=prepared.model,
+                project=find_project(self.document),
+                label="Intersections",
+            )
+            self.document.recompute()
+        except Exception as error:
+            _show_message(self.form, "Intersections", f"Source review could not be applied:\n{error}")
+            return
+        self._refresh_review_table()
+        lines = [
+            "Accepted %d row(s)." % len(prepared.accepted_row_ids),
+        ]
+        if prepared.incomplete_row_ids:
+            lines.append("Still incomplete: %s" % ", ".join(prepared.incomplete_row_ids))
+            lines.extend(str(diagnostic) for diagnostic in prepared.diagnostics)
+            lines.append("")
+            lines.append("A row is not accepted while a field it needs is missing, because a ref that names")
+            lines.append("nothing would leave the same gap behind a reviewed status.")
+        _show_message(self.form, "Intersections", "\n".join(lines))
 
     def _selected_label(self) -> str:
         return str(self._preset_combo.currentText() or "")

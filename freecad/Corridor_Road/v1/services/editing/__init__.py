@@ -14,15 +14,27 @@ from .editor_source_service import (
     prepare_structure_edit,
     prepare_subassembly_library_edit,
 )
+from .intersection_review_service import (
+    IntersectionReviewRow,
+    PreparedIntersectionReview,
+    apply_intersection_review,
+    intersection_review_rows,
+    intersection_review_summary,
+)
 from .tin_edit_service import TINEditReport, TINEditResult, TINEditService
 
 __all__ = [
+    "IntersectionReviewRow",
+    "PreparedIntersectionReview",
     "PreparedSourceEdit",
     "SourceEditorViewModel",
     "TINEditReport",
     "TINEditResult",
     "TINEditService",
+    "apply_intersection_review",
     "editor_view_model",
+    "intersection_review_rows",
+    "intersection_review_summary",
     "prepare_alignment_edit",
     "prepare_alignment_element_rows",
     "prepare_assembly_edit",

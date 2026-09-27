@@ -156,7 +156,7 @@ Two exits, and the choice is a product decision:
 Acceptance: the contract baseline reaches 0 with both tests stating the chosen
 rule explicitly.
 
-### 5.3 Give the panel the review controls the flow requires: partly verified
+### 5.3 Give the panel the review controls the flow requires: first half done on 2026-09-27
 
 The first draft framed this as Slope Face Surface completeness for Cross and
 Roundabout, on the strength of the non-T smoke's own docstring, which says it does
@@ -187,10 +187,27 @@ Auto Detect, Apply, Close, Hide and Show Preset Sources. There is no leg table, 
 anchor editor and no control-area editor, so there is no control that sets a leg's
 `profile_ref`, its `centerline3d_ref` or any row's `approval_status`.
 
-Acceptance: a leg, anchor and control-area review surface in the panel that sets
-those fields, so what the T smoke does in code can be done in the document; and,
-separately, a measurement of whether a dedicated Slope Face Surface is reachable
-for Cross and Roundabout once it can.
+The first half is done. `services/editing/intersection_review_service.py` reports
+every leg, anchor and control area with what it still needs, and accepts the rows
+that are complete. It refuses to fill a ref it was not given: inventing one would
+make the source look reviewed while leaving the same gap, so an incomplete row keeps
+its draft status and carries `warning|leg_review_incomplete:<leg_id>:<fields>`.
+
+`resolve_intersection_review_leg_refs` in `cmd_intersection_editor` supplies the refs
+the document actually holds: the Profile whose `alignment_id` is the leg's
+`alignment_ref`, and the 3D Centerline object covering that alignment, which on a
+preset is the shared `centerline3d:multiple`. Note that the T smoke fabricates
+`profile:{alignment_ref}`, which matches no object, so nothing downstream was ever
+validating those refs.
+
+The Intersection panel gained a source review table over the five preset rows, a
+summary line, a Refresh Review button and an Accept Reviewed Rows button. Measured on
+a T preset: 0 of 5 reviewed with three rows missing fields, then 5 of 5 after Accept,
+with `profile:V1Profile` and `profile:V1Profile001` resolved per road.
+
+Acceptance for the remaining half: measure whether a dedicated Slope Face Surface is
+reachable for Cross and Roundabout now that the review can be done in the document,
+since the per-kind completeness claim still rests only on the non-T smoke's docstring.
 
 ### 5.4 Give each roundabout approach its own geometry
 

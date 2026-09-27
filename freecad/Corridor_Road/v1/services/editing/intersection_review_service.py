@@ -1,0 +1,202 @@
+"""UI-independent review of Intersection source rows before they can build geometry.
+
+An Intersection preset writes its rows as `draft`, with each leg's `profile_ref`
+and `centerline3d_ref` empty, and nothing downstream fills them. Until they are
+reviewed the junction evaluates against an incomplete source, so the review is a
+real authoring step rather than a formality.
+
+Like the rest of `services/editing`, nothing here reads a FreeCAD document or
+builds a widget. A caller that can read the document resolves the refs and passes
+them in, and persistence stays an explicit command step afterwards.
+
+A row is accepted only when every field it needs is present. Inventing a ref that
+names nothing would make the source look reviewed while leaving the same gap, so
+an incomplete row keeps its draft status and says what it still needs.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+
+from ...models.source.intersection_model import IntersectionModel
+
+
+LEG_REQUIRED_FIELDS = ("alignment_ref", "profile_ref", "centerline3d_ref")
+ANCHOR_DEFAULT_TOLERANCE = 0.01
+
+
+@dataclass(frozen=True)
+class IntersectionReviewRow:
+    """One source row a user must review, and what it still lacks."""
+
+    kind: str
+    row_id: str
+    intersection_id: str
+    approval_status: str
+    missing_fields: tuple[str, ...] = ()
+    notes: str = ""
+
+    @property
+    def reviewed(self) -> bool:
+        return self.approval_status == "accepted" and not self.missing_fields
+
+
+@dataclass(frozen=True)
+class PreparedIntersectionReview:
+    """Non-mutating result at the review Apply boundary."""
+
+    model: IntersectionModel
+    accepted_row_ids: tuple[str, ...] = ()
+    incomplete_row_ids: tuple[str, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+    @property
+    def accepted(self) -> bool:
+        return not any(row.startswith("error|") for row in self.diagnostics)
+
+
+def intersection_review_rows(model: IntersectionModel | None) -> list[IntersectionReviewRow]:
+    """Return every leg, anchor and control area row with its review state."""
+
+    if model is None:
+        return []
+    rows: list[IntersectionReviewRow] = []
+    for intersection in list(getattr(model, "intersection_rows", []) or []):
+        intersection_id = _text(getattr(intersection, "intersection_id", ""))
+        for leg in list(getattr(intersection, "leg_rows", []) or []):
+            missing = tuple(name for name in LEG_REQUIRED_FIELDS if not _text(getattr(leg, name, "")))
+            rows.append(
+                IntersectionReviewRow(
+                    kind="leg",
+                    row_id=_text(getattr(leg, "leg_id", "")),
+                    intersection_id=intersection_id,
+                    approval_status=_text(getattr(leg, "approval_status", "")),
+                    missing_fields=missing,
+                    notes=_text(getattr(leg, "leg_role", "")),
+                )
+            )
+    for anchor in list(getattr(model, "anchor_rows", []) or []):
+        missing = () if _float(getattr(anchor, "tolerance", 0.0)) > 0.0 else ("tolerance",)
+        rows.append(
+            IntersectionReviewRow(
+                kind="anchor",
+                row_id=_text(getattr(anchor, "anchor_id", "")),
+                intersection_id=_text(getattr(anchor, "intersection_id", "")),
+                approval_status=_text(getattr(anchor, "approval_status", "")),
+                missing_fields=missing,
+                notes=_text(getattr(anchor, "source_method", "")),
+            )
+        )
+    for area in list(getattr(model, "control_area_rows", []) or []):
+        missing = () if list(getattr(area, "station_ranges", []) or []) else ("station_ranges",)
+        rows.append(
+            IntersectionReviewRow(
+                kind="control_area",
+                row_id=_text(getattr(area, "control_area_id", "")),
+                intersection_id=_text(getattr(area, "intersection_id", "")),
+                approval_status=_text(getattr(area, "approval_status", "")),
+                missing_fields=missing,
+                notes=_text(getattr(area, "intent_status", "")),
+            )
+        )
+    return rows
+
+
+def apply_intersection_review(
+    model: IntersectionModel | None,
+    *,
+    leg_refs: dict[str, dict[str, str]] | None = None,
+    anchor_tolerance: float | None = None,
+) -> PreparedIntersectionReview:
+    """Accept the rows that are complete, filling leg refs the caller resolved.
+
+    `leg_refs` maps a leg id to the refs found in the document, for example
+    ``{"intersection:t:leg:01": {"profile_ref": "profile:V1Profile",
+    "centerline3d_ref": "centerline3d:multiple"}}``. A ref already on the row is
+    kept; the caller's value only fills a blank.
+    """
+
+    if model is None:
+        return PreparedIntersectionReview(
+            model=IntersectionModel(schema_version=1, project_id=""),
+            diagnostics=("error|intersection_review_model_missing",),
+        )
+
+    refs = dict(leg_refs or {})
+    accepted: list[str] = []
+    incomplete: list[str] = []
+    diagnostics: list[str] = []
+
+    intersection_rows = []
+    for intersection in list(getattr(model, "intersection_rows", []) or []):
+        legs = []
+        for leg in list(getattr(intersection, "leg_rows", []) or []):
+            leg_id = _text(getattr(leg, "leg_id", ""))
+            supplied = dict(refs.get(leg_id, {}) or {})
+            profile_ref = _text(getattr(leg, "profile_ref", "")) or _text(supplied.get("profile_ref", ""))
+            centerline_ref = _text(getattr(leg, "centerline3d_ref", "")) or _text(supplied.get("centerline3d_ref", ""))
+            candidate = replace(leg, profile_ref=profile_ref, centerline3d_ref=centerline_ref)
+            missing = tuple(name for name in LEG_REQUIRED_FIELDS if not _text(getattr(candidate, name, "")))
+            if missing:
+                incomplete.append(leg_id)
+                diagnostics.append("warning|leg_review_incomplete:%s:%s" % (leg_id, ",".join(missing)))
+                legs.append(candidate)
+                continue
+            accepted.append(leg_id)
+            legs.append(replace(candidate, approval_status="accepted", span_source="explicit"))
+        intersection_rows.append(replace(intersection, leg_rows=legs))
+
+    anchor_rows = []
+    for anchor in list(getattr(model, "anchor_rows", []) or []):
+        anchor_id = _text(getattr(anchor, "anchor_id", ""))
+        tolerance = _float(getattr(anchor, "tolerance", 0.0))
+        if tolerance <= 0.0:
+            tolerance = _float(anchor_tolerance) if anchor_tolerance is not None else ANCHOR_DEFAULT_TOLERANCE
+        accepted.append(anchor_id)
+        anchor_rows.append(replace(anchor, approval_status="accepted", tolerance=tolerance))
+
+    control_area_rows = []
+    for area in list(getattr(model, "control_area_rows", []) or []):
+        area_id = _text(getattr(area, "control_area_id", ""))
+        if not list(getattr(area, "station_ranges", []) or []):
+            incomplete.append(area_id)
+            diagnostics.append("warning|control_area_review_incomplete:%s:station_ranges" % area_id)
+            control_area_rows.append(area)
+            continue
+        accepted.append(area_id)
+        control_area_rows.append(replace(area, approval_status="accepted", intent_status="intersection_owned"))
+
+    reviewed = replace(
+        model,
+        intersection_rows=intersection_rows,
+        anchor_rows=anchor_rows,
+        control_area_rows=control_area_rows,
+    )
+    return PreparedIntersectionReview(
+        model=reviewed,
+        accepted_row_ids=tuple(accepted),
+        incomplete_row_ids=tuple(incomplete),
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def intersection_review_summary(rows: list[IntersectionReviewRow]) -> str:
+    """Return a one-line count for a panel header."""
+
+    total = len(rows)
+    if not total:
+        return "No Intersection source rows to review."
+    reviewed = sum(1 for row in rows if row.reviewed)
+    blocked = sum(1 for row in rows if row.missing_fields)
+    return "%d of %d row(s) reviewed; %d still missing source fields." % (reviewed, total, blocked)
+
+
+def _text(value) -> str:
+    return str(value or "").strip()
+
+
+def _float(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
