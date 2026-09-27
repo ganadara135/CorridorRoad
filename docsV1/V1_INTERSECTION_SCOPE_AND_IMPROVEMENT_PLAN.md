@@ -394,36 +394,66 @@ will carry it, so the review step has a checklist rather than a note.
 
 ### 5.10 Extend the review to the five remaining row families
 
-The review surface covers legs, anchors and control areas. Five families are left, and
-they are what hold the boundary owner at `missing`: `corner_rows`, `edge_policy_rows`,
-`lane_connection_rows`, `grading_policy_rows` and `drainage_policy_rows`. Measured on a T
-preset: 2, 4, 2, 1 and 1 rows, every one `draft` with `source_method` `preset_default` or
-`subassembly_default`, and every one carrying a `*_source_defaulted` marker beside its
-`approval_pending` and `review_required` markers.
+The review surface covers legs, anchors and control areas. Five families are left:
+`corner_rows`, `edge_policy_rows`, `lane_connection_rows`, `grading_policy_rows` and
+`drainage_policy_rows`. Measured on a T preset: 2, 4, 2, 1 and 1 rows, every one `draft`
+with `source_method` `preset_default` or `subassembly_default`, and every one carrying a
+`*_source_defaulted` or `*_hint_only` marker beside its `approval_pending` and
+`review_required` markers.
 
-The blocker is the `defaulted` token. `_intersection_boundary_edge_authority_exclusion_reason`
-excludes an edge whose source diagnostics contain it, so no amount of approval flipping
-helps while the marker stands.
+#### What is actually required
 
-That is a design question rather than a mechanical extension, which is why it is its own
-item. An accepted default is no longer an unreviewed default, but it is still a default,
-and the marker should not simply be deleted the way the smoke deletes it. The proposal is
-a third state: rewrite `*_source_defaulted` to an accepted form such as
-`*_default_accepted`, which keeps the origin on the record, stops matching the `defaulted`
-exclusion token, and is distinguishable from a value the user actually authored.
+Measured rather than reasoned, by varying one thing at a time on a T preset and reading
+`IntersectionBoundaryOwnerStatus` off the slope face preview:
 
-Two decisions sit inside it and should be made explicitly rather than as a side effect of
-an Accept button:
+| five families accepted with diagnostics cleared | `edge_policy` `source_method` rewritten | `drainage_policy` `intent_status` rewritten | owner |
+| --- | --- | --- | --- |
+| yes | yes | yes | ready, 15 owners |
+| yes | yes | no | ready, 15 owners |
+| yes | no | no | missing |
+| no | yes | yes | missing |
 
-- `edge_policy_rows` carry `source_method="subassembly_default"`, and the smoke rewrites it
-  to `subassembly_derived`. That is a claim about where the edge family comes from, and a
-  review cannot substantiate it by itself.
-- `drainage_policy_rows` carry `intent_status="hint_only"`, and the smoke rewrites it to
-  `accepted_drainage`. Turning a drainage hint into drainage intent is a design decision.
+Both of the first two columns are necessary and neither alone is sufficient. The third is
+irrelevant to the outcome.
 
-Acceptance: the five families reviewable in the panel, `IntersectionBoundaryOwnerStatus`
-reaching `ready` for T and Cross from preset plus review alone, and the two decisions above
-recorded as explicit choices rather than defaults of the Accept action.
+Two earlier guesses were wrong and are recorded so they are not repeated. Accepting the
+five families without touching their diagnostics does nothing. Rewriting each
+`*_defaulted` marker to an adopted form such as `*_default_accepted`, which was the
+proposal in the first draft of this item, also does nothing: the markers have to be
+cleared. The edge-authority filter is not the rule that governs this, since none of its
+exclusion tokens match `default_accepted`, so something else reads these rows and was not
+located. Whoever implements this should find that rule first.
+
+#### Decisions
+
+These were delegated and are taken here.
+
+**`edge_policy_rows.source_method`, `subassembly_default` to `subassembly_derived`:
+allowed, but as its own action.** It is required, and it is a claim about where the edge
+family comes from. The preset does create a starter Assembly and Subassembly, so the claim
+can be true, but only once a user has looked at that Assembly and decided it is the one
+they want. It must therefore not ride along inside `Accept Reviewed Rows`. Give it a
+separate, separately-labelled action, so the claim belongs to the user and is visible in
+the review.
+
+**`drainage_policy_rows.intent_status`, `hint_only` to `accepted_drainage`: not touched.**
+It is measured irrelevant to the surface, and promoting a drainage hint to drainage intent
+inside an intersection review would have the intersection absorb Drainage's meaning, which
+`V1_REGION_MODEL.md` and the domain ownership rule both forbid. Drainage owns that, from
+its own editor, through `region_ref`.
+
+**Diagnostics on the five families: cleared, with provenance kept where it belongs.** The
+marker transition does not work, so clearing is the only measured option. Clearing loses
+nothing that matters, because `source_method` already records where each row came from:
+`preset_default` for the four non-edge families. A diagnostic list is for conditions that
+are still unresolved; provenance belongs in the structured field that already holds it.
+The three families the review covers today keep their `*_region_derived` markers, which
+have no `source_method` equivalent.
+
+Acceptance: the five families reviewable in the panel, with the edge-family adoption as its
+own action; `IntersectionBoundaryOwnerStatus` reaching `ready` for T and Cross from preset
+plus review alone; and the rule that reads these rows identified in the commit message, so
+the next person does not have to find it again.
 
 ## 6. Order
 
