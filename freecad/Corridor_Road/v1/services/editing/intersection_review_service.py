@@ -24,6 +24,15 @@ from ...models.source.intersection_model import IntersectionModel
 LEG_REQUIRED_FIELDS = ("alignment_ref", "profile_ref", "centerline3d_ref")
 ANCHOR_DEFAULT_TOLERANCE = 0.01
 
+# Accepting a row resolves the markers that say nobody has reviewed it, and only
+# those. A preset leaves two families behind: review state, `leg_approval_pending`,
+# `control_area_approval_pending`, `preset_anchor_review_required`, and provenance,
+# `leg_source_region_derived`, `control_area_region_derived`. Review state stops
+# being true once a user accepts the row; provenance stays true forever, and it is
+# what the edge-authority filter and the audit trail read afterwards. The T
+# slope-face smoke clears `diagnostic_rows` outright, which drops provenance too.
+REVIEW_STATE_DIAGNOSTIC_TOKENS = ("approval_pending", "review_required")
+
 
 @dataclass(frozen=True)
 class IntersectionReviewRow:
@@ -143,7 +152,14 @@ def apply_intersection_review(
                 legs.append(candidate)
                 continue
             accepted.append(leg_id)
-            legs.append(replace(candidate, approval_status="accepted", span_source="explicit"))
+            legs.append(
+                replace(
+                    candidate,
+                    approval_status="accepted",
+                    span_source="explicit",
+                    diagnostic_rows=_resolved_review_diagnostics(candidate),
+                )
+            )
         intersection_rows.append(replace(intersection, leg_rows=legs))
 
     anchor_rows = []
@@ -153,7 +169,14 @@ def apply_intersection_review(
         if tolerance <= 0.0:
             tolerance = _float(anchor_tolerance) if anchor_tolerance is not None else ANCHOR_DEFAULT_TOLERANCE
         accepted.append(anchor_id)
-        anchor_rows.append(replace(anchor, approval_status="accepted", tolerance=tolerance))
+        anchor_rows.append(
+            replace(
+                anchor,
+                approval_status="accepted",
+                tolerance=tolerance,
+                diagnostic_rows=_resolved_review_diagnostics(anchor),
+            )
+        )
 
     control_area_rows = []
     for area in list(getattr(model, "control_area_rows", []) or []):
@@ -164,7 +187,14 @@ def apply_intersection_review(
             control_area_rows.append(area)
             continue
         accepted.append(area_id)
-        control_area_rows.append(replace(area, approval_status="accepted", intent_status="intersection_owned"))
+        control_area_rows.append(
+            replace(
+                area,
+                approval_status="accepted",
+                intent_status="intersection_owned",
+                diagnostic_rows=_resolved_review_diagnostics(area),
+            )
+        )
 
     reviewed = replace(
         model,
@@ -189,6 +219,16 @@ def intersection_review_summary(rows: list[IntersectionReviewRow]) -> str:
     reviewed = sum(1 for row in rows if row.reviewed)
     blocked = sum(1 for row in rows if row.missing_fields)
     return "%d of %d row(s) reviewed; %d still missing source fields." % (reviewed, total, blocked)
+
+
+def _resolved_review_diagnostics(row) -> list[str]:
+    """Return the row's diagnostics without the markers acceptance resolves."""
+
+    return [
+        str(value)
+        for value in list(getattr(row, "diagnostic_rows", []) or [])
+        if not any(token in str(value).lower() for token in REVIEW_STATE_DIAGNOSTIC_TOKENS)
+    ]
 
 
 def _text(value) -> str:

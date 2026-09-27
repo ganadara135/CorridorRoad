@@ -153,6 +153,34 @@ def test_apply_review_keeps_a_ref_the_row_already_carries() -> None:
     assert leg.centerline3d_ref == "centerline3d:authored"
 
 
+def test_apply_review_resolves_review_state_markers_and_keeps_provenance() -> None:
+    doc = App.newDocument("CRV1IntersectionReviewDiagnostics")
+    try:
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        before = list(model.intersection_rows[0].leg_rows[0].diagnostic_rows or [])
+        assert "leg_approval_pending" in before
+        assert "leg_source_region_derived" in before
+
+        prepared = apply_intersection_review(
+            model,
+            leg_refs=resolve_intersection_review_leg_refs(doc, model),
+        )
+
+        leg = prepared.model.intersection_rows[0].leg_rows[0]
+        # the marker that says nobody reviewed it is resolved by the review itself
+        assert "leg_approval_pending" not in list(leg.diagnostic_rows or [])
+        # where the row came from stays true and stays recorded
+        assert "leg_source_region_derived" in list(leg.diagnostic_rows or [])
+        anchor = prepared.model.anchor_rows[0]
+        assert not any("review_required" in str(row) for row in list(anchor.diagnostic_rows or []))
+        area = prepared.model.control_area_rows[0]
+        assert "control_area_region_derived" in list(area.diagnostic_rows or [])
+        assert not any("approval_pending" in str(row) for row in list(area.diagnostic_rows or []))
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_apply_review_reports_a_missing_model_as_an_error() -> None:
     prepared = apply_intersection_review(None)
 

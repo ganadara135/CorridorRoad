@@ -158,7 +158,7 @@ and never from the edges.
 The contract baseline is 0. The record is in section 10 of
 `V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md`.
 
-### 5.3 Give the panel the review controls the flow requires: first half done on 2026-09-27
+### 5.3 Give the panel the review controls the flow requires: done on 2026-09-27
 
 The first draft framed this as Slope Face Surface completeness for Cross and
 Roundabout, on the strength of the non-T smoke's own docstring, which says it does
@@ -207,9 +207,53 @@ summary line, a Refresh Review button and an Accept Reviewed Rows button. Measur
 a T preset: 0 of 5 reviewed with three rows missing fields, then 5 of 5 after Accept,
 with `profile:V1Profile` and `profile:V1Profile001` resolved per road.
 
-Acceptance for the remaining half: measure whether a dedicated Slope Face Surface is
-reachable for Cross and Roundabout now that the review can be done in the document,
-since the per-kind completeness claim still rests only on the non-T smoke's docstring.
+The remaining half is measured. The same sequence the T slope-face smoke runs was run
+for all three kinds, using the review service above instead of the smoke's private
+accept helper, so what was measured is what a user can now do in the document:
+preset, review, Applied Sections, corridor model, surface model, then the
+intersection, design and daylight surface previews, which is what creates
+`V1CorridorIntersectionSlopeFaceSurfacePreview` as a side effect.
+
+| | T | Cross | Roundabout |
+| --- | --- | --- | --- |
+| rows reviewed | 5 of 5 | 7 of 7 | 5 of 5 |
+| patch prerequisite | ready | ready | ready |
+| applied sections | 32 | 38 | 42 |
+| slope face preview | present | present | **missing** |
+| tie slope preview | present | present | missing |
+| `intersection_slope` review row | ready | ready | missing |
+| `TriangleCount` | 4 | 4 | n/a |
+| `IntersectionBoundaryOwnerStatus` | missing | missing | n/a |
+| `IntersectionSlopeFaceOwnerFillReadinessStatus` | warning | warning | n/a |
+
+Two answers, and one of them contradicts what this item was written on.
+
+**Cross is not behind T.** Every marker is identical for the two kinds. The claim that
+only T has a completed Slope Face Surface came from the non-T readiness smoke's
+docstring, and for the preset path this measurement does not support it. What is true
+is that neither kind reaches the state the T smoke asserts, so the smoke is not
+measuring the preset path.
+
+**Roundabout genuinely differs.** No slope face preview object is created at all, no tie
+slope preview, and the `intersection_slope` review row is `missing` rather than `ready`.
+That is a real gap and it belongs with item 5.4.
+
+Why neither T nor Cross reaches `IntersectionBoundaryOwnerStatus` `ready`: the review
+surface covers three of the eight reviewable row families. The T smoke's helper also
+accepts `corner_rows`, `edge_policy_rows`, `lane_connection_rows`, `grading_policy_rows`
+and `drainage_policy_rows`, and with it the same document reports owner `ready` with 15
+owners and fill readiness `ready`. A field-by-field diff of the two accepted models
+showed no difference in the three families the service covers, apart from the refs and
+the provenance markers, and matching those did not reproduce `ready`; the five families
+the service does not touch are what does. Each of them carries a `*_source_defaulted`
+marker, and the edge-authority filter excludes any edge whose diagnostics contain
+`defaulted`. That is item 5.10.
+
+One change came out of the measurement. Acceptance now resolves the markers that say
+nobody reviewed a row, `approval_pending` and `review_required`, and keeps the ones that
+record where it came from, `leg_source_region_derived` and
+`control_area_region_derived`. The smoke clears `diagnostic_rows` outright, which drops
+provenance with them. This changed no measured outcome and makes an accepted row honest.
 
 ### 5.4 Give each roundabout approach its own geometry
 
@@ -348,6 +392,39 @@ which is the only place the user is told the shape may be incomplete.
 Acceptance: the preset summary lists each defaulted value with the review ref that
 will carry it, so the review step has a checklist rather than a note.
 
+### 5.10 Extend the review to the five remaining row families
+
+The review surface covers legs, anchors and control areas. Five families are left, and
+they are what hold the boundary owner at `missing`: `corner_rows`, `edge_policy_rows`,
+`lane_connection_rows`, `grading_policy_rows` and `drainage_policy_rows`. Measured on a T
+preset: 2, 4, 2, 1 and 1 rows, every one `draft` with `source_method` `preset_default` or
+`subassembly_default`, and every one carrying a `*_source_defaulted` marker beside its
+`approval_pending` and `review_required` markers.
+
+The blocker is the `defaulted` token. `_intersection_boundary_edge_authority_exclusion_reason`
+excludes an edge whose source diagnostics contain it, so no amount of approval flipping
+helps while the marker stands.
+
+That is a design question rather than a mechanical extension, which is why it is its own
+item. An accepted default is no longer an unreviewed default, but it is still a default,
+and the marker should not simply be deleted the way the smoke deletes it. The proposal is
+a third state: rewrite `*_source_defaulted` to an accepted form such as
+`*_default_accepted`, which keeps the origin on the record, stops matching the `defaulted`
+exclusion token, and is distinguishable from a value the user actually authored.
+
+Two decisions sit inside it and should be made explicitly rather than as a side effect of
+an Accept button:
+
+- `edge_policy_rows` carry `source_method="subassembly_default"`, and the smoke rewrites it
+  to `subassembly_derived`. That is a claim about where the edge family comes from, and a
+  review cannot substantiate it by itself.
+- `drainage_policy_rows` carry `intent_status="hint_only"`, and the smoke rewrites it to
+  `accepted_drainage`. Turning a drainage hint into drainage intent is a design decision.
+
+Acceptance: the five families reviewable in the panel, `IntersectionBoundaryOwnerStatus`
+reaching `ready` for T and Cross from preset plus review alone, and the two decisions above
+recorded as explicit choices rather than defaults of the Accept action.
+
 ## 6. Order
 
 5.1 needs nothing. 5.6 is small and makes a silent drop-out visible; do it first.
@@ -355,7 +432,7 @@ will carry it, so the review step has a checklist rather than a note.
 and its first half does not depend on the unverified half. 5.2 is the only item
 that changes the contract baseline. 5.5 and 5.8 are the two that block a real
 route. 5.4 is what the Roundabout needs to be more than a symmetric starter. 5.7
-is measurable on its own and 5.9 is workflow quality.
+is measurable on its own and 5.9 is workflow quality. 5.10 came out of measuring 5.3 and is what unblocks a slope face surface from the panel alone.
 
 ## 7. Out of Scope
 
