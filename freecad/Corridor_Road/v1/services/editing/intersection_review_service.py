@@ -64,6 +64,125 @@ class PreparedIntersectionReview:
         return not any(row.startswith("error|") for row in self.diagnostics)
 
 
+@dataclass(frozen=True)
+class IntersectionPresetDefaultRow:
+    """One value the preset decided, where it landed, and whether it can be reviewed."""
+
+    label: str
+    value: str
+    carrier: str
+    review_state: str
+    reviewable: bool = True
+    notes: str = ""
+
+
+def intersection_preset_default_rows(model: IntersectionModel | None) -> list[IntersectionPresetDefaultRow]:
+    """Return the preset-decided values as a checklist, with the review state of each.
+
+    The panel already shows what the combos and spins will send. This reports the
+    other half: what ended up in the document and which row family carries it, so the
+    review step has a checklist rather than a note.
+
+    Two of the five carry no review state at all. `IntersectionCurbReturnPolicyRow`
+    and `IntersectionArmPolicyRow` are the only two of the eleven row families without
+    `approval_status` or `diagnostic_rows`, and the curb return radius and the design
+    vehicle land on exactly those. They are reported as not reviewable rather than
+    quietly shown as reviewed.
+    """
+
+    if model is None:
+        return []
+    rows: list[IntersectionPresetDefaultRow] = []
+
+    arm_rows = list(getattr(model, "arm_policy_rows", []) or [])
+    vehicles = sorted({_text(getattr(row, "design_vehicle_ref", "")) for row in arm_rows} - {""})
+    rows.append(
+        IntersectionPresetDefaultRow(
+            label="Design vehicle",
+            value=", ".join(vehicles) or "(not set)",
+            carrier="arm_policy_rows",
+            review_state="no review state on this row family",
+            reviewable=False,
+            notes="IntersectionArmPolicyRow has no approval_status or diagnostic_rows.",
+        )
+    )
+
+    curb_rows = list(getattr(model, "curb_return_policy_rows", []) or [])
+    radii = sorted({_float(getattr(row, "radius", 0.0)) for row in curb_rows} - {0.0})
+    rows.append(
+        IntersectionPresetDefaultRow(
+            label="Curb return radius",
+            value=", ".join("%.3f m" % value for value in radii) or "(not set)",
+            carrier="curb_return_policy_rows",
+            review_state="no review state on this row family",
+            reviewable=False,
+            notes="IntersectionCurbReturnPolicyRow has no approval_status or diagnostic_rows.",
+        )
+    )
+
+    area_rows = list(getattr(model, "control_area_rows", []) or [])
+    spans = []
+    for row in area_rows:
+        for start, end in list(getattr(row, "station_ranges", []) or []):
+            spans.append(abs(_float(end) - _float(start)))
+    rows.append(
+        IntersectionPresetDefaultRow(
+            label="Control length",
+            value=", ".join("%.3f m" % span for span in spans) or "(no station ranges)",
+            carrier="control_area_rows",
+            review_state=_family_review_state(area_rows),
+        )
+    )
+
+    grading_rows = list(getattr(model, "grading_policy_rows", []) or [])
+    rows.append(
+        IntersectionPresetDefaultRow(
+            label="Grading policy",
+            value=", ".join(
+                sorted({_text(getattr(row, "crown_behavior", "")) for row in grading_rows} - {""})
+            )
+            or "(not set)",
+            carrier="grading_policy_rows",
+            review_state=_family_review_state(grading_rows),
+        )
+    )
+
+    drainage_rows = list(getattr(model, "drainage_policy_rows", []) or [])
+    rows.append(
+        IntersectionPresetDefaultRow(
+            label="Drainage mode",
+            value=", ".join(
+                sorted({_text(getattr(row, "capture_mode", "")) for row in drainage_rows} - {""})
+            )
+            or "(not set)",
+            carrier="drainage_policy_rows",
+            review_state=_family_review_state(drainage_rows),
+        )
+    )
+    return rows
+
+
+def _family_review_state(rows) -> str:
+    """Summarise the review state of a row family that carries one."""
+
+    rows = list(rows or [])
+    if not rows:
+        return "no rows"
+    pending = [
+        row
+        for row in rows
+        if _text(getattr(row, "approval_status", "")) != "accepted"
+        or any(
+            token in str(value).lower()
+            for value in list(getattr(row, "diagnostic_rows", []) or [])
+            for token in REVIEW_STATE_DIAGNOSTIC_TOKENS
+        )
+    ]
+    if not pending:
+        return "reviewed"
+    return "review required (%d of %d row(s))" % (len(pending), len(rows))
+
+
 def intersection_review_rows(model: IntersectionModel | None) -> list[IntersectionReviewRow]:
     """Return every leg, anchor and control area row with its review state."""
 

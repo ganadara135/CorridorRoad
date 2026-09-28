@@ -405,17 +405,31 @@ Acceptance: `Use Existing Alignments` creates the same source set the preset doe
 minus the alignments and profiles it is given, including the intersection-tagged
 Region rows it currently demands as a precondition.
 
-### 5.9 Expose the control values the preset guesses: confirmed
+### 5.9 Expose the control values the preset guesses: done on 2026-09-28
 
-Design vehicle, curb-return radius, control length, grading policy and drainage
-mode all arrive as preset defaults. The panel's status text lists what was created
-and a generic next-workflow note; it does not name the defaulted values or the
-review refs that will carry them. Its own closing line says that final
-surface-zone and roundabout geometry expansion remain planned follow-up phases,
-which is the only place the user is told the shape may be incomplete.
+Done. `intersection_preset_default_rows` reports the five values the preset decided,
+each with what it became in the document, the row family carrying it, and that family's
+review state. The Intersection panel lists them under `Preset defaults in the document:`,
+so the panel now shows both halves: the combos say what will be sent, and this says what
+landed and what still needs review.
 
-Acceptance: the preset summary lists each defaulted value with the review ref that
-will carry it, so the review step has a checklist rather than a note.
+Measured on a T preset with every option set by hand:
+
+| value | landed as | carrier | review state |
+| --- | --- | --- | --- |
+| Design vehicle | `single_unit_truck` | `arm_policy_rows` | none |
+| Curb return radius | `11.000 m` | `curb_return_policy_rows` | none |
+| Control length | `30.000 m, 15.000 m` | `control_area_rows` | review required, then `reviewed` after Accept |
+| Grading policy | `preserve_primary_crown` | `grading_policy_rows` | review required |
+| Drainage mode | `curb_gutter_inlets` | `drainage_policy_rows` | review required |
+
+The checklist also makes the shape of item 5.10 visible from the panel: after
+`Accept Reviewed Rows`, control length reads `reviewed` while grading and drainage still
+read `review required`, because those two are among the five families the review does not
+yet cover.
+
+Two of the five cannot be reviewed at all, which the item had not anticipated and which
+is now item 5.11.
 
 ### 5.10 Extend the review to the five remaining row families
 
@@ -480,14 +494,35 @@ own action; `IntersectionBoundaryOwnerStatus` reaching `ready` for T and Cross f
 plus review alone; and the rule that reads these rows identified in the commit message, so
 the next person does not have to find it again.
 
+### 5.11 Two preset values land where no review state exists
+
+`IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` are the only two of the
+eleven row families in `intersection_model.py` without `approval_status` or
+`diagnostic_rows`. The curb return radius lands on the first and the design vehicle on the
+second.
+
+That means neither can carry `preset_*_review_required`, neither can be accepted, and
+neither can appear in the review table. The curb return radius is the value that sets the
+corner arcs, so of the five preset defaults it is the one most directly responsible for the
+shape, and it is the one with no record that it is an unreviewed default.
+
+This is a persistence contract change rather than a panel change, so it is its own item.
+`AGENTS.md` requires consulting `V1_PERSISTENCE_SCHEMA_INVENTORY.md` before changing a typed
+payload, and that document does not currently mention either row, which should be settled
+as part of the work.
+
+Acceptance: both rows carry `approval_status` and `diagnostic_rows` with the defaults the
+other nine use, the preset marks them review-required like the rest, the review table lists
+them, `intersection_preset_default_rows` reports a real review state for all five values,
+and a document saved before the change still restores.
+
 ## 6. Order
 
-5.1 needs nothing. 5.6 is small and makes a silent drop-out visible; do it first.
-5.3 is the one that decides whether the flow is completable in the document at all,
-and its first half does not depend on the unverified half. 5.2 is the only item
-that changes the contract baseline. 5.5 and 5.8 are the two that block a real
-route. 5.4 is what the Roundabout needs to be more than a symmetric starter. 5.7
-is measurable on its own and 5.9 is workflow quality. 5.10 came out of measuring 5.3 and is what unblocks a slope face surface from the panel alone.
+5.1 needs nothing and 5.2, 5.3, 5.5, 5.6 and 5.9 are done. 5.11 is small and is what
+makes the curb return radius reviewable at all, so it comes before 5.10, which covers
+the other five families and needs the rule that reads them found first. 5.7 is
+measurable on its own. 5.8 is what a real route needs. 5.4 is the largest and is what
+the Roundabout needs to be more than a symmetric starter.
 
 ## 7. Out of Scope
 

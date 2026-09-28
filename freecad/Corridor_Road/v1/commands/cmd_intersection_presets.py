@@ -33,6 +33,7 @@ from .cmd_intersection_editor import (
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
 from ..commands.cmd_intersection_editor import resolve_intersection_review_leg_refs
 from ..services.editing import (
+    intersection_preset_default_rows,
     apply_intersection_review,
     intersection_review_rows,
     intersection_review_summary,
@@ -521,6 +522,7 @@ class V1IntersectionPresetsTaskPanel:
                 f"Control Length: {self._control_length_spin.value():.3f} m",
                 f"Grading Policy: {self._grading_combo.currentText()}",
                 f"Drainage Mode: {self._drainage_combo.currentText()}",
+                *_preset_default_summary_lines(self.document),
                 f"Primary Alignment: {primary_ref or '-'}",
                 f"Secondary Alignment: {secondary_ref or '-'}",
                 f"Alignment Validation: {'ok' if not alignment_errors else 'error'}",
@@ -621,6 +623,26 @@ def _ensure_intersection_preset_project(document):
         except Exception:
             pass
     return project
+
+
+def _preset_default_summary_lines(document) -> list[str]:
+    """Return the preset-default checklist for the panel, or nothing before Apply."""
+
+    try:
+        model = to_intersection_model(find_v1_intersection_model(document))
+    except Exception:
+        return []
+    rows = intersection_preset_default_rows(model)
+    if not rows:
+        return []
+    lines = ["", "Preset defaults in the document:"]
+    for row in rows:
+        lines.append(
+            "- %s: %s  [%s] %s" % (row.label, row.value, row.carrier, row.review_state)
+        )
+    if any(not row.reviewable for row in rows):
+        lines.append("  (two row families carry no review state; see plan item 5.11)")
+    return lines
 
 
 def _refresh_intersection_tree_view(document) -> None:

@@ -29,6 +29,7 @@ from freecad.Corridor_Road.v1.objects.obj_intersection import (
 )
 from freecad.Corridor_Road.v1.services.editing import (
     apply_intersection_review,
+    intersection_preset_default_rows,
     intersection_review_rows,
     intersection_review_summary,
 )
@@ -218,6 +219,86 @@ def test_resolver_finds_the_profile_and_centerline_refs_the_document_holds() -> 
 def test_resolver_is_empty_without_a_document_or_a_model() -> None:
     assert resolve_intersection_review_leg_refs(None, _model()) == {}
     assert resolve_intersection_review_leg_refs(object(), None) == {}
+
+
+def test_preset_default_rows_name_each_value_and_where_it_landed() -> None:
+    doc = App.newDocument("CRV1PresetDefaultChecklist")
+    try:
+        create_intersection_preset_sources(
+            doc,
+            preset_label="T Intersection - Basic",
+            design_vehicle="single_unit_truck",
+            radius=11.0,
+            control_length=30.0,
+            grading_policy="keep_primary_crown",
+            drainage_mode="curb_gutter_inlets",
+        )
+        model = to_intersection_model(find_v1_intersection_model(doc))
+
+        rows = {row.label: row for row in intersection_preset_default_rows(model)}
+
+        assert set(rows) == {
+            "Design vehicle",
+            "Curb return radius",
+            "Control length",
+            "Grading policy",
+            "Drainage mode",
+        }
+        assert rows["Design vehicle"].value == "single_unit_truck"
+        assert rows["Design vehicle"].carrier == "arm_policy_rows"
+        assert rows["Curb return radius"].value == "11.000 m"
+        assert rows["Curb return radius"].carrier == "curb_return_policy_rows"
+        assert rows["Drainage mode"].value == "curb_gutter_inlets"
+        assert "30.000 m" in rows["Control length"].value
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_preset_default_rows_say_which_values_cannot_be_reviewed() -> None:
+    doc = App.newDocument("CRV1PresetDefaultNotReviewable")
+    try:
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
+        model = to_intersection_model(find_v1_intersection_model(doc))
+
+        rows = {row.label: row for row in intersection_preset_default_rows(model)}
+
+        # IntersectionCurbReturnPolicyRow and IntersectionArmPolicyRow are the only two
+        # of the eleven row families without approval_status or diagnostic_rows, and the
+        # radius and the design vehicle land on exactly those
+        for label in ("Design vehicle", "Curb return radius"):
+            assert rows[label].reviewable is False
+            assert rows[label].review_state == "no review state on this row family"
+            assert "approval_status" in rows[label].notes
+        for label in ("Control length", "Grading policy", "Drainage mode"):
+            assert rows[label].reviewable is True
+            assert rows[label].review_state.startswith("review required")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_preset_default_rows_follow_the_review_as_it_happens() -> None:
+    doc = App.newDocument("CRV1PresetDefaultAfterReview")
+    try:
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        prepared = apply_intersection_review(
+            model,
+            leg_refs=resolve_intersection_review_leg_refs(doc, model),
+        )
+
+        rows = {row.label: row for row in intersection_preset_default_rows(prepared.model)}
+
+        # control areas are one of the three families the review covers today
+        assert rows["Control length"].review_state == "reviewed"
+        # grading and drainage are among the five it does not, which is plan item 5.10
+        assert rows["Grading policy"].review_state.startswith("review required")
+        assert rows["Drainage mode"].review_state.startswith("review required")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_preset_default_rows_are_empty_without_a_model() -> None:
+    assert intersection_preset_default_rows(None) == []
 
 
 def test_panel_review_surface_accepts_the_preset_rows_in_the_document() -> None:
