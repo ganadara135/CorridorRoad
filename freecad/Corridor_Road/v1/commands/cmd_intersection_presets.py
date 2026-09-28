@@ -499,7 +499,6 @@ class V1IntersectionPresetsTaskPanel:
     def _update_status(self, *args, prefix: str = ""):
         if args and not prefix and isinstance(args[0], str):
             prefix = args[0]
-        row = intersection_preset_row_from_label(self._selected_label())
         source_mode = self._selected_source_mode()
         primary_ref = self._selected_primary_alignment_ref() if hasattr(self, "_primary_alignment_combo") else ""
         secondary_ref = self._selected_secondary_alignment_ref() if hasattr(self, "_secondary_alignment_combo") else ""
@@ -640,8 +639,9 @@ def _preset_default_summary_lines(document) -> list[str]:
         lines.append(
             "- %s: %s  [%s] %s" % (row.label, row.value, row.carrier, row.review_state)
         )
-    if any(not row.reviewable for row in rows):
-        lines.append("  (two row families carry no review state; see plan item 5.11)")
+    unreviewable = [row.label for row in rows if not row.reviewable]
+    if unreviewable:
+        lines.append("  (no review state for: %s)" % ", ".join(unreviewable))
     return lines
 
 
@@ -892,6 +892,24 @@ def _apply_preset_source_completeness_status(model, *, preset_label: str) -> Non
             notes=_append_note(str(getattr(row, "notes", "") or ""), note),
         )
         for row in list(getattr(model, "drainage_policy_rows", []) or [])
+    ]
+    model.curb_return_policy_rows = [
+        replace(
+            row,
+            approval_status=str(getattr(row, "approval_status", "") or "draft"),
+            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_curb_return_policy_review_required"),
+            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
+        )
+        for row in list(getattr(model, "curb_return_policy_rows", []) or [])
+    ]
+    model.arm_policy_rows = [
+        replace(
+            row,
+            approval_status=str(getattr(row, "approval_status", "") or "draft"),
+            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_arm_policy_review_required"),
+            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
+        )
+        for row in list(getattr(model, "arm_policy_rows", []) or [])
     ]
 
 

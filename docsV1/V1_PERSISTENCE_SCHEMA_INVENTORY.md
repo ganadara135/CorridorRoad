@@ -78,6 +78,23 @@ Presentation-only fields such as visibility, colors, line width, transparency, d
 
 Build Parametric persists Corridor and Surface results through a single document transaction. Accepted unchanged result models are reused, presentation adapters may refresh separately, and the transaction performs one final recompute.
 
+## Intersection Source Row Families
+
+Intersection source rows are not written through the typed payload adapter. Each of the
+eleven row families is stored as its own JSON string property on the Intersection object,
+`AnchorRowsJson`, `ControlAreaRowsJson`, `CurbReturnPolicyRowsJson`, `ArmPolicyRowsJson`
+and the rest, with a matching `*Count` summary property.
+
+Every family carries `approval_status` and `diagnostic_rows`, which is what the source
+review reads and writes. `IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow`
+gained theirs on 2026-09-28; every other family already had them.
+
+A key absent from a stored row falls back to the dataclass default rather than being
+rejected, so a document saved before a field existed restores with `approval_status`
+`accepted` and no diagnostics. Adding a field to one of these rows is therefore
+backward compatible in itself, but it is only forward safe while no evaluation rule
+treats the fallback value as an instruction.
+
 ## Output Compatibility
 
 Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packaged output ids together with chunk-safe JSON payloads. Existing FreeCAD save/reopen coverage verifies large output payload and traceability survival. This Phase does not expand exchange formats.

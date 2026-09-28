@@ -409,6 +409,8 @@ def _curb_return_policy_from_json(row: dict[str, object], index: int) -> Interse
         approach_leg_refs=[str(value) for value in _any_list(row.get("approach_leg_refs", []))],
         corner_refs=[str(value) for value in _any_list(row.get("corner_refs", []))],
         status=str(row.get("status", "") or "active"),
+        approval_status=str(row.get("approval_status", "") or "accepted"),
+        diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
         notes=str(row.get("notes", "") or ""),
     )
 
@@ -427,6 +429,8 @@ def _arm_policy_from_json(row: dict[str, object], index: int) -> IntersectionArm
         median_width=_float_value(row.get("median_width", 0.0)),
         turn_lane_policy_ref=str(row.get("turn_lane_policy_ref", "") or ""),
         status=str(row.get("status", "") or "active"),
+        approval_status=str(row.get("approval_status", "") or "accepted"),
+        diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
         notes=str(row.get("notes", "") or ""),
     )
 

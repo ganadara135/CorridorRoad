@@ -9,6 +9,10 @@ Like the rest of `services/editing`, nothing here reads a FreeCAD document or
 builds a widget. A caller that can read the document resolves the refs and passes
 them in, and persistence stays an explicit command step afterwards.
 
+The curb return radius and the design vehicle are reviewed here too, because the
+radius is what sets the corner arcs and neither row family could record that it
+was still an unreviewed preset default until plan item 5.11 gave them one.
+
 A row is accepted only when every field it needs is present. Inventing a ref that
 names nothing would make the source look reviewed while leaving the same gap, so
 an incomplete row keeps its draft status and says what it still needs.
@@ -22,6 +26,9 @@ from ...models.source.intersection_model import IntersectionModel
 
 
 LEG_REQUIRED_FIELDS = ("alignment_ref", "profile_ref", "centerline3d_ref")
+ARM_POLICY_REQUIRED_FIELDS = ("leg_ref", "design_vehicle_ref")
+# The curb return radius is checked on its own because it is numeric: a row that
+# stores 0.0 governs no arc, and a blank-text test would read it as present.
 ANCHOR_DEFAULT_TOLERANCE = 0.01
 
 # Accepting a row resolves the markers that say nobody has reviewed it, and only
@@ -83,11 +90,10 @@ def intersection_preset_default_rows(model: IntersectionModel | None) -> list[In
     other half: what ended up in the document and which row family carries it, so the
     review step has a checklist rather than a note.
 
-    Two of the five carry no review state at all. `IntersectionCurbReturnPolicyRow`
-    and `IntersectionArmPolicyRow` are the only two of the eleven row families without
-    `approval_status` or `diagnostic_rows`, and the curb return radius and the design
-    vehicle land on exactly those. They are reported as not reviewable rather than
-    quietly shown as reviewed.
+    All five carry a real review state. `IntersectionCurbReturnPolicyRow` and
+    `IntersectionArmPolicyRow` were the only two of the eleven row families without
+    `approval_status` or `diagnostic_rows`, which is what plan item 5.11 changed, and
+    the curb return radius and the design vehicle land on exactly those two.
     """
 
     if model is None:
@@ -101,9 +107,8 @@ def intersection_preset_default_rows(model: IntersectionModel | None) -> list[In
             label="Design vehicle",
             value=", ".join(vehicles) or "(not set)",
             carrier="arm_policy_rows",
-            review_state="no review state on this row family",
-            reviewable=False,
-            notes="IntersectionArmPolicyRow has no approval_status or diagnostic_rows.",
+            review_state=_family_review_state(arm_rows),
+            reviewable=_family_carries_review_state(arm_rows),
         )
     )
 
@@ -114,9 +119,8 @@ def intersection_preset_default_rows(model: IntersectionModel | None) -> list[In
             label="Curb return radius",
             value=", ".join("%.3f m" % value for value in radii) or "(not set)",
             carrier="curb_return_policy_rows",
-            review_state="no review state on this row family",
-            reviewable=False,
-            notes="IntersectionCurbReturnPolicyRow has no approval_status or diagnostic_rows.",
+            review_state=_family_review_state(curb_rows),
+            reviewable=_family_carries_review_state(curb_rows),
         )
     )
 
@@ -131,6 +135,7 @@ def intersection_preset_default_rows(model: IntersectionModel | None) -> list[In
             value=", ".join("%.3f m" % span for span in spans) or "(no station ranges)",
             carrier="control_area_rows",
             review_state=_family_review_state(area_rows),
+            reviewable=_family_carries_review_state(area_rows),
         )
     )
 
@@ -144,6 +149,7 @@ def intersection_preset_default_rows(model: IntersectionModel | None) -> list[In
             or "(not set)",
             carrier="grading_policy_rows",
             review_state=_family_review_state(grading_rows),
+            reviewable=_family_carries_review_state(grading_rows),
         )
     )
 
@@ -157,13 +163,24 @@ def intersection_preset_default_rows(model: IntersectionModel | None) -> list[In
             or "(not set)",
             carrier="drainage_policy_rows",
             review_state=_family_review_state(drainage_rows),
+            reviewable=_family_carries_review_state(drainage_rows),
         )
     )
     return rows
 
 
+def _family_carries_review_state(rows) -> bool:
+    """True when this row family has somewhere to record that it was reviewed."""
+
+    rows = list(rows or [])
+    return all(hasattr(row, "approval_status") for row in rows)
+
+
 def _family_review_state(rows) -> str:
     """Summarise the review state of a row family that carries one."""
+
+    if not _family_carries_review_state(rows):
+        return "no review state on this row family"
 
     rows = list(rows or [])
     if not rows:
@@ -225,6 +242,32 @@ def intersection_review_rows(model: IntersectionModel | None) -> list[Intersecti
                 approval_status=_text(getattr(area, "approval_status", "")),
                 missing_fields=missing,
                 notes=_text(getattr(area, "intent_status", "")),
+            )
+        )
+    for policy in list(getattr(model, "curb_return_policy_rows", []) or []):
+        missing = () if _float(getattr(policy, "radius", 0.0)) > 0.0 else ("radius",)
+        rows.append(
+            IntersectionReviewRow(
+                kind="curb_return_policy",
+                row_id=_text(getattr(policy, "policy_id", "")),
+                intersection_id=_text(getattr(policy, "intersection_id", "")),
+                approval_status=_text(getattr(policy, "approval_status", "")),
+                missing_fields=missing,
+                notes=_text(getattr(policy, "side", "")),
+            )
+        )
+    for policy in list(getattr(model, "arm_policy_rows", []) or []):
+        missing = tuple(
+            name for name in ARM_POLICY_REQUIRED_FIELDS if not _text(getattr(policy, name, ""))
+        )
+        rows.append(
+            IntersectionReviewRow(
+                kind="arm_policy",
+                row_id=_text(getattr(policy, "policy_id", "")),
+                intersection_id=_text(getattr(policy, "intersection_id", "")),
+                approval_status=_text(getattr(policy, "approval_status", "")),
+                missing_fields=missing,
+                notes=_text(getattr(policy, "arm_role", "")),
             )
         )
     return rows
@@ -315,11 +358,50 @@ def apply_intersection_review(
             )
         )
 
+    curb_return_policy_rows = []
+    for policy in list(getattr(model, "curb_return_policy_rows", []) or []):
+        policy_id = _text(getattr(policy, "policy_id", ""))
+        if _float(getattr(policy, "radius", 0.0)) <= 0.0:
+            incomplete.append(policy_id)
+            diagnostics.append("warning|curb_return_review_incomplete:%s:radius" % policy_id)
+            curb_return_policy_rows.append(policy)
+            continue
+        accepted.append(policy_id)
+        curb_return_policy_rows.append(
+            replace(
+                policy,
+                approval_status="accepted",
+                diagnostic_rows=_resolved_review_diagnostics(policy),
+            )
+        )
+
+    arm_policy_rows = []
+    for policy in list(getattr(model, "arm_policy_rows", []) or []):
+        policy_id = _text(getattr(policy, "policy_id", ""))
+        missing = tuple(
+            name for name in ARM_POLICY_REQUIRED_FIELDS if not _text(getattr(policy, name, ""))
+        )
+        if missing:
+            incomplete.append(policy_id)
+            diagnostics.append("warning|arm_policy_review_incomplete:%s:%s" % (policy_id, ",".join(missing)))
+            arm_policy_rows.append(policy)
+            continue
+        accepted.append(policy_id)
+        arm_policy_rows.append(
+            replace(
+                policy,
+                approval_status="accepted",
+                diagnostic_rows=_resolved_review_diagnostics(policy),
+            )
+        )
+
     reviewed = replace(
         model,
         intersection_rows=intersection_rows,
         anchor_rows=anchor_rows,
         control_area_rows=control_area_rows,
+        curb_return_policy_rows=curb_return_policy_rows,
+        arm_policy_rows=arm_policy_rows,
     )
     return PreparedIntersectionReview(
         model=reviewed,

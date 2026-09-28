@@ -123,6 +123,8 @@ class IntersectionCurbReturnPolicyRow:
     approach_leg_refs: list[str] = field(default_factory=list)
     corner_refs: list[str] = field(default_factory=list)
     status: str = "active"
+    approval_status: str = "accepted"
+    diagnostic_rows: list[str] = field(default_factory=list)
     notes: str = ""
 
 
@@ -142,6 +144,8 @@ class IntersectionArmPolicyRow:
     median_width: float = 0.0
     turn_lane_policy_ref: str = ""
     status: str = "active"
+    approval_status: str = "accepted"
+    diagnostic_rows: list[str] = field(default_factory=list)
     notes: str = ""
 
 

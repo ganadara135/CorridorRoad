@@ -1786,6 +1786,8 @@ def _default_arm_policy_rows(intersection_id: str, leg_rows: list[IntersectionLe
                 lane_count=2,
                 lane_width=3.5,
                 shoulder_width=1.0,
+                approval_status="draft",
+                diagnostic_rows=["arm_policy_source_defaulted", "arm_policy_approval_pending"],
                 notes="Default intersection arm policy for future edge-network evaluation.",
             )
         )
@@ -2010,6 +2012,8 @@ def _default_curb_return_policy(
             for row in list(corner_rows or [])
             if str(getattr(row, "corner_id", "") or "")
         ],
+        approval_status="draft",
+        diagnostic_rows=["curb_return_source_defaulted", "curb_return_approval_pending"],
         notes="Default first-slice curb return radius for 3D review preview.",
     )
 

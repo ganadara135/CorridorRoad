@@ -6,6 +6,8 @@ the way the T slope-face smoke does. These lock the review service, the document
 resolver that feeds it real refs, and the panel surface that runs it.
 """
 
+import json
+
 import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
@@ -18,7 +20,9 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
 )
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionAnchorRow,
+    IntersectionArmPolicyRow,
     IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -254,24 +258,25 @@ def test_preset_default_rows_name_each_value_and_where_it_landed() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_preset_default_rows_say_which_values_cannot_be_reviewed() -> None:
-    doc = App.newDocument("CRV1PresetDefaultNotReviewable")
+def test_preset_default_rows_report_a_real_review_state_for_every_value() -> None:
+    doc = App.newDocument("CRV1PresetDefaultReviewState")
     try:
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
         model = to_intersection_model(find_v1_intersection_model(doc))
 
         rows = {row.label: row for row in intersection_preset_default_rows(model)}
 
-        # IntersectionCurbReturnPolicyRow and IntersectionArmPolicyRow are the only two
-        # of the eleven row families without approval_status or diagnostic_rows, and the
-        # radius and the design vehicle land on exactly those
-        for label in ("Design vehicle", "Curb return radius"):
-            assert rows[label].reviewable is False
-            assert rows[label].review_state == "no review state on this row family"
-            assert "approval_status" in rows[label].notes
-        for label in ("Control length", "Grading policy", "Drainage mode"):
-            assert rows[label].reviewable is True
-            assert rows[label].review_state.startswith("review required")
+        # item 5.11 gave the curb return radius and the design vehicle a review state;
+        # before it they were the only two of the five with nowhere to record one
+        for label in (
+            "Design vehicle",
+            "Curb return radius",
+            "Control length",
+            "Grading policy",
+            "Drainage mode",
+        ):
+            assert rows[label].reviewable is True, label
+            assert rows[label].review_state.startswith("review required"), label
     finally:
         App.closeDocument(doc.Name)
 
@@ -290,6 +295,9 @@ def test_preset_default_rows_follow_the_review_as_it_happens() -> None:
 
         # control areas are one of the three families the review covers today
         assert rows["Control length"].review_state == "reviewed"
+        # and so are the two families item 5.11 added
+        assert rows["Curb return radius"].review_state == "reviewed"
+        assert rows["Design vehicle"].review_state == "reviewed"
         # grading and drainage are among the five it does not, which is plan item 5.10
         assert rows["Grading policy"].review_state.startswith("review required")
         assert rows["Drainage mode"].review_state.startswith("review required")
@@ -321,5 +329,133 @@ def test_panel_review_surface_accepts_the_preset_rows_in_the_document() -> None:
         assert "0 still missing source fields" in panel._review_summary.text()
         reviewed = intersection_review_rows(to_intersection_model(find_v1_intersection_model(doc)))
         assert reviewed and all(row.reviewed for row in reviewed)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_review_lists_the_curb_return_radius_and_the_design_vehicle() -> None:
+    doc = App.newDocument("CRV1ReviewPolicyFamilies")
+    try:
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic", radius=11.0)
+        model = to_intersection_model(find_v1_intersection_model(doc))
+
+        rows = intersection_review_rows(model)
+
+        by_kind = {}
+        for row in rows:
+            by_kind.setdefault(row.kind, []).append(row)
+        assert set(by_kind) == {"leg", "anchor", "control_area", "curb_return_policy", "arm_policy"}
+        # one curb return policy for the junction, one arm policy for each leg
+        assert len(by_kind["curb_return_policy"]) == 1
+        assert len(by_kind["arm_policy"]) == len(model.intersection_rows[0].leg_rows)
+        for row in by_kind["curb_return_policy"] + by_kind["arm_policy"]:
+            assert row.approval_status == "draft"
+            assert row.missing_fields == ()
+            assert not row.reviewed
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_accepting_the_review_accepts_both_policy_families_and_keeps_provenance() -> None:
+    doc = App.newDocument("CRV1ReviewPolicyAccept")
+    try:
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
+        model = to_intersection_model(find_v1_intersection_model(doc))
+        curb_before = model.curb_return_policy_rows[0]
+        assert "preset_curb_return_policy_review_required" in curb_before.diagnostic_rows
+        assert "curb_return_source_defaulted" in curb_before.diagnostic_rows
+
+        prepared = apply_intersection_review(
+            model,
+            leg_refs=resolve_intersection_review_leg_refs(doc, model),
+        )
+
+        curb = prepared.model.curb_return_policy_rows[0]
+        assert curb.approval_status == "accepted"
+        # the markers that said nobody had reviewed it are resolved by the review
+        assert not any("review_required" in str(row) for row in curb.diagnostic_rows)
+        assert not any("approval_pending" in str(row) for row in curb.diagnostic_rows)
+        # where the row came from stays true, and these two have no source_method
+        assert "curb_return_source_defaulted" in curb.diagnostic_rows
+        arm = prepared.model.arm_policy_rows[0]
+        assert arm.approval_status == "accepted"
+        assert "arm_policy_source_defaulted" in arm.diagnostic_rows
+        assert curb.policy_id in prepared.accepted_row_ids
+        assert arm.policy_id in prepared.accepted_row_ids
+        # the radius itself is untouched by being reviewed
+        assert curb.radius == curb_before.radius
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_a_policy_row_missing_what_it_governs_is_not_accepted() -> None:
+    model = _model(profile_ref="profile:main", centerline3d_ref="centerline3d:main")
+    model.curb_return_policy_rows = [
+        IntersectionCurbReturnPolicyRow(
+            policy_id="curb-return:intersection:t:default",
+            intersection_id="intersection:t",
+            radius=0.0,
+            approval_status="draft",
+        )
+    ]
+    model.arm_policy_rows = [
+        IntersectionArmPolicyRow(
+            policy_id="arm-policy:intersection:t:leg:01",
+            intersection_id="intersection:t",
+            leg_ref="intersection:t:leg:01",
+            approval_status="draft",
+        )
+    ]
+
+    rows = {row.kind: row for row in intersection_review_rows(model)}
+    prepared = apply_intersection_review(model)
+
+    # a radius of zero governs no arc, so the row is not reviewed by accepting it
+    assert rows["curb_return_policy"].missing_fields == ("radius",)
+    assert rows["arm_policy"].missing_fields == ("design_vehicle_ref",)
+    assert prepared.model.curb_return_policy_rows[0].approval_status == "draft"
+    assert prepared.model.arm_policy_rows[0].approval_status == "draft"
+    assert "curb-return:intersection:t:default" in prepared.incomplete_row_ids
+    assert "arm-policy:intersection:t:leg:01" in prepared.incomplete_row_ids
+    assert any(
+        row.startswith("warning|curb_return_review_incomplete:") for row in prepared.diagnostics
+    )
+    assert any(
+        row.startswith("warning|arm_policy_review_incomplete:") for row in prepared.diagnostics
+    )
+
+
+def test_a_document_written_before_the_review_state_existed_still_restores() -> None:
+    # item 5.11 added approval_status and diagnostic_rows to these two families. A
+    # document saved before it has neither key, so the reader falls back the way the
+    # other nine do: accepted, with no diagnostics, and nothing refuses to restore.
+    doc = App.newDocument("CRV1PolicyRowLegacyRestore")
+    try:
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
+        obj = find_v1_intersection_model(doc)
+        for property_name in ("CurbReturnPolicyRowsJson", "ArmPolicyRowsJson"):
+            legacy = [
+                {
+                    key: value
+                    for key, value in row.items()
+                    if key not in {"approval_status", "diagnostic_rows"}
+                }
+                for row in json.loads(getattr(obj, property_name))
+            ]
+            assert legacy
+            setattr(obj, property_name, json.dumps(legacy))
+        doc.recompute()
+
+        restored = to_intersection_model(obj)
+
+        for row in list(restored.curb_return_policy_rows) + list(restored.arm_policy_rows):
+            assert row.approval_status == "accepted"
+            assert row.diagnostic_rows == []
+        # the values the old document did carry are unchanged
+        assert restored.curb_return_policy_rows[0].radius > 0.0
+        assert restored.arm_policy_rows[0].design_vehicle_ref.startswith("design-vehicle:")
+        # and the checklist reports the state it can actually see
+        rows = {row.label: row for row in intersection_preset_default_rows(restored)}
+        assert rows["Curb return radius"].review_state == "reviewed"
     finally:
         App.closeDocument(doc.Name)

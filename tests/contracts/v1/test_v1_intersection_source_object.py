@@ -135,6 +135,8 @@ def test_intersection_source_object_round_trips_phase2_policy_rows() -> None:
                     intersection_id="intersection:t-01",
                     leg_ref="intersection:t-01:leg-01",
                     lane_width=3.6,
+                    approval_status="locked",
+                    diagnostic_rows=["arm_policy_locked_by_user"],
                 )
             ],
             curb_return_policy_rows=[
@@ -145,6 +147,8 @@ def test_intersection_source_object_round_trips_phase2_policy_rows() -> None:
                     long_edge_factor=3.0,
                     max_boundary_edge_length=2.0,
                     corner_refs=["corner:intersection:t-01:left"],
+                    approval_status="locked",
+                    diagnostic_rows=["curb_return_locked_by_user"],
                 )
             ],
             edge_policy_rows=[
@@ -265,6 +269,10 @@ def test_intersection_source_object_round_trips_phase2_policy_rows() -> None:
         assert restored.curb_return_policy_rows[0].long_edge_factor == 3.0
         assert restored.curb_return_policy_rows[0].max_boundary_edge_length == 2.0
         assert restored.curb_return_policy_rows[0].corner_refs == ["corner:intersection:t-01:left"]
+        assert restored.arm_policy_rows[0].approval_status == "locked"
+        assert restored.arm_policy_rows[0].diagnostic_rows == ["arm_policy_locked_by_user"]
+        assert restored.curb_return_policy_rows[0].approval_status == "locked"
+        assert restored.curb_return_policy_rows[0].diagnostic_rows == ["curb_return_locked_by_user"]
         assert restored.edge_policy_rows[0].offset_rule == "lane_width_from_arm_policy"
         assert restored.edge_policy_rows[0].edge_family_intent == "lane"
         assert restored.edge_policy_rows[0].approval_status == "locked"
@@ -535,7 +543,11 @@ def test_intersection_editor_source_builder_creates_phase2_default_policy_rows()
     assert model.corner_rows[0].approval_status == "draft"
     assert "corner_approval_pending" in model.corner_rows[0].diagnostic_rows
     assert model.curb_return_policy_rows[0].corner_refs == [row.corner_id for row in model.corner_rows]
+    assert model.curb_return_policy_rows[0].approval_status == "draft"
+    assert "curb_return_approval_pending" in model.curb_return_policy_rows[0].diagnostic_rows
     assert len(model.arm_policy_rows) == 2
+    assert model.arm_policy_rows[0].approval_status == "draft"
+    assert "arm_policy_approval_pending" in model.arm_policy_rows[0].diagnostic_rows
     assert len(model.edge_policy_rows) == 4
     assert len(model.drainage_policy_rows) == 1
     assert intersection.leg_rows[0].arm_policy_ref == model.arm_policy_rows[0].policy_id
@@ -560,7 +572,6 @@ def test_intersection_editor_source_builder_creates_phase2_default_policy_rows()
     assert model.drainage_policy_rows[0].approval_status == "draft"
     assert "drainage_policy_hint_only" in model.drainage_policy_rows[0].diagnostic_rows
     assert model.drainage_policy_rows[0].policy_id in intersection.policy_refs
-
 
 
 def test_intersection_edge_network_exposes_curb_return_contact_stations() -> None:

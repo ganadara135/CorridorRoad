@@ -32,7 +32,9 @@ Do not re-check these by hand:
   `CRV1_02_Alignment_Profile` as the stored object names
 - each of the three Intersection presets creates 18 source rows with an `IntersectionModel`,
   and the four retired kinds are refused by name
-- the Intersection review table lists 5 rows for a T preset and reaches 5 of 5 reviewed
+- the Intersection review table lists 8 rows for a T preset and reaches 8 of 8 reviewed
+- the preset-default checklist reports a review state for all five values, and both the
+  curb return radius and the design vehicle reach `reviewed`
 - Applied Sections skips an Alignment missing a Profile, Region or Stationing, and names it
 - superelevation is paired per Alignment, and a preset writes one source per road
 
@@ -125,34 +127,45 @@ With the T preset sources from section 6 still open, and the Intersection panel 
 
 Expected:
 
-- **5 rows**: 2 `leg`, 1 `anchor`, 2 `control_area`
+- **8 rows**: 2 `leg`, 1 `anchor`, 2 `control_area`, 1 `curb_return_policy`, 2 `arm_policy`.
+  The last two families were added by plan item 5.11; five rows here means that change is
+  not in the build under test
 - the `Approval` column reads `draft` on every row
 - the `Missing` column reads `profile_ref, centerline3d_ref` on both leg rows and
   `tolerance` on the anchor row
-- the summary line under the table reads `0 of 5 row(s) reviewed; 3 still missing source fields.`
+- the summary line under the table reads `0 of 8 row(s) reviewed; 3 still missing source fields.`
 - the table is **readable without resizing the task panel**, and its columns are not clipped
 
 2. Press `Refresh Review`.
 
-Expected: the same 5 rows, no flicker into an error message, summary unchanged.
+Expected: the same 8 rows, no flicker into an error message, summary unchanged.
 
 3. Press `Accept Reviewed Rows`.
 
 Expected:
 
-- a dialog appears reading `Accepted 5 row(s).`
-- after closing it, the summary reads `5 of 5 row(s) reviewed; 0 still missing source fields.`
+- a dialog appears reading `Accepted 8 row(s).`
+- after closing it, the summary reads `8 of 8 row(s) reviewed; 0 still missing source fields.`
 - the `Approval` column reads `accepted` on every row and `Missing` is empty
 - no traceback in the Report view
 
 4. Press `Accept Reviewed Rows` a second time.
 
-Expected: it stays at 5 of 5 and reports `Accepted 5 row(s).` again. Accepting twice must not
+Expected: it stays at 8 of 8 and reports `Accepted 8 row(s).` again. Accepting twice must not
 error or double anything.
 
 5. Close the panel with `Close`, then reopen `Intersection`.
 
-Expected: the table still reads 5 of 5, because acceptance was written to the document.
+Expected: the table still reads 8 of 8, because acceptance was written to the document.
+
+6. Read the `Preset defaults in the document:` block in the status text.
+
+Expected: five lines, one for each preset value, each naming the row family carrying it.
+After the acceptance above, `Design vehicle`, `Curb return radius` and `Control length`
+read `reviewed`, while `Grading policy` and `Drainage mode` still read `review required`.
+Those last two are the families plan item 5.10 covers, so that is the measured state and
+not a defect. A line reading `no review state on this row family` means a row family lost
+its `approval_status`, which is worth recording.
 
 ## 8. Applied Sections panel, two new summary sections
 
@@ -210,7 +223,8 @@ Expected:
 
 2. Repeat sections 6, 7 and 9 for `Cross Intersection - Basic`.
 
-Expected: the same as T, with **7 review rows** rather than 5, because a Cross has four legs.
+Expected: the same as T, with **12 review rows** rather than 8, because a Cross has four
+legs and so four arm policies.
 
 3. Repeat for `Roundabout - Single Lane`.
 

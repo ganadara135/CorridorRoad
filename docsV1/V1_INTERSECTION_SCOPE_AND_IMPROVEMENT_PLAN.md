@@ -433,7 +433,8 @@ is now item 5.11.
 
 ### 5.10 Extend the review to the five remaining row families
 
-The review surface covers legs, anchors and control areas. Five families are left:
+The review surface covers legs, anchors, control areas and, since item 5.11, the curb
+return and arm policies. Five families are left:
 `corner_rows`, `edge_policy_rows`, `lane_connection_rows`, `grading_policy_rows` and
 `drainage_policy_rows`. Measured on a T preset: 2, 4, 2, 1 and 1 rows, every one `draft`
 with `source_method` `preset_default` or `subassembly_default`, and every one carrying a
@@ -494,35 +495,57 @@ own action; `IntersectionBoundaryOwnerStatus` reaching `ready` for T and Cross f
 plus review alone; and the rule that reads these rows identified in the commit message, so
 the next person does not have to find it again.
 
-### 5.11 Two preset values land where no review state exists
+### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
-`IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` are the only two of the
-eleven row families in `intersection_model.py` without `approval_status` or
-`diagnostic_rows`. The curb return radius lands on the first and the design vehicle on the
-second.
+`IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` were the only two of
+the eleven row families in `intersection_model.py` without `approval_status` or
+`diagnostic_rows`. The curb return radius lands on the first and the design vehicle on
+the second, so neither could carry `preset_*_review_required`, be accepted, or appear
+in the review table. The curb return radius sets the corner arcs, so of the five preset
+defaults it was the one most directly responsible for the shape and the one with no
+record that it was an unreviewed default.
 
-That means neither can carry `preset_*_review_required`, neither can be accepted, and
-neither can appear in the review table. The curb return radius is the value that sets the
-corner arcs, so of the five preset defaults it is the one most directly responsible for the
-shape, and it is the one with no record that it is an unreviewed default.
+Both now carry the two fields with the defaults the other nine use. The two default
+constructors write `draft` with a `*_source_defaulted` and a `*_approval_pending`
+marker, the way every other default family already did; the preset adds
+`preset_curb_return_policy_review_required` and `preset_arm_policy_review_required`;
+and the review lists and accepts them, keeping the `*_source_defaulted` provenance,
+which is where these two record where they came from since neither has a
+`source_method` field.
 
-This is a persistence contract change rather than a panel change, so it is its own item.
-`AGENTS.md` requires consulting `V1_PERSISTENCE_SCHEMA_INVENTORY.md` before changing a typed
-payload, and that document does not currently mention either row, which should be settled
-as part of the work.
+Measured, with the preset options set by hand:
 
-Acceptance: both rows carry `approval_status` and `diagnostic_rows` with the defaults the
-other nine use, the preset marks them review-required like the rest, the review table lists
-them, `intersection_preset_default_rows` reports a real review state for all five values,
-and a document saved before the change still restores.
+| preset | review rows before | after | added |
+| --- | --- | --- | --- |
+| T | 5 | 8 | 1 curb return, 2 arm |
+| Cross | 7 | 12 | 1 curb return, 4 arm |
+| Roundabout | 5 | 8 | 1 curb return, 2 arm |
+
+All three reach `n of n reviewed` from `Accept Reviewed Rows` alone, and the checklist
+the previous item added now reads a real state for all five values: three `reviewed`
+and two still `review required`, which are grading and drainage, the two of the five
+that belong to item 5.10.
+
+Nothing in evaluation reads `approval_status` on either family. The curb return lookup
+filters on `intersection_id` alone and the arm policies are read only for the existence
+of their ids, so marking a row `draft` changes no geometry. That is what made this item
+small.
+
+Compatibility: an old document's JSON has neither key, and both readers fall back the
+same way the other nine do, to `accepted` with no diagnostics. A row written before this
+change therefore restores as reviewed rather than as pending. Inventing `draft` for it
+would be a guess about a history the document does not record, and the fallback rule
+here is the one the rest of the family already follows.
+
+`V1_PERSISTENCE_SCHEMA_INVENTORY.md` did not mention either row and now records how
+the Intersection row families are stored and what an absent key means.
 
 ## 6. Order
 
-5.1 needs nothing and 5.2, 5.3, 5.5, 5.6 and 5.9 are done. 5.11 is small and is what
-makes the curb return radius reviewable at all, so it comes before 5.10, which covers
-the other five families and needs the rule that reads them found first. 5.7 is
-measurable on its own. 5.8 is what a real route needs. 5.4 is the largest and is what
-the Roundabout needs to be more than a symmetric starter.
+5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.9 and 5.11 are done. 5.10 is next: it
+covers the five families the review still does not reach and needs the rule that reads
+them found first. 5.7 is measurable on its own. 5.8 is what a real route needs. 5.4 is
+the largest and is what the Roundabout needs to be more than a symmetric starter.
 
 ## 7. Out of Scope
 
