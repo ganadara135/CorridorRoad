@@ -367,7 +367,7 @@ reports nothing, because Applied Sections not having run is a different message.
 including a T preset whose secondary Region is deleted and which then reports that
 one Alignment as missing `Regions` while the main road still builds.
 
-### 5.7 Cache the intersection evaluation chain: confirmed, with a measured count
+### 5.7 Cache the intersection evaluation chain: closed without a cache, on 2026-10-05
 
 The first draft said the chain runs seven times per build. Seven is the number of
 call sites in `cmd_build_corridor`, not the number of runtime calls, and the two
@@ -386,6 +386,41 @@ stages on `corridor_model` and `surface_model`, so none of this is cached.
 Acceptance: one chain evaluation per unchanged IntersectionModel across a review
 and preview pass, proved by a call counter in a focused test, with the same result
 rows as today.
+
+#### Outcome: the chain is not where the time goes
+
+The count was right and the premise was not. Timing each method over a full pass
+(`build_document_applied_section_set` through the three surface previews, then
+`corridor_build_review_rows`, `corridor_intersection_contract_review_rows` and
+`corridor_shared_breakline_audit_rows`):
+
+| kind | whole build + previews | the six chain methods together | the review passes |
+| --- | --- | --- | --- |
+| T | 5.9 s | 0.32 s (`evaluate_slope_face_loops` 0.24 s) | 0.08 s |
+| Cross | 9.0 s | 0.77 s (`evaluate_slope_face_loops` 0.65 s) | 0.15 s |
+
+`evaluate_topology`, `evaluate_edge_network` and `evaluate_surface_zones` together cost
+1 to 2 ms per call chain, about what a deep copy of their results costs, and the counts
+including nested calls are higher than the 13 above (47, 26 and 23). A cache over them
+would save nothing measurable, and the two methods that do take time also depend on the
+Applied Section Set, so a correct key would have to cover that too. Their results are
+mutable dataclasses shared by many callers, so a cache would also introduce the second
+source of truth that `AGENTS.md` warns about. No cache was built.
+
+What does take the time, from a profile of the same T pass:
+
+- `SharedBreaklineAuditService.audit`: 5 calls, about 1.2 s each. Nearly all of it is
+  `_boundary_edge_matches` and `_boundary_chain_matches`, which test every boundary point
+  against every segment (300,160 `_project_to_segment` calls on a T).
+- `intersection_patch_constraint_build_service.constraint_rows`: 5 calls, about 0.7 s each,
+  through `_existing_edges_cover_segment` and `_boundary_coverage_matches`, the same
+  point-to-polyline pattern (144,252 projections).
+- the TIN clip against the Intersection exclusion: about 1 s per call.
+
+So the real item is the point-to-polyline matching in those two services, which is
+quadratic in boundary points times segments and runs five times over unchanged inputs.
+That is an optimisation of geometry matching, it needs its own measurement and its own
+test that the match rows are identical, and it is not started.
 
 ### 5.8 Make the starter geometry usable on a real route: confirmed, and wider
 
@@ -585,9 +620,10 @@ the Intersection row families are stored and what an absent key means.
 
 ## 6. Order
 
-5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.9, 5.10 and 5.11 are done. 5.7 is next and
-is measurable on its own. The Cross corner arc gap found by 5.10 is a candidate for its own
-item. 5.8 is what a real route needs. 5.4 is
+5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.9, 5.10 and 5.11 are done. 5.7 is closed
+without a cache; the time it was about is in the shared breakline audit and the patch
+constraint coverage matching, which is a candidate for its own item. The Cross corner arc
+gap found by 5.10 is another. 5.8 is what a real route needs. 5.4 is
 the largest and is what the Roundabout needs to be more than a symmetric starter.
 
 ## 7. Out of Scope

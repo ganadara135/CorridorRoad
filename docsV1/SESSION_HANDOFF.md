@@ -83,7 +83,7 @@ a guess about a history the document does not record.
 | 5.4 | **open, largest** | per-approach roundabout geometry; Roundabout creates no slope face preview at all |
 | 5.5 | done | superelevation paired per Alignment |
 | 5.6 | done | Applied Sections names the Alignments it skips |
-| 5.7 | **open** | cache the evaluation chain; 13 runtime calls measured in one review+preview sequence |
+| 5.7 | closed 2026-10-05, no cache | the chain costs 0.3 s of a 5.9 s T build; the time is in the shared breakline audit and patch constraint matching |
 | 5.8 | **open** | `Use Existing Alignments` creates only the IntersectionModel and refuses without pre-existing intersection-tagged Regions |
 | 5.9 | done | the preset-default checklist in the panel |
 | 5.10 | done 2026-10-05 | the review covers the five remaining families; the edge-family adoption is its own action |
@@ -104,7 +104,9 @@ plan's §5.10 Outcome records and a strict `xfail` pins.
 
 ### Intersection plan, in order
 
-1. **5.7** — caching, measurable on its own.
+1. **Audit and constraint matching** — not yet an item. `SharedBreaklineAuditService.audit` runs 5 times
+   at about 1.2 s each and `intersection_patch_constraint_build_service` about 0.7 s each, both on
+   quadratic point-to-polyline tests; the plan's §5.7 Outcome has the profile.
 2. **5.8** — what a real route needs.
 3. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
 4. **Cross corner arcs** — not yet an item. A Cross builds no curb return arcs, so it has no
