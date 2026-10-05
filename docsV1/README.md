@@ -27,6 +27,7 @@ Baseline document:
 - [V1_SUPPORTED_DOMAIN_STATUS.md](./V1_SUPPORTED_DOMAIN_STATUS.md) - single current-scope, ownership, runtime, and document-classification index
 - [V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md](./V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md) - final FreeCAD 1.1.1 supported-domain acceptance checklist
 - [V1_UNRELEASED_CHANGES_MANUAL_QA.md](./V1_UNRELEASED_CHANGES_MANUAL_QA.md) - FreeCAD GUI checks for the unreleased changelog block, including the one change that touches saved documents
+- [SESSION_HANDOFF.md](./SESSION_HANDOFF.md) - working state of the `ganada_0902` branch: the decisions taken, what is left, the validation gate, and the traps that cost time
 - [V1_PERSISTENCE_SCHEMA_INVENTORY.md](./V1_PERSISTENCE_SCHEMA_INVENTORY.md) - active typed-payload, migration, compatibility, and incremental-result persistence baseline
 - [V1_RELEASE_1_0_0_PLAN.md](./V1_RELEASE_1_0_0_PLAN.md)
 - [V1_RELEASE_1_0_0_VALIDATION_RECORD.md](./V1_RELEASE_1_0_0_VALIDATION_RECORD.md)
