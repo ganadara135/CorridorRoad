@@ -431,7 +431,7 @@ yet cover.
 Two of the five cannot be reviewed at all, which the item had not anticipated and which
 is now item 5.11.
 
-### 5.10 Extend the review to the five remaining row families
+### 5.10 Extend the review to the five remaining row families: done on 2026-10-05
 
 The review surface covers legs, anchors, control areas and, since item 5.11, the curb
 return and arm policies. Five families are left:
@@ -495,6 +495,49 @@ own action; `IntersectionBoundaryOwnerStatus` reaching `ready` for T and Cross f
 plus review alone; and the rule that reads these rows identified in the commit message, so
 the next person does not have to find it again.
 
+#### Outcome
+
+**The rule was located.** The edge-authority filter *is* the reader, and the earlier note
+that none of its tokens match was wrong. The chain is:
+
+1. The preset writes `source_method="subassembly_default"` on its edge policy rows.
+2. `_VALID_EDGE_POLICY_SOURCE_METHODS` in `intersection_evaluation_service.py` lists
+   `manual`, `detected`, `preset_default`, `subassembly`, `subassembly_bridge`,
+   `subassembly_derived` and `imported`, and not `subassembly_default`.
+3. The edge network builder therefore appends `source_edge_family_method_unknown` to every
+   edge row's diagnostics, and `_edge_family_source_status` turns that into `warning`.
+4. `_intersection_boundary_edge_authority_exclusion_reason` lowercases the row's
+   `source_diagnostic_rows` and matches the token `method_unknown`, so the row is excluded
+   as `method_unknown`. The `default_accepted` guess missed it because it never touched the
+   method itself.
+
+That also explains the measured table: clearing the diagnostics removes the stored
+`edge_family_subassembly_defaulted` and `approval_pending` markers, but the method-unknown
+diagnostic is regenerated on every evaluation from `source_method`, so only rewriting the
+method removes it.
+
+**What was built.** `intersection_review_rows` and `apply_intersection_review` now cover
+all five families (`POLICY_FAMILY_SPECS`), accepting a row only when the fields it governs
+are present and clearing its diagnostics. `adopt_edge_families_from_subassembly` rewrites
+`subassembly_default` to `subassembly_derived` as its own action, refusing a row without a
+`subassembly_kind`, and the panel exposes it as `Adopt Edge Families From Subassembly` with
+a confirmation. `drainage_policy_rows.intent_status` is untouched, as decided.
+
+Review rows are now **T 18, Cross 30, Roundabout 24**, all reaching `n of n` from
+`Accept Reviewed Rows`.
+
+**Measured result.** For a T preset, accepting alone leaves `IntersectionBoundaryOwnerStatus`
+short of `ready`; accepting and then adopting gives `ready` with 15 owners.
+
+**Cross does not reach `ready`, and this item does not explain why.** The same document
+measured through the T smoke's manual acceptance also reads `missing`, with zero owners. Its
+slope face preview reports `curb_return_arcs=0/4` and `cross_intersection_corner_arc_gap:
+missing=4`, and the Design and Daylight previews report `boundary_loop_refs_missing`. The
+corner arcs are not built for a Cross, so the boundary loop carries no owners whatever the
+review state. That is a separate gap, pinned by a strict `xfail` in
+`test_intersection_policy_family_review.py` so that fixing it forces the test to be updated.
+The acceptance line above is therefore met for T and not for Cross.
+
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
 `IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` were the only two of
@@ -542,9 +585,9 @@ the Intersection row families are stored and what an absent key means.
 
 ## 6. Order
 
-5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.9 and 5.11 are done. 5.10 is next: it
-covers the five families the review still does not reach and needs the rule that reads
-them found first. 5.7 is measurable on its own. 5.8 is what a real route needs. 5.4 is
+5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.9, 5.10 and 5.11 are done. 5.7 is next and
+is measurable on its own. The Cross corner arc gap found by 5.10 is a candidate for its own
+item. 5.8 is what a real route needs. 5.4 is
 the largest and is what the Roundabout needs to be more than a symmetric starter.
 
 ## 7. Out of Scope

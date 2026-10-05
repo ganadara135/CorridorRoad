@@ -34,6 +34,7 @@ from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
 from ..commands.cmd_intersection_editor import resolve_intersection_review_leg_refs
 from ..services.editing import (
     intersection_preset_default_rows,
+    adopt_edge_families_from_subassembly,
     apply_intersection_review,
     intersection_review_rows,
     intersection_review_summary,
@@ -239,7 +240,7 @@ class V1IntersectionPresetsTaskPanel:
         self._status.setMinimumHeight(190)
         layout.addWidget(self._status)
 
-        review_label = QtWidgets.QLabel("Source review (legs, anchors, control areas):")
+        review_label = QtWidgets.QLabel("Source review (legs, anchors, control areas, policies):")
         layout.addWidget(review_label)
         self._review_table = QtWidgets.QTableWidget(0, 5)
         self._review_table.setHorizontalHeaderLabels(["Row", "Id", "Approval", "Missing", "Note"])
@@ -257,6 +258,13 @@ class V1IntersectionPresetsTaskPanel:
         self._accept_review_button = QtWidgets.QPushButton("Accept Reviewed Rows")
         self._accept_review_button.clicked.connect(self._accept_reviewed_rows)
         review_buttons.addWidget(self._accept_review_button)
+        self._adopt_edge_families_button = QtWidgets.QPushButton("Adopt Edge Families From Subassembly")
+        self._adopt_edge_families_button.setToolTip(
+            "Marks the preset's edge policies as derived from the starter Assembly. "
+            "Do this only after reviewing that Assembly; it is not part of Accept Reviewed Rows."
+        )
+        self._adopt_edge_families_button.clicked.connect(self._adopt_edge_families)
+        review_buttons.addWidget(self._adopt_edge_families_button)
         review_buttons.addStretch(1)
         layout.addLayout(review_buttons)
 
@@ -345,6 +353,48 @@ class V1IntersectionPresetsTaskPanel:
             lines.append("")
             lines.append("A row is not accepted while a field it needs is missing, because a ref that names")
             lines.append("nothing would leave the same gap behind a reviewed status.")
+        _show_message(self.form, "Intersections", "\n".join(lines))
+
+    def _confirm_edge_family_adoption(self) -> bool:
+        """Ask the user to own the claim that the edge families come from the Assembly."""
+
+        try:
+            answer = QtWidgets.QMessageBox.question(
+                self.form,
+                "Intersections",
+                "Mark the edge policies as derived from the Assembly?\n\n"
+                "This states that you have reviewed the starter Assembly and Subassembly "
+                "and that they are the source of the intersection edge families.",
+            )
+        except Exception:
+            return False
+        return answer == QtWidgets.QMessageBox.Yes
+
+    def _adopt_edge_families(self) -> None:
+        """Change the preset edge policies' source method, as its own decision."""
+
+        try:
+            obj = find_v1_intersection_model(self.document)
+            model = to_intersection_model(obj)
+            if model is None:
+                _show_message(self.form, "Intersections", "Create or apply an Intersection source first.")
+                return
+            if not self._confirm_edge_family_adoption():
+                return
+            prepared = adopt_edge_families_from_subassembly(model)
+            create_or_update_v1_intersection_model_object(
+                self.document,
+                intersection_model=prepared.model,
+                project=find_project(self.document),
+                label="Intersections",
+            )
+            self.document.recompute()
+        except Exception as error:
+            _show_message(self.form, "Intersections", f"Edge families could not be adopted:\n{error}")
+            return
+        self._refresh_review_table()
+        lines = ["Adopted %d edge policy row(s) from the Subassembly." % len(prepared.accepted_row_ids)]
+        lines.extend(str(diagnostic) for diagnostic in prepared.diagnostics)
         _show_message(self.form, "Intersections", "\n".join(lines))
 
     def _selected_label(self) -> str:

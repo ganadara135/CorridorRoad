@@ -13,6 +13,20 @@ The curb return radius and the design vehicle are reviewed here too, because the
 radius is what sets the corner arcs and neither row family could record that it
 was still an unreviewed preset default until plan item 5.11 gave them one.
 
+Plan item 5.10 extends the review to the last five families: corners, edge policies,
+lane connections, grading policies and drainage policies. Accepting them clears their
+diagnostics outright, because for these families `source_method` already records where
+a row came from and a diagnostic list is for what is still unresolved.
+
+Accepting is not enough for the edge policies. The preset writes
+`source_method="subassembly_default"`, which `_VALID_EDGE_POLICY_SOURCE_METHODS` in the
+evaluation service does not list, so every edge row evaluates with
+`source_edge_family_method_unknown` and the edge-authority filter
+(`_intersection_boundary_edge_authority_exclusion_reason`, token `method_unknown`)
+drops it from the boundary. Changing the method to `subassembly_derived` is a claim
+that the edge family comes from an Assembly the user has looked at, so it is its own
+action, `adopt_edge_families_from_subassembly`, and never part of the acceptance.
+
 A row is accepted only when every field it needs is present. Inventing a ref that
 names nothing would make the source look reviewed while leaving the same gap, so
 an incomplete row keeps its draft status and says what it still needs.
@@ -30,6 +44,19 @@ ARM_POLICY_REQUIRED_FIELDS = ("leg_ref", "design_vehicle_ref")
 # The curb return radius is checked on its own because it is numeric: a row that
 # stores 0.0 governs no arc, and a blank-text test would read it as present.
 ANCHOR_DEFAULT_TOLERANCE = 0.01
+
+# The five families plan item 5.10 added, as (model attribute, review kind, id field,
+# fields the row needs before accepting it means anything). A row that names no legs,
+# no edge family, no grading mode or no capture mode governs nothing yet.
+POLICY_FAMILY_SPECS = (
+    ("corner_rows", "corner", "corner_id", ("from_leg_ref", "to_leg_ref")),
+    ("edge_policy_rows", "edge_policy", "policy_id", ("leg_ref", "edge_family_intent")),
+    ("lane_connection_rows", "lane_connection", "connection_id", ("from_leg_ref", "to_leg_ref")),
+    ("grading_policy_rows", "grading_policy", "policy_id", ("mode",)),
+    ("drainage_policy_rows", "drainage_policy", "policy_id", ("capture_mode",)),
+)
+EDGE_FAMILY_PRESET_METHOD = "subassembly_default"
+EDGE_FAMILY_ADOPTED_METHOD = "subassembly_derived"
 
 # Accepting a row resolves the markers that say nobody has reviewed it, and only
 # those. A preset leaves two families behind: review state, `leg_approval_pending`,
@@ -270,6 +297,18 @@ def intersection_review_rows(model: IntersectionModel | None) -> list[Intersecti
                 notes=_text(getattr(policy, "arm_role", "")),
             )
         )
+    for attribute, kind, id_field, required in POLICY_FAMILY_SPECS:
+        for policy in list(getattr(model, attribute, []) or []):
+            rows.append(
+                IntersectionReviewRow(
+                    kind=kind,
+                    row_id=_text(getattr(policy, id_field, "")),
+                    intersection_id=_text(getattr(policy, "intersection_id", "")),
+                    approval_status=_text(getattr(policy, "approval_status", "")),
+                    missing_fields=tuple(name for name in required if not _text(getattr(policy, name, ""))),
+                    notes=_text(getattr(policy, "source_method", "")),
+                )
+            )
     return rows
 
 
@@ -395,6 +434,22 @@ def apply_intersection_review(
             )
         )
 
+    policy_families: dict[str, list] = {}
+    for attribute, kind, id_field, required in POLICY_FAMILY_SPECS:
+        family_rows = []
+        for policy in list(getattr(model, attribute, []) or []):
+            policy_id = _text(getattr(policy, id_field, ""))
+            missing = tuple(name for name in required if not _text(getattr(policy, name, "")))
+            if missing:
+                incomplete.append(policy_id)
+                diagnostics.append("warning|%s_review_incomplete:%s:%s" % (kind, policy_id, ",".join(missing)))
+                family_rows.append(policy)
+                continue
+            accepted.append(policy_id)
+            # Cleared rather than filtered: source_method keeps the provenance for these.
+            family_rows.append(replace(policy, approval_status="accepted", diagnostic_rows=[]))
+        policy_families[attribute] = family_rows
+
     reviewed = replace(
         model,
         intersection_rows=intersection_rows,
@@ -402,10 +457,50 @@ def apply_intersection_review(
         control_area_rows=control_area_rows,
         curb_return_policy_rows=curb_return_policy_rows,
         arm_policy_rows=arm_policy_rows,
+        **policy_families,
     )
     return PreparedIntersectionReview(
         model=reviewed,
         accepted_row_ids=tuple(accepted),
+        incomplete_row_ids=tuple(incomplete),
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def adopt_edge_families_from_subassembly(model: IntersectionModel | None) -> PreparedIntersectionReview:
+    """Mark the preset's edge policies as derived from the Assembly, as a separate decision.
+
+    The preset creates a starter Assembly and Subassembly, so the claim can be true, but
+    only once the user has looked at that Assembly and decided it is the one they want.
+    That is why this is not folded into `apply_intersection_review`. A row without a
+    `subassembly_kind` stays as it is, because the evaluation service reports
+    `source_edge_family_subassembly_kind_missing` as an error for any `subassembly*` method.
+    """
+
+    if model is None:
+        return PreparedIntersectionReview(
+            model=IntersectionModel(schema_version=1, project_id=""),
+            diagnostics=("error|intersection_review_model_missing",),
+        )
+    adopted: list[str] = []
+    incomplete: list[str] = []
+    diagnostics: list[str] = []
+    edge_rows = []
+    for policy in list(getattr(model, "edge_policy_rows", []) or []):
+        policy_id = _text(getattr(policy, "policy_id", ""))
+        if _text(getattr(policy, "source_method", "")) != EDGE_FAMILY_PRESET_METHOD:
+            edge_rows.append(policy)
+            continue
+        if not _text(getattr(policy, "subassembly_kind", "")):
+            incomplete.append(policy_id)
+            diagnostics.append("warning|edge_family_adoption_incomplete:%s:subassembly_kind" % policy_id)
+            edge_rows.append(policy)
+            continue
+        adopted.append(policy_id)
+        edge_rows.append(replace(policy, source_method=EDGE_FAMILY_ADOPTED_METHOD))
+    return PreparedIntersectionReview(
+        model=replace(model, edge_policy_rows=edge_rows),
+        accepted_row_ids=tuple(adopted),
         incomplete_row_ids=tuple(incomplete),
         diagnostics=tuple(diagnostics),
     )

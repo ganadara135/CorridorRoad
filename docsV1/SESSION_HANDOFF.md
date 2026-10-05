@@ -86,7 +86,7 @@ a guess about a history the document does not record.
 | 5.7 | **open** | cache the evaluation chain; 13 runtime calls measured in one review+preview sequence |
 | 5.8 | **open** | `Use Existing Alignments` creates only the IntersectionModel and refuses without pre-existing intersection-tagged Regions |
 | 5.9 | done | the preset-default checklist in the panel |
-| 5.10 | **open, next** | extend the review to the five remaining families |
+| 5.10 | done 2026-10-05 | the review covers the five remaining families; the edge-family adoption is its own action |
 | 5.11 | done | gave the curb return radius and the design vehicle a review state |
 
 New service: `v1/services/editing/intersection_review_service.py`, a document-free,
@@ -94,24 +94,21 @@ widget-free review of intersection source rows. New presentation rows:
 `intersection_leg_section_coverage_rows` in
 `ui/presentation/intersection_contract_review_presentation.py`.
 
-Review row counts after 5.11: **T 8, Cross 12, Roundabout 8**, all reaching `n of n` from
-`Accept Reviewed Rows` alone.
+Review row counts after 5.10: **T 18, Cross 30, Roundabout 24**, all reaching `n of n` from
+`Accept Reviewed Rows` alone. For T, `IntersectionBoundaryOwnerStatus` reaches `ready` (15 owners)
+only after `Adopt Edge Families From Subassembly` as well. Cross stays `missing`: its corner arcs
+are not built (`cross_intersection_corner_arc_gap:missing=4`), which is a separate gap that the
+plan's §5.10 Outcome records and a strict `xfail` pins.
 
 ## 5. What is left
 
 ### Intersection plan, in order
 
-1. **5.10** — the five families: `corner_rows`, `edge_policy_rows`, `lane_connection_rows`,
-   `grading_policy_rows`, `drainage_policy_rows`. **Do the search first.** Accepting the
-   rows and clearing their diagnostics is necessary, and rewriting
-   `edge_policy_rows.source_method` is necessary, and neither alone is sufficient — that is
-   measured in the plan's table. The rule that enforces this was **not located**; the
-   edge-authority filter is not it, since none of its exclusion tokens match. Two wrong
-   guesses are recorded in the plan so they are not repeated. The acceptance asks for that
-   rule to be named in the commit message.
-2. **5.7** — caching, measurable on its own.
-3. **5.8** — what a real route needs.
-4. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
+1. **5.7** — caching, measurable on its own.
+2. **5.8** — what a real route needs.
+3. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
+4. **Cross corner arcs** — not yet an item. A Cross builds no curb return arcs, so it has no
+   boundary owners whatever the review state; found while closing 5.10.
 
 ### Repository-wide
 
@@ -225,8 +222,9 @@ procedure, and its §5, an existing document restoring after the tree swap, is t
 blocking check.
 
 **That pass is partly stale.** The user reported the GUI checks complete on 2026-09-28, but
-that was **before** items 5.9 and 5.11 landed, and 5.11 changed the review table from 5 rows
-to 8 for a T preset and from 7 to 12 for a Cross. Sections 7 and 9 of the procedure were
+that was **before** items 5.9, 5.11 and 5.10 landed. 5.11 changed the review table from 5 rows
+to 8 for a T preset and from 7 to 12 for a Cross, and 5.10 took them to 18 and 30 and added the
+`Adopt Edge Families From Subassembly` button, whose confirmation dialog was stubbed in the harness. Sections 7 and 9 of the procedure were
 updated to the new numbers and have **not** been re-run in the GUI. Section 5 is unaffected.
 
 `AGENTS.md` is explicit that GUI integration must not be claimed when only headless tests

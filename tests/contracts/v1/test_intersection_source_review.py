@@ -298,9 +298,9 @@ def test_preset_default_rows_follow_the_review_as_it_happens() -> None:
         # and so are the two families item 5.11 added
         assert rows["Curb return radius"].review_state == "reviewed"
         assert rows["Design vehicle"].review_state == "reviewed"
-        # grading and drainage are among the five it does not, which is plan item 5.10
-        assert rows["Grading policy"].review_state.startswith("review required")
-        assert rows["Drainage mode"].review_state.startswith("review required")
+        # grading and drainage joined them with plan item 5.10
+        assert rows["Grading policy"].review_state == "reviewed"
+        assert rows["Drainage mode"].review_state == "reviewed"
     finally:
         App.closeDocument(doc.Name)
 
@@ -344,7 +344,7 @@ def test_the_review_lists_the_curb_return_radius_and_the_design_vehicle() -> Non
         by_kind = {}
         for row in rows:
             by_kind.setdefault(row.kind, []).append(row)
-        assert set(by_kind) == {"leg", "anchor", "control_area", "curb_return_policy", "arm_policy"}
+        assert {"leg", "anchor", "control_area", "curb_return_policy", "arm_policy"} <= set(by_kind)
         # one curb return policy for the junction, one arm policy for each leg
         assert len(by_kind["curb_return_policy"]) == 1
         assert len(by_kind["arm_policy"]) == len(model.intersection_rows[0].leg_rows)

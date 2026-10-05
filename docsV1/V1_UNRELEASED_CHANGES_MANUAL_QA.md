@@ -32,7 +32,7 @@ Do not re-check these by hand:
   `CRV1_02_Alignment_Profile` as the stored object names
 - each of the three Intersection presets creates 18 source rows with an `IntersectionModel`,
   and the four retired kinds are refused by name
-- the Intersection review table lists 8 rows for a T preset and reaches 8 of 8 reviewed
+- the Intersection review table lists 18 rows for a T preset and reaches 18 of 18 reviewed
 - the preset-default checklist reports a review state for all five values, and both the
   curb return radius and the design vehicle reach `reviewed`
 - Applied Sections skips an Alignment missing a Profile, Region or Stationing, and names it
@@ -123,31 +123,44 @@ but not real clicks, and the confirmation dialog was stubbed in the harness.
 
 With the T preset sources from section 6 still open, and the Intersection panel still open:
 
-1. Read the `Source review (legs, anchors, control areas)` table.
+1. Read the `Source review (legs, anchors, control areas, policies)` table.
 
 Expected:
 
-- **8 rows**: 2 `leg`, 1 `anchor`, 2 `control_area`, 1 `curb_return_policy`, 2 `arm_policy`.
-  The last two families were added by plan item 5.11; five rows here means that change is
-  not in the build under test
+- **18 rows**: 2 `leg`, 1 `anchor`, 2 `control_area`, 1 `curb_return_policy`, 2 `arm_policy`,
+  and the five families plan item 5.10 added: 2 `corner`, 4 `edge_policy`,
+  2 `lane_connection`, 1 `grading_policy`, 1 `drainage_policy`. Eight rows here means
+  item 5.10 is not in the build under test
 - the `Approval` column reads `draft` on every row
 - the `Missing` column reads `profile_ref, centerline3d_ref` on both leg rows and
   `tolerance` on the anchor row
-- the summary line under the table reads `0 of 8 row(s) reviewed; 3 still missing source fields.`
+- the summary line under the table reads `0 of 18 row(s) reviewed; 3 still missing source fields.`
 - the table is **readable without resizing the task panel**, and its columns are not clipped
 
 2. Press `Refresh Review`.
 
-Expected: the same 8 rows, no flicker into an error message, summary unchanged.
+Expected: the same 18 rows, no flicker into an error message, summary unchanged.
 
 3. Press `Accept Reviewed Rows`.
 
 Expected:
 
-- a dialog appears reading `Accepted 8 row(s).`
-- after closing it, the summary reads `8 of 8 row(s) reviewed; 0 still missing source fields.`
+- a dialog appears reading `Accepted 18 row(s).`
+- after closing it, the summary reads `18 of 18 row(s) reviewed; 0 still missing source fields.`
 - the `Approval` column reads `accepted` on every row and `Missing` is empty
+- the four `edge_policy` rows still read `subassembly_default` in the `Note` column
 - no traceback in the Report view
+
+4. Press `Adopt Edge Families From Subassembly`.
+
+Expected:
+
+- a confirmation dialog asks whether to mark the edge policies as derived from the Assembly;
+  answering `No` changes nothing
+- after answering `Yes`, a dialog reads `Adopted 4 edge policy row(s) from the Subassembly.`
+- the four `edge_policy` rows now read `subassembly_derived` in the `Note` column and every
+  other row is unchanged
+- the button is its own step: `Accept Reviewed Rows` never changes the method
 
 4. Press `Accept Reviewed Rows` a second time.
 
@@ -217,14 +230,17 @@ Expected:
 - a `V1CorridorIntersectionSurfacePreview` and a
   `V1CorridorIntersectionSlopeFaceSurfacePreview` appear under
   `04_Parametric Model / Build Parametric Outputs`
-- `IntersectionBoundaryOwnerStatus` on the slope face preview reads `missing`. That is the
-  measured state today and item 5.10 of the improvement plan is what changes it; a different
-  value here is worth recording
+- `IntersectionBoundaryOwnerStatus` on the slope face preview reads `ready` with 15 owners
+  once both `Accept Reviewed Rows` and `Adopt Edge Families From Subassembly` have been
+  pressed, and not before: with only the first it stays short of `ready`
 
 2. Repeat sections 6, 7 and 9 for `Cross Intersection - Basic`.
 
-Expected: the same as T, with **12 review rows** rather than 8, because a Cross has four
-legs and so four arm policies.
+Expected: the same as T, with **30 review rows** rather than 18, because a Cross has four
+legs, so four arm policies, four corners, eight edge policies and four lane connections.
+`IntersectionBoundaryOwnerStatus` stays `missing` for a Cross even after adoption: its corner
+arcs are not built (`cross_intersection_corner_arc_gap:missing=4`), which is a separate gap
+from the review.
 
 3. Repeat for `Roundabout - Single Lane`.
 
