@@ -422,7 +422,7 @@ quadratic in boundary points times segments and runs five times over unchanged i
 That is an optimisation of geometry matching, it needs its own measurement and its own
 test that the match rows are identical, and it is not started.
 
-### 5.8 Make the starter geometry usable on a real route: confirmed, and wider
+### 5.8 Make the starter geometry usable on a real route: done on 2026-10-06
 
 The starter alignments are hardcoded straight lines: the T is a 240 m main road
 and a 100 m side road, with no curve, no superelevation and a generated flat
@@ -439,6 +439,43 @@ intersections.
 Acceptance: `Use Existing Alignments` creates the same source set the preset does,
 minus the alignments and profiles it is given, including the intersection-tagged
 Region rows it currently demands as a precondition.
+
+#### Outcome
+
+`create_intersection_from_existing_alignments` now writes the IntersectionModel and
+then the rest of the preset's source set around the two roads the user selected.
+
+**Control Regions are overlay rows.** A real route already has a Region model the user
+wrote, so editing or splitting its rows would change authored source. The decision, taken
+with the user, was to add a row and leave the others alone. `build_control_region_overlay`
+(`services/editing/intersection_control_region_service.py`, no document access) builds a
+row centred on the detected crossing station, one control length wide and clipped to the
+span the Regions cover, with `intersection_ref` set and a priority of at least 80 and above
+every existing row. `RegionResolutionService` therefore makes it the active row there, and
+every other station resolves exactly as before. The overlay copies the Assembly, Template,
+Superelevation and policy-set refs of the row that was active at the crossing, so the
+section a station resolves to does not change.
+
+What it refuses, with a message that names the cause, because an invented row would claim
+an Assembly nobody chose: a road with no Region model, a crossing station outside the
+Regions, a control length of zero, two roads that neither cross nor come within one
+control length of each other, and detection that could not place the roads at all. Both
+roads' rows are built before either is written, so a refusal changes nothing.
+
+Existing intersection-tagged Regions are kept and nothing is added, so applying twice, or
+applying after hand-authored control Regions, is a no-op for Region source.
+
+**Superelevation and Drainage.** One Superelevation handoff source per road, as the
+preset writes, except that a road which already has a Superelevation source of its own
+keeps it and gets none. The Drainage handoff source is written as for the preset.
+
+The apply dialog lists what was created. `Control Length` from the panel sets the overlay
+width, falling back to 24 m, the panel default.
+
+**Not covered.** The overlay is placed from the detected crossing, so the roads must
+actually have been detected against each other; the starter preset's Profile, Stations
+and Assembly are still the user's to supply on a real route, because this mode takes
+Alignments the user already has.
 
 ### 5.9 Expose the control values the preset guesses: done on 2026-09-28
 
@@ -620,7 +657,7 @@ the Intersection row families are stored and what an absent key means.
 
 ## 6. Order
 
-5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.9, 5.10 and 5.11 are done. 5.7 is closed
+5.1 needs nothing and 5.2, 5.3, 5.5, 5.6, 5.8, 5.9, 5.10 and 5.11 are done. 5.7 is closed
 without a cache; the time it was about is in the shared breakline audit and the patch
 constraint coverage matching, which is a candidate for its own item. The Cross corner arc
 gap found by 5.10 is another. 5.8 is what a real route needs. 5.4 is

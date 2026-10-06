@@ -14,6 +14,7 @@ from .editor_source_service import (
     prepare_structure_edit,
     prepare_subassembly_library_edit,
 )
+from .intersection_control_region_service import ControlRegionOverlay, build_control_region_overlay
 from .intersection_review_service import (
     IntersectionPresetDefaultRow,
     IntersectionReviewRow,
@@ -27,6 +28,7 @@ from .intersection_review_service import (
 from .tin_edit_service import TINEditReport, TINEditResult, TINEditService
 
 __all__ = [
+    "ControlRegionOverlay",
     "IntersectionPresetDefaultRow",
     "IntersectionReviewRow",
     "PreparedIntersectionReview",
@@ -37,6 +39,7 @@ __all__ = [
     "TINEditService",
     "adopt_edge_families_from_subassembly",
     "apply_intersection_review",
+    "build_control_region_overlay",
     "editor_view_model",
     "intersection_preset_default_rows",
     "intersection_review_rows",

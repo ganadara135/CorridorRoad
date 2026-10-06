@@ -33,6 +33,7 @@ from .cmd_intersection_editor import (
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
 from ..commands.cmd_intersection_editor import resolve_intersection_review_leg_refs
 from ..services.editing import (
+    build_control_region_overlay,
     intersection_preset_default_rows,
     adopt_edge_families_from_subassembly,
     apply_intersection_review,
@@ -44,7 +45,8 @@ from ..objects.obj_intersection import (
     find_v1_intersection_model,
     to_intersection_model,
 )
-from ..objects.obj_superelevation import create_or_update_v1_superelevation_source_object
+from ..objects.obj_region import create_or_update_v1_region_model_object, to_region_model
+from ..objects.obj_superelevation import create_or_update_v1_superelevation_source_object, to_superelevation_model
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
@@ -513,12 +515,14 @@ class V1IntersectionPresetsTaskPanel:
 
     def _apply_existing_alignment_intersection(self):
         try:
+            created_details: list[str] = []
             obj, control_region_count = create_intersection_from_existing_alignments(
                 self.document,
                 preset_label=self._selected_label(),
                 primary_alignment_ref=self._selected_primary_alignment_ref(),
                 secondary_alignment_ref=self._selected_secondary_alignment_ref(),
                 detection_result=self._last_detection,
+                details=created_details,
                 **self._selected_options(),
             )
             self._last_applied_intersection = f"{getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {getattr(obj, 'IntersectionModelId', '')}"
@@ -530,7 +534,8 @@ class V1IntersectionPresetsTaskPanel:
                     "Intersection has been applied from existing Alignments.\n\n"
                     f"Object: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')}\n"
                     f"IntersectionModel: {getattr(obj, 'IntersectionModelId', '')}\n"
-                    f"Control Regions: {control_region_count}"
+                    f"Control Regions: {control_region_count}\n\n"
+                    + "\n".join(created_details)
                 ),
             )
         except Exception as exc:
@@ -604,6 +609,11 @@ class V1IntersectionPresetsTaskPanel:
             ]
         )
         self._status.setPlainText("\n".join(str(line) for line in lines if line is not None))
+
+
+# The preset's Control Length spin box defaults to this, so an existing-Alignment apply
+# that passes no length uses the same span.
+EXISTING_ALIGNMENT_DEFAULT_CONTROL_LENGTH = 24.0
 
 
 def create_intersection_preset_sources(
@@ -830,12 +840,31 @@ def create_intersection_from_existing_alignments(
     control_length: float | None = None,
     grading_policy: str = "",
     drainage_mode: str = "",
+    details: list[str] | None = None,
 ):
-    """Create or update an IntersectionModel object from existing Alignment selections."""
+    """Create or update an IntersectionModel object from existing Alignment selections.
+
+    The same source set the preset writes is created around the Alignments the user
+    selected: intersection control Regions as overlay rows on their existing Region
+    models, one Superelevation handoff source for each road that has none, and the
+    Drainage handoff source. `details`, when given, receives one line for each.
+    """
 
     if document is None:
         raise RuntimeError("No active document is available.")
     project = find_project(document)
+    detail_lines = details if details is not None else []
+    detail_lines.extend(
+        ensure_existing_alignment_control_regions(
+            document,
+            preset_label=preset_label,
+            primary_alignment_ref=primary_alignment_ref,
+            secondary_alignment_ref=secondary_alignment_ref,
+            detection_result=detection_result,
+            control_length=control_length,
+            project=project,
+        )
+    )
     model, control_region_count = build_existing_alignment_intersection_model(
         document,
         preset_label=preset_label,
@@ -854,11 +883,149 @@ def create_intersection_from_existing_alignments(
         project=project,
         label="Intersections",
     )
+    kind = intersection_preset_kind_from_label(preset_label)
+    control_regions = list_intersection_control_region_choices(document, intersection_ref_for_kind(kind))
+    detail_lines.extend(
+        _create_preset_superelevation_source(
+            document,
+            intersection_kind=kind,
+            primary_alignment_ref=primary_alignment_ref,
+            secondary_alignment_ref=secondary_alignment_ref,
+            control_region_choices=control_regions,
+            grading_policy=grading_policy or str(intersection_preset_row_from_label(preset_label).get("grading", "") or ""),
+            project=project,
+            skip_alignment_refs=_alignments_with_superelevation_source(
+                document,
+                (primary_alignment_ref, secondary_alignment_ref),
+            ),
+        )
+    )
+    detail_lines.extend(
+        _create_preset_drainage_source(
+            document,
+            intersection_kind=kind,
+            primary_alignment_ref=primary_alignment_ref,
+            secondary_alignment_ref=secondary_alignment_ref,
+            control_region_choices=control_regions,
+            drainage_mode=drainage_mode or str(intersection_preset_row_from_label(preset_label).get("drainage", "") or ""),
+            project=project,
+        )
+    )
     try:
         document.recompute()
     except Exception:
         pass
     return obj, control_region_count
+
+
+def ensure_existing_alignment_control_regions(
+    document,
+    *,
+    preset_label: str,
+    primary_alignment_ref: str,
+    secondary_alignment_ref: str,
+    detection_result=None,
+    control_length: float | None = None,
+    project=None,
+) -> list[str]:
+    """Add an intersection control Region overlay row to each selected Alignment's Regions.
+
+    Existing intersection-tagged Regions are respected and nothing is added, so applying
+    twice, or applying after hand-authored control Regions, changes no Region source. The
+    user's own rows are never edited: each overlay is a new row with a higher priority.
+    Both Regions are built before either is written, so a refusal leaves the document as it was.
+    """
+
+    kind = intersection_preset_kind_from_label(preset_label)
+    if not kind:
+        raise ValueError(f"Unsupported Intersection Preset: {preset_label}")
+    intersection_ref = intersection_ref_for_kind(kind)
+    if list_intersection_control_region_choices(document, intersection_ref):
+        return ["Control Regions: kept the existing intersection-tagged Regions"]
+    detection = detection_result or _detect_preset_alignment_intersection(
+        document,
+        primary_alignment_ref=primary_alignment_ref,
+        secondary_alignment_ref=secondary_alignment_ref,
+    )
+    length = _positive_float_or_none(control_length) or EXISTING_ALIGNMENT_DEFAULT_CONTROL_LENGTH
+    status = str(getattr(detection, "status", "") or "")
+    if detection is None or status not in {"intersection", "nearest"}:
+        raise ValueError(
+            "The two Alignments could not be placed against each other, so no control Region station "
+            "is known. Run Auto Detect and check both Alignments have geometry."
+        )
+    # Roads that do not meet are not an intersection. Within one control length the
+    # nearest approach is still inside the junction's own control area.
+    if status == "nearest" and float(getattr(detection, "distance", 0.0) or 0.0) > length:
+        raise ValueError(
+            "The two Alignments do not meet: their nearest approach is %.3f m, more than the %.3f m control length."
+            % (float(getattr(detection, "distance", 0.0) or 0.0), length)
+        )
+    plans = []
+    for role, alignment_ref, station in (
+        ("primary", primary_alignment_ref, float(getattr(detection, "primary_station", 0.0) or 0.0)),
+        ("secondary", secondary_alignment_ref, float(getattr(detection, "secondary_station", 0.0) or 0.0)),
+    ):
+        region_obj = _region_object_for_alignment(document, alignment_ref)
+        if region_obj is None:
+            raise ValueError(
+                f"Alignment {alignment_ref} has no Region model. Author its Regions first so the "
+                "intersection control Region can inherit their Assembly."
+            )
+        overlay = build_control_region_overlay(
+            to_region_model(region_obj),
+            station=station,
+            control_length=length,
+            intersection_ref=intersection_ref,
+            role=role,
+            kind=kind,
+        )
+        plans.append((region_obj, overlay, role, alignment_ref, station))
+    lines = []
+    for region_obj, overlay, role, alignment_ref, station in plans:
+        create_or_update_v1_region_model_object(
+            document,
+            overlay.model,
+            project=project,
+            object_name=str(getattr(region_obj, "Name", "") or "V1RegionModel"),
+            label=str(getattr(region_obj, "Label", "") or "Regions"),
+        )
+        lines.append(
+            "Control Region: %s | alignment=%s | STA %.3f-%.3f | around crossing STA %.3f | inherits %s"
+            % (
+                overlay.row.region_id,
+                alignment_ref,
+                overlay.row.station_start,
+                overlay.row.station_end,
+                station,
+                overlay.base_region_id or "no covering row",
+            )
+        )
+    return lines
+
+
+def _region_object_for_alignment(document, alignment_ref: str):
+    """Return the first Region model object that belongs to the Alignment."""
+
+    target = str(alignment_ref or "").strip()
+    for obj in list(getattr(document, "Objects", []) or []):
+        model = to_region_model(obj)
+        if model is not None and str(getattr(model, "alignment_id", "") or "") == target:
+            return obj
+    return None
+
+
+def _alignments_with_superelevation_source(document, alignment_refs) -> list[str]:
+    """Return which of the Alignments already carry a Superelevation source."""
+
+    wanted = {str(ref or "").strip() for ref in alignment_refs}
+    found: list[str] = []
+    for obj in list(getattr(document, "Objects", []) or []):
+        model = to_superelevation_model(obj)
+        alignment_id = str(getattr(model, "alignment_id", "") or "") if model is not None else ""
+        if alignment_id in wanted and alignment_id not in found:
+            found.append(alignment_id)
+    return found
 
 
 def _apply_preset_source_completeness_status(model, *, preset_label: str) -> None:
@@ -1479,8 +1646,13 @@ def _create_preset_superelevation_source(
     control_region_choices: list[dict[str, object]],
     grading_policy: str = "",
     project=None,
+    skip_alignment_refs=(),
 ) -> list[str]:
-    """Store a preset-owned Superelevation handoff source without inventing crossfall rows."""
+    """Store a preset-owned Superelevation handoff source without inventing crossfall rows.
+
+    A road listed in `skip_alignment_refs` already has a Superelevation source of its own,
+    so it gets no handoff source and keeps what its author wrote.
+    """
 
     # One source per participating road. Applied Sections pairs superelevation by
     # alignment_id, so a single source keyed on the primary would leave the side road
@@ -1491,8 +1663,12 @@ def _create_preset_superelevation_source(
         if ref
     ]
     details: list[str] = []
+    skipped = {str(ref or "").strip() for ref in skip_alignment_refs}
     for index, alignment_ref in enumerate(participating, start=1):
         role = "primary" if index == 1 else "secondary"
+        if alignment_ref in skipped:
+            details.append(f"Superelevation: kept the existing source | alignment={alignment_ref}")
+            continue
         model = SuperelevationModel(
             schema_version=1,
             project_id=_project_id(project),
@@ -1550,7 +1726,7 @@ def _create_preset_superelevation_source(
         )
     details.append(
         "Superelevation rows per road: controls=0; transitions=0; constraints=2 (%d road(s))"
-        % len(participating)
+        % (len(participating) - len([ref for ref in participating if ref in skipped]))
     )
     return details
 

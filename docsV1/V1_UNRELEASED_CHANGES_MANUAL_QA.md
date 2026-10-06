@@ -116,6 +116,23 @@ Expected in the Tree view:
 - one Drainage object, one `Intersections` object
 - a `3D Centerline` preview
 
+### 6a. Use Existing Alignments
+
+This needs a document with two real roads that cross, each with its own Region model.
+
+1. In the Intersection panel set `Source Mode` to `Use Existing Alignments`, choose the two
+   roads, press `Auto Detect`, set `Control Length`, press `Apply`.
+
+Expected:
+
+- no refusal about missing intersection-tagged Regions
+- the dialog lists one `Control Region:` line per road, one `Superelevation:` line per road
+  (`kept the existing source` for a road that already had one) and a `Drainage:` line
+- in the Region editor each road shows its own rows unchanged plus one new row tagged with an
+  intersection, one control length wide and centred on the crossing
+- pressing `Apply` a second time adds no further Region row
+- a road with no Region model is refused with a message naming it, and nothing is written
+
 ## 7. Intersection source review, new panel surface
 
 The table and its two buttons are new. Headless construction and the handler calls passed,

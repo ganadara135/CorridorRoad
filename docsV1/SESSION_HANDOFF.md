@@ -84,7 +84,7 @@ a guess about a history the document does not record.
 | 5.5 | done | superelevation paired per Alignment |
 | 5.6 | done | Applied Sections names the Alignments it skips |
 | 5.7 | closed 2026-10-05, no cache | the chain costs 0.3 s of a 5.9 s T build; the time is in the shared breakline audit and patch constraint matching |
-| 5.8 | **open** | `Use Existing Alignments` creates only the IntersectionModel and refuses without pre-existing intersection-tagged Regions |
+| 5.8 | done 2026-10-06 | `Use Existing Alignments` adds overlay control Regions to the user's Region models and writes the Superelevation and Drainage handoff sources |
 | 5.9 | done | the preset-default checklist in the panel |
 | 5.10 | done 2026-10-05 | the review covers the five remaining families; the edge-family adoption is its own action |
 | 5.11 | done | gave the curb return radius and the design vehicle a review state |
@@ -107,9 +107,8 @@ plan's §5.10 Outcome records and a strict `xfail` pins.
 1. **Audit and constraint matching** — not yet an item. `SharedBreaklineAuditService.audit` runs 5 times
    at about 1.2 s each and `intersection_patch_constraint_build_service` about 0.7 s each, both on
    quadratic point-to-polyline tests; the plan's §5.7 Outcome has the profile.
-2. **5.8** — what a real route needs.
-3. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
-4. **Cross corner arcs** — not yet an item. A Cross builds no curb return arcs, so it has no
+2. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
+3. **Cross corner arcs** — not yet an item. A Cross builds no curb return arcs, so it has no
    boundary owners whatever the review state; found while closing 5.10.
 
 ### Repository-wide
