@@ -196,16 +196,17 @@ def test_a_row_missing_what_it_governs_is_not_accepted_and_not_adopted() -> None
 
 
 # Cross does not reach ready for a reason that has nothing to do with the review: its
-# corner arcs are not built (`curb_return_arcs=0/4`, `cross_intersection_corner_arc_gap`),
-# so the boundary loop carries no owners. The manual acceptance the T smoke uses gives the
-# same `missing`. Strict, so that fixing the arcs turns this into a failure to update.
+# boundary takes the curb return envelope path, which assigns no `intersection-boundary-owner`
+# refs, and the slope face surface consumes none of the loop's edges. The manual acceptance
+# the T smoke uses gives the same `missing`. Strict, so that giving the envelope owners turns
+# this into a failure to update.
 @pytest.mark.parametrize(
     "label",
     [
         "T Intersection - Basic",
         pytest.param(
             "Cross Intersection - Basic",
-            marks=pytest.mark.xfail(strict=True, reason="Cross corner arcs are not built, so no boundary owners"),
+            marks=pytest.mark.xfail(strict=True, reason="the Cross curb return envelope path assigns no boundary owners"),
         ),
     ],
 )

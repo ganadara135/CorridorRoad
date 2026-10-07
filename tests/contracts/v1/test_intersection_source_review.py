@@ -309,7 +309,11 @@ def test_preset_default_rows_are_empty_without_a_model() -> None:
     assert intersection_preset_default_rows(None) == []
 
 
-def test_panel_review_surface_accepts_the_preset_rows_in_the_document() -> None:
+def test_panel_review_surface_accepts_the_preset_rows_in_the_document(monkeypatch) -> None:
+    from freecad.Corridor_Road.v1.commands import cmd_intersection_presets
+
+    # a real QMessageBox is modal and waits for a click that never comes, which hung the gate
+    monkeypatch.setattr(cmd_intersection_presets, "_show_message", lambda *args, **kwargs: None)
     # the application must outlive the widgets, so it is held for the test body
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     assert app is not None
