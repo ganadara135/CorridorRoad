@@ -24,6 +24,7 @@ EXPECTED_CONSUMERS = {
     "curb_return_to_intersection_slope_face": (
         "intersection_surface",
         "intersection_slope_face_surface",
+        "slope_face_surface",
     ),
     "roundabout_island_to_circulatory": (
         "intersection_surface",

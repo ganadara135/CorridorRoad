@@ -5315,11 +5315,12 @@ def test_intersection_shared_breakline_contract_is_consumed_by_patch_and_slope_s
     assert shoulder_to_slope in design_surface.boundary_refs
     assert shoulder_to_slope in slope_surface.boundary_refs
     assert build_corridor_command._tin_quality_text(slope_surface, "shared_breakline_result_id") == "shared-breakline:intersection:intersection:t-01"
-    assert build_corridor_command._tin_quality_float(slope_surface, "shared_breakline_consumed_count") == 11
+    # 11 before the curb return arcs listed the ordinary slope face among their consumers
+    assert build_corridor_command._tin_quality_float(slope_surface, "shared_breakline_consumed_count") == 14
     assert audit["status"] == "ready"
-    assert audit["geometry_match_count"] == 46
+    assert audit["geometry_match_count"] == 49
     assert audit["geometry_mismatch_count"] == 0
-    assert audit["mesh_match_count"] == 46
+    assert audit["mesh_match_count"] == 49
     assert audit["mesh_mismatch_count"] == 0
 
 

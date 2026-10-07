@@ -247,18 +247,21 @@ Expected:
 - a `V1CorridorIntersectionSurfacePreview` and a
   `V1CorridorIntersectionSlopeFaceSurfacePreview` appear under
   `04_Parametric Model / Build Parametric Outputs`
-- `IntersectionBoundaryOwnerStatus` on the slope face preview reads `ready` with 15 owners
-  once both `Accept Reviewed Rows` and `Adopt Edge Families From Subassembly` have been
-  pressed, and not before: with only the first it stays short of `ready`
+- `IntersectionBoundaryOwnerStatus` on the slope face preview reads `ready` with 4 owners
+  (the two curb return arcs, the stem mouth connector and the closure along the through road). It
+  no longer waits for `Adopt Edge Families From Subassembly`: the T boundary is built from the corner
+  fillets, not from the edge rows
+- the curb return arc is tangent to both edges of the stem (it no longer cuts across the stem), the
+  area inside it is covered, and the boundary runs straight along the through road's far edge; compare
+  with a capture of the same view taken before this build
 
 2. Repeat sections 6, 7 and 9 for `Cross Intersection - Basic`.
 
 Expected: the same as T, with **30 review rows** rather than 18, because a Cross has four
 legs, so four arm policies, four corners, eight edge policies and four lane connections.
-`IntersectionBoundaryOwnerStatus` is `ready` for a Cross with 4 owners (one curb return arc per
-corner), and unlike a T it does not wait for the adopt step. The Cross boundary is built from the
-corner arcs, not from the edge rows. These counts come from headless tests; check them in the
-GUI on the preview's properties.
+`IntersectionBoundaryOwnerStatus` is `ready` for a Cross with 8 owners: the four curb return arcs, three
+connectors across the arm mouths and the closing connector. Like the T it does not wait for the adopt
+step. These counts come from headless tests; check them in the GUI on the preview's properties.
 
 3. Repeat for `Roundabout - Single Lane`.
 

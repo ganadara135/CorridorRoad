@@ -4,8 +4,9 @@ The corner arcs used to be circles of the curb return radius about the intersect
 whose end points lay on the arms' centre lines. A Cross now gets, for each of its four corners,
 the arc of radius R tangent to the pavement edges of the two arms either side of the corner.
 The edge it is tangent to is the one the leg edge rows use (`_intersection_edge_lateral_offset`),
-so the boundary loop and the arcs share it. A corner with a through leg, as a T has, and an
-arm without a pavement edge policy row keep the earlier arc.
+so the boundary loop and the arcs share it. A T's primary leg is one span with two ends, the
+corner's side choosing the end, so a T gets its two fillets too; its straight side is closed
+along the through road's far edge. An arm without a pavement edge policy row keeps the earlier arc.
 """
 
 import math
@@ -91,15 +92,64 @@ def test_the_cross_boundary_loop_closes_around_the_arm_mouths_with_evenly_cut_co
         App.closeDocument(doc.Name)
 
 
-def test_a_t_keeps_its_earlier_arcs_because_its_primary_leg_is_a_through_leg() -> None:
+def test_a_t_has_two_fillets_on_the_stem_side_each_one_end_of_the_through_road() -> None:
     doc = App.newDocument("CRV1FilletT")
     try:
         model = _model(doc, "T Intersection - Basic")
         radius = _radius(model)
+        reach = PAVEMENT_HALF_WIDTH + radius
         topology = IntersectionEvaluationService().evaluate_topology(model)
-        starts = sorted(tuple(round(v, 6) for v in corner.start_xyz[:2]) for corner in topology.corner_rows)
-        # the arcs about the intersection centre, ends on the centre lines
-        assert all(abs(math.hypot(*point) - radius) < 1.0e-6 for point in starts)
+        first, second = sorted(topology.corner_rows, key=lambda row: row.corner_graph_order)
+        assert [row.arc_kind for row in (first, second)] == ["fillet", "fillet"]
+        # the stem runs to -y, so the corners are on its two sides; the through road is one leg
+        # with two ends, the corner's side choosing which
+        assert first.start_xyz[:2] == (-reach, -PAVEMENT_HALF_WIDTH)
+        assert first.end_xyz[:2] == (-PAVEMENT_HALF_WIDTH, -reach)
+        assert second.start_xyz[:2] == (PAVEMENT_HALF_WIDTH, -reach)
+        assert second.end_xyz[:2] == (reach, -PAVEMENT_HALF_WIDTH)
+        for corner, center in ((first, (-reach, -reach)), (second, (reach, -reach))):
+            for point in corner.arc_points_xyz:
+                assert abs(math.hypot(point[0] - center[0], point[1] - center[1]) - radius) < 1.0e-9
+        # the points across the through road, on its far edge, which close the straight side
+        assert first.start_far_edge_xyz[:2] == (-reach, PAVEMENT_HALF_WIDTH)
+        assert second.end_far_edge_xyz[:2] == (reach, PAVEMENT_HALF_WIDTH)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_t_boundary_loop_is_the_junction_outline_closed_along_the_through_roads_far_edge() -> None:
+    doc = App.newDocument("CRV1FilletTLoop")
+    try:
+        model = _model(doc, "T Intersection - Basic")
+        radius = _radius(model)
+        reach = PAVEMENT_HALF_WIDTH + radius
+        service = IntersectionEvaluationService()
+        edges = service.evaluate_edge_network(model)
+        zones = service.evaluate_surface_zones(model, edges)
+        loops = service.evaluate_boundary_loops(model, zones, edges)
+        outer = next(row for row in loops.loop_rows if row.loop_role == "outer_intersection_boundary")
+        assert outer.status == "ready" and outer.closed
+        assert any("candidate_source=curb_return_envelope" in text for text in outer.diagnostics)
+        xs = [point[0] for point in outer.loop_points_xyz]
+        ys = [point[1] for point in outer.loop_points_xyz]
+        assert (min(xs), max(xs), min(ys), max(ys)) == (-reach, reach, -reach, PAVEMENT_HALF_WIDTH)
+        # the through road's straight side is the loop's top edge, from one mouth to the other
+        top = [row for row in loops.segment_rows if row.loop_ref == outer.loop_id
+               and row.from_xyz[1] == PAVEMENT_HALF_WIDTH and row.to_xyz[1] == PAVEMENT_HALF_WIDTH]
+        assert min(min(row.from_xyz[0], row.to_xyz[0]) for row in top) == -reach
+        assert max(max(row.from_xyz[0], row.to_xyz[0]) for row in top) == reach
+        # the through road (2 * reach by two half widths), the stem below it and two fillet corners
+        expected = 2.0 * reach * 2.0 * PAVEMENT_HALF_WIDTH + 2.0 * PAVEMENT_HALF_WIDTH * radius
+        expected += 2.0 * radius * radius * (1.0 - math.pi / 4.0)
+        assert abs(outer.area_xy - expected) / expected < 0.02
+        suffixes = {
+            ref.rsplit(":", 1)[-1]
+            for row in loops.segment_rows
+            if row.loop_ref == outer.loop_id
+            for ref in row.source_refs
+            if ref.startswith("intersection-boundary-owner:")
+        }
+        assert suffixes == {"arc", "connector", "closure"}
     finally:
         App.closeDocument(doc.Name)
 

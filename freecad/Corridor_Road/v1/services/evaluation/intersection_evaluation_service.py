@@ -1766,7 +1766,7 @@ class IntersectionEvaluationService:
                     arm_half_widths=arm_half_widths,
                 )
                 if fillet is not None:
-                    start_xyz, end_xyz, arc_center_xyz, arc_points_xyz = fillet
+                    start_xyz, end_xyz, arc_center_xyz, arc_points_xyz, _start_far, _end_far = fillet
                 else:
                     start_xyz, end_xyz = _intersection_curb_return_edge_endpoints(
                         corner=corner,
@@ -2708,8 +2708,10 @@ def _topology_corner_graph_rows(
             anchor_context=anchor_context,
             arm_half_widths=_intersection_arm_half_widths(intersection_model, intersection_id),
         )
+        start_far: tuple[float, ...] = ()
+        end_far: tuple[float, ...] = ()
         if fillet is not None:
-            start_xyz, end_xyz, _arc_center, arc_points = fillet
+            start_xyz, end_xyz, _arc_center, arc_points, start_far, end_far = fillet
         else:
             start_xyz, end_xyz = _intersection_curb_return_edge_endpoints(
                 corner=working_corner,
@@ -2754,6 +2756,9 @@ def _topology_corner_graph_rows(
                 source_diagnostic_rows=tuple(row_diagnostics),
                 status=source_status if source_status != "accepted" else "ready",
                 notes="; ".join(row_diagnostics),
+                arc_kind="fillet" if fillet is not None else "centre_arc",
+                start_far_edge_xyz=tuple(start_far),
+                end_far_edge_xyz=tuple(end_far),
             )
         )
     if any(str(getattr(row, "status", "") or "") == "error" for row in rows):
@@ -2809,7 +2814,19 @@ def _intersection_boundary_construct_curb_return_envelope(
         )
         if len(tuple(getattr(row, "arc_points_xyz", ()) or ())) >= 2
     ]
-    if len(corners) < 3:
+    closure_candidates: list[tuple[float, float, float]] = []
+    if len(corners) == 2 and all(
+        str(getattr(row, "arc_kind", "") or "") == "fillet"
+        and len(tuple(getattr(row, "start_far_edge_xyz", ()) or ())) >= 3
+        and len(tuple(getattr(row, "end_far_edge_xyz", ()) or ())) >= 3
+        for row in corners
+    ):
+        # a T: two fillets and one straight side. Its far edge points close the loop.
+        closure_candidates = [
+            _xyz_tuple(corners[0].start_far_edge_xyz),
+            _xyz_tuple(corners[-1].end_far_edge_xyz),
+        ]
+    if len(corners) < 3 and not closure_candidates:
         diagnostics.append(
             "info:intersection_boundary_curb_return_envelope_skipped:"
             f"corner_arcs={len(corners)};reason=corner_arc_count_too_low"
@@ -2834,6 +2851,7 @@ def _intersection_boundary_construct_curb_return_envelope(
         points, segments, connector_count = _intersection_boundary_join_ordered_corner_arcs(
             ordered_arcs,
             intersection_id=intersection_id,
+            closure_candidates=closure_candidates,
         )
         if len(points) < 4:
             continue
@@ -2871,6 +2889,7 @@ def _intersection_boundary_join_ordered_corner_arcs(
     ordered_arcs: list[tuple[IntersectionTopologyCornerRow, list[tuple[float, float, float]]]],
     *,
     intersection_id: str,
+    closure_candidates: list[tuple[float, float, float]] | None = None,
 ) -> tuple[
     list[tuple[float, float, float]],
     list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, tuple[str, ...]]],
@@ -2907,6 +2926,7 @@ def _intersection_boundary_join_ordered_corner_arcs(
         )
         arc_owner_refs = (*source_refs, _intersection_boundary_rectilinear_owner_ref(corner_group, "arc"))
         connector_owner_refs = (*source_refs, _intersection_boundary_rectilinear_owner_ref(corner_group, "connector"))
+        closure_owner_refs = (*source_refs, _intersection_boundary_rectilinear_owner_ref(corner_group, "closure"))
         if points and _intersection_boundary_key(points[-1]) != _intersection_boundary_key(arc_points[0]):
             connector_count += 1
             connector_id = (
@@ -2937,12 +2957,19 @@ def _intersection_boundary_join_ordered_corner_arcs(
     if points and _intersection_boundary_key(points[0]) != _intersection_boundary_key(points[-1]):
         connector_count += 1
         connector_id = f"intersection-boundary-envelope:{_id_token(intersection_id)}:corner-connector:close"
-        pieces = _intersection_boundary_connector_pieces(points[-1], points[0], connector_spacing)
-        for piece_index, (first, second) in enumerate(zip(pieces[:-1], pieces[1:]), start=1):
-            segments.append(
-                (first, second, f"{connector_id}:{piece_index:02d}", "curb_return_envelope_connector", connector_owner_refs)
-            )
-        points.extend(pieces[1:])
+        route = [points[-1], points[0]]
+        if closure_candidates and len(closure_candidates) == 2:
+            # the straight side is closed through the far edge points, nearest first
+            near, far = sorted(closure_candidates, key=lambda point: _distance_xy(points[-1], point))
+            route = [points[-1], near, far, points[0]]
+        for hop_index, (hop_start, hop_end) in enumerate(zip(route[:-1], route[1:]), start=1):
+            pieces = _intersection_boundary_connector_pieces(hop_start, hop_end, connector_spacing)
+            hop_id = connector_id if len(route) == 2 else f"{connector_id}:{hop_index:02d}"
+            for piece_index, (first, second) in enumerate(zip(pieces[:-1], pieces[1:]), start=1):
+                segments.append(
+                    (first, second, f"{hop_id}:{piece_index:02d}", "curb_return_envelope_connector", closure_owner_refs)
+                )
+            points.extend(pieces[1:])
     return points, segments, connector_count
 
 
@@ -4156,6 +4183,10 @@ def _intersection_boundary_segment_role_from_edge_role(
         return "side_road_tie"
     if "slope_face_loop" in role:
         return "intersection_slope_face_to_corridor_slope_face"
+    if "connector" in role:
+        # a curb return envelope connector closes the loop across an arm mouth or along a straight
+        # side, where the corridor's design surface meets the patch, as a pavement edge segment does
+        return "patch_to_design_surface"
     if "curb" in role:
         return "curb_return_to_intersection_slope_face"
     if "daylight" in role or "slope" in role:
@@ -4193,7 +4224,9 @@ def _intersection_boundary_expected_consumers(segment_role: str) -> tuple[str, .
     if segment_role == "patch_to_design_surface":
         return ("intersection_surface", "design_surface", "intersection_slope_face_surface")
     if segment_role == "curb_return_to_intersection_slope_face":
-        return ("intersection_surface", "intersection_slope_face_surface")
+        # the corridor's ordinary slope face meets the curb return arc, since the dedicated
+        # intersection slope face is a handful of triangles beside it, so it consumes it too
+        return ("intersection_surface", "intersection_slope_face_surface", "slope_face_surface")
     if segment_role == "intersection_slope_face_to_corridor_slope_face":
         return ("intersection_slope_face_surface", "slope_face_surface")
     if segment_role in {"main_road_tie", "side_road_tie"}:
@@ -4888,16 +4921,16 @@ def _intersection_curb_return_leg_direction(
     leg_span,
     *,
     anchor_context: dict[str, object],
+    corner_side: str = "",
 ) -> tuple[float, float] | None:
     """Return the outward direction of one leg end of a corner, in the intersection frame.
 
     A `before` or `after` role names its direction. Any other leg takes it from where its
     station span lies against the anchor station, the way the leg edge rows place themselves:
     a span wholly behind the anchor runs along the negative axis, one wholly ahead along the
-    positive axis. A span on both sides is a through leg, as the primary leg of a T is, and
-    has no single direction: None, so that its corners keep the earlier arc. A T's source
-    edge rows describe one side of each arm only, which the rectilinear perimeter its
-    boundary is built from depends on, so a fillet there would not close.
+    positive axis. A span on both sides is a through leg, as the primary leg of a T is: it has
+    two ends, and the corner's `left` side takes the negative one and any other side the
+    positive one. Any other leg that spans both sides has no single direction: None.
     """
 
     role = str(getattr(leg_span, "leg_role", "") or "").lower()
@@ -4915,6 +4948,8 @@ def _intersection_curb_return_leg_direction(
         return (-axis[0], -axis[1])
     if low >= -tolerance:
         return axis
+    if "primary" in role:
+        return (-axis[0], -axis[1]) if str(corner_side or "").lower() == "left" else axis
     return None
 
 
@@ -4931,15 +4966,18 @@ def _intersection_curb_return_fillet(
     tuple[float, float, float],
     tuple[float, float, float],
     tuple[tuple[float, float, float], ...],
+    tuple[float, float, float],
+    tuple[float, float, float],
 ] | None:
     """Return a curb return as a fillet tangent to the two arms' pavement edges, or None.
 
     The fillet of radius R is tangent to the pavement edge of the from arm and of the to arm,
     on the side of the corner, so its centre is R beyond each edge. Its end points are the
-    tangent points. Returned: start, end, centre and the arc points. None means no fillet:
-    no corner or policy, an arm without a pavement edge policy row, a through leg, arms in
-    line with each other, or a radius so large that a tangent point falls behind the
-    intersection centre. The caller then
+    tangent points. Returned: start, end, centre, the arc points, and the points on the opposite
+    pavement edge across the from arm at the start and across the to arm at the end. None means no
+    fillet: no corner or policy, an arm without a pavement edge policy row, a leg with no single
+    direction, arms in line with each other, or a radius so large that a tangent point falls
+    behind the intersection centre. The caller then
     keeps the earlier arc about the intersection centre.
     """
 
@@ -4956,8 +4994,9 @@ def _intersection_curb_return_fillet(
     half_to = float(arm_half_widths.get(to_ref, 0.0) or 0.0)
     if from_leg is None or to_leg is None or half_from <= 0.0 or half_to <= 0.0:
         return None
-    a = _intersection_curb_return_leg_direction(from_leg, anchor_context=anchor_context)
-    b = _intersection_curb_return_leg_direction(to_leg, anchor_context=anchor_context)
+    side = str(getattr(corner, "side", "") or "")
+    a = _intersection_curb_return_leg_direction(from_leg, anchor_context=anchor_context, corner_side=side)
+    b = _intersection_curb_return_leg_direction(to_leg, anchor_context=anchor_context, corner_side=side)
     if a is None or b is None or abs(a[0] * b[1] - a[1] * b[0]) <= 1.0e-6:
         return None
     # unit normals of each pavement edge, pointing out of the road towards the other arm
@@ -4994,7 +5033,9 @@ def _intersection_curb_return_fillet(
     ]
     arc[0] = world(start_local)
     arc[-1] = world(end_local)
-    return world(start_local), world(end_local), world((cx, cy)), tuple(arc)
+    start_far = world((start_local[0] - 2.0 * half_from * na[0], start_local[1] - 2.0 * half_from * na[1]))
+    end_far = world((end_local[0] - 2.0 * half_to * nb[0], end_local[1] - 2.0 * half_to * nb[1]))
+    return world(start_local), world(end_local), world((cx, cy)), tuple(arc), start_far, end_far
 
 
 def _intersection_curb_return_arc_points(

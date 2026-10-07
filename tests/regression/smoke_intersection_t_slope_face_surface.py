@@ -710,19 +710,14 @@ def run():
             "Dedicated Intersection Slope Face Surface should expose boundary-owner coverage rows.",
         )
         boundary_owner_refs = list(getattr(slope_face_preview, "IntersectionBoundaryOwnerRefs", []) or [])
+        # The T boundary is the curb return envelope: its owners are the two fillet arcs (one per
+        # corner), the connector across the stem mouth and the closure along the through road, not
+        # the main and side road legs of the rectilinear boundary the T used to have.
+        owner_kinds = sorted(str(value).rsplit(":", 1)[-1] for value in boundary_owner_refs)
         _assert(
-            any(
-                "intersection-boundary-owner:leg:01:" in str(value)
-                or "intersection-boundary-owner:leg-01:" in str(value)
-                for value in boundary_owner_refs
-            )
-            and any(
-                "intersection-boundary-owner:leg:02:" in str(value)
-                or "intersection-boundary-owner:leg-02:" in str(value)
-                for value in boundary_owner_refs
-            ),
-            f"Dedicated Intersection Slope Face Surface should expose main and side-road boundary owner refs; "
-            f"{boundary_owner_refs}",
+            owner_kinds == ["arc", "arc", "closure", "connector"],
+            f"Dedicated Intersection Slope Face Surface should expose the two corner arc owners, the stem mouth "
+            f"connector and the closure; {boundary_owner_refs}",
         )
         _assert(
             str(getattr(slope_face_preview, "IntersectionSlopeFaceOwnerFillReadinessStatus", "") or "") == "ready",
@@ -1059,7 +1054,7 @@ def run():
             "patch_to_intersection_slope_face",
             "intersection_slope_face_to_corridor_slope_face",
             "intersection_slope_face_to_design_surface",
-            "main_road_tie",
+            "patch_to_design_surface",
             "main_side_slope_face_tie",
             "curb_return_to_intersection_slope_face",
         ):
@@ -1079,9 +1074,13 @@ def run():
             "patch_to_intersection_slope_face": {"intersection_surface", "intersection_slope_face_surface"},
             "intersection_slope_face_to_design_surface": {"intersection_slope_face_surface", "design_surface"},
             "intersection_slope_face_to_corridor_slope_face": {"intersection_slope_face_surface", "slope_face_surface"},
-            "main_road_tie": {"intersection_surface", "design_surface", "intersection_slope_face_surface"},
+            "patch_to_design_surface": {"intersection_surface", "design_surface", "intersection_slope_face_surface"},
             "main_side_slope_face_tie": {"intersection_slope_face_surface"},
-            "curb_return_to_intersection_slope_face": {"intersection_surface", "intersection_slope_face_surface"},
+            "curb_return_to_intersection_slope_face": {
+                "intersection_surface",
+                "intersection_slope_face_surface",
+                "slope_face_surface",
+            },
         }
         for role_name, expected_consumers in expected_graph_consumers.items():
             _assert(
@@ -1446,21 +1445,34 @@ def run():
             and float(slope_face_bbox.get("ylen", 0.0) or 0.0) <= 40.0,
             f"Dedicated Intersection Slope Face Surface should stay near the local intersection envelope; bbox={slope_face_bbox}",
         )
+        # The T boundary now has its curb return fillets, and no face fills a curb return arc yet
+        # (the plan's open item "the slope face fill of the curb return arcs"). Before the fillets the
+        # T boundary had no arcs, which is why this was `ready`. So the connectors and the closure
+        # must be filled, and the only edges missing must be the fillet arcs, no others.
+        missing_graph_edges = list(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphMissingEdgeRefs", []) or [])
         _assert(
-            str(getattr(slope_face_preview, "IntersectionBoundaryLoopTransitionQAStatus", "") or "") == "ready",
-            f"Boundary-loop transition QA should be ready; "
+            str(getattr(slope_face_preview, "IntersectionBoundaryLoopTransitionQAStatus", "") or "")
+            == str(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphCoverageStatus", "") or ""),
+            f"Boundary-loop transition QA should agree with the graph coverage; "
             f"notes={getattr(slope_face_preview, 'IntersectionBoundaryLoopTransitionQANotes', '')}",
         )
         _assert(
-            "Inspect dedicated slope-face cell" in str(
-                getattr(slope_face_preview, "IntersectionBoundaryLoopTransitionRecommendedAction", "") or ""
-            ),
-            "Boundary-loop transition QA should guide remaining visual gap triage toward cell and adjacent surface ownership.",
+            str(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphCoverageStatus", "") or "") == "warning"
+            and bool(missing_graph_edges)
+            and all(":edge:curb_return_to_intersection_slope_face:" in str(ref) for ref in missing_graph_edges),
+            f"Only the curb return arc edges of the T boundary should be unfilled; missing={missing_graph_edges}",
         )
         _assert(
-            str(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphCoverageStatus", "") or "") == "ready",
-            f"Dedicated Intersection Slope Face Surface should cover all boundary-loop graph edges intended for it; "
-            f"missing={list(getattr(slope_face_preview, 'IntersectionBoundaryLoopGraphMissingEdgeRefs', []) or [])}",
+            int(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphFilledEdgeCount", 0) or 0)
+            + int(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphMissingEdgeCount", 0) or 0)
+            == int(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphEdgeCount", 0) or 0)
+            and int(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphMissingEdgeCount", 0) or 0)
+            == len(missing_graph_edges),
+            "Filled and missing boundary-loop graph edges should account for every edge.",
+        )
+        _assert(
+            str(getattr(slope_face_preview, "IntersectionBoundaryLoopTransitionRecommendedAction", "") or "").strip(),
+            "Boundary-loop transition QA should recommend an action while edges are unfilled.",
         )
         _assert(
             int(getattr(slope_face_preview, "IntersectionBoundaryLoopGraphConsumerEdgeCount", 0) or 0) > 0,

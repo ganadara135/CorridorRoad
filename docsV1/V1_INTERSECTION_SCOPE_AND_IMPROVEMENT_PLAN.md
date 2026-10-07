@@ -707,7 +707,9 @@ Review rows are now **T 18, Cross 30, Roundabout 24**, all reaching `n of n` fro
 `Accept Reviewed Rows`.
 
 **Measured result.** For a T preset, accepting alone leaves `IntersectionBoundaryOwnerStatus`
-short of `ready`; accepting and then adopting gives `ready` with 15 owners.
+short of `ready`; accepting and then adopting gives `ready` with 15 owners. (That was true while the T
+boundary was a rectilinear perimeter built from the edge rows. Since the T fillet of 2026-10-07 the T takes the
+curb return envelope and is `ready` with 4 owners either way; see "Curb return fillet for a T".)
 
 **Cross did not reach `ready`, for a reason that was not the review.** The same document
 measured through the T smoke's manual acceptance also read `missing`, with zero owners. A
@@ -948,6 +950,74 @@ So the fillet's own contribution was 12 triangles, not the 50 the totals suggest
 - **Tests.** `test_polygon_triangulation_service.py` (a thin ellipse is improved with the polygon, its boundary
   edges, its area and its triangle count kept, a Delaunay input is left alone, an L shape keeps its area) and
   `test_curb_return_fillet.py` (the Cross patch's boundary triangles are all above the skinny threshold).
+
+#### Curb return fillet for a T: done on 2026-10-07
+
+The user supplied Build Parametric captures of the starter T on 2026-10-07 that showed what the earlier
+T work had left: a heavy arc about the intersection centre cutting across the stem's pavement, an empty area
+between the stem, the through road and that arc, and patch and panel pieces on one side of the through road
+only. The plan agreed with the user was (1) make the T's edge rows two-sided, (2) fix the T's corner
+direction, (3) apply the fillet. Step 1 was dropped after measuring.
+
+- **Why step 1 was dropped.** The T boundary was the outline of the union of rectangles built from the
+  edge rows (the north strip, the stem's west strip and two corner rectangles), an 18-point rectilinear
+  loop reaching 35 m down the stem, which is the shape in the captures. Completing the edge rows would add the
+  south and east strips, and the union of those strips around the junction is a ring with the pavement as its
+  hole, not one closed outline, so the rectilinear perimeter would not have closed. The Cross already had a
+  construction that suits any junction, the curb return envelope, so the T now uses it.
+- **Corner direction (step 2).** The primary leg is one span with two ends, so
+  `_intersection_curb_return_leg_direction` takes its end from the corner's `side` (`left` is the negative end)
+  and the stem's direction from where its station span lies against the anchor (the stem runs to -y, as its
+  leg edge rows place it). The corners are now (-16.5, -4.5) to (-4.5, -16.5) and (4.5, -16.5) to (16.5, -4.5).
+  The earlier defect, both corners ending on the same side and the stem at +y, is gone with it.
+- **Fillet and closure (step 3).** A T has two fillets and a straight side. The topology corner row gained
+  `arc_kind` (`fillet` or `centre_arc`) and `start_far_edge_xyz` / `end_far_edge_xyz`, the points on the through
+  road's opposite pavement edge. With two fillet corners the envelope joins them across the stem mouth and
+  closes the loop through those two far edge points, which is the through road's north edge. Connectors
+  are cut to the arc spacing as for the Cross.
+- **Measured on the starter T.** The boundary loop is `ready`, closed, 43 points, extent x -16.5 to 16.5,
+  y -16.5 to 4.5, area 468 against 467 for the exact outline. Before it was 18 points reaching y -35.
+  Owners are 4: the two arcs, the stem mouth connector and a `closure` owner for the straight side
+  (the Cross has 8, its closing connector now also a `closure` owner). The patch has no long boundary
+  edges and its status is `warning` for `curb_return_radius_large` only. The shared breakline audit stays
+  `ready` with zero geometry, mesh and reversed mismatches, and the count goes from 49 to 92: the 43 loop
+  segments are now breaklines (`intersection_boundary=43`).
+- **A consequence to know.** The T owner status no longer depends on the review or on adopting the edge
+  families, as for the Cross, because the envelope is built from the corners and not from the edge rows. The
+  5.10 measurement above ("accepting alone leaves it short of `ready`, adopting gives 15 owners") was true of
+  the rectilinear boundary and is not true of the presets now: the owner is `ready` with 4 owners
+  either way. The edge-authority filter still holds a boundary built from edge rows back, which is what a document
+  without pavement edge policies, or a hand-built model, still gets.
+- **What the regression runner found.** `smoke_intersection_t_slope_face_surface.py` (the practical-scope runner)
+  failed on the first run of this change, and the failures were real:
+  - The Design Surface stopped consuming boundary-loop breaklines, because the envelope connectors carried
+    the role `curb_return_to_intersection_slope_face`, whose consumers do not include the design surface. A
+    connector closes the loop across an arm mouth or along the straight side, where the corridor's design
+    surface meets the patch as a pavement edge does, so `_intersection_boundary_segment_role_from_edge_role`
+    now gives a connector the role `patch_to_design_surface`. The Design Surface consumes 27 of them.
+  - The ordinary Slope Face Surface stopped consuming boundary-loop breaklines although the loop clips it
+    (112 triangles tested, 64 clipped). The corridor's slope face meets the curb return arc, since the dedicated
+    intersection slope face is a handful of triangles beside it. So the role `curb_return_to_intersection_slope_face`
+    now lists `slope_face_surface` among its consumers (`_intersection_boundary_expected_consumers` and the shared
+    breakline service's `EXPECTED_CONSUMERS`), and the ordinary Slope Face Surface consumes the 16 arc segments. This
+    applies to a Cross's arcs too. The shared breakline audit stays `ready` with zero mismatches.
+  - Seven assertions of that smoke described the old rectilinear T: owners on the main and side road legs, the role
+    `main_road_tie`, and a boundary loop coverage of `ready`. The smoke now asserts the new truth: the owners are
+    the two arcs, the stem mouth connector and the closure; the roles are `patch_to_design_surface` and the curb
+    return role with its three consumers; and the coverage is `warning` with **exactly the 16 arc edges unfilled and
+    nothing else** (27 of 43 filled). The coverage was `ready` before only because the old T boundary had no arcs in it.
+    So the T now shows the open item below; it is not a new defect and not hidden.
+- **Not done.** The T's leg edge rows are still one-sided, since the envelope does not need the other sides; the
+  zone surfaces and slope face loops that are built from them are unchanged. The Roundabout is not touched. The
+  curb return perimeter strip still builds nothing for a T or a Cross (`outer_point_missing`, the nearest Applied
+  Section slope point is not found 0.25 to 4-8 m outside the arc), so the arcs stay unfilled, which is the
+  item "the slope face fill of the curb return arcs".
+- **Not verified.** Nothing was looked at in FreeCAD. The captures are the reason for the change and a new capture of
+  the same view is the way to check it: the arc should now hug the stem's two edges and the area inside it should
+  be covered.
+- **Tests.** `test_curb_return_fillet.py` (the T's two fillets and their far edge points; the loop's extent,
+  area, straight side and owner kinds), the T breakline preview test (92 breaklines, `intersection_boundary=43`),
+  and the two owner tests.
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 

@@ -95,11 +95,11 @@ widget-free review of intersection source rows. New presentation rows:
 `ui/presentation/intersection_contract_review_presentation.py`.
 
 Review row counts after 5.10: **T 18, Cross 30, Roundabout 24**, all reaching `n of n` from
-`Accept Reviewed Rows` alone. For T, `IntersectionBoundaryOwnerStatus` reaches `ready` (15 owners)
-only after `Adopt Edge Families From Subassembly` as well. A Cross reaches `ready` with 4 owners (one
-curb return arc per corner) without adoption, because its boundary takes the curb return envelope path,
-which does not read the edge rows. Its loop coverage stays 0 of 32 filled, since no face fills the arcs
-for either kind; the plan's §5.10 Outcome records the measurement.
+`Accept Reviewed Rows` alone. A T and a Cross both take the curb return envelope path since 2026-10-07, which
+is built from the corner fillets and does not read the edge rows, so `IntersectionBoundaryOwnerStatus` is
+`ready` without adopting: 4 owners for a T, 8 for a Cross. (A T used to need `Adopt Edge Families From
+Subassembly` and showed 15 owners.) The loop coverage stays 0 of 32 filled for a Cross, since no face
+fills the arcs; the plan's §5.10 Outcome records the measurement.
 
 ## 5. What is left
 
@@ -107,12 +107,14 @@ for either kind; the plan's §5.10 Outcome records the measurement.
 
 1. **5.4, authoring** — the per-approach apron and flare rows exist only as source rows; there is no editor
    field. Circulation direction is fixed to right-hand traffic in code; a project setting would be its own item.
-2. **Curb return fillet for a T, then the fill** — a Cross's arcs are now fillets tangent to the pavement edge
-   (done 2026-10-07, plan section 5.10 "Curb return fillet for a Cross"). A T keeps the old arcs: its primary
-   arm is a through leg and its source edge rows are one-sided, so its edge rows must be made two-sided
-   first, and its corner direction defect fixed. The slope face fill of the arcs
-   (`curb_return_slope_face_perimeter_outer_point_missing`, Cross loop coverage 0 of 32) can be revisited
-   now that a Cross's arcs are on the pavement edge, and is still undone.
+2. **The slope face fill of the curb return arcs** — a Cross's and a T's arcs are now fillets tangent to the
+   pavement edge (done 2026-10-07, plan section 5.10 "Curb return fillet for a Cross" and "for a T"). The fill
+   (`curb_return_slope_face_perimeter_outer_point_missing`, Cross loop coverage 0 of 32) can be revisited now
+   that the arcs are on the pavement edge, and is still undone. It is now the only thing keeping the T's boundary
+   loop coverage at `warning` (27 of 43 filled, the 16 unfilled are exactly the arcs, which
+   `smoke_intersection_t_slope_face_surface.py` pins). The T work was checked headless and by the regression
+   runners only; a new Build Parametric capture of the same T view is the check that matters. The T's leg edge rows
+   stay one-sided, and the curb return arc role now lists the ordinary slope face as a consumer.
 3. **The 160 constraint support triangles** — every `constraint_support_triangle` of the Cross patch
    (`shared_breakline_constraint_edge`) is skinny, minimum quality 0.0122, before and after the fillet. The
    fillet's boundary polygon triangles are fixed (Delaunay flips, 12 skinny to 0, done 2026-10-07). The edge

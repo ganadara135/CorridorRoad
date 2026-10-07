@@ -365,7 +365,9 @@ def test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_prev
         assert slope_preview is not None
         assert preview.SharedBreaklineResultId == "shared-breakline:intersection:intersection:starter-t_intersection"
         assert preview.SharedBreaklineAuditStatus == "ready"
-        assert int(preview.SharedBreaklineCount) == 49
+        # 49 breaklines from the tie-ins, curb returns and drainage, and the 43 segments of the
+        # T boundary loop, which the curb return envelope now builds and closes
+        assert int(preview.SharedBreaklineCount) == 92
         assert int(preview.SharedBreaklineConsumedCount) == int(preview.SharedBreaklineCount)
         assert int(preview.SharedBreaklineGeometryMismatchCount) == 0
         assert int(preview.SharedBreaklineMeshMismatchCount) == 0
@@ -381,15 +383,15 @@ def test_intersection_preset_t_source_builds_zero_mismatch_shared_breakline_prev
         assert any("intersection_gutter_handoff" in ref for ref in list(preview.SharedBreaklineRefs))
         assert any("low_point_flow_split" in ref for ref in list(preview.SharedBreaklineRefs))
         assert preview.SharedBreaklineMaterialSummary == (
-            "curb_return=4, design_surface=4, drainage_surface=6, pavement=8, shoulder=8,"
-            " side_slope=13, slope_face_surface=6"
+            "curb_return=4, design_surface=4, drainage_surface=6, intersection_boundary=43,"
+            " pavement=8, shoulder=8, side_slope=13, slope_face_surface=6"
         )
         assert "control_area_entry=5" in preview.SharedBreaklineRoleSummary
         assert "control_area_exit=5" in preview.SharedBreaklineRoleSummary
         assert "patch_to_design_pavement_tie_in=2" in preview.SharedBreaklineRoleSummary
         assert "patch_to_design_stem_tie_in=2" in preview.SharedBreaklineRoleSummary
-        assert "shared_breakline=ready consumed=49/49" in intersection_row["notes"]
-        assert "audit=ready geometry=49/49 mesh=49/49" in intersection_row["notes"]
+        assert "shared_breakline=ready consumed=92/92" in intersection_row["notes"]
+        assert "audit=ready geometry=92/92 mesh=92/92" in intersection_row["notes"]
         assert any("curb-return-to-pavement" in ref for ref in list(design_preview.SharedBreaklineRefs))
         assert any("curb-return-to-shoulder" in ref for ref in list(design_preview.SharedBreaklineRefs))
         assert "pavement=8" in design_preview.SharedBreaklineMaterialSummary

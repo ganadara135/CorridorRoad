@@ -105,9 +105,11 @@ def test_boundary_loop_contributor_preserves_identity_sources_and_consumers() ->
         "segment:1",
         "zone:test",
     )
+    # a curb return arc is met by the dedicated intersection slope face and by the corridor's slope face
     assert row.consumer_refs == (
         "intersection_surface",
         "intersection_slope_face_surface",
+        "slope_face_surface",
     )
     assert row.source_status == "accepted"
     assert row.point_refs == ("shared:segment:1:p1", "shared:segment:1:p2")

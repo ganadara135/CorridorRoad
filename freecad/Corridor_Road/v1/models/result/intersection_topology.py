@@ -84,6 +84,13 @@ class IntersectionTopologyCornerRow:
     source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"
     notes: str = ""
+    # "fillet" when the arc is tangent to the two arms' pavement edges, "centre_arc" when it is the
+    # earlier arc about the intersection centre
+    arc_kind: str = ""
+    # for a fillet: the point on the opposite pavement edge across the from arm at the start's
+    # station, and across the to arm at the end's, which close a boundary that has a straight side
+    start_far_edge_xyz: tuple[float, ...] = ()
+    end_far_edge_xyz: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -194,20 +194,26 @@ def test_a_row_missing_what_it_governs_is_not_accepted_and_not_adopted() -> None
     assert adopt_edge_families_from_subassembly(None).accepted is False
 
 
-def test_boundary_owner_reaches_ready_from_the_preset_plus_review_and_adoption() -> None:
+def test_t_boundary_owner_is_ready_before_and_after_adoption_because_the_envelope_ignores_the_edge_rows() -> None:
+    # This used to need the adoption: the T boundary was a rectilinear perimeter built from the
+    # edge rows, and the edge-authority filter held it at `missing` while they were `method_unknown`.
+    # A T now takes the curb return envelope like a Cross, built from the corner fillets and the
+    # through road's far edge, so its owners are the two arcs, the stem mouth connector and the
+    # closure, and they do not wait for the edge families.
     doc = App.newDocument("CRV1PolicyFamilyOwner")
     try:
         reviewed = _reviewed_model(doc, "T Intersection - Basic")
 
-        # accepting alone is not enough: the edge rows still evaluate as method_unknown
         _store(doc, reviewed)
         accepted_only = _owner_status(doc)
-        assert accepted_only[0] != "ready", accepted_only
+        assert accepted_only == ("ready", 4), accepted_only
 
         _store(doc, adopt_edge_families_from_subassembly(reviewed).model)
         adopted = _owner_status(doc)
-        assert adopted[0] == "ready", adopted
-        assert adopted[1] > 0
+        assert adopted == ("ready", 4), adopted
+        preview = doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
+        suffixes = sorted(ref.rsplit(":", 1)[-1] for ref in list(preview.IntersectionBoundaryOwnerRefs))
+        assert suffixes == ["arc", "arc", "closure", "connector"], suffixes
     finally:
         App.closeDocument(doc.Name)
 
@@ -250,21 +256,25 @@ def test_cross_boundary_owner_is_one_curb_return_arc_per_corner() -> None:
     # arcs, not from the edge rows, so the owner is the corner arc and it does not wait for
     # the edge families to be adopted. A curved span has no rectangle side to own it. The
     # fillets leave the arm mouths open, and the connector across each is owned by the corner
-    # it follows: 4 arc owners and 3 connector owners (the first corner has none before it
-    # and the closing connector belongs to the last).
+    # it follows: 4 arc owners and 3 connector owners (the first corner has none before it),
+    # and the connector that closes the loop is a closure owner of its own.
     doc = App.newDocument("CRV1PolicyFamilyCrossOwner")
     try:
         _store(doc, _reviewed_model(doc, "Cross Intersection - Basic"))
         status, count = _owner_status(doc)
         preview = doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
         owner_refs = list(getattr(preview, "IntersectionBoundaryOwnerRefs", []) or [])
-        assert (status, count) == ("ready", 7)
-        assert len(owner_refs) == 7
+        assert (status, count) == ("ready", 8)
+        assert len(owner_refs) == 8
         assert sum(ref.endswith(":arc") for ref in owner_refs) == 4, owner_refs
         assert sum(ref.endswith(":connector") for ref in owner_refs) == 3, owner_refs
-        # the surface itself is unchanged: no face fills these arcs yet, so the loop
-        # coverage keeps saying so rather than borrowing the owner status
-        assert int(getattr(preview, "IntersectionBoundaryLoopGraphFilledEdgeCount", -1)) == 0
+        assert sum(ref.endswith(":closure") for ref in owner_refs) == 1, owner_refs
+        # no face fills the 32 arc edges yet, so the loop coverage keeps saying so rather than
+        # borrowing the owner status; the 20 connector and closure edges are filled
+        assert int(getattr(preview, "IntersectionBoundaryLoopGraphFilledEdgeCount", -1)) == 20
+        assert int(getattr(preview, "IntersectionBoundaryLoopGraphMissingEdgeCount", -1)) == 32
+        missing = list(getattr(preview, "IntersectionBoundaryLoopGraphMissingEdgeRefs", []) or [])
+        assert all(":edge:curb_return_to_intersection_slope_face:" in ref for ref in missing)
         assert str(getattr(preview, "IntersectionBoundaryLoopGraphCoverageStatus", "")) == "warning"
     finally:
         App.closeDocument(doc.Name)
