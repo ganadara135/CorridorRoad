@@ -58,6 +58,72 @@ def ear_clip_triangulation_indices(
     return triangles
 
 
+def delaunay_flip_triangulation_indices(
+    vertices: list[object],
+    triangles: list[tuple[int, int, int]],
+    *,
+    incircle_tolerance: float = 1.0e-9,
+) -> list[tuple[int, int, int]]:
+    """Improve a triangulation of a simple XY polygon by flipping interior diagonals.
+
+    The triangles are counter-clockwise index triples, as `ear_clip_triangulation_indices` returns
+    them. An interior edge is flipped when the opposite vertex of its neighbour lies inside the
+    circumcircle (the Delaunay criterion, which maximises the smallest angle) and the quadrilateral
+    is strictly convex, so the new diagonal stays inside the polygon. No vertex is added and no
+    boundary edge changes, so the polygon, its area and its triangle count are kept. Edges are
+    visited in sorted order, so the result is deterministic.
+    """
+
+    points = [xy_point(vertex) for vertex in vertices]
+    result = [tuple(triangle) for triangle in triangles]
+    if len(result) < 2:
+        return result
+    for _ in range(max(len(result) * len(result), 1) * 4):
+        owners: dict[tuple[int, int], list[tuple[int, int, int]]] = {}
+        for triangle_index, (first, second, third) in enumerate(result):
+            for start, end in ((first, second), (second, third), (third, first)):
+                owners.setdefault((min(start, end), max(start, end)), []).append((triangle_index, start, end))
+        flipped = False
+        for key in sorted(owners):
+            pair = owners[key]
+            if len(pair) != 2:
+                continue
+            (first_index, a, b), (second_index, _other_start, _other_end) = pair
+            first_triangle = result[first_index]
+            second_triangle = result[second_index]
+            p = next(vertex for vertex in first_triangle if vertex not in (a, b))
+            q = next(vertex for vertex in second_triangle if vertex not in (a, b))
+            if _incircle_determinant(points[a], points[b], points[p], points[q]) <= incircle_tolerance:
+                continue
+            new_first = (a, q, p)
+            new_second = (q, b, p)
+            if (
+                xy_triangle_signed_area(points[a], points[q], points[p]) <= 1.0e-9
+                or xy_triangle_signed_area(points[q], points[b], points[p]) <= 1.0e-9
+            ):
+                continue
+            result[first_index] = new_first
+            result[second_index] = new_second
+            flipped = True
+            break
+        if not flipped:
+            break
+    return result
+
+
+def _incircle_determinant(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float], d: tuple[float, float]) -> float:
+    """Return a positive value when d lies inside the circle through the counter-clockwise a, b, c."""
+
+    adx, ady = a[0] - d[0], a[1] - d[1]
+    bdx, bdy = b[0] - d[0], b[1] - d[1]
+    cdx, cdy = c[0] - d[0], c[1] - d[1]
+    return (
+        (adx * adx + ady * ady) * (bdx * cdy - cdx * bdy)
+        - (bdx * bdx + bdy * bdy) * (adx * cdy - cdx * ady)
+        + (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady)
+    )
+
+
 def xy_triangle_quality_ratio(first: object, second: object, third: object) -> float:
     """Return the normalized 0..1 XY triangle quality ratio."""
 

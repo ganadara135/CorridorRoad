@@ -8,6 +8,7 @@ from .xy_primitives import (
     xy_triangle_signed_area,
 )
 from .polygon_triangulation import (
+    delaunay_flip_triangulation_indices,
     ear_clip_triangulation_indices,
     triangulate_simple_polygon_points,
     xy_triangle_quality_ratio,
@@ -54,6 +55,7 @@ __all__ = [
     "xy_point_in_triangle_strict",
     "xy_polygon_signed_area",
     "xy_triangle_signed_area",
+    "delaunay_flip_triangulation_indices",
     "ear_clip_triangulation_indices",
     "triangulate_simple_polygon_points",
     "xy_triangle_quality_ratio",

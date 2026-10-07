@@ -888,8 +888,8 @@ rows use, so it was not used as written; see the second point.
   `cross_intersection_corner_arc_gap`). The long edge count is 0 in both. The triangle quality is worse:
   skinny triangles 122 to 172 and the minimum triangle quality 0.012 to 0.0029, because the boundary
   is now the real intersection area (reaching 14.5 m from the centre rather than a circle of
-  radius 10) and the patch is triangulated from boundary points alone. Improving that triangulation is
-  not part of this change.
+  radius 10) and the patch is triangulated from boundary points alone. That is dealt with in the
+  next section.
 - **Not verified.** Nothing was looked at in FreeCAD. The Cross patch, slope face and breaklines were
   checked through the preview properties and the contract tests only.
 - **Tests.** `test_curb_return_fillet.py`: each corner is tangent to both edges with its centre at
@@ -922,6 +922,32 @@ arm policy row of the leg.
   here, so an arm policy that disagrees with the Assembly's pavement width is not detected.
 - **Tests.** `test_edge_offset_arm_policy.py`: the formula, the starter edges unchanged and a changed arm
   moving only its own edge, explicit offset wins and the fallback note, and the fillet following the arm.
+
+#### Patch triangulation quality after the fillet: done on 2026-10-07
+
+Measured by wrapping `IntersectionPatchShapeQualityService.evaluate` and splitting the triangles by kind.
+Of the starter Cross patch's 207 triangles, **160 are `constraint_support_triangle` rows from the shared
+breakline constraint (`shared_breakline_constraint_edge`) and all 160 are skinny, with a minimum quality of
+0.0122**; they were skinny before the fillet and are not part of this change. The other 47 are the boundary
+polygon (`intersection_surface_patch`, `ordered_polygon`), and 12 of them were skinny, the worst at 0.0029.
+So the fillet's own contribution was 12 triangles, not the 50 the totals suggested.
+
+- **Cause.** `ordered_polygon_triangulation` ear-clips the boundary points only. Ear clipping takes
+  the first ear it finds, which on a long outline leaves slivers.
+- **Change.** `delaunay_flip_triangulation_indices` (in `services/geometry/polygon_triangulation.py`)
+  flips interior diagonals while the opposite vertex lies inside the circumcircle and the quadrilateral is
+  strictly convex, so the new diagonal stays inside the polygon. No vertex is added, no boundary edge changes
+  and the triangle count and area are kept; edges are visited in sorted order, so it is deterministic.
+  `ordered_polygon_triangulation` runs it on the ear clip.
+- **Result on the starter Cross.** The boundary polygon's skinny triangles go from 12 to 0 and its smallest
+  quality from 0.0029 to 0.1885, against the service's threshold of 0.08. A T does not take this path, so it is
+  unchanged.
+- **Not changed.** The 160 constraint support triangles; the patch status is still `warning` for the same two
+  reasons as before (`curb_return_radius_large`, `cross_intersection_corner_arc_gap`). The structured strip
+  triangulation also ear-clips and was not changed, since the starter documents do not use it.
+- **Tests.** `test_polygon_triangulation_service.py` (a thin ellipse is improved with the polygon, its boundary
+  edges, its area and its triangle count kept, a Delaunay input is left alone, an L shape keeps its area) and
+  `test_curb_return_fillet.py` (the Cross patch's boundary triangles are all above the skinny threshold).
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 

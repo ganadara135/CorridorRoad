@@ -14,6 +14,7 @@ from ...models.result.intersection_patch_triangulation import (
 )
 from ...models.result.tin_surface import TINTriangle, TINVertex
 from ..geometry import (
+    delaunay_flip_triangulation_indices,
     ear_clip_triangulation_indices,
     xy_closed_edges,
     xy_distance,
@@ -203,6 +204,9 @@ class IntersectionPatchTriangulationService:
             edge_lengths.append(edge_length)
             max_edge_length = max(max_edge_length, edge_length)
         polygon_indices = ear_clip_triangulation_indices(vertices)
+        # an ear clip of a long boundary leaves thin triangles; flipping diagonals fixes most
+        # of them without adding a point or touching a boundary edge
+        polygon_indices = delaunay_flip_triangulation_indices(vertices, polygon_indices)
         if polygon_indices:
             for first_index, second_index, third_index in polygon_indices:
                 first = vertices[first_index]

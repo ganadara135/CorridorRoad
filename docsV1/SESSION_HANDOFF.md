@@ -113,10 +113,11 @@ for either kind; the plan's §5.10 Outcome records the measurement.
    first, and its corner direction defect fixed. The slope face fill of the arcs
    (`curb_return_slope_face_perimeter_outer_point_missing`, Cross loop coverage 0 of 32) can be revisited
    now that a Cross's arcs are on the pavement edge, and is still undone.
-3. **Cross patch triangulation** — it got worse with the larger fillet boundary (skinny triangles 122 to 172,
-   minimum quality 0.012 to 0.0029); it is triangulated from boundary points only. The edge offset rule
-   `lane_width_from_arm_policy` now reads the arm policy (done 2026-10-07: half the lanes, plus shoulder,
-   plus half the median; the starter gives 4.5 m, unchanged), so the fillet follows the arm.
+3. **The 160 constraint support triangles** — every `constraint_support_triangle` of the Cross patch
+   (`shared_breakline_constraint_edge`) is skinny, minimum quality 0.0122, before and after the fillet. The
+   fillet's boundary polygon triangles are fixed (Delaunay flips, 12 skinny to 0, done 2026-10-07). The edge
+   offset rule `lane_width_from_arm_policy` also reads the arm policy now (2026-10-07: half the lanes, plus
+   shoulder, plus half the median; the starter gives 4.5 m, unchanged), so the fillet follows the arm.
 
 ### Repository-wide
 

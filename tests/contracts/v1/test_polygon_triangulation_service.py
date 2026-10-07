@@ -2,6 +2,7 @@ import math
 from dataclasses import dataclass
 
 from freecad.Corridor_Road.v1.services.geometry import (
+    delaunay_flip_triangulation_indices,
     ear_clip_triangulation_indices,
     xy_polygon_signed_area,
     xy_triangle_quality_ratio,
@@ -63,3 +64,51 @@ def test_triangle_quality_distinguishes_equilateral_skinny_and_degenerate() -> N
     assert abs(equilateral - 1.0) <= 1.0e-12
     assert 0.0 < skinny < 0.08
     assert degenerate == 0.0
+
+
+def _boundary_edges(indices) -> set:
+    counts = {}
+    for row in indices:
+        for first, second in ((row[0], row[1]), (row[1], row[2]), (row[2], row[0])):
+            key = (min(first, second), max(first, second))
+            counts[key] = counts.get(key, 0) + 1
+    return {key for key, count in counts.items() if count == 1}
+
+
+def _minimum_quality(vertices, indices) -> float:
+    return min(xy_triangle_quality_ratio(*(vertices[index] for index in row)) for row in indices)
+
+
+def test_delaunay_flip_improves_a_thin_ear_clip_without_changing_the_polygon() -> None:
+    # a long thin ellipse: the ear clip leaves slivers across it
+    vertices = [
+        _Vertex(15.0 * math.cos(2.0 * math.pi * index / 24.0), 3.0 * math.sin(2.0 * math.pi * index / 24.0))
+        for index in range(24)
+    ]
+    clipped = ear_clip_triangulation_indices(vertices)
+    flipped = delaunay_flip_triangulation_indices(vertices, clipped)
+
+    assert len(flipped) == len(clipped)
+    assert math.isclose(_triangulated_area(vertices, flipped), _triangulated_area(vertices, clipped), rel_tol=1.0e-12)
+    assert _boundary_edges(flipped) == _boundary_edges(clipped)
+    assert all(xy_triangle_signed_area(*(vertices[index] for index in row)) > 0.0 for row in flipped)
+    assert _minimum_quality(vertices, flipped) > _minimum_quality(vertices, clipped)
+    assert delaunay_flip_triangulation_indices(vertices, clipped) == flipped
+
+
+def test_delaunay_flip_keeps_a_triangulation_that_is_already_delaunay() -> None:
+    square = [_Vertex(0.0, 0.0), _Vertex(4.0, 0.0), _Vertex(4.0, 4.0), _Vertex(0.0, 4.0)]
+    clipped = ear_clip_triangulation_indices(square)
+    assert delaunay_flip_triangulation_indices(square, clipped) == clipped
+    assert delaunay_flip_triangulation_indices(square, []) == []
+
+
+def test_delaunay_flip_never_leaves_a_concave_polygon() -> None:
+    # an L shape: the diagonal across the reflex corner would leave the polygon and must stay
+    vertices = [
+        _Vertex(0.0, 0.0), _Vertex(6.0, 0.0), _Vertex(6.0, 2.0), _Vertex(2.0, 2.0), _Vertex(2.0, 6.0), _Vertex(0.0, 6.0),
+    ]
+    clipped = ear_clip_triangulation_indices(vertices)
+    flipped = delaunay_flip_triangulation_indices(vertices, clipped)
+    assert math.isclose(_triangulated_area(vertices, flipped), xy_polygon_signed_area(vertices), rel_tol=1.0e-12)
+    assert _boundary_edges(flipped) == _boundary_edges(clipped)
