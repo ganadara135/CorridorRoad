@@ -106,19 +106,34 @@ class IntersectionBoundarySegmentEvaluationService:
                 f"{radius:.3f} exceeds 75% of tie-in span {tie_in_span:.3f}."
             )
         sample_count = _curb_return_arc_sample_count(radius, policy)
+        road_frames = _tie_in_road_frames(tie_in_rows, primary_ref, secondary_ref, primary_dir, secondary_dir)
+        fillet_count = 0
         for index, (primary_sign, secondary_sign) in enumerate(
             quadrants,
             start=1,
         ):
-            chord_points = _curb_return_chord_points(
-                center,
-                primary_dir,
-                secondary_dir,
+            chord_points = _curb_return_fillet_points(
+                road_frames,
+                center_z=float(center[2]),
                 radius=radius,
                 primary_sign=primary_sign,
                 secondary_sign=secondary_sign,
                 sample_count=sample_count,
             )
+            arc_kind = "fillet"
+            if chord_points:
+                fillet_count += 1
+            else:
+                arc_kind = "centre_arc"
+                chord_points = _curb_return_chord_points(
+                    center,
+                    primary_dir,
+                    secondary_dir,
+                    radius=radius,
+                    primary_sign=primary_sign,
+                    secondary_sign=secondary_sign,
+                    sample_count=sample_count,
+                )
             if len(chord_points) < 2:
                 diagnostics.append(
                     "intersection_curb_return_radius_invalid: boundary arc "
@@ -152,11 +167,18 @@ class IntersectionBoundarySegmentEvaluationService:
                         f"kind={intersection_kind}; "
                         f"quadrant={primary_sign:+.0f},{secondary_sign:+.0f}; "
                         f"arc_samples={len(chord_points)}; "
-                        f"arc_segments={max(len(chord_points) - 1, 0)}"
+                        f"arc_segments={max(len(chord_points) - 1, 0)}; "
+                        f"arc_kind={arc_kind}"
                     ),
                 )
             )
 
+        if quadrants and fillet_count < len(quadrants):
+            diagnostics.append(
+                "warning:intersection_curb_return_fillet_unavailable: "
+                f"{len(quadrants) - fillet_count} of {len(quadrants)} curb returns keep the arc about the "
+                "intersection centre; each needs a left and a right tie-in edge on both alignments."
+            )
         arc_count = sum(row.segment_kind == "arc" for row in rows)
         tie_in_count = sum(row.segment_kind == "tie_in" for row in rows)
         status = (
@@ -329,6 +351,127 @@ def _curb_return_arc_sample_count(radius: float, policy=None) -> int:
     arc_length = max(float(radius), 0.0) * (math.pi / 2.0)
     segment_count = int(math.ceil(arc_length / spacing)) if arc_length > 0.0 else 4
     return max(4, min(segment_count, 48)) + 1
+
+
+def _tie_in_road_frames(tie_in_rows, primary_ref, secondary_ref, primary_dir, secondary_dir):
+    """Return each road's direction, centre line offset and pavement half width, from its tie-in edges.
+
+    A road's left and right tie-in edges are its two pavement edges near the intersection. In the
+    XY plane, with n the road direction turned a quarter turn counter-clockwise, each edge lies at a
+    signed offset along n; the centre line is their mean and the half width half their difference.
+    The two centre lines cross at the intersection's own origin, which is found here rather than taken
+    from the source point (a source point at the coordinate origin reads as unset). None when either
+    road lacks a left and a right edge.
+    """
+
+    frames = {}
+    for key, alignment_ref, direction in (
+        ("primary", primary_ref, primary_dir),
+        ("secondary", secondary_ref, secondary_dir),
+    ):
+        ux, uy = float(direction[0]), float(direction[1])
+        length = math.hypot(ux, uy)
+        if length <= 1.0e-9:
+            return None
+        ux, uy = ux / length, uy / length
+        nx, ny = -uy, ux
+        offsets = {}
+        for row in tie_in_rows:
+            if alignment_ref and str(getattr(row, "alignment_ref", "") or "") != alignment_ref:
+                continue
+            side = str(getattr(row, "side", "") or "").lower()
+            if side not in ("left", "right") or side in offsets:
+                continue
+            start = tuple(getattr(row, "start_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
+            end = tuple(getattr(row, "end_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
+            mid_x = (float(start[0]) + float(end[0])) * 0.5
+            mid_y = (float(start[1]) + float(end[1])) * 0.5
+            offsets[side] = mid_x * nx + mid_y * ny
+        if len(offsets) != 2:
+            return None
+        half_width = abs(offsets["left"] - offsets["right"]) * 0.5
+        if half_width <= 1.0e-9:
+            return None
+        frames[key] = {
+            "direction": (ux, uy),
+            "normal": (nx, ny),
+            "centre_offset": (offsets["left"] + offsets["right"]) * 0.5,
+            "half_width": half_width,
+        }
+    primary, secondary = frames["primary"], frames["secondary"]
+    origin = _solve_xy(
+        primary["normal"], primary["centre_offset"], secondary["normal"], secondary["centre_offset"]
+    )
+    if origin is None:
+        return None
+    frames["origin"] = origin
+    return frames
+
+
+def _curb_return_fillet_points(road_frames, *, center_z, radius, primary_sign, secondary_sign, sample_count):
+    """Return the curb return of one quadrant as a fillet tangent to both roads' pavement edges.
+
+    The arms are the primary road in the direction `primary_sign` and the secondary road in the
+    direction `secondary_sign`. The fillet of radius R is tangent to the pavement edge of each road on
+    the side of the other arm, so its centre is R beyond each edge. The points run from the tangent
+    point on the primary road's edge to the one on the secondary road's edge, the order the arc about
+    the centre had. An empty list means no fillet: no road frames, roads in line, or a radius so large
+    that a tangent point falls behind the intersection.
+    """
+
+    if not road_frames or float(radius) <= 0.0:
+        return []
+    primary, secondary = road_frames["primary"], road_frames["secondary"]
+    ox, oy = road_frames["origin"]
+    ax, ay = primary_sign * primary["direction"][0], primary_sign * primary["direction"][1]
+    bx, by = secondary_sign * secondary["direction"][0], secondary_sign * secondary["direction"][1]
+    na = _unit_xy(bx - (bx * ax + by * ay) * ax, by - (bx * ax + by * ay) * ay)
+    nb = _unit_xy(ax - (ax * bx + ay * by) * bx, ay - (ax * bx + ay * by) * by)
+    if na is None or nb is None:
+        return []
+    r = float(radius)
+    centre = _solve_xy(na, primary["half_width"] + r, nb, secondary["half_width"] + r)
+    if centre is None:
+        return []
+    cx, cy = centre
+    start = (cx - r * na[0], cy - r * na[1])
+    end = (cx - r * nb[0], cy - r * nb[1])
+    if start[0] * ax + start[1] * ay < 0.0 or end[0] * bx + end[1] * by < 0.0:
+        return []
+    start_angle = math.atan2(start[1] - cy, start[0] - cx)
+    end_angle = math.atan2(end[1] - cy, end[0] - cx)
+    delta = end_angle - start_angle
+    while delta > math.pi:
+        delta -= math.tau
+    while delta < -math.pi:
+        delta += math.tau
+    count = max(int(sample_count), 2)
+    points = []
+    for step in range(count):
+        angle = start_angle + delta * (step / max(count - 1, 1))
+        points.append((ox + cx + math.cos(angle) * r, oy + cy + math.sin(angle) * r, float(center_z)))
+    points[0] = (ox + start[0], oy + start[1], float(center_z))
+    points[-1] = (ox + end[0], oy + end[1], float(center_z))
+    return points
+
+
+def _solve_xy(first_normal, first_value, second_normal, second_value):
+    """Solve first_normal . p = first_value and second_normal . p = second_value for p in XY."""
+
+    determinant = first_normal[0] * second_normal[1] - first_normal[1] * second_normal[0]
+    if abs(determinant) <= 1.0e-9:
+        return None
+    return (
+        (first_value * second_normal[1] - first_normal[1] * second_value) / determinant,
+        (first_normal[0] * second_value - first_value * second_normal[0]) / determinant,
+    )
+
+
+def _unit_xy(x, y):
+    length = math.hypot(x, y)
+    if length <= 1.0e-9:
+        return None
+    return (x / length, y / length)
 
 
 def _curb_return_chord_points(

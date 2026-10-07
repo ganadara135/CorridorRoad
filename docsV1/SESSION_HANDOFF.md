@@ -107,6 +107,12 @@ fills the arcs; the plan's §5.10 Outcome records the measurement.
 
 1. **5.4, authoring** — the per-approach apron and flare rows exist only as source rows; there is no editor
    field. Circulation direction is fixed to right-hand traffic in code; a project setting would be its own item.
+0. **The fixed frame of the intersection evaluation** — `evaluate_topology`, `evaluate_edge_network` and
+   `evaluate_boundary_loops` place the legs on the X and Y axes (`_intersection_alignment_axis`); nothing in the
+   source or topology carries an alignment bearing. On a document whose roads lean, the boundary loop and the patch
+   rectangles it shapes are turned wrong (the user's captures of 2026-10-07). The patch boundary's curb returns are
+   real fillets since 2026-10-07 and build the arc slope face strip (plan section 5.10, "The arcs the build draws").
+   Next: carry each alignment's direction at the intersection from the commands into the evaluation.
 2. **The slope face fill of the curb return arcs** — a Cross's and a T's arcs are now fillets tangent to the
    pavement edge (done 2026-10-07, plan section 5.10 "Curb return fillet for a Cross" and "for a T"). The fill
    (`curb_return_slope_face_perimeter_outer_point_missing`, Cross loop coverage 0 of 32) can be revisited now

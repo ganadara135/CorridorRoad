@@ -766,18 +766,24 @@ def run():
             f"Dedicated Intersection Slope Face Surface bbox should stay within local intersection transition coverage; "
             f"intersection_bbox_area={intersection_bbox_area:.3f}, slope_face_bbox_area={slope_face_bbox_area:.3f}.",
         )
+        # The curb returns were arcs about the intersection centre, cutting across the stem, and the
+        # only slope face points near them were remote, so the strip had to stay empty. They are now
+        # fillets tangent to the pavement edges, the corridor's own slope points lie just outside them,
+        # and the strip is built from those (test_boundary_segment_curb_return_fillet.py measures how
+        # local they are). So it must be built for both corners, with no missing outer point.
         _assert(
-            int(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterTriangleCount", 0) or 0) == 0,
-            "Curb-return perimeter should not use remote Applied Section candidates to emit alignment-direction triangles.",
+            int(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterCount", 0) or 0) == 2
+            and int(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterTriangleCount", 0) or 0) > 0,
+            "Curb-return perimeter should fill both T corners from the slope points beside the fillets.",
         )
         _assert(
             str(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterGenerationMode", "") or "")
-            == "no_curb_return_perimeter_strip",
-            "Dedicated Intersection Slope Face Surface should suppress curb-return perimeter strips when only remote candidates are available.",
+            == "curb_return_to_slope_face_perimeter",
+            "Dedicated Intersection Slope Face Surface should build curb-return perimeter strips beside the fillets.",
         )
         _assert(
-            "outer_point_missing" in str(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterDiagnostic", "") or ""),
-            "Suppressed curb-return perimeter strips should expose a diagnostic instead of silently creating remote geometry.",
+            "outer_point_missing" not in str(getattr(slope_face_preview, "CurbReturnSlopeFacePerimeterDiagnostic", "") or ""),
+            "Curb-return perimeter strips should find an outer slope point for every fillet point.",
         )
         _assert(
             int(getattr(slope_face_preview, "IntersectionSlopeFaceBoundaryStripTriangleCount", 0) or 0) == 0,

@@ -1019,6 +1019,61 @@ direction, (3) apply the fillet. Step 1 was dropped after measuring.
   area, straight side and owner kinds), the T breakline preview test (92 breaklines, `intersection_boundary=43`),
   and the two owner tests.
 
+#### The arcs the build draws: the patch boundary's curb returns are fillets, done on 2026-10-07
+
+The user's Build Parametric captures of the starter T after the T fillet above still showed the heavy arc
+about the intersection centre. Measuring found why: **curb return arcs come from three places**, and the
+work above had changed two of them.
+
+| source | used by | before this |
+| --- | --- | --- |
+| topology corner rows (`evaluate_topology`) | the boundary loop, its owners, its breaklines | fillet (above) |
+| edge network curb return rows | the edge rows | fillet (above) |
+| patch boundary segments (`IntersectionBoundarySegmentEvaluationService`) | the arc the build draws, the intersection exclusion, the patch's curb return parts, the curb return slope face strip, the curb return breaklines | arc about the centre |
+
+The third is built from the tie-in edges, which come from the Applied Sections, so it is in the real
+directions of the alignments. The first two work in a fixed frame whose axes are (1, 0) and (0, 1)
+(`_intersection_alignment_axis`): the intersection source and topology carry no alignment bearing at
+all. That is why the captures showed the patch rectangles level while the road leans. It is recorded
+under "Not done" and is the next item.
+
+- **Change.** `_curb_return_fillet_points` in `intersection_boundary_segment_evaluation_service.py`
+  makes each quadrant's arc the fillet of the curb return radius tangent to the two roads' pavement
+  edges. Each road's direction, centre line and pavement half width come from its left and right tie-in
+  edges (`_tie_in_road_frames`), and the intersection origin is where the two centre lines cross, rather
+  than the source point, which at the coordinate origin reads as unset (the old code then used the mean of
+  the tie-in end points, (0, -1.5) for the starter T). A road without both edges keeps the arc about the
+  centre and the result carries `warning:intersection_curb_return_fillet_unavailable`. Each arc's notes
+  say `arc_kind=fillet` or `centre_arc`. `center_xyz` stays the intersection centre, because every
+  consumer uses it as the patch's inward reference (the blend and core fans, the slope face strip's
+  outward ray).
+- **Measured on the starter documents.** The real pavement half width is 5 m (the fixed-frame
+  evaluation's 4.5 m is its own default). T arcs run (17, -5) to (5, -17) and its mirror; Cross arcs (15, 5)
+  to (5, 15) in each quadrant.
+- **The arc fill now builds.** The curb return slope face strip, empty for both kinds until now with
+  `outer_point_missing`, builds 2 strips of 40 triangles on the T and 4 strips of 64 on the Cross. The
+  arcs had been cutting across the roadway, where no slope point is near. Each strip reaches at most
+  7.66 m (T) or 6.01 m (Cross) out from its fillet, takes its heights from slope points within 2.5 m of
+  its ray, and drops 1.7 to 1.95 m, a side slope.
+- **The T smoke guard changed with it.** `smoke_intersection_t_slope_face_surface.py` asserted that the
+  strip stays empty, as a guard against a strip built from slope points far along the road. With the old
+  arcs that was the only kind it could build. It now asserts that the strip is built for both corners with
+  no missing outer point, and `test_boundary_segment_curb_return_fillet.py` pins the guard's real intent:
+  every outer point within 8 m of its fillet and every slope point it used within 3 m of the ray.
+- **What does not change.** The boundary loop coverage metric is still 27 of 43 on the T: it counts the
+  fixed-frame envelope's edges (at 4.5 m), and the strip fills the real arcs (at 5 m). They are not the same
+  line, so the strip is not counted against the envelope's arcs, and linking them would hide the frame
+  difference.
+- **Not done.** The fixed frame of the topology, edge network and envelope. They need each alignment's
+  real direction at the intersection, which only the commands can read from the document; about 50
+  calls of `evaluate_topology`, `evaluate_edge_network` and `evaluate_boundary_loops` across four command
+  modules and the builders would carry it. Until then, on a document whose roads are not on the X and Y
+  axes, the boundary loop, its owners and breaklines, and the patch rectangles it shapes are placed in the
+  wrong directions, as the captures show. Nothing was looked at in FreeCAD after this change.
+- **Tests.** `test_boundary_segment_curb_return_fillet.py`: a 30 degree rotated Cross off the origin gets
+  fillets tangent to its rotated edges and outside both pavements, a road missing an edge keeps the centre
+  arc with the warning, and the starter T strip's locality.
+
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
 `IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` were the only two of
