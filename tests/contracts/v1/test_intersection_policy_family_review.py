@@ -8,7 +8,6 @@ evaluation service does not accept, and adopting the Subassembly is a claim the 
 makes in its own action rather than a side effect of accepting.
 """
 
-import pytest
 
 import FreeCAD as App
 
@@ -195,25 +194,10 @@ def test_a_row_missing_what_it_governs_is_not_accepted_and_not_adopted() -> None
     assert adopt_edge_families_from_subassembly(None).accepted is False
 
 
-# Cross does not reach ready for a reason that has nothing to do with the review: its
-# boundary takes the curb return envelope path, which assigns no `intersection-boundary-owner`
-# refs, and the slope face surface consumes none of the loop's edges. The manual acceptance
-# the T smoke uses gives the same `missing`. Strict, so that giving the envelope owners turns
-# this into a failure to update.
-@pytest.mark.parametrize(
-    "label",
-    [
-        "T Intersection - Basic",
-        pytest.param(
-            "Cross Intersection - Basic",
-            marks=pytest.mark.xfail(strict=True, reason="the Cross curb return envelope path assigns no boundary owners"),
-        ),
-    ],
-)
-def test_boundary_owner_reaches_ready_from_the_preset_plus_review_and_adoption(label) -> None:
+def test_boundary_owner_reaches_ready_from_the_preset_plus_review_and_adoption() -> None:
     doc = App.newDocument("CRV1PolicyFamilyOwner")
     try:
-        reviewed = _reviewed_model(doc, label)
+        reviewed = _reviewed_model(doc, "T Intersection - Basic")
 
         # accepting alone is not enough: the edge rows still evaluate as method_unknown
         _store(doc, reviewed)
@@ -257,5 +241,26 @@ def test_panel_adoption_needs_the_users_confirmation_and_then_changes_only_the_m
         assert methods() == {"subassembly_derived"}
         reviewed = intersection_review_rows(to_intersection_model(find_v1_intersection_model(doc)))
         assert all(row.reviewed for row in reviewed)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_cross_boundary_owner_is_one_curb_return_arc_per_corner() -> None:
+    # A Cross takes the curb return envelope path: its boundary is built from the corner
+    # arcs, not from the edge rows, so the owner is the corner arc and it does not wait for
+    # the edge families to be adopted. A curved span has no rectangle side to own it.
+    doc = App.newDocument("CRV1PolicyFamilyCrossOwner")
+    try:
+        _store(doc, _reviewed_model(doc, "Cross Intersection - Basic"))
+        status, count = _owner_status(doc)
+        preview = doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
+        owner_refs = list(getattr(preview, "IntersectionBoundaryOwnerRefs", []) or [])
+        assert (status, count) == ("ready", 4)
+        assert len(owner_refs) == 4
+        assert all(ref.endswith(":arc") for ref in owner_refs), owner_refs
+        # the surface itself is unchanged: no face fills these arcs yet, so the loop
+        # coverage keeps saying so rather than borrowing the owner status
+        assert int(getattr(preview, "IntersectionBoundaryLoopGraphFilledEdgeCount", -1)) == 0
+        assert str(getattr(preview, "IntersectionBoundaryLoopGraphCoverageStatus", "")) == "warning"
     finally:
         App.closeDocument(doc.Name)

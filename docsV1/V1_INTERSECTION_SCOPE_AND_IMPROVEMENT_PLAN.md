@@ -639,11 +639,10 @@ Review rows are now **T 18, Cross 30, Roundabout 24**, all reaching `n of n` fro
 **Measured result.** For a T preset, accepting alone leaves `IntersectionBoundaryOwnerStatus`
 short of `ready`; accepting and then adopting gives `ready` with 15 owners.
 
-**Cross does not reach `ready`, for a reason that is not the review.** The same document
-measured through the T smoke's manual acceptance also reads `missing`, with zero owners. It
-is pinned by a strict `xfail` in `test_intersection_policy_family_review.py`, so that fixing
-it forces the test to be updated. The acceptance line above is therefore met for T and not
-for Cross.
+**Cross did not reach `ready`, for a reason that was not the review.** The same document
+measured through the T smoke's manual acceptance also read `missing`, with zero owners. A
+strict `xfail` pinned it until the Cross owner change below. The acceptance line above was
+therefore met for T and not for Cross at the time of the review change.
 
 The first explanation written here, that the corner arcs are not built, was wrong and is
 corrected on 2026-10-07 after measuring both kinds. The evaluation is sound for a Cross:
@@ -692,13 +691,45 @@ the envelope owner refs would be enough, did not survive it.
   alignment's left side; the panel generator groups by alignment and side, so for a Cross it
   would panel one side of one road.
 
-So making a Cross `ready` honestly needs three things together: shared-boundary graph upper
-cells that reference the curb return envelope's edges, an owner for each envelope segment (the
-rectilinear owner is a perimeter rectangle side, which an arc does not have), and a decision
-about whether the upper panels should cover all four arms rather than one side. None of the
-three is a defect fix; each is new behaviour with a design question, and it can be checked only
-by the metadata, not by looking at the surface. It is recorded here as a candidate item rather
-than started.
+That scoping note over-stated what `ready` needs, and the next section corrects it.
+
+#### Cross boundary owners: done on 2026-10-07
+
+Reading the owner status derivation again showed that it does not depend on "filled". The
+rows come from graph edges whose `source_refs` carry an `intersection-boundary-owner:` ref
+(`_boundary_loop_owner_summary_display_rows`), and a row is `ready` when the edge's role has all
+its expected consumers. The curb return envelope segments already had the consumers; they only
+lacked the owner ref. So the change is the owner definition alone.
+
+`_intersection_boundary_join_ordered_corner_arcs` now adds
+`intersection-boundary-owner:<corner ref>:arc` to each arc segment, and `:connector` to a
+connector, in the same `intersection-boundary-owner:<group>:<side>` form the rectilinear path
+uses. A curved span has no rectangle side to own it, so a corner's curb return arc is one owner.
+A Cross has 4 corners and so 4 owners of 8 edges each.
+
+Measured, with the starter Cross after Accept Reviewed Rows: `IntersectionBoundaryOwnerStatus`
+`ready`, 4 owners, 4 ready, 0 warning. Nothing about T changes, since it takes the rectilinear path.
+
+Two facts to keep in mind:
+
+- **The Cross owner does not wait for adoption.** The envelope is built from the topology's corner
+  arcs, not from the edge rows, so the `method_unknown` edge-authority filter that holds a T at
+  `missing` until `Adopt Edge Families From Subassembly` does not apply. The Cross owner is `ready`
+  before and after adoption. This is stated as measured; whether the envelope should also respect
+  edge authority is a separate question and is not decided here.
+- **Nothing fills the arcs yet, for either kind.** The Cross slope face preview is 4 triangles
+  (a boundary strip) and the T one is 4 triangles (one upper panel); the curb return perimeter strip
+  is empty for both (`curb_return_slope_face_perimeter_outer_point_missing`). The loop coverage
+  `IntersectionBoundaryLoopGraphFilledEdgeCount` is therefore still 0 of 32 for a Cross, with
+  `IntersectionBoundaryLoopGraphCoverageStatus` `warning`, and the change does not touch it. The
+  three design questions of the earlier note, graph upper cells over the envelope, the owner
+  definition, and panel coverage across the four arms, reduce to the second one for the owner
+  status. The first and third would change the surface and would be checked only by metadata,
+  so they are left as a candidate and not started.
+
+`test_boundary_owner_reaches_ready_from_the_preset_plus_review_and_adoption` is now T only, and
+`test_cross_boundary_owner_is_one_curb_return_arc_per_corner` pins the Cross result, including that
+the filled count stays 0 and the coverage stays `warning`.
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 

@@ -2849,13 +2849,20 @@ def _intersection_boundary_join_ordered_corner_arcs(
             )
             if value
         )
+        # a curved span has no rectangle side to own it, so each corner's curb return arc is
+        # one owner, the way a perimeter rectangle side is one owner for a rectilinear boundary
+        corner_group = str(
+            getattr(corner, "source_corner_ref", "") or getattr(corner, "corner_result_id", "") or f"corner-{corner_index:02d}"
+        )
+        arc_owner_refs = (*source_refs, _intersection_boundary_rectilinear_owner_ref(corner_group, "arc"))
+        connector_owner_refs = (*source_refs, _intersection_boundary_rectilinear_owner_ref(corner_group, "connector"))
         if points and _intersection_boundary_key(points[-1]) != _intersection_boundary_key(arc_points[0]):
             connector_count += 1
             connector_id = (
                 f"intersection-boundary-envelope:{_id_token(intersection_id)}:"
                 f"corner-connector:{corner_index:02d}"
             )
-            segments.append((points[-1], arc_points[0], connector_id, "curb_return_envelope_connector", source_refs))
+            segments.append((points[-1], arc_points[0], connector_id, "curb_return_envelope_connector", connector_owner_refs))
         if not points:
             points.append(arc_points[0])
         elif _intersection_boundary_key(points[-1]) != _intersection_boundary_key(arc_points[0]):
@@ -2870,12 +2877,11 @@ def _intersection_boundary_join_ordered_corner_arcs(
                 f"intersection-boundary-envelope:{_id_token(intersection_id)}:"
                 f"corner:{corner_index:02d}:arc:{arc_index:02d}"
             )
-            segments.append((first, second, segment_id, "curb_return_envelope_arc", source_refs))
+            segments.append((first, second, segment_id, "curb_return_envelope_arc", arc_owner_refs))
     if points and _intersection_boundary_key(points[0]) != _intersection_boundary_key(points[-1]):
         connector_count += 1
         connector_id = f"intersection-boundary-envelope:{_id_token(intersection_id)}:corner-connector:close"
-        last_refs = segments[-1][4] if segments else ()
-        segments.append((points[-1], points[0], connector_id, "curb_return_envelope_connector", last_refs))
+        segments.append((points[-1], points[0], connector_id, "curb_return_envelope_connector", connector_owner_refs))
         points.append(points[0])
     return points, segments, connector_count
 

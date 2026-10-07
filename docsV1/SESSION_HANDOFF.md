@@ -96,18 +96,19 @@ widget-free review of intersection source rows. New presentation rows:
 
 Review row counts after 5.10: **T 18, Cross 30, Roundabout 24**, all reaching `n of n` from
 `Accept Reviewed Rows` alone. For T, `IntersectionBoundaryOwnerStatus` reaches `ready` (15 owners)
-only after `Adopt Edge Families From Subassembly` as well. Cross stays `missing`: its boundary takes the
-curb return envelope path, which assigns no boundary owners and whose edges the slope face does not consume
-(not missing arcs; the plan's section 5.10 Outcome has the measurement), which is a separate gap that the
-plan's §5.10 Outcome records and a strict `xfail` pins.
+only after `Adopt Edge Families From Subassembly` as well. A Cross reaches `ready` with 4 owners (one
+curb return arc per corner) without adoption, because its boundary takes the curb return envelope path,
+which does not read the edge rows. Its loop coverage stays 0 of 32 filled, since no face fills the arcs
+for either kind; the plan's §5.10 Outcome records the measurement.
 
 ## 5. What is left
 
 ### Intersection plan, in order
 
 1. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
-2. **Cross boundary owners** — not yet an item. A Cross takes the curb return envelope path, which assigns no owner refs and has none of its loop edges consumed by the slope face; it has no
-   boundary owners whatever the review state; found while closing 5.10.
+2. **Curb return arc fill** — not an item yet. No slope face fills the curb return arcs for a T or a
+   Cross (`curb_return_slope_face_perimeter_outer_point_missing`), so a Cross loop coverage stays 0 of 32.
+   It would change the surface and is checkable by metadata only; decide before starting.
 
 ### Repository-wide
 
