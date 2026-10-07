@@ -6,6 +6,7 @@ import math
 
 from ...models.result.applied_section_set import AppliedSectionSet
 from ...services.geometry import (
+    ear_clip_triangulation_indices,
     xy_distance,
     xy_polygon_signed_area,
     xyz_point,
@@ -447,7 +448,10 @@ def build_roundabout_entry_exit_connector_surface_tin(
         if len(points) < 4:
             skipped_loop_count += 1
             continue
-        points = points[:4]
+        # a connector without a flare is the four-point rectangle; a flared one has more points
+        flared = len(points) > 4
+        if not flared:
+            points = points[:4]
         area = abs(_xy_polygon_area([(float(point[0]), float(point[1])) for point in points]))
         if area <= 1.0e-6:
             skipped_loop_count += 1
@@ -469,28 +473,29 @@ def build_roundabout_entry_exit_connector_surface_tin(
                     notes="roundabout entry/exit connector boundary vertex",
                 )
             )
-        triangles.append(
-            TINTriangle(
-                triangle_id=f"rect{len(triangles) + 1:03d}",
-                v1=vertex_ids[0],
-                v2=vertex_ids[1],
-                v3=vertex_ids[2],
-                triangle_kind="roundabout_entry_exit_connector_surface",
-                quality_ref=loop_ref,
-                notes=f"roundabout entry/exit connector loop {loop_index}",
+        if flared:
+            # the loop is concave at a flare, so a fan would cross the outline; the triangles
+            # are turned to the winding the rectangle's two triangles already have
+            corner_indices = [
+                (first, third, second)
+                for first, second, third in ear_clip_triangulation_indices(
+                    [(float(point[0]), float(point[1])) for point in points]
+                )
+            ]
+        else:
+            corner_indices = [(0, 1, 2), (0, 2, 3)]
+        for first, second, third in corner_indices:
+            triangles.append(
+                TINTriangle(
+                    triangle_id=f"rect{len(triangles) + 1:03d}",
+                    v1=vertex_ids[first],
+                    v2=vertex_ids[second],
+                    v3=vertex_ids[third],
+                    triangle_kind="roundabout_entry_exit_connector_surface",
+                    quality_ref=loop_ref,
+                    notes=f"roundabout entry/exit connector loop {loop_index}",
+                )
             )
-        )
-        triangles.append(
-            TINTriangle(
-                triangle_id=f"rect{len(triangles) + 1:03d}",
-                v1=vertex_ids[0],
-                v2=vertex_ids[2],
-                v3=vertex_ids[3],
-                triangle_kind="roundabout_entry_exit_connector_surface",
-                quality_ref=loop_ref,
-                notes=f"roundabout entry/exit connector loop {loop_index}",
-            )
-        )
 
     shape_quality = _intersection_patch_shape_quality(vertices, triangles) if vertices and triangles else {
         "bbox_x": 0.0,

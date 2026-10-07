@@ -4951,6 +4951,12 @@ def _roundabout_approach_leg_rows(
         0.0,
     )
     approach_apron_rows = _roundabout_approach_apron_policy_rows(intersection_model, intersection_id)
+    approach_entry_rows = _roundabout_approach_apron_policy_rows(
+        intersection_model, intersection_id, "roundabout_approach_entry_radius"
+    )
+    approach_exit_rows = _roundabout_approach_apron_policy_rows(
+        intersection_model, intersection_id, "roundabout_approach_exit_radius"
+    )
     rows: list[IntersectionRoundaboutApproachLegRow] = []
     role_counts: dict[str, int] = {}
     shared_roles = (
@@ -4993,6 +4999,17 @@ def _roundabout_approach_leg_rows(
                 endpoint=endpoint_suffix,
                 default_width=default_apron_width,
             )
+            radius_values = {}
+            for name, policy_rows in (("entry_radius", approach_entry_rows), ("exit_radius", approach_exit_rows)):
+                value, value_source, value_diagnostics = _roundabout_approach_apron_width(
+                    policy_rows,
+                    leg_ref=str(getattr(span, "leg_ref", "") or ""),
+                    endpoint=endpoint_suffix,
+                    default_width=0.0,
+                    name=name,
+                )
+                radius_values[name] = (value, value_source)
+                apron_diagnostics = [*apron_diagnostics, *value_diagnostics]
             for diagnostic in apron_diagnostics:
                 row_diagnostics.append(diagnostic)
                 diagnostics.append(f"warning:{diagnostic}:{approach_role}")
@@ -5026,6 +5043,10 @@ def _roundabout_approach_leg_rows(
                     status=status,
                     apron_width=apron_width,
                     apron_width_source=apron_width_source,
+                    entry_radius=radius_values["entry_radius"][0],
+                    entry_radius_source=radius_values["entry_radius"][1],
+                    exit_radius=radius_values["exit_radius"][0],
+                    exit_radius_source=radius_values["exit_radius"][1],
                     notes=(
                         "physical_roundabout_approach_leg_from_topology_span; "
                         f"source_leg={str(getattr(span, 'leg_ref', '') or '')}; "
@@ -5042,13 +5063,15 @@ def _roundabout_approach_leg_rows(
 def _roundabout_approach_apron_policy_rows(
     intersection_model: IntersectionModel,
     intersection_id: str,
+    rule: str = "roundabout_approach_apron_width",
 ) -> list[tuple[str, str, float]]:
-    """Return (leg_ref, endpoint, width) for the per-approach apron rows of one intersection.
+    """Return (leg_ref, endpoint, value) for the per-approach rows of one rule.
 
     A per-approach row is an edge policy row of the roundabout intent whose rule is
-    `roundabout_approach_apron_width`, keyed by its `leg_ref` and by `side` ("start", "end"
-    or "both"). They are kept apart from `roundabout_outer_apron_width`, which stays the
-    default every approach without a row uses.
+    `roundabout_approach_apron_width`, `roundabout_approach_entry_radius` or
+    `roundabout_approach_exit_radius`, keyed by its `leg_ref` and by `side` ("start", "end"
+    or "both"). The apron one is kept apart from `roundabout_outer_apron_width`, which stays
+    the default every approach without a row uses; a radius has no default but 0, no flare.
     """
 
     output: list[tuple[str, str, float]] = []
@@ -5057,7 +5080,7 @@ def _roundabout_approach_apron_policy_rows(
             continue
         if str(getattr(row, "edge_family_intent", "") or "") != "roundabout":
             continue
-        if str(getattr(row, "offset_rule", "") or "").strip() != "roundabout_approach_apron_width":
+        if str(getattr(row, "offset_rule", "") or "").strip() != rule:
             continue
         if str(getattr(row, "status", "") or "active") != "active":
             continue
@@ -5077,8 +5100,9 @@ def _roundabout_approach_apron_width(
     leg_ref: str,
     endpoint: str,
     default_width: float,
+    name: str = "apron_width",
 ) -> tuple[float, str, list[str]]:
-    """Resolve one approach's apron width: an endpoint row beats a "both" row beats the default."""
+    """Resolve one approach's value: an endpoint row beats a "both" row beats the default."""
 
     matches = {"both": None, endpoint: None}
     for row_leg_ref, row_side, value in policy_rows:
@@ -5091,7 +5115,7 @@ def _roundabout_approach_apron_width(
         if value is None:
             continue
         if value <= 0.0:
-            diagnostics.append(f"roundabout_approach_apron_width_invalid:{leg_ref}:{side}")
+            diagnostics.append(f"roundabout_approach_{name}_invalid:{leg_ref}:{side}")
             continue
         return float(value), "approach_policy", diagnostics
     return float(default_width), "roundabout_default", diagnostics
@@ -5411,12 +5435,23 @@ def _roundabout_boundary_loop_result(
             str(getattr(approach_legs, "approach_leg_result_id", "") or ""),
             str(getattr(approach_leg, "approach_leg_id", "") or ""),
         )
+        flare_radii = []
+        for side_name, radius_attr in (("entry", "entry_radius"), ("exit", "exit_radius")):
+            flare_radius = float(getattr(approach_leg, radius_attr, 0.0) or 0.0)
+            if flare_radius > 0.0 and _roundabout_connector_flare_geometry(
+                outer_radius, connector_width * 0.5, flare_radius, connector_length
+            ) is None:
+                diagnostics.append(f"warning:roundabout_connector_flare_unavailable:{approach_role}:{side_name}")
+                flare_radius = 0.0
+            flare_radii.append(flare_radius)
         connector_points = _roundabout_entry_exit_connector_points(
             center,
             outer_radius=outer_radius,
             connector_length=connector_length,
             connector_width=connector_width,
             angle_deg=angle,
+            entry_radius=flare_radii[0],
+            exit_radius=flare_radii[1],
         )
         loop_specs.append(
             (
@@ -5625,6 +5660,71 @@ def _roundabout_circle_points(
     ]
 
 
+def _roundabout_connector_flare_geometry(
+    outer_radius: float,
+    half_width: float,
+    flare_radius: float,
+    connector_length: float,
+) -> tuple[float, float, tuple[float, float], tuple[float, float]] | None:
+    """Return the flare of one connector side in the connector's own frame, or None.
+
+    The frame has x along the approach outward from the roundabout centre and y across it.
+    The flare is the arc of radius R tangent to the connector edge line y = h and externally
+    tangent to the circulatory outer circle of radius r0, so its centre is at y = h + R and at
+    distance r0 + R from the roundabout centre. Returned: the centre's x, the centre's y, the
+    tangent point on the circle and the tangent point on the edge line, for the +y side.
+    It is None when the flare does not fit: no real centre, or its line tangent point lies
+    beyond the end of the connector.
+    """
+
+    r0 = float(outer_radius or 0.0)
+    h = float(half_width or 0.0)
+    radius = float(flare_radius or 0.0)
+    if r0 <= 0.0 or h <= 0.0 or radius <= 0.0:
+        return None
+    square = (r0 + radius) ** 2 - (h + radius) ** 2
+    if square <= 0.0:
+        return None
+    center_x = math.sqrt(square)
+    center_y = h + radius
+    if center_x > r0 + float(connector_length or 0.0):
+        return None
+    scale = r0 / (r0 + radius)
+    return (center_x, center_y, (center_x * scale, center_y * scale), (center_x, h))
+
+
+def _roundabout_connector_flare_arc(
+    outer_radius: float,
+    half_width: float,
+    flare_radius: float,
+    connector_length: float,
+    *,
+    sign: float,
+    sample_count: int = 8,
+) -> list[tuple[float, float]]:
+    """Return the flare arc points (x, y) of one side, from the ring tangent to the edge tangent."""
+
+    geometry = _roundabout_connector_flare_geometry(outer_radius, half_width, flare_radius, connector_length)
+    if geometry is None:
+        return []
+    center_x, center_y, ring_tangent, line_tangent = geometry
+    radius = float(flare_radius)
+    start_angle = math.atan2(ring_tangent[1] - center_y, ring_tangent[0] - center_x)
+    end_angle = math.atan2(line_tangent[1] - center_y, line_tangent[0] - center_x)
+    delta = end_angle - start_angle
+    while delta > math.pi:
+        delta -= math.tau
+    while delta < -math.pi:
+        delta += math.tau
+    points: list[tuple[float, float]] = []
+    for index in range(sample_count + 1):
+        angle = start_angle + delta * (index / float(sample_count))
+        points.append((center_x + math.cos(angle) * radius, sign * (center_y + math.sin(angle) * radius)))
+    points[0] = (ring_tangent[0], sign * ring_tangent[1])
+    points[-1] = (line_tangent[0], sign * line_tangent[1])
+    return points
+
+
 def _roundabout_entry_exit_connector_points(
     center: tuple[float, float, float],
     *,
@@ -5632,7 +5732,18 @@ def _roundabout_entry_exit_connector_points(
     connector_length: float,
     connector_width: float,
     angle_deg: float,
+    entry_radius: float = 0.0,
+    exit_radius: float = 0.0,
 ) -> list[tuple[float, float, float]]:
+    """Return the connector polygon of one approach.
+
+    Without a flare it is the rectangle it has always been. For right-hand traffic circulating
+    counter-clockwise, the entry side of an approach is the side `p` points to, where `p` is
+    the outward direction turned a quarter turn counter-clockwise, and the exit side is the
+    other. A flare replaces the ring end of its side with the arc, so a side that has none keeps
+    its corner.
+    """
+
     radius = float(outer_radius or 0.0)
     length = float(connector_length or 0.0)
     width = float(connector_width or 0.0)
@@ -5647,12 +5758,24 @@ def _roundabout_entry_exit_connector_points(
     half_width = width * 0.5
     inner = radius
     outer = radius + length
-    return [
-        (cx + ux * inner + px * half_width, cy + uy * inner + py * half_width, cz),
-        (cx + ux * outer + px * half_width, cy + uy * outer + py * half_width, cz),
-        (cx + ux * outer - px * half_width, cy + uy * outer - py * half_width, cz),
-        (cx + ux * inner - px * half_width, cy + uy * inner - py * half_width, cz),
-    ]
+
+    def world(x: float, y: float) -> tuple[float, float, float]:
+        return (cx + ux * x + px * y, cy + uy * x + py * y, cz)
+
+    entry_arc = _roundabout_connector_flare_arc(radius, half_width, entry_radius, length, sign=1.0)
+    exit_arc = _roundabout_connector_flare_arc(radius, half_width, exit_radius, length, sign=-1.0)
+    if not entry_arc and not exit_arc:
+        return [
+            world(inner, half_width),
+            world(outer, half_width),
+            world(outer, -half_width),
+            world(inner, -half_width),
+        ]
+    points = [world(x, y) for x, y in (entry_arc or [(inner, half_width)])]
+    points.append(world(outer, half_width))
+    points.append(world(outer, -half_width))
+    points.extend(world(x, y) for x, y in reversed(exit_arc or [(inner, -half_width)]))
+    return points
 
 
 def _roundabout_cross_boundary_loop_points(

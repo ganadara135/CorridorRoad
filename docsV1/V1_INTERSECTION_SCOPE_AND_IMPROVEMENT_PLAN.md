@@ -290,7 +290,7 @@ where no per-approach row exists.
 
 #### Outcome, first part: apron width per approach, done on 2026-10-07
 
-Apron width is done; entry radius and exit radius are not, and the section stays open for them.
+Apron width is done here. Entry radius and exit radius are done in the next part.
 
 - **Source.** No new row family. A per-approach apron is an `IntersectionEdgePolicyRow` of the
   `roundabout` intent with the rule `roundabout_approach_apron_width`, keyed by `leg_ref` and by
@@ -313,19 +313,50 @@ Apron width is done; entry radius and exit radius are not, and the section stays
 
 Not done, and stated so it is not mistaken for done:
 
-- **Entry radius and exit radius.** Entry and exit are not yet separate in the geometry. The
-  connector is a rectangle of the circulatory width with no flare, so a radius has nothing to
-  change until the connector shape has a flare. That is a geometry decision, not a source field.
-  It also needs to know which side of an approach is the entry side, which depends on the
-  circulation direction. Nothing in the project records that (a search for drive side, traffic
-  direction, circulation and handedness finds nothing), so it would be a new project-level input.
-  A flare of radius R is the arc tangent to the connector edge line and externally tangent to the
-  circulatory outer circle; its centre is at lateral distance half-width + R and at distance
-  R + outer radius from the roundabout centre.
 - **Authoring.** There is no editor field for the new rows. They exist as source rows, as the
   existing roundabout policy rows do.
 - **GUI.** Everything above was checked headless, against the evaluation results. Nothing was looked
   at in FreeCAD, and the apron TIN was not rebuilt with a widened loop; only its loop pairing was checked.
+
+#### Outcome, second part: entry and exit radius, done on 2026-10-07
+
+The connector now has a flare. The two open decisions were answered by the user on 2026-10-07:
+**right-hand traffic circulating counter-clockwise, fixed in code**, and a flare tangent to the
+connector's edge line. Nothing in the project records a circulation direction (a search for drive
+side, traffic direction, circulation and handedness finds nothing), so the fixed assumption is stated
+here and in the code, and a project setting would be a separate item.
+
+- **Source.** Edge policy rows of the `roundabout` intent with the rules
+  `roundabout_approach_entry_radius` and `roundabout_approach_exit_radius`, keyed by `leg_ref` and
+  `side` (`start`, `end`, `both`) exactly like the per-approach apron. There is no default but 0,
+  which means no flare, so every existing document and the preset are unchanged. A value of 0 or
+  less warns (`roundabout_approach_entry_radius_invalid`, `..._exit_radius_invalid`) and means no flare.
+- **Result.** `IntersectionRoundaboutApproachLegRow` gained `entry_radius`, `exit_radius` and their sources.
+- **Geometry.** A flare of radius R is the arc tangent to the connector edge line and externally
+  tangent to the circulatory outer circle: its centre is at lateral distance half-width + R, at
+  distance outer radius + R from the roundabout centre, so its centre's distance along the approach
+  is `sqrt((r0 + R)^2 - (h + R)^2)`. The connector polygon replaces the ring end of that side with
+  the arc, 9 points from the ring tangent to the edge tangent. Entry is the side the outward direction
+  turned a quarter turn counter-clockwise points to; exit is the other. A flare whose edge tangent lies
+  beyond the end of the connector, or that has no real centre, is refused with
+  `roundabout_connector_flare_unavailable` and the side keeps its rectangle corner.
+- **Surface.** `build_roundabout_entry_exit_connector_surface_tin` kept its two-triangle rectangle for a
+  four-point loop and ear-clips a flared one, because the outline is concave at the flare. The triangles
+  are given the winding the rectangle's two already have, so one surface does not mix windings.
+- **Tests.** `test_roundabout_connector_flare.py`: no radius gives the four-point rectangle, the entry
+  flare is on the entry side only and tangent to both curves, an exit flare is on the other side and
+  an oversized flare falls back, and the flared triangles add up to the loop's polygon area.
+
+Things to know before relying on it:
+
+- **The connector surface preview is not in the build.** `create_corridor_intersection_surface_preview`
+  reports the roundabout entry/exit connector surface `not_applicable` ("disabled for generalization").
+  A flare changes the boundary loop, and the shared breaklines and graph edges derived from it, but not
+  a surface you can see in the built document today.
+- **Nothing was looked at in FreeCAD.** The checks are headless, on the evaluation and the builder.
+- **Neighbouring flares can meet.** Two flares on adjacent approaches are not checked against each
+  other; with a small ring and large radii they could overlap.
+- **Authoring.** There is still no editor field for any per-approach row.
 
 ### 5.5 Let the side road have superelevation: done on 2026-09-28
 
@@ -865,7 +896,7 @@ without a cache; the time it was about is in the shared breakline audit and the 
 constraint coverage matching, which is a candidate for its own item. The Cross corner arc
 gap found by 5.10 is another. 5.8 is what a real route needs. 5.4 is
 the largest and is what the Roundabout needs to be more than a symmetric starter; its apron
-width part is done and entry and exit radius remain.
+width and flare parts are done; the editor field for the per-approach rows remains.
 
 ## 7. Out of Scope
 

@@ -80,7 +80,7 @@ a guess about a history the document does not record.
 | 5.1 | already implemented | unsupported-kind diagnosis |
 | 5.2 | closed 2026-09-27 | was a test defect, not a code defect |
 | 5.3 | done | the panel's source review table, `Refresh Review` / `Accept Reviewed Rows` |
-| 5.4 | **part done** | apron width per approach is done (rule `roundabout_approach_apron_width`); entry and exit radius are not, and Roundabout still creates no slope face preview |
+| 5.4 | **done except authoring** | per-approach apron width (`roundabout_approach_apron_width`) and entry / exit flare radius (`roundabout_approach_entry_radius` / `..._exit_radius`, right-hand traffic fixed in code); no editor field yet; Roundabout still creates no slope face preview |
 | 5.5 | done | superelevation paired per Alignment |
 | 5.6 | done | Applied Sections names the Alignments it skips |
 | 5.7 | closed 2026-10-05, no cache | the chain costs 0.3 s of a 5.9 s T build; the time was in the shared breakline audit and patch constraint matching, which was then made 3 to 8 times faster with identical output on 2026-10-07 |
@@ -105,9 +105,10 @@ for either kind; the plan's §5.10 Outcome records the measurement.
 
 ### Intersection plan, in order
 
-1. **5.4, entry and exit radius** — the apron width part is done. The connector is an unflared rectangle, so a
-   radius needs a decision on the flare shape first; there is also no editor field for the per-approach rows.
-2. **Curb return arc geometry** — not an item yet. The topology's corner arcs are circles of the curb
+1. **5.4, authoring** — the per-approach apron and flare rows exist only as source rows; there is no editor
+   field. Circulation direction is fixed to right-hand traffic in code; a project setting would be its own item.
+2. **Curb return arc geometry** — the user chose a fillet tangent to the pavement edge, offset by lane count x
+   lane width of the arm policy rows (2026-10-07); not started. Original note: — not an item yet. The topology's corner arcs are circles of the curb
    return radius centred on the intersection centre (Cross: radius 10 through the leg centre lines), not
    fillets tangent to the leg edges. A slope fill built outward from them would land on the roadway, so the
    fill (`curb_return_slope_face_perimeter_outer_point_missing`, Cross coverage 0 of 32) waits for the arcs.

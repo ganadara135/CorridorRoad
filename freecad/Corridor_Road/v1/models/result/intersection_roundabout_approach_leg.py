@@ -42,6 +42,12 @@ class IntersectionRoundaboutApproachLegRow:
     # "approach_policy" when a leg keyed row set it and "roundabout_default" otherwise
     apron_width: float = 0.0
     apron_width_source: str = ""
+    # flare radii of the connector mouth, in metres; 0 means no flare. Entry is the side
+    # vehicles enter on and exit the other, for right-hand traffic circulating counter-clockwise
+    entry_radius: float = 0.0
+    entry_radius_source: str = ""
+    exit_radius: float = 0.0
+    exit_radius_source: str = ""
 
 
 @dataclass
