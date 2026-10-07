@@ -826,6 +826,9 @@ the curb return radius changes all of those, so it needs its own decision, a reg
 the built surfaces, and a GUI check. The Cross owner change above is unaffected: it labels whatever
 arcs the topology gives, and the labels would stay one per corner.
 
+Update, 2026-10-07: a Cross's arcs are now fillets (the section "Curb return fillet" below); the text
+above records what was found and why the fill waited for it.
+
 Not verified here: whether this is a deliberate starter simplification or an unfinished evaluation,
 since no document or plan text states the intended geometry. Check `evaluate_topology` and the
 curb return policy rows before assuming either.
@@ -843,6 +846,55 @@ as defaults), and which side of each leg the corner is on. The tangent points an
 from the radius. The last one is already in the corner row (`side`, `quadrant`) but the existing
 `left` / `right` handling in `_intersection_curb_return_edge_endpoints` only negates one end.
 The first two are decisions, and they set where the boundary loop goes.
+
+#### Curb return fillet for a Cross: done on 2026-10-07
+
+The user decided on 2026-10-07 that the arc should be a fillet tangent to the pavement edge. The
+offset the user named, lane count times lane width from the arm policy rows, is not what the leg edge
+rows use, so it was not used as written; see the second point.
+
+- **Geometry.** For a corner between two arms, the arc of radius R (the curb return policy's) tangent
+  to the pavement edge of each arm, on the side of the corner: its centre is R beyond each edge, its
+  end points are the tangent points. For the starter Cross that is centres at (+-14.5, +-14.5) and
+  end points such as (14.5, 4.5) and (4.5, 14.5). The old arcs were centred on the intersection centre
+  with end points on the centre lines. Implemented in `_intersection_curb_return_fillet`, called by
+  both `evaluate_topology` (the corner rows) and `evaluate_edge_network` (the curb return edge rows,
+  whose `arc_center_xyz` is now the fillet centre), with the old arc kept as the fallback.
+- **Pavement edge offset.** It is taken from the edge policy row of each arm's `pavement_edge`
+  through `_intersection_edge_lateral_offset`, the function the leg edge rows use, so the arc is
+  tangent to the very line the boundary and the patch are built from. Today that is 4.5 m, because the
+  starter rows carry the rule `lane_width_from_arm_policy` with `offset_value` 0 and the function falls
+  back to a constant: **the rule does not read the arm policy**. Reading lane count x lane width / 2
+  (3.5 m for the default arm) would put the arc 1 m inside the edge it is meant to touch. Making that
+  rule real is a separate item, and the fillet will follow it when it is done.
+- **Not applied to a T.** A T's primary arm is a through leg, one span covering both directions, so a
+  corner of it has no single direction, and its source edge rows describe one side of each arm only
+  (the north edge of the primary, the west edge of the stem). Its boundary is built from a rectilinear
+  perimeter of those rows; with fillets in place the perimeter no longer closed and the boundary
+  fell to the convex hull, which lost the owners (`ready` with 15 owners became `missing`). So a corner
+  with a through leg, or an arm without a pavement edge policy row, keeps the earlier arc, and a T's
+  boundary is unchanged. Doing a T needs its edge rows made two-sided first.
+- **A T's corners are also inconsistent.** Found on the way, and left alone: the T's second corner
+  ends on the same side as its first (`side` right negates the wrong end), and the stem is placed at
+  +y by the corner code and at -y by the leg edge rows. The fillet reads the direction from the leg's
+  station span, as the edge rows place it, which is why it is correct for the stem.
+- **Boundary loop.** The fillets leave the four arm mouths open, so the envelope joins them with
+  `curb_return_envelope_connector` segments, which the envelope code already supported. They are
+  cut to the average arc segment length, because the patch quality check flags an edge more than 2.5
+  times the average (`intersection_surface_patch_long_boundary_edges` appeared with a 9 m connector).
+  Cross owners are now 7: 4 arcs and 3 connectors.
+- **Measured against the starter Cross before the change.** The patch status was `warning` before and
+  is `warning` now, with the same two diagnostics (`curb_return_radius_large`,
+  `cross_intersection_corner_arc_gap`). The long edge count is 0 in both. The triangle quality is worse:
+  skinny triangles 122 to 172 and the minimum triangle quality 0.012 to 0.0029, because the boundary
+  is now the real intersection area (reaching 14.5 m from the centre rather than a circle of
+  radius 10) and the patch is triangulated from boundary points alone. Improving that triangulation is
+  not part of this change.
+- **Not verified.** Nothing was looked at in FreeCAD. The Cross patch, slope face and breaklines were
+  checked through the preview properties and the contract tests only.
+- **Tests.** `test_curb_return_fillet.py`: each corner is tangent to both edges with its centre at
+  (+-(4.5+R), +-(4.5+R)), the loop closes with evenly cut connectors, a T keeps its arcs, an arm without
+  a pavement edge policy keeps the arc. The Cross owner test now expects 7.
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 

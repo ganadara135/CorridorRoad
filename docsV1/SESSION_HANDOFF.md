@@ -107,13 +107,15 @@ for either kind; the plan's §5.10 Outcome records the measurement.
 
 1. **5.4, authoring** — the per-approach apron and flare rows exist only as source rows; there is no editor
    field. Circulation direction is fixed to right-hand traffic in code; a project setting would be its own item.
-2. **Curb return arc geometry** — the user chose a fillet tangent to the pavement edge, offset by lane count x
-   lane width of the arm policy rows (2026-10-07); not started. Original note: — not an item yet. The topology's corner arcs are circles of the curb
-   return radius centred on the intersection centre (Cross: radius 10 through the leg centre lines), not
-   fillets tangent to the leg edges. A slope fill built outward from them would land on the roadway, so the
-   fill (`curb_return_slope_face_perimeter_outer_point_missing`, Cross coverage 0 of 32) waits for the arcs.
-   Changing them moves the boundary loop, patch and breaklines; decide, review, and check in the GUI first.
-   Details in the plan's section 5.10, "Curb return arc fill: stopped".
+2. **Curb return fillet for a T, then the fill** — a Cross's arcs are now fillets tangent to the pavement edge
+   (done 2026-10-07, plan section 5.10 "Curb return fillet for a Cross"). A T keeps the old arcs: its primary
+   arm is a through leg and its source edge rows are one-sided, so its edge rows must be made two-sided
+   first, and its corner direction defect fixed. The slope face fill of the arcs
+   (`curb_return_slope_face_perimeter_outer_point_missing`, Cross loop coverage 0 of 32) can be revisited
+   now that a Cross's arcs are on the pavement edge, and is still undone.
+3. **The edge offset rule** — `lane_width_from_arm_policy` does not read the arm policy; it falls back to
+   4.5 m. The fillet follows the edge rows, so it moves when this does. The Cross patch triangulation
+   also got worse with the larger boundary (skinny triangles 122 to 172).
 
 ### Repository-wide
 

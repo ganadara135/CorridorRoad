@@ -248,16 +248,20 @@ def test_panel_adoption_needs_the_users_confirmation_and_then_changes_only_the_m
 def test_cross_boundary_owner_is_one_curb_return_arc_per_corner() -> None:
     # A Cross takes the curb return envelope path: its boundary is built from the corner
     # arcs, not from the edge rows, so the owner is the corner arc and it does not wait for
-    # the edge families to be adopted. A curved span has no rectangle side to own it.
+    # the edge families to be adopted. A curved span has no rectangle side to own it. The
+    # fillets leave the arm mouths open, and the connector across each is owned by the corner
+    # it follows: 4 arc owners and 3 connector owners (the first corner has none before it
+    # and the closing connector belongs to the last).
     doc = App.newDocument("CRV1PolicyFamilyCrossOwner")
     try:
         _store(doc, _reviewed_model(doc, "Cross Intersection - Basic"))
         status, count = _owner_status(doc)
         preview = doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
         owner_refs = list(getattr(preview, "IntersectionBoundaryOwnerRefs", []) or [])
-        assert (status, count) == ("ready", 4)
-        assert len(owner_refs) == 4
-        assert all(ref.endswith(":arc") for ref in owner_refs), owner_refs
+        assert (status, count) == ("ready", 7)
+        assert len(owner_refs) == 7
+        assert sum(ref.endswith(":arc") for ref in owner_refs) == 4, owner_refs
+        assert sum(ref.endswith(":connector") for ref in owner_refs) == 3, owner_refs
         # the surface itself is unchanged: no face fills these arcs yet, so the loop
         # coverage keeps saying so rather than borrowing the owner status
         assert int(getattr(preview, "IntersectionBoundaryLoopGraphFilledEdgeCount", -1)) == 0
