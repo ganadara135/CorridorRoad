@@ -24,7 +24,7 @@ from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_servic
     IntersectionEvaluationService,
 )
 
-PAVEMENT_HALF_WIDTH = 4.5  # the rule lane_width_from_arm_policy falls back to today
+PAVEMENT_HALF_WIDTH = 4.5  # the starter arm: 2 lanes of 3.5 m and a 1.0 m shoulder, half plus shoulder
 
 
 def _model(doc, label):

@@ -1574,6 +1574,7 @@ class IntersectionEvaluationService:
             if str(getattr(policy, "policy_id", "") or "")
         }
         anchor_context = _intersection_edge_anchor_context(topology)
+        arm_policy_by_leg = _intersection_arm_policy_by_leg(intersection_model, topology.intersection_id)
         edge_rows: list[IntersectionEdgeNetworkRow] = []
         for leg_index, leg_span in enumerate(list(getattr(topology, "leg_span_rows", []) or []), start=1):
             edge_refs = tuple(str(ref) for ref in list(getattr(leg_span, "edge_policy_refs", []) or []) if str(ref))
@@ -1633,12 +1634,23 @@ class IntersectionEvaluationService:
                     edge_role = _edge_role_from_policy_ref(edge_ref)
                 side = str(getattr(policy, "side", "") or "both") if policy is not None else "both"
                 edge_family_source_status = _edge_family_source_status(row_diagnostics)
+                leg_arm_policy = arm_policy_by_leg.get(str(getattr(leg_span, "leg_ref", "") or ""))
+                if (
+                    policy is not None
+                    and str(getattr(policy, "offset_rule", "") or "") == _ARM_POLICY_PAVEMENT_OFFSET_RULE
+                    and abs(float(getattr(policy, "offset_value", 0.0) or 0.0)) <= 1.0e-9
+                    and _intersection_arm_pavement_half_width(leg_arm_policy) <= 0.0
+                ):
+                    diagnostics.append(
+                        f"info:edge_network_arm_policy_width_missing_default_offset_used:{edge_ref}:{leg_span.leg_ref}"
+                    )
                 start_xyz, end_xyz = _intersection_leg_edge_endpoints(
                     leg_span,
                     edge_role=edge_role,
                     side=side,
                     policy=policy,
                     anchor_context=anchor_context,
+                    arm_policy=leg_arm_policy,
                 )
                 endpoint_diagnostic = _edge_network_endpoint_diagnostic(
                     source_policy_ref=edge_ref,
@@ -4704,6 +4716,7 @@ def _intersection_leg_edge_endpoints(
     side: str,
     policy,
     anchor_context: dict[str, object],
+    arm_policy=None,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     anchor = _xyz_tuple(anchor_context.get("anchor_xyz", (0.0, 0.0, 0.0)))
     alignment_ref = str(getattr(leg_span, "alignment_ref", "") or "")
@@ -4720,7 +4733,7 @@ def _intersection_leg_edge_endpoints(
     end_delta = station_end - center_station
     axis = _intersection_alignment_axis(alignment_ref, str(anchor_context.get("primary_alignment", "") or ""), str(getattr(leg_span, "leg_role", "") or ""))
     normal = (-axis[1], axis[0])
-    offset = _intersection_edge_lateral_offset(edge_role, side, policy)
+    offset = _intersection_edge_lateral_offset(edge_role, side, policy, arm_policy)
     start = (
         anchor[0] + axis[0] * start_delta + normal[0] * offset,
         anchor[1] + axis[1] * start_delta + normal[1] * offset,
@@ -4751,12 +4764,57 @@ def _intersection_alignment_axis(alignment_ref: str, primary_alignment_ref: str,
     return (0.0, 1.0)
 
 
-def _intersection_edge_lateral_offset(edge_role: str, side: str, policy) -> float:
+_ARM_POLICY_PAVEMENT_OFFSET_RULE = "lane_width_from_arm_policy"
+
+
+def _intersection_arm_pavement_half_width(arm_policy) -> float:
+    """Return the distance from an arm's centre line to its pavement edge, in metres.
+
+    It is half the lane count times the lane width, plus the shoulder, plus half the median:
+    the `lane_count` of an arm policy row is the arm's total lane count (the editor default is 2
+    for a two-lane road), the pavement edge sits outside the shoulder, and a median pushes both
+    edges out by half its width. The starter arm (2 lanes of 3.5 m, 1.0 m shoulder, no median)
+    gives 4.5 m, the constant this used to be. 0 means the row does not define a width.
+    """
+
+    if arm_policy is None:
+        return 0.0
+    lane_count = int(getattr(arm_policy, "lane_count", 0) or 0)
+    lane_width = float(getattr(arm_policy, "lane_width", 0.0) or 0.0)
+    if lane_count <= 0 or lane_width <= 0.0:
+        return 0.0
+    shoulder = max(float(getattr(arm_policy, "shoulder_width", 0.0) or 0.0), 0.0)
+    median = max(float(getattr(arm_policy, "median_width", 0.0) or 0.0), 0.0)
+    return lane_count * lane_width * 0.5 + shoulder + median * 0.5
+
+
+def _intersection_arm_policy_by_leg(intersection_model: IntersectionModel, intersection_id: str) -> dict[str, object]:
+    arms: dict[str, object] = {}
+    for row in list(getattr(intersection_model, "arm_policy_rows", []) or []):
+        if str(getattr(row, "intersection_id", "") or "") != str(intersection_id or ""):
+            continue
+        if str(getattr(row, "status", "") or "active") != "active":
+            continue
+        leg_ref = str(getattr(row, "leg_ref", "") or "")
+        if leg_ref and leg_ref not in arms:
+            arms[leg_ref] = row
+    return arms
+
+
+def _intersection_edge_lateral_offset(edge_role: str, side: str, policy, arm_policy=None) -> float:
     explicit = float(getattr(policy, "offset_value", 0.0) or 0.0) if policy is not None else 0.0
     if abs(explicit) > 1.0e-9:
         return explicit
     role = str(edge_role or "").lower()
     base = 9.0 if "daylight" in role or "slope" in role else 4.5 if "pavement" in role or "lane" in role else 6.0
+    if (
+        policy is not None
+        and str(getattr(policy, "offset_rule", "") or "") == _ARM_POLICY_PAVEMENT_OFFSET_RULE
+        and ("pavement" in role or "lane" in role)
+    ):
+        from_arm = _intersection_arm_pavement_half_width(arm_policy)
+        if from_arm > 0.0:
+            base = from_arm
     side_text = str(side or "").lower()
     if side_text in {"left", "inside"}:
         return base
@@ -4805,12 +4863,12 @@ def _intersection_arm_half_widths(intersection_model: IntersectionModel, interse
     """Return the pavement half width of each arm that has an active pavement edge policy row.
 
     It is the lateral offset the leg edge rows themselves use for that arm's pavement edge
-    (`_intersection_edge_lateral_offset`), so a curb return is tangent to the very edge the
-    boundary loop and the patch are built from. An arm without a pavement edge policy row has
-    no entry. The `lane_width_from_arm_policy` rule of the starter rows does not yet read the
-    arm policy, so this is the rule's fallback today and follows it when it changes.
+    (`_intersection_edge_lateral_offset`, which reads the arm policy for the rule
+    `lane_width_from_arm_policy`), so a curb return is tangent to the very edge the boundary
+    loop and the patch are built from. An arm without a pavement edge policy row has no entry.
     """
 
+    arm_policy_by_leg = _intersection_arm_policy_by_leg(intersection_model, intersection_id)
     widths: dict[str, float] = {}
     for row in list(getattr(intersection_model, "edge_policy_rows", []) or []):
         if str(getattr(row, "intersection_id", "") or "") != str(intersection_id or ""):
@@ -4820,7 +4878,7 @@ def _intersection_arm_half_widths(intersection_model: IntersectionModel, interse
         if str(getattr(row, "edge_role", "") or "") != "pavement_edge":
             continue
         leg_ref = str(getattr(row, "leg_ref", "") or "")
-        half_width = abs(_intersection_edge_lateral_offset("pavement_edge", "left", row))
+        half_width = abs(_intersection_edge_lateral_offset("pavement_edge", "left", row, arm_policy_by_leg.get(leg_ref)))
         if leg_ref and half_width > 0.0 and leg_ref not in widths:
             widths[leg_ref] = half_width
     return widths

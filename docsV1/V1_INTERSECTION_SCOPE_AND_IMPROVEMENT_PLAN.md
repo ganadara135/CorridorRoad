@@ -862,11 +862,11 @@ rows use, so it was not used as written; see the second point.
   whose `arc_center_xyz` is now the fillet centre), with the old arc kept as the fallback.
 - **Pavement edge offset.** It is taken from the edge policy row of each arm's `pavement_edge`
   through `_intersection_edge_lateral_offset`, the function the leg edge rows use, so the arc is
-  tangent to the very line the boundary and the patch are built from. Today that is 4.5 m, because the
-  starter rows carry the rule `lane_width_from_arm_policy` with `offset_value` 0 and the function falls
-  back to a constant: **the rule does not read the arm policy**. Reading lane count x lane width / 2
-  (3.5 m for the default arm) would put the arc 1 m inside the edge it is meant to touch. Making that
-  rule real is a separate item, and the fillet will follow it when it is done.
+  tangent to the very line the boundary and the patch are built from. When this was written that was
+  4.5 m because the starter rows carry the rule `lane_width_from_arm_policy` with `offset_value` 0 and the
+  function fell back to a constant: the rule did not read the arm policy. Reading lane count x lane width / 2
+  alone (3.5 m for the default arm) would have put the arc 1 m inside the edge it is meant to touch. The
+  rule now reads it; see "The pavement edge rule reads the arm policy" below.
 - **Not applied to a T.** A T's primary arm is a through leg, one span covering both directions, so a
   corner of it has no single direction, and its source edge rows describe one side of each arm only
   (the north edge of the primary, the west edge of the stem). Its boundary is built from a rectilinear
@@ -895,6 +895,33 @@ rows use, so it was not used as written; see the second point.
 - **Tests.** `test_curb_return_fillet.py`: each corner is tangent to both edges with its centre at
   (+-(4.5+R), +-(4.5+R)), the loop closes with evenly cut connectors, a T keeps its arcs, an arm without
   a pavement edge policy keeps the arc. The Cross owner test now expects 7.
+
+#### The pavement edge rule reads the arm policy: done on 2026-10-07
+
+The starter edge policy rows name the rule `lane_width_from_arm_policy` with `offset_value` 0, and
+`_intersection_edge_lateral_offset` ignored the name and returned a constant 4.5 m. It now reads the
+arm policy row of the leg.
+
+- **Definition.** `_intersection_arm_pavement_half_width`: half of `lane_count` times `lane_width`, plus
+  `shoulder_width`, plus half of `median_width`. `lane_count` is the arm's total lane count (the editor
+  default is 2 for a two-lane road). The pavement edge is taken outside the shoulder, which is why the
+  shoulder is in it. The starter arm (2 lanes, 3.5 m, 1.0 m shoulder, no median) gives 4.5 m: the
+  old constant is exactly this sum, which is the evidence for the definition, so **the starter
+  documents do not move**. Lane width alone, 3.5 m, was the first reading and was wrong by the shoulder.
+- **Precedence.** An explicit `offset_value` still wins. Only the rule `lane_width_from_arm_policy` on a
+  pavement or lane edge reads the arm; the daylight rows and every other rule are untouched.
+- **Fallback.** An arm with no row, or a row with no lane count or lane width, keeps 4.5 m and
+  `evaluate_edge_network` adds `info:edge_network_arm_policy_width_missing_default_offset_used:<policy>:<leg>`.
+  It is an info line, not a warning on the edge row, so the edge status of existing documents does not change.
+- **Consumers.** The leg edge rows and the curb return fillet read the same function, so an arm that is
+  changed (lanes, lane width, shoulder, median) moves its pavement edge and the fillets tangent to it
+  together. The daylight edge stays at its own offset, so a very wide arm can reach it; there is no check
+  for that.
+- **Not verified.** Only the starter T and Cross and hand-built arms were run; nothing was looked at in
+  FreeCAD. The Applied Sections and Assembly widths are separate sources and are not tied to the arm policy
+  here, so an arm policy that disagrees with the Assembly's pavement width is not detected.
+- **Tests.** `test_edge_offset_arm_policy.py`: the formula, the starter edges unchanged and a changed arm
+  moving only its own edge, explicit offset wins and the fallback note, and the fillet following the arm.
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
