@@ -316,6 +316,12 @@ Not done, and stated so it is not mistaken for done:
 - **Entry radius and exit radius.** Entry and exit are not yet separate in the geometry. The
   connector is a rectangle of the circulatory width with no flare, so a radius has nothing to
   change until the connector shape has a flare. That is a geometry decision, not a source field.
+  It also needs to know which side of an approach is the entry side, which depends on the
+  circulation direction. Nothing in the project records that (a search for drive side, traffic
+  direction, circulation and handedness finds nothing), so it would be a new project-level input.
+  A flare of radius R is the arc tangent to the connector edge line and externally tangent to the
+  circulatory outer circle; its centre is at lateral distance half-width + R and at distance
+  R + outer radius from the roundabout centre.
 - **Authoring.** There is no editor field for the new rows. They exist as source rows, as the
   existing roundabout policy rows do.
 - **GUI.** Everything above was checked headless, against the evaluation results. Nothing was looked
@@ -792,6 +798,20 @@ arcs the topology gives, and the labels would stay one per corner.
 Not verified here: whether this is a deliberate starter simplification or an unfinished evaluation,
 since no document or plan text states the intended geometry. Check `evaluate_topology` and the
 curb return policy rows before assuming either.
+
+How the arc is built, read on 2026-10-07 so the next step does not have to rediscover it:
+`_intersection_curb_return_edge_endpoints` puts each arc end on a leg axis at a distance equal to
+the curb return radius from the anchor, so the ends are on the centre lines, and
+`_intersection_curb_return_arc_points` sweeps between them around `arc_center_xyz`, which
+`evaluate_edge_network` sets to the anchor. Nothing in that path reads a leg half-width.
+
+A fillet needs three inputs the path does not have: which edge it is tangent to (the pavement edge
+or the curb or shoulder line), that edge's lateral offset on each leg (the lane count, lane width,
+shoulder width and median of the arm policy rows are the candidates, and the starter writes them
+as defaults), and which side of each leg the corner is on. The tangent points and centre then follow
+from the radius. The last one is already in the corner row (`side`, `quadrant`) but the existing
+`left` / `right` handling in `_intersection_curb_return_edge_endpoints` only negates one end.
+The first two are decisions, and they set where the boundary loop goes.
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
