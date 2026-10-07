@@ -1074,6 +1074,35 @@ under "Not done" and is the next item.
   fillets tangent to its rotated edges and outside both pavements, a road missing an edge keeps the centre
   arc with the warning, and the starter T strip's locality.
 
+#### The fixed frame reproduced on a turned T: 2026-10-07
+
+The user's captures after the patch boundary fillet showed the two fillets and their slope face strips in
+place, and three remaining defects: side slopes that end in a wedge beside the stem and the through road,
+slivers on the clipped edges of the design surface, and the through road's upper slope face panel standing
+apart. The roads in the captures lean about 4.7 degrees. The step agreed with the user was to reproduce
+before changing the evaluation.
+
+The starter T was built headless with its alignment points turned about the intersection (the starter
+specs patched in the test), at 0, 5 and 30 degrees:
+
+| turn | loop straight sides off the road | loop arcs to the real fillets | design surface clipped / kept near the boundary | ordinary slope face clipped |
+| --- | --- | --- | --- | --- |
+| 0 | 0.00 degrees | 1.05 m | 140 / 221 | 64 (all by control sections) |
+| 5 | 5.00 degrees | 1.96 m | 132 / 209 | 64 (all by control sections) |
+| 30 | 30.00 degrees | 9.36 m | 112 / 133 | 64 (all by control sections) |
+
+- **Reproduced.** The boundary loop stays on the X and Y axes whatever the roads do, off them by exactly the
+  turn, and so do its owners and its 43 boundary breaklines. At 0 degrees the arcs are still 1.05 m from the real
+  fillets, because the fixed-frame evaluation's pavement half width is 4.5 m and the real one is 5 m.
+- **Not reproduced: the side slope wedge.** The ordinary slope face is clipped by the control sections, 64
+  triangles at every turn, not by the loop. Measured across the stem in the stem's own frame, the side slope is
+  absent from the junction to about 49 m along the stem and then full width (4 m) at once, a step, at both 0
+  and 30 degrees. So the wedge in the captures does not come from the fixed frame, and the starter T does not show
+  it; the captured document differs from the starter in a way not yet known. The long stretch with no side slope
+  beside the stem is real in the starter too, and is why the fillet strips stand apart from the road side slopes.
+- **Pinned.** `test_intersection_rotated_frame.py`: on the 30 degree T the patch boundary's fillets follow the roads
+  (passes), and the loop's straight sides follow the roads (strict xfail until the evaluation gets the directions).
+
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
 `IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` were the only two of

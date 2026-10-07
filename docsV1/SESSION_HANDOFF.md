@@ -112,7 +112,11 @@ fills the arcs; the plan's §5.10 Outcome records the measurement.
    source or topology carries an alignment bearing. On a document whose roads lean, the boundary loop and the patch
    rectangles it shapes are turned wrong (the user's captures of 2026-10-07). The patch boundary's curb returns are
    real fillets since 2026-10-07 and build the arc slope face strip (plan section 5.10, "The arcs the build draws").
+   Reproduced headless on a turned starter T (plan section 5.10, "The fixed frame reproduced on a turned T"): the
+   loop is off the roads by exactly the turn; `test_intersection_rotated_frame.py` pins it with a strict xfail.
    Next: carry each alignment's direction at the intersection from the commands into the evaluation.
+   Not explained by it: the side slope wedges in the user's captures (the starter T shows a step instead), and the
+   side slope missing for about 49 m beside the stem (clipped by the control sections, at every turn).
 2. **The slope face fill of the curb return arcs** — a Cross's and a T's arcs are now fillets tangent to the
    pavement edge (done 2026-10-07, plan section 5.10 "Curb return fillet for a Cross" and "for a T"). The fill
    (`curb_return_slope_face_perimeter_outer_point_missing`, Cross loop coverage 0 of 32) can be revisited now
