@@ -106,9 +106,12 @@ for either kind; the plan's §5.10 Outcome records the measurement.
 ### Intersection plan, in order
 
 1. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
-2. **Curb return arc fill** — not an item yet. No slope face fills the curb return arcs for a T or a
-   Cross (`curb_return_slope_face_perimeter_outer_point_missing`), so a Cross loop coverage stays 0 of 32.
-   It would change the surface and is checkable by metadata only; decide before starting.
+2. **Curb return arc geometry** — not an item yet. The topology's corner arcs are circles of the curb
+   return radius centred on the intersection centre (Cross: radius 10 through the leg centre lines), not
+   fillets tangent to the leg edges. A slope fill built outward from them would land on the roadway, so the
+   fill (`curb_return_slope_face_perimeter_outer_point_missing`, Cross coverage 0 of 32) waits for the arcs.
+   Changing them moves the boundary loop, patch and breaklines; decide, review, and check in the GUI first.
+   Details in the plan's section 5.10, "Curb return arc fill: stopped".
 
 ### Repository-wide
 

@@ -731,6 +731,35 @@ Two facts to keep in mind:
 `test_cross_boundary_owner_is_one_curb_return_arc_per_corner` pins the Cross result, including that
 the filled count stays 0 and the coverage stays `warning`.
 
+#### Curb return arc fill: stopped on 2026-10-07, the arcs are not fillets
+
+Starting the fill showed that it should not be built on the arcs as they are. Measured with
+`evaluate_topology` on the starter presets:
+
+- The curb return perimeter strip (`_append_intersection_curb_return_slope_face_perimeter_tin`)
+  looks for an Applied Section side-slope point 0.25 m to 4-8 m radially outside each arc point.
+  The nearest candidate to a Cross arc is 2.83 m away and 0.1 m *inside* the arc, so every point
+  reports `outer_point_missing`. It is the same for a T.
+- The reason is the arc. For a Cross the four corner arcs are quarter circles of radius 10 centred
+  on the intersection centre (0, 0): `(10, 0) -> (0, 10)`, `(0, 10) -> (-10, 0)`, and so on. Joined,
+  they are one circle of radius 10, and their end points lie on the leg centre lines. For a T, the
+  two arcs are both of radius 12, `(-12, 0) -> (0, 12)` and back. A curb return is a fillet tangent
+  to the two leg edges, with its centre out in the corner; these are not.
+- A radial strip outward from such a circle would run across the arms' roadway, so a fill would put
+  slope face triangles on pavement. It would make the coverage read 32 of 32 while the surface got
+  worse.
+
+So the fill is not the next step; the arc geometry is. That is the topology's corner arc
+(`IntersectionTopologyCornerRow.arc_points_xyz`) and everything built on it: the boundary loop and
+its owners, the patch, the shared breaklines. Deriving a tangent fillet from the leg edge lines and
+the curb return radius changes all of those, so it needs its own decision, a regression review of
+the built surfaces, and a GUI check. The Cross owner change above is unaffected: it labels whatever
+arcs the topology gives, and the labels would stay one per corner.
+
+Not verified here: whether this is a deliberate starter simplification or an unfinished evaluation,
+since no document or plan text states the intended geometry. Check `evaluate_topology` and the
+curb return policy rows before assuming either.
+
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
 `IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` were the only two of
