@@ -43,6 +43,10 @@ class IntersectionAnchorRow:
     tolerance: float = 0.0
     diagnostic_rows: list[str] = field(default_factory=list)
     notes: str = ""
+    # unit XY direction of each alignment at the anchor, along increasing station, keyed by
+    # alignment ref. Detected with the point and the stations; empty in an older document,
+    # where the evaluation keeps its fixed X and Y axes.
+    alignment_direction_refs: dict[str, tuple[float, float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

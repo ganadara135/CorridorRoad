@@ -27,6 +27,8 @@ class IntersectionTopologyAnchorRow:
     source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"
     notes: str = ""
+    # (alignment ref, unit XY direction along increasing station) from the source anchor
+    alignment_direction_refs: tuple[tuple[str, tuple[float, float]], ...] = ()
 
 
 @dataclass(frozen=True)

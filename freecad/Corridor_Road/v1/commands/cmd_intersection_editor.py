@@ -204,6 +204,14 @@ def build_intersection_model_from_sources(
         tolerance=0.0,
         diagnostic_rows=[] if detection_result is not None else ["anchor_source_defaulted"],
         notes="Intersection anchor source row created from panel inputs.",
+        alignment_direction_refs={
+            ref: (float(direction[0]), float(direction[1]))
+            for ref, direction in (
+                (primary_ref, tuple(getattr(detection_result, "primary_direction_xy", ()) or ())),
+                (secondary_refs[0] if secondary_refs else "", tuple(getattr(detection_result, "secondary_direction_xy", ()) or ())),
+            )
+            if ref and len(direction) == 2
+        },
     )
     control_area_rows = _control_area_rows_from_region_choices(intersection_id, control_region_choices)
     leg_rows = _leg_rows_from_region_choices(

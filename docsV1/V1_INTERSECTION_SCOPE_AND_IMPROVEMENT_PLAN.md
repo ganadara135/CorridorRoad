@@ -1103,6 +1103,33 @@ specs patched in the test), at 0, 5 and 30 degrees:
 - **Pinned.** `test_intersection_rotated_frame.py`: on the 30 degree T the patch boundary's fillets follow the roads
   (passes), and the loop's straight sides follow the roads (strict xfail until the evaluation gets the directions).
 
+#### The evaluation follows the alignments' directions: done on 2026-10-07
+
+The fixed frame reproduced above is gone for any intersection created from alignments.
+
+- **Where the direction comes from.** `AlignmentIntersectionDetectionService` already finds the two
+  alignment segments that cross (or come nearest); it now also returns each one's unit direction along
+  increasing station (`primary_direction_xy`, `secondary_direction_xy`). `build_intersection_model_from_sources`,
+  which every creation path uses (the editor, the presets and `Use Existing Alignments`), stores them on the
+  anchor as `alignment_direction_refs`, next to the point and the stations the anchor already keeps. The
+  direction is derived from the alignments exactly as the point is; no command or service call site had to
+  change, and nothing reads a document during evaluation.
+- **Where it is used.** The topology anchor carries the map (`IntersectionTopologyAnchorRow.alignment_direction_refs`)
+  into the two anchor contexts, and `_intersection_alignment_axis` puts the alignment's real direction in place of
+  the fixed X or Y axis, with the same sign. Every geometry built from that axis turns with it: the leg edge rows,
+  the corner fillets, their far edge points, the envelope and so the boundary loop, its owners and breaklines.
+- **Measured on the turned starter T.** The loop's straight sides are off the roads by 0.00 degrees at 0, 5 and 30
+  degrees (5.00 and 30.00 before), and its arcs are 1.05 m from the real fillets at every turn (9.36 m at 30 degrees
+  before). The 1.05 m that remains is a source difference, not a frame one: the evaluation's pavement half width is
+  4.5 m, the arm policy's (two 3.5 m lanes halved plus a 1.0 m shoulder), and the Applied Sections' pavement edge is
+  at 5 m. Which of the two owns the pavement edge is a decision for the next step, not a fix to make silently.
+- **Older documents.** An anchor without directions keeps the fixed frame, so an existing document builds exactly as
+  before until its intersection is recreated from its alignments. The Roundabout's approach directions
+  (`leg_graph_angle_deg`) are a separate schematic and are not changed.
+- **Tests.** `test_intersection_rotated_frame.py` now asserts that the loop follows the roads (it was the strict
+  xfail), that the anchor keeps both directions through the document round trip, and that an anchor without
+  directions keeps the fixed frame.
+
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 
 `IntersectionCurbReturnPolicyRow` and `IntersectionArmPolicyRow` were the only two of

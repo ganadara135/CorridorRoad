@@ -95,6 +95,14 @@ rejected, so a document saved before a field existed restores with `approval_sta
 backward compatible in itself, but it is only forward safe while no evaluation rule
 treats the fallback value as an instruction.
 
+`IntersectionAnchorRow.alignment_direction_refs` was added on 2026-10-07: a map from alignment
+ref to the unit XY direction of that alignment at the anchor, along increasing station, written
+as two-number lists by the generic dataclass writer and read back by `_direction_refs`, which
+skips an entry that is not two numbers. Its fallback, an empty map, is safe in the sense above:
+the evaluation then keeps the fixed X and Y frame it used before the field existed. The map is
+detected with the anchor point and its stations, and is as stale as they are when an alignment
+moves; recreating the intersection from its alignments refreshes all three.
+
 ## Output Compatibility
 
 Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packaged output ids together with chunk-safe JSON payloads. Existing FreeCAD save/reopen coverage verifies large output payload and traceability survival. This Phase does not expand exchange formats.

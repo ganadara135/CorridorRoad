@@ -2,11 +2,11 @@
 
 The patch boundary (the arc the build draws, the exclusion, the curb return slope face strip) is built
 from the tie-in edges in the alignments' real directions, so it turns with the roads. The topology,
-edge network and boundary loop are built in a fixed frame whose axes are X and Y
-(`_intersection_alignment_axis`): nothing in the intersection source or topology carries an alignment
-bearing. Measured on 2026-10-07, the loop's straight sides stay on the axes whatever the roads do, off
-the road by exactly the turn (0, 5 and 30 degrees), and its arcs end up 9.36 m from the real fillets at
-30 degrees. The strict xfail pins that until the evaluation is given each alignment's direction.
+edge network and boundary loop used a fixed frame whose axes are X and Y: measured on 2026-10-07 the
+loop's straight sides stayed on the axes, off the road by exactly the turn, its arcs 9.36 m from the
+real fillets at 30 degrees. The anchor now keeps each alignment's direction where they meet, as the
+detection finds it, and `_intersection_alignment_axis` uses it, so the loop turns with the roads. An
+anchor without directions, as in an older document, keeps the fixed frame.
 """
 
 import math
@@ -82,7 +82,6 @@ def test_the_patch_boundary_fillets_turn_with_the_roads(turned_t) -> None:
         assert abs(abs(end[0]) - 5.0) < 1.0e-3
 
 
-@pytest.mark.xfail(strict=True, reason="the boundary loop is built in a fixed X/Y frame, not the alignments' directions")
 def test_the_boundary_loop_straight_sides_follow_the_roads(turned_t) -> None:
     model, _boundary = turned_t
     service = IntersectionEvaluationService()
@@ -96,3 +95,33 @@ def test_the_boundary_loop_straight_sides_follow_the_roads(turned_t) -> None:
         du, dv = (b - a for a, b in zip(_local(row.from_xyz), _local(row.to_xyz)))
         # a straight side runs along one road or across it
         assert min(abs(du), abs(dv)) < 1.0e-3, (row.segment_id, du, dv)
+
+
+def test_the_anchor_keeps_both_directions_through_the_document_round_trip(turned_t) -> None:
+    model, _boundary = turned_t
+    anchor = model.anchor_rows[0]
+    directions = dict(anchor.alignment_direction_refs)
+    assert set(directions) == {anchor.primary_alignment_ref, *anchor.secondary_station_refs}
+    # along increasing station: the primary road runs along the turned X, the stem along the turned Y.
+    # The directions come from the sampled alignment points, up to a few 1e-6 off (0.0006 degrees).
+    assert math.dist(directions[anchor.primary_alignment_ref], PRIMARY) < 1.0e-5
+    (secondary_ref,) = anchor.secondary_station_refs
+    assert math.dist(directions[secondary_ref], SECONDARY) < 1.0e-5
+
+
+def test_an_anchor_without_directions_keeps_the_fixed_frame(turned_t) -> None:
+    # an older document's anchor has no directions: the loop is the axis-aligned one it always was
+    from dataclasses import replace
+
+    model, _boundary = turned_t
+    older = replace(model, anchor_rows=[replace(row, alignment_direction_refs={}) for row in model.anchor_rows])
+    service = IntersectionEvaluationService()
+    edges = service.evaluate_edge_network(older)
+    zones = service.evaluate_surface_zones(older, edges)
+    loops = service.evaluate_boundary_loops(older, zones, edges)
+    outer = next(row for row in loops.loop_rows if row.loop_role == "outer_intersection_boundary")
+    for row in loops.segment_rows:
+        if row.loop_ref != outer.loop_id or not any(ref.endswith((":closure", ":connector")) for ref in row.source_refs):
+            continue
+        dx, dy = row.to_xyz[0] - row.from_xyz[0], row.to_xyz[1] - row.from_xyz[1]
+        assert min(abs(dx), abs(dy)) < 1.0e-6

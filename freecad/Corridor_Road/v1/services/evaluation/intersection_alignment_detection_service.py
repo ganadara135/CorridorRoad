@@ -20,6 +20,10 @@ class AlignmentIntersectionDetectionResult:
     secondary_station: float = 0.0
     distance: float = 0.0
     notes: str = ""
+    # unit XY direction of each alignment at the detected point, along increasing station;
+    # empty when the detection found no segment pair
+    primary_direction_xy: tuple[float, ...] = ()
+    secondary_direction_xy: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,14 +74,18 @@ class AlignmentIntersectionDetectionService:
                     secondary_station=_station_at_t(secondary, secondary_t),
                     distance=0.0,
                     notes="Alignment paths cross in plan view.",
+                    primary_direction_xy=_segment_direction(primary),
+                    secondary_direction_xy=_segment_direction(secondary),
                 )
 
         nearest = None
+        nearest_segments = None
         for primary in primary_segments:
             for secondary in secondary_segments:
                 candidate = _nearest_segment_pair(primary, secondary)
                 if nearest is None or candidate[-1] < nearest[-1]:
                     nearest = candidate
+                    nearest_segments = (primary, secondary)
         if nearest is None:
             return AlignmentIntersectionDetectionResult(
                 status="error",
@@ -87,6 +95,7 @@ class AlignmentIntersectionDetectionService:
             )
 
         primary_x, primary_y, primary_t, secondary_x, secondary_y, secondary_t, distance = nearest
+        primary, secondary = nearest_segments
         return AlignmentIntersectionDetectionResult(
             status="nearest",
             primary_alignment_ref=primary_ref,
@@ -97,7 +106,21 @@ class AlignmentIntersectionDetectionService:
             secondary_station=_station_at_t(secondary, secondary_t),
             distance=distance,
             notes="Alignment paths do not cross; nearest approach was detected.",
+            primary_direction_xy=_segment_direction(primary),
+            secondary_direction_xy=_segment_direction(secondary),
         )
+
+
+def _segment_direction(segment: _Segment) -> tuple[float, ...]:
+    """Return the unit XY direction of a segment along increasing station."""
+
+    dx = segment.x1 - segment.x0
+    dy = segment.y1 - segment.y0
+    length = _distance(segment.x0, segment.y0, segment.x1, segment.y1)
+    if length <= 1.0e-12:
+        return ()
+    sign = -1.0 if segment.sta1 < segment.sta0 else 1.0
+    return (sign * dx / length, sign * dy / length)
 
 
 def _alignment_segments(alignment: AlignmentModel) -> list[_Segment]:

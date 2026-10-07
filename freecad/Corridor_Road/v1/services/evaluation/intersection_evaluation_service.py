@@ -1976,6 +1976,11 @@ class IntersectionEvaluationService:
                         float(getattr(anchor, "point_z", 0.0) or 0.0),
                     ),
                     tolerance=float(getattr(anchor, "tolerance", 0.0) or 0.0),
+                    alignment_direction_refs=tuple(
+                        (str(ref), (float(direction[0]), float(direction[1])))
+                        for ref, direction in sorted(dict(getattr(anchor, "alignment_direction_refs", {}) or {}).items())
+                        if len(tuple(direction or ())) == 2
+                    ),
                     source_status=anchor_source_status,
                     source_diagnostic_rows=tuple(anchor_diagnostics),
                     status=anchor_source_status if anchor_source_status != "accepted" else "ready",
@@ -2658,6 +2663,7 @@ def _topology_corner_graph_rows(
         "anchor_xyz": tuple(getattr(anchor, "point_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0)),
         "primary_alignment": str(getattr(anchor, "primary_alignment_ref", "") or ""),
         "station_by_alignment": station_by_alignment,
+        "alignment_directions": dict(getattr(anchor, "alignment_direction_refs", ()) or ()) if anchor is not None else {},
     }
     rows: list[IntersectionTopologyCornerRow] = []
     for index, from_span in enumerate(ordered_spans, start=1):
@@ -4739,6 +4745,7 @@ def _intersection_edge_anchor_context(topology_result: IntersectionTopologyResul
         "anchor_xyz": anchor_xyz,
         "primary_alignment": primary_alignment,
         "station_by_alignment": station_by_alignment,
+        "alignment_directions": dict(getattr(anchor, "alignment_direction_refs", ()) or ()) if anchor is not None else {},
     }
 
 
@@ -4764,7 +4771,12 @@ def _intersection_leg_edge_endpoints(
     station_end = float(getattr(leg_span, "station_end", 0.0) or 0.0)
     start_delta = station_start - center_station
     end_delta = station_end - center_station
-    axis = _intersection_alignment_axis(alignment_ref, str(anchor_context.get("primary_alignment", "") or ""), str(getattr(leg_span, "leg_role", "") or ""))
+    axis = _intersection_alignment_axis(
+        alignment_ref,
+        str(anchor_context.get("primary_alignment", "") or ""),
+        str(getattr(leg_span, "leg_role", "") or ""),
+        directions=anchor_context.get("alignment_directions"),
+    )
     normal = (-axis[1], axis[0])
     offset = _intersection_edge_lateral_offset(edge_role, side, policy, arm_policy)
     start = (
@@ -4780,7 +4792,38 @@ def _intersection_leg_edge_endpoints(
     return start, end
 
 
-def _intersection_alignment_axis(alignment_ref: str, primary_alignment_ref: str, leg_role: str) -> tuple[float, float]:
+def _intersection_alignment_axis(
+    alignment_ref: str,
+    primary_alignment_ref: str,
+    leg_role: str,
+    *,
+    directions: dict[str, tuple[float, float]] | None = None,
+) -> tuple[float, float]:
+    """Return a leg's outward axis.
+
+    The roles place the legs on a fixed frame: the primary alignment along X, a secondary one
+    along Y, `before` legs the other way. When the anchor knows the alignment's real direction at
+    the intersection (along increasing station), that direction takes the place of X or Y, with
+    the same sign, so the legs, their edges and the curb returns turn with the roads. Without it
+    the fixed frame stands, as it did before the anchor carried directions.
+    """
+
+    fixed = _intersection_fixed_alignment_axis(alignment_ref, primary_alignment_ref, leg_role)
+    known = dict(directions or {})
+    if not known:
+        return fixed
+    ref = str(alignment_ref or "") or (str(primary_alignment_ref or "") if "primary" in str(leg_role or "").lower() else "")
+    direction = known.get(ref)
+    if direction is None or len(tuple(direction)) != 2:
+        return fixed
+    length = math.hypot(float(direction[0]), float(direction[1]))
+    if length <= 1.0e-12:
+        return fixed
+    sign = 1.0 if fixed[0] + fixed[1] > 0.0 else -1.0
+    return (sign * float(direction[0]) / length, sign * float(direction[1]) / length)
+
+
+def _intersection_fixed_alignment_axis(alignment_ref: str, primary_alignment_ref: str, leg_role: str) -> tuple[float, float]:
     role = str(leg_role or "").lower()
     if role == "primary_after":
         return (1.0, 0.0)
@@ -4876,11 +4919,13 @@ def _intersection_curb_return_edge_endpoints(
         str(getattr(from_leg, "alignment_ref", "") or ""),
         str(anchor_context.get("primary_alignment", "") or ""),
         str(getattr(from_leg, "leg_role", "") or ""),
+        directions=anchor_context.get("alignment_directions"),
     )
     to_axis = _intersection_alignment_axis(
         str(getattr(to_leg, "alignment_ref", "") or ""),
         str(anchor_context.get("primary_alignment", "") or ""),
         str(getattr(to_leg, "leg_role", "") or ""),
+        directions=anchor_context.get("alignment_directions"),
     )
     start = (anchor[0] + from_axis[0] * offset, anchor[1] + from_axis[1] * offset, anchor[2])
     end = (anchor[0] + to_axis[0] * offset, anchor[1] + to_axis[1] * offset, anchor[2])
@@ -4935,7 +4980,12 @@ def _intersection_curb_return_leg_direction(
 
     role = str(getattr(leg_span, "leg_role", "") or "").lower()
     alignment_ref = str(getattr(leg_span, "alignment_ref", "") or "")
-    axis = _intersection_alignment_axis(alignment_ref, str(anchor_context.get("primary_alignment", "") or ""), role)
+    axis = _intersection_alignment_axis(
+        alignment_ref,
+        str(anchor_context.get("primary_alignment", "") or ""),
+        role,
+        directions=anchor_context.get("alignment_directions"),
+    )
     if "before" in role or "after" in role:
         return axis
     station_start = float(getattr(leg_span, "station_start", 0.0) or 0.0)

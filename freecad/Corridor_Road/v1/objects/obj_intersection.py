@@ -309,7 +309,23 @@ def _anchor_row_from_json(row: dict[str, object], index: int) -> IntersectionAnc
         tolerance=_float_value(row.get("tolerance", 0.0)),
         diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
         notes=str(row.get("notes", "") or ""),
+        alignment_direction_refs=_direction_refs(row.get("alignment_direction_refs", {})),
     )
+
+
+def _direction_refs(value) -> dict[str, tuple[float, float]]:
+    """Read alignment directions; an entry that is not two numbers is left out."""
+
+    output: dict[str, tuple[float, float]] = {}
+    for key, item in _dict(value).items():
+        values = _any_list(item)
+        if len(values) != 2:
+            continue
+        try:
+            output[str(key)] = (float(values[0]), float(values[1]))
+        except (TypeError, ValueError):
+            continue
+    return output
 
 
 def _intersection_row_from_json(row: dict[str, object], index: int) -> IntersectionRow:
