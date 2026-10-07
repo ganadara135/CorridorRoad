@@ -150,6 +150,9 @@ class IntersectionPatchConstraintBuildService:
         next_vertex_index = len(output_vertices) + 1
         next_triangle_index = len(output_triangles) + 1
         snapped_vertex_ids: set[str] = set()
+        # edge rows and vertex coordinates are reused across segments and rebuilt only when
+        # a support triangle has been appended
+        edge_cache: dict[str, object] = {}
         stats["mode"] = "support_triangle_edge_preservation"
         for breakline in breakline_rows:
             breakline_id = str(getattr(breakline, "breakline_id", "") or "")
@@ -233,6 +236,7 @@ class IntersectionPatchConstraintBuildService:
                     start_vertex,
                     end_vertex,
                     tolerance=5.0e-2,
+                    edge_cache=edge_cache,
                 ):
                     edge_keys.add(segment_edge_key)
                     _record_preserved_edge(stats, is_boundary_loop)
@@ -564,19 +568,76 @@ def _existing_edges_cover_segment(
     end_vertex,
     *,
     tolerance,
+    edge_cache=None,
 ) -> bool:
     if start_vertex is None or end_vertex is None:
         return False
     target_points = [_row_xyz(start_vertex), _row_xyz(end_vertex)]
     if _distance_3d(*target_points) <= max(float(tolerance or 0.0), 1.0e-9):
         return False
+    tolerance_value = float(tolerance or 0.0)
+    if edge_cache is None:
+        edges = _edge_rows_from_triangles(triangles)
+    else:
+        edges = _edges_near_segment(
+            _cached_edge_rows(triangles, edge_cache),
+            vertex_by_id,
+            target_points,
+            tolerance=tolerance_value,
+            edge_cache=edge_cache,
+        )
     coverage = _boundary_coverage_matches(
         vertex_by_id,
-        _edge_rows_from_triangles(triangles),
+        edges,
         target_points,
-        tolerance=float(tolerance or 0.0),
+        tolerance=tolerance_value,
     )
     return bool(coverage.get("matched", False))
+
+
+def _cached_edge_rows(triangles, edge_cache) -> list[dict[str, object]]:
+    """Return the edge rows of `triangles`, rebuilt only if triangles were appended."""
+
+    marker = (id(triangles), len(triangles))
+    if edge_cache.get("rows_marker") != marker:
+        edge_cache["rows"] = _edge_rows_from_triangles(triangles)
+        edge_cache["rows_marker"] = marker
+    return edge_cache["rows"]
+
+
+def _edges_near_segment(edges, vertex_by_id, target_points, *, tolerance, edge_cache):
+    """Keep the edges that can contribute coverage to a segment.
+
+    `_boundary_coverage_matches` ignores an edge unless both of its vertices are within
+    `tolerance` of the target, and the caller reads only `matched`, so an edge with a
+    vertex outside the target's box widened by that tolerance cannot change the answer.
+    The widening carries a margin above floating-point error, so the filter never drops
+    an edge the exact test would have kept.
+    """
+
+    reach = tolerance + tolerance * 0.01 + 1.0e-9
+    low = tuple(min(point[axis] for point in target_points) - reach for axis in range(3))
+    high = tuple(max(point[axis] for point in target_points) + reach for axis in range(3))
+    xyz_by_id = edge_cache.setdefault("xyz", {})
+
+    def xyz_of(vertex_id):
+        # a vertex that is not known yet is not cached, since it may be added later
+        if vertex_id not in xyz_by_id:
+            vertex = vertex_by_id.get(vertex_id)
+            if vertex is None:
+                return None
+            xyz_by_id[vertex_id] = _row_xyz(vertex)
+        return xyz_by_id[vertex_id]
+
+    kept = []
+    for edge in edges:
+        first = xyz_of(str(edge.get("first_id", "") or ""))
+        second = xyz_of(str(edge.get("second_id", "") or ""))
+        if first is None or second is None:
+            continue
+        if all(low[axis] <= first[axis] <= high[axis] and low[axis] <= second[axis] <= high[axis] for axis in range(3)):
+            kept.append(edge)
+    return kept
 
 
 def _edge_rows_from_triangles(triangles) -> list[dict[str, object]]:
@@ -687,13 +748,10 @@ def _polyline_stations(points) -> list[float]:
 def _project_to_polyline(point, points, stations):
     best_distance = None
     best_station = 0.0
-    for index, (start, end) in enumerate(
-        zip(list(points or [])[:-1], list(points or [])[1:])
-    ):
-        projection = _project_to_segment(point, start, end)
-        distance = float(projection["distance"])
+    points = list(points or [])
+    for index, (start, end) in enumerate(zip(points[:-1], points[1:])):
+        distance, ratio = _segment_distance_ratio(point, start, end)
         if best_distance is None or distance < best_distance:
-            ratio = float(projection["ratio"])
             best_distance = distance
             best_station = float(stations[index]) + _distance_3d(start, end) * ratio
     return {
@@ -703,15 +761,28 @@ def _project_to_polyline(point, points, stations):
 
 
 def _project_to_segment(point, start, end):
-    vector = tuple(float(end[i]) - float(start[i]) for i in range(3))
-    relative = tuple(float(point[i]) - float(start[i]) for i in range(3))
-    length_sq = sum(value * value for value in vector)
+    distance, ratio = _segment_distance_ratio(point, start, end)
+    return {"distance": distance, "ratio": ratio}
+
+
+def _segment_distance_ratio(point, start, end):
+    """Return (distance, clamped ratio) of `point` against the segment.
+
+    Written out per axis because the coverage test evaluates this hundreds of thousands
+    of times per build. The arithmetic order is that of the earlier tuple-and-`sum` form,
+    so results are bit-identical.
+    """
+
+    sx, sy, sz = float(start[0]), float(start[1]), float(start[2])
+    vx, vy, vz = float(end[0]) - sx, float(end[1]) - sy, float(end[2]) - sz
+    px, py, pz = float(point[0]), float(point[1]), float(point[2])
+    length_sq = vx * vx + vy * vy + vz * vz
     if length_sq <= 1.0e-18:
-        return {"distance": _distance_3d(point, start), "ratio": 0.0}
-    ratio = sum(relative[i] * vector[i] for i in range(3)) / length_sq
+        return math.sqrt((px - sx) ** 2 + (py - sy) ** 2 + (pz - sz) ** 2), 0.0
+    ratio = ((px - sx) * vx + (py - sy) * vy + (pz - sz) * vz) / length_sq
     ratio = max(0.0, min(1.0, ratio))
-    closest = tuple(float(start[i]) + vector[i] * ratio for i in range(3))
-    return {"distance": _distance_3d(point, closest), "ratio": ratio}
+    cx, cy, cz = sx + vx * ratio, sy + vy * ratio, sz + vz * ratio
+    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2), ratio
 
 
 def _merge_intervals(intervals, *, gap_tolerance):
@@ -734,5 +805,7 @@ def _merge_intervals(intervals, *, gap_tolerance):
 
 def _distance_3d(first, second) -> float:
     return math.sqrt(
-        sum((float(first[i]) - float(second[i])) ** 2 for i in range(3))
+        (float(first[0]) - float(second[0])) ** 2
+        + (float(first[1]) - float(second[1])) ** 2
+        + (float(first[2]) - float(second[2])) ** 2
     )

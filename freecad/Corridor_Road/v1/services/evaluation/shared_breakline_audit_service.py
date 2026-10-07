@@ -115,6 +115,10 @@ class SharedBreaklineAuditService:
             for point in list(getattr(shared_result, "point_rows", []) or [])
             if str(getattr(point, "point_id", "") or "")
         }
+        # Derived views of each consumer surface (vertex lookup, edge list, parsed
+        # constraint rows) are built once per audit. They used to be rebuilt for every
+        # breakline x consumer pair, which is what made this audit quadratic.
+        mesh_cache: dict = {}
         missing_consumer_count = 0
         mismatch_count = 0
         geometry_match_count = 0
@@ -143,13 +147,14 @@ class SharedBreaklineAuditService:
                     surface,
                     breakline_id,
                     breakline_points,
+                    cache=mesh_cache,
                 )
                 contract_matched = bool(contract_geometry["matched"])
                 mesh_geometry = None
                 if len(breakline_points) >= 2 and list(
                     getattr(surface, "triangle_rows", []) or []
                 ):
-                    mesh_geometry = _boundary_edge_matches(surface, breakline_points)
+                    mesh_geometry = _boundary_edge_matches(surface, breakline_points, cache=mesh_cache)
                     if mesh_geometry["matched"]:
                         mesh_match_count += 1
                     elif contract_matched:
@@ -244,13 +249,20 @@ def _constraint_matches(
     breakline_points: list[object],
     *,
     tolerance: float = 5.0e-2,
+    cache: dict | None = None,
 ) -> dict[str, object]:
     target_points = [_row_xyz(point) for point in breakline_points]
     if len(target_points) < 2:
         return {"matched": False, "reversed": False}
+    cache_key = ("constraint_rows", id(surface))
+    segment_rows = cache.get(cache_key) if cache is not None else None
+    if segment_rows is None:
+        segment_rows = _constraint_segment_rows(surface)
+        if cache is not None:
+            cache[cache_key] = segment_rows
     matching_rows = [
         row
-        for row in _constraint_segment_rows(surface)
+        for row in segment_rows
         if str(row.get("breakline_id", "") or "") == str(breakline_id or "")
     ]
     if not matching_rows:
@@ -341,66 +353,98 @@ def _segment_rows_cover_polyline(rows, points, stations, *, tolerance) -> dict[s
     }
 
 
-def _boundary_edge_matches(surface, breakline_points, *, tolerance=5.0e-2):
-    target_points = [_row_xyz(point) for point in breakline_points]
-    target_start = target_points[0]
-    target_end = target_points[-1]
+def _surface_mesh_view(surface, cache):
+    """Return the vertex lookup, vertex coordinates and edge rows of a surface.
+
+    The surface is not changed while an audit runs, so one view per surface serves every
+    breakline. `cache` is the audit's own dict; without one the view is built fresh.
+    """
+
+    key = ("mesh_view", id(surface))
+    if cache is not None and key in cache:
+        return cache[key]
     vertex_map = {
         str(getattr(vertex, "vertex_id", "") or ""): vertex
         for vertex in list(getattr(surface, "vertex_rows", []) or [])
         if str(getattr(vertex, "vertex_id", "") or "")
     }
-    edges = _all_edge_rows(surface)
+    view = {
+        "vertex_map": vertex_map,
+        "xyz_by_id": {vertex_id: _row_xyz(vertex) for vertex_id, vertex in vertex_map.items()},
+        "edges": _all_edge_rows(surface),
+    }
+    if cache is not None:
+        cache[key] = view
+    return view
+
+
+def _boundary_edge_matches(surface, breakline_points, *, tolerance=5.0e-2, cache=None):
+    target_points = [_row_xyz(point) for point in breakline_points]
+    target_start = target_points[0]
+    target_end = target_points[-1]
+    view = _surface_mesh_view(surface, cache)
+    vertex_map = view["vertex_map"]
+    xyz_by_id = view["xyz_by_id"]
+    edges = view["edges"]
     for edge in edges:
-        start = vertex_map.get(str(edge.get("first_id", "") or ""))
-        end = vertex_map.get(str(edge.get("second_id", "") or ""))
-        if start is None or end is None:
+        start_xyz = xyz_by_id.get(str(edge.get("first_id", "") or ""))
+        end_xyz = xyz_by_id.get(str(edge.get("second_id", "") or ""))
+        if start_xyz is None or end_xyz is None:
             continue
-        start_xyz = _row_xyz(start)
-        end_xyz = _row_xyz(end)
         if _distance(start_xyz, target_start) <= tolerance and _distance(end_xyz, target_end) <= tolerance:
             return {"matched": True, "reversed": False}
         if _distance(start_xyz, target_end) <= tolerance and _distance(end_xyz, target_start) <= tolerance:
             return {"matched": True, "reversed": True}
-    chain = _boundary_chain_matches(vertex_map, edges, target_points, tolerance=tolerance)
+    chain = _boundary_chain_matches(vertex_map, edges, target_points, tolerance=tolerance, xyz_by_id=xyz_by_id)
     if chain["matched"]:
         return chain
-    coverage = _boundary_coverage_matches(vertex_map, edges, target_points, tolerance=tolerance)
+    coverage = _boundary_coverage_matches(vertex_map, edges, target_points, tolerance=tolerance, xyz_by_id=xyz_by_id)
     if coverage["matched"]:
         return coverage
+    # evaluated only when the coverage pass produced no distance: the old
+    # `.get("distance", _boundary_min_distance(...))` scanned every vertex every time
+    distance = coverage["distance"] if "distance" in coverage else _boundary_min_distance(vertex_map, edges, target_points)
     return {
         "matched": False,
         "reversed": False,
-        "distance": coverage.get("distance", _boundary_min_distance(vertex_map, edges, target_points)),
+        "distance": distance,
         "coverage": coverage.get("coverage", 0.0),
     }
 
 
-def _boundary_chain_matches(vertex_map, edges, points, *, tolerance):
+def _boundary_chain_matches(vertex_map, edges, points, *, tolerance, xyz_by_id=None):
     if len(points) < 2:
         return {"matched": False, "reversed": False}
+    xyz = xyz_by_id if xyz_by_id is not None else {vertex_id: _row_xyz(vertex) for vertex_id, vertex in vertex_map.items()}
     target_start, target_end = points[0], points[-1]
     if sum(_distance(a, b) for a, b in zip(points[:-1], points[1:])) <= tolerance:
         return {"matched": False, "reversed": False}
+    low, high = _polyline_reach_bounds(points, tolerance)
+    near_by_id: dict[str, bool] = {}
+
+    def near(vertex_id):
+        # a vertex is near the polyline or not regardless of which edge asks
+        if vertex_id not in near_by_id:
+            point = xyz[vertex_id]
+            near_by_id[vertex_id] = _inside_bounds(point, low, high) and _point_near_polyline(
+                point, points, tolerance=tolerance
+            )
+        return near_by_id[vertex_id]
+
     candidate_edges = []
     vertex_ids = set()
     for edge in edges:
         first_id = str(edge.get("first_id", "") or "")
         second_id = str(edge.get("second_id", "") or "")
-        first = vertex_map.get(first_id)
-        second = vertex_map.get(second_id)
-        if first is None or second is None:
+        if first_id not in xyz or second_id not in xyz:
             continue
-        if (
-            _point_near_polyline(_row_xyz(first), points, tolerance=tolerance)
-            and _point_near_polyline(_row_xyz(second), points, tolerance=tolerance)
-        ):
+        if near(first_id) and near(second_id):
             candidate_edges.append((first_id, second_id))
             vertex_ids.update((first_id, second_id))
     if not candidate_edges:
         return {"matched": False, "reversed": False}
-    start_ids = [value for value in vertex_ids if _distance(_row_xyz(vertex_map[value]), target_start) <= tolerance]
-    end_ids = [value for value in vertex_ids if _distance(_row_xyz(vertex_map[value]), target_end) <= tolerance]
+    start_ids = [value for value in vertex_ids if _distance(xyz[value], target_start) <= tolerance]
+    end_ids = [value for value in vertex_ids if _distance(xyz[value], target_end) <= tolerance]
     graph = {}
     oriented = set(candidate_edges)
     for first_id, second_id in candidate_edges:
@@ -416,23 +460,54 @@ def _boundary_chain_matches(vertex_map, edges, points, *, tolerance):
     return {"matched": False, "reversed": False}
 
 
-def _boundary_coverage_matches(vertex_map, edges, points, *, tolerance):
+def _polyline_reach_bounds(points, tolerance):
+    """Return the box that contains every point within `tolerance` of the polyline.
+
+    The margin is far above floating-point error at survey coordinates, so a point
+    outside the box is certainly farther than `tolerance` from every segment and the
+    exact distance never has to be computed for it.
+    """
+
+    reach = float(tolerance) + float(tolerance) * 0.01 + 1.0e-9
+    low = tuple(min(float(point[axis]) for point in points) - reach for axis in range(3))
+    high = tuple(max(float(point[axis]) for point in points) + reach for axis in range(3))
+    return low, high
+
+
+def _inside_bounds(point, low, high):
+    return (
+        low[0] <= point[0] <= high[0]
+        and low[1] <= point[1] <= high[1]
+        and low[2] <= point[2] <= high[2]
+    )
+
+
+def _boundary_coverage_matches(vertex_map, edges, points, *, tolerance, xyz_by_id=None):
     stations = _polyline_stations(points)
     total_length = stations[-1] if stations else 0.0
     if total_length <= tolerance:
         return {"matched": False, "reversed": False, "coverage": 0.0}
+    xyz = xyz_by_id if xyz_by_id is not None else {vertex_id: _row_xyz(vertex) for vertex_id, vertex in vertex_map.items()}
+    projection_by_id: dict[str, dict] = {}
+
+    def projection(vertex_id):
+        # the projection of a vertex onto this polyline does not depend on the edge
+        if vertex_id not in projection_by_id:
+            projection_by_id[vertex_id] = _project_to_polyline(xyz[vertex_id], points, stations)
+        return projection_by_id[vertex_id]
+
     intervals = []
     distances = []
     forward_count = 0
     reversed_count = 0
     for edge in edges:
-        first = vertex_map.get(str(edge.get("first_id", "") or ""))
-        second = vertex_map.get(str(edge.get("second_id", "") or ""))
-        if first is None or second is None:
+        first_id = str(edge.get("first_id", "") or "")
+        second_id = str(edge.get("second_id", "") or "")
+        if first_id not in xyz or second_id not in xyz:
             continue
-        first_xyz, second_xyz = _row_xyz(first), _row_xyz(second)
-        first_projection = _project_to_polyline(first_xyz, points, stations)
-        second_projection = _project_to_polyline(second_xyz, points, stations)
+        first_xyz, second_xyz = xyz[first_id], xyz[second_id]
+        first_projection = projection(first_id)
+        second_projection = projection(second_id)
         first_distance = float(first_projection.get("distance", 0.0) or 0.0)
         second_distance = float(second_projection.get("distance", 0.0) or 0.0)
         distances.extend([first_distance, second_distance])
@@ -509,11 +584,10 @@ def _project_to_polyline(point, points, stations):
     best_distance = None
     best_station = 0.0
     for index, (start, end) in enumerate(zip(points[:-1], points[1:])):
-        projection = _project_to_segment(point, start, end)
-        distance = float(projection["distance"])
+        distance, ratio = _segment_distance_ratio(point, start, end)
         if best_distance is None or distance < best_distance:
             best_distance = distance
-            best_station = float(stations[index]) + _distance(start, end) * float(projection["ratio"])
+            best_station = float(stations[index]) + _distance(start, end) * ratio
     return {"station": best_station, "distance": float(best_distance or 0.0)}
 
 
@@ -572,19 +646,32 @@ def _graph_path(graph, start_id, end_id):
 
 
 def _point_to_segment_distance(point, start, end):
-    return float(_project_to_segment(point, start, end)["distance"])
+    return _segment_distance_ratio(point, start, end)[0]
 
 
 def _project_to_segment(point, start, end):
-    vector = tuple(float(end[i]) - float(start[i]) for i in range(3))
-    offset = tuple(float(point[i]) - float(start[i]) for i in range(3))
-    length_sq = sum(value * value for value in vector)
+    distance, ratio = _segment_distance_ratio(point, start, end)
+    return {"distance": distance, "ratio": ratio}
+
+
+def _segment_distance_ratio(point, start, end):
+    """Return (distance, clamped ratio) of `point` against the segment.
+
+    Written out per axis because one audit evaluates this hundreds of thousands of times,
+    and building a tuple and a dict for each call was most of its cost. The arithmetic
+    order is that of the earlier tuple-and-`sum` form, so results are bit-identical.
+    """
+
+    sx, sy, sz = float(start[0]), float(start[1]), float(start[2])
+    vx, vy, vz = float(end[0]) - sx, float(end[1]) - sy, float(end[2]) - sz
+    px, py, pz = float(point[0]), float(point[1]), float(point[2])
+    length_sq = vx * vx + vy * vy + vz * vz
     if length_sq <= 1.0e-18:
-        return {"distance": _distance(point, start), "ratio": 0.0}
-    ratio = sum(offset[i] * vector[i] for i in range(3)) / length_sq
+        return math.sqrt((px - sx) ** 2 + (py - sy) ** 2 + (pz - sz) ** 2), 0.0
+    ratio = ((px - sx) * vx + (py - sy) * vy + (pz - sz) * vz) / length_sq
     ratio = max(0.0, min(1.0, ratio))
-    closest = tuple(float(start[i]) + vector[i] * ratio for i in range(3))
-    return {"distance": _distance(point, closest), "ratio": ratio}
+    cx, cy, cz = sx + vx * ratio, sy + vy * ratio, sz + vz * ratio
+    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2), ratio
 
 
 def _row_xyz(row):
@@ -592,4 +679,8 @@ def _row_xyz(row):
 
 
 def _distance(first, second):
-    return math.sqrt(sum((float(first[i]) - float(second[i])) ** 2 for i in range(3)))
+    return math.sqrt(
+        (float(first[0]) - float(second[0])) ** 2
+        + (float(first[1]) - float(second[1])) ** 2
+        + (float(first[2]) - float(second[2])) ** 2
+    )
