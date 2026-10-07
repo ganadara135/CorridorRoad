@@ -38,6 +38,10 @@ class IntersectionRoundaboutApproachLegRow:
     source_diagnostic_rows: tuple[str, ...] = ()
     status: str = "candidate"
     notes: str = ""
+    # apron width the outer ownership loop uses at this approach, in metres; the source is
+    # "approach_policy" when a leg keyed row set it and "roundabout_default" otherwise
+    apron_width: float = 0.0
+    apron_width_source: str = ""
 
 
 @dataclass

@@ -13123,6 +13123,19 @@ def _roundabout_ownership_boundary_spec(document=None) -> dict[str, object] | No
             outer_radius = max(outer_radius, float(getattr(policy, "radius", 0.0) or 0.0))
     if outer_radius <= 0.0:
         return None
+    # the ownership loop is wider at some approaches than at others, so the circle used to
+    # flag intrusions takes the narrowest apron: everything inside it is owned in every direction
+    approach_legs = IntersectionEvaluationService().evaluate_roundabout_approach_legs(
+        model,
+        intersection_id=intersection_id,
+    )
+    resolved_aprons = [
+        float(getattr(row, "apron_width", 0.0) or 0.0)
+        for row in list(getattr(approach_legs, "approach_leg_rows", []) or [])
+        if str(getattr(row, "status", "") or "") == "ready"
+    ]
+    if resolved_aprons:
+        apron_width = min(resolved_aprons)
     ownership_radius = max(outer_radius + apron_width, outer_radius)
     return {
         "intersection_id": intersection_id,

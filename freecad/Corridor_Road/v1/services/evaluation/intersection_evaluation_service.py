@@ -4946,6 +4946,11 @@ def _roundabout_approach_leg_rows(
 
     intersection_id = str(getattr(topology_result, "intersection_id", "") or "")
     center = _roundabout_center_xyz(intersection_model, topology_result)
+    default_apron_width = max(
+        float(_roundabout_source_policy_values(intersection_model, intersection_id).get("outer_apron_width", 0.0) or 0.0),
+        0.0,
+    )
+    approach_apron_rows = _roundabout_approach_apron_policy_rows(intersection_model, intersection_id)
     rows: list[IntersectionRoundaboutApproachLegRow] = []
     role_counts: dict[str, int] = {}
     shared_roles = (
@@ -4982,6 +4987,15 @@ def _roundabout_approach_leg_rows(
             row_diagnostics = [*source_diagnostics, *geometry_diagnostics]
             for diagnostic in geometry_diagnostics:
                 diagnostics.append(f"{diagnostic}:{approach_role}")
+            apron_width, apron_width_source, apron_diagnostics = _roundabout_approach_apron_width(
+                approach_apron_rows,
+                leg_ref=str(getattr(span, "leg_ref", "") or ""),
+                endpoint=endpoint_suffix,
+                default_width=default_apron_width,
+            )
+            for diagnostic in apron_diagnostics:
+                row_diagnostics.append(diagnostic)
+                diagnostics.append(f"warning:{diagnostic}:{approach_role}")
             status = "error" if geometry_diagnostics else "ready"
             rows.append(
                 IntersectionRoundaboutApproachLegRow(
@@ -5007,9 +5021,11 @@ def _roundabout_approach_leg_rows(
                     approach_center_xyz=center,
                     roundabout_center_xyz=center,
                     shared_breakline_roles=shared_roles,
-                    source_status="warning" if source_diagnostics else "accepted",
+                    source_status="warning" if source_diagnostics or apron_diagnostics else "accepted",
                     source_diagnostic_rows=tuple(row_diagnostics),
                     status=status,
+                    apron_width=apron_width,
+                    apron_width_source=apron_width_source,
                     notes=(
                         "physical_roundabout_approach_leg_from_topology_span; "
                         f"source_leg={str(getattr(span, 'leg_ref', '') or '')}; "
@@ -5021,6 +5037,111 @@ def _roundabout_approach_leg_rows(
     if len(rows) != 4:
         diagnostics.append(f"warning:roundabout_approach_leg_expected_four_rows:actual={len(rows)}")
     return rows
+
+
+def _roundabout_approach_apron_policy_rows(
+    intersection_model: IntersectionModel,
+    intersection_id: str,
+) -> list[tuple[str, str, float]]:
+    """Return (leg_ref, endpoint, width) for the per-approach apron rows of one intersection.
+
+    A per-approach row is an edge policy row of the roundabout intent whose rule is
+    `roundabout_approach_apron_width`, keyed by its `leg_ref` and by `side` ("start", "end"
+    or "both"). They are kept apart from `roundabout_outer_apron_width`, which stays the
+    default every approach without a row uses.
+    """
+
+    output: list[tuple[str, str, float]] = []
+    for row in list(getattr(intersection_model, "edge_policy_rows", []) or []):
+        if str(getattr(row, "intersection_id", "") or "") != str(intersection_id or ""):
+            continue
+        if str(getattr(row, "edge_family_intent", "") or "") != "roundabout":
+            continue
+        if str(getattr(row, "offset_rule", "") or "").strip() != "roundabout_approach_apron_width":
+            continue
+        if str(getattr(row, "status", "") or "active") != "active":
+            continue
+        output.append(
+            (
+                str(getattr(row, "leg_ref", "") or ""),
+                str(getattr(row, "side", "") or "both").strip().lower() or "both",
+                float(getattr(row, "offset_value", 0.0) or 0.0),
+            )
+        )
+    return output
+
+
+def _roundabout_approach_apron_width(
+    policy_rows: list[tuple[str, str, float]],
+    *,
+    leg_ref: str,
+    endpoint: str,
+    default_width: float,
+) -> tuple[float, str, list[str]]:
+    """Resolve one approach's apron width: an endpoint row beats a "both" row beats the default."""
+
+    matches = {"both": None, endpoint: None}
+    for row_leg_ref, row_side, value in policy_rows:
+        if row_leg_ref != leg_ref or row_side not in matches:
+            continue
+        matches[row_side] = value
+    diagnostics: list[str] = []
+    for side in (endpoint, "both"):
+        value = matches.get(side)
+        if value is None:
+            continue
+        if value <= 0.0:
+            diagnostics.append(f"roundabout_approach_apron_width_invalid:{leg_ref}:{side}")
+            continue
+        return float(value), "approach_policy", diagnostics
+    return float(default_width), "roundabout_default", diagnostics
+
+
+def _roundabout_ownership_loop_points(
+    center: tuple[float, float, float],
+    outer_radius: float,
+    approach_widths: list[tuple[float, float]],
+    *,
+    segment_count: int,
+) -> list[tuple[float, float, float]]:
+    """Return the outer ownership loop, widened per approach and smooth between approaches.
+
+    `approach_widths` holds (direction angle in degrees, apron width) for each approach. The
+    width at an angle is interpolated linearly, going round the circle, between the two
+    approaches that bracket it. When every width is equal this is the circle it has always
+    been, point for point.
+    """
+
+    anchors: dict[float, float] = {}
+    for angle, width in approach_widths:
+        key = float(angle) % 360.0
+        anchors[key] = max(float(width), anchors.get(key, 0.0))
+    widths = set(anchors.values())
+    if len(widths) <= 1:
+        width = next(iter(widths)) if widths else 0.0
+        return _roundabout_circle_points(center, max(outer_radius + width, outer_radius), segment_count=segment_count)
+    ordered = sorted(anchors.items())
+    count = max(int(segment_count or 0), 8)
+    cx, cy, cz = _xyz_tuple(center)
+    points: list[tuple[float, float, float]] = []
+    for index in range(count):
+        angle = (360.0 * index) / count
+        before = [item for item in ordered if item[0] <= angle]
+        after = [item for item in ordered if item[0] > angle]
+        previous_angle, previous_width = before[-1] if before else (ordered[-1][0] - 360.0, ordered[-1][1])
+        next_angle, next_width = after[0] if after else (ordered[0][0] + 360.0, ordered[0][1])
+        span = next_angle - previous_angle
+        ratio = (angle - previous_angle) / span if span > 1.0e-9 else 0.0
+        width = previous_width + (next_width - previous_width) * ratio
+        radius = max(outer_radius + width, outer_radius)
+        points.append(
+            (
+                cx + math.cos(math.radians(angle)) * radius,
+                cy + math.sin(math.radians(angle)) * radius,
+                cz,
+            )
+        )
+    return points
 
 
 def _roundabout_approach_base_role(leg_role: str, span_index: int) -> str:
@@ -5225,6 +5346,25 @@ def _roundabout_boundary_loop_result(
         policy_diagnostics.append("roundabout_boundary_loop_central_radius_fallback")
     apron_width = max(float(policy_values.get("outer_apron_width", 0.0) or 0.0), 0.0)
     ownership_radius = max(outer_radius + apron_width, outer_radius)
+    approach_legs = IntersectionEvaluationService().evaluate_roundabout_approach_legs(
+        intersection_model,
+        topology_result,
+    )
+    approach_leg_rows = list(getattr(approach_legs, "approach_leg_rows", []) or [])
+    ownership_points = _roundabout_ownership_loop_points(
+        center,
+        outer_radius,
+        [
+            (
+                float(getattr(row, "direction_angle_deg", 0.0) or 0.0),
+                float(getattr(row, "apron_width", 0.0) or 0.0)
+                if str(getattr(row, "apron_width_source", "") or "") == "approach_policy"
+                else apron_width,
+            )
+            for row in approach_leg_rows
+        ],
+        segment_count=32,
+    ) if approach_leg_rows else _roundabout_circle_points(center, ownership_radius, segment_count=32)
     loop_rows: list[IntersectionBoundaryLoopRow] = []
     segment_rows: list[IntersectionBoundarySegmentRow] = []
     loop_specs = [
@@ -5248,7 +5388,7 @@ def _roundabout_boundary_loop_result(
             "outer-ownership",
             "roundabout_outer_ownership_boundary",
             ownership_radius,
-            _roundabout_circle_points(center, ownership_radius, segment_count=32),
+            ownership_points,
             (),
             "roundabout_source_policy",
         ),
@@ -5256,11 +5396,6 @@ def _roundabout_boundary_loop_result(
     connector_length = float(policy_values.get("approach_connector_length", 0.0) or max(outer_radius * 1.25, 12.0))
     connector_width = max(outer_radius - central_radius, 1.0)
     clip_depth = max(min(connector_width * 0.25, 3.0), 0.75)
-    approach_legs = IntersectionEvaluationService().evaluate_roundabout_approach_legs(
-        intersection_model,
-        topology_result,
-    )
-    approach_leg_rows = list(getattr(approach_legs, "approach_leg_rows", []) or [])
     if approach_leg_rows:
         diagnostics.append(
             "info:roundabout_boundary_loop_source=roundabout_approach_leg_contract:"

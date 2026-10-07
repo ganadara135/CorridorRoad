@@ -288,6 +288,39 @@ and apron width, consumed by `evaluate_roundabout_approach_legs` so the outer
 ownership loop reflects them, with the single-valued rows kept as the default
 where no per-approach row exists.
 
+#### Outcome, first part: apron width per approach, done on 2026-10-07
+
+Apron width is done; entry radius and exit radius are not, and the section stays open for them.
+
+- **Source.** No new row family. A per-approach apron is an `IntersectionEdgePolicyRow` of the
+  `roundabout` intent with the rule `roundabout_approach_apron_width`, keyed by `leg_ref` and by
+  `side`: `start`, `end`, or `both`. An endpoint row beats a `both` row, which beats the
+  intersection default `roundabout_outer_apron_width`. Nothing in the stored schema changes, so
+  an older document loads as before. A value of 0 or less is ignored with a
+  `roundabout_approach_apron_width_invalid` warning and the approach falls back to the default.
+- **Result.** `IntersectionRoundaboutApproachLegRow` gained `apron_width` and
+  `apron_width_source` (`approach_policy` or `roundabout_default`), resolved in
+  `_roundabout_approach_leg_rows`.
+- **Geometry.** The `roundabout_outer_ownership_boundary` loop is the circulatory outer radius plus
+  the apron width interpolated linearly, round the circle, between the approach directions. It is
+  built from the same 32 angles as the circulatory outer loop, which the apron builder relies on
+  to pair the two point by point. When every approach has the same width the loop is the circle
+  it was, point for point, and a test pins that.
+- **Guardrail.** The ownership-intrusion circle (`_roundabout_ownership_boundary_spec`) now uses the
+  narrowest resolved apron, so it flags only intrusions into area the roundabout owns in every direction.
+- **Tests.** `test_roundabout_approach_apron.py`: the default case, a leg row that widens its two
+  approaches with a smooth loop, endpoint beats both and the invalid fallback, and the persisted round trip.
+
+Not done, and stated so it is not mistaken for done:
+
+- **Entry radius and exit radius.** Entry and exit are not yet separate in the geometry. The
+  connector is a rectangle of the circulatory width with no flare, so a radius has nothing to
+  change until the connector shape has a flare. That is a geometry decision, not a source field.
+- **Authoring.** There is no editor field for the new rows. They exist as source rows, as the
+  existing roundabout policy rows do.
+- **GUI.** Everything above was checked headless, against the evaluation results. Nothing was looked
+  at in FreeCAD, and the apron TIN was not rebuilt with a widened loop; only its loop pairing was checked.
+
 ### 5.5 Let the side road have superelevation: done on 2026-09-28
 
 The first draft said a main road and a side road cannot have different standard
@@ -811,7 +844,8 @@ the Intersection row families are stored and what an absent key means.
 without a cache; the time it was about is in the shared breakline audit and the patch
 constraint coverage matching, which is a candidate for its own item. The Cross corner arc
 gap found by 5.10 is another. 5.8 is what a real route needs. 5.4 is
-the largest and is what the Roundabout needs to be more than a symmetric starter.
+the largest and is what the Roundabout needs to be more than a symmetric starter; its apron
+width part is done and entry and exit radius remain.
 
 ## 7. Out of Scope
 
