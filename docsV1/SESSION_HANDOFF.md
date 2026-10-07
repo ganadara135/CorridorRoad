@@ -83,7 +83,7 @@ a guess about a history the document does not record.
 | 5.4 | **open, largest** | per-approach roundabout geometry; Roundabout creates no slope face preview at all |
 | 5.5 | done | superelevation paired per Alignment |
 | 5.6 | done | Applied Sections names the Alignments it skips |
-| 5.7 | closed 2026-10-05, no cache | the chain costs 0.3 s of a 5.9 s T build; the time is in the shared breakline audit and patch constraint matching |
+| 5.7 | closed 2026-10-05, no cache | the chain costs 0.3 s of a 5.9 s T build; the time was in the shared breakline audit and patch constraint matching, which was then made 3 to 8 times faster with identical output on 2026-10-07 |
 | 5.8 | done 2026-10-06 | `Use Existing Alignments` adds overlay control Regions to the user's Region models and writes the Superelevation and Drainage handoff sources |
 | 5.9 | done | the preset-default checklist in the panel |
 | 5.10 | done 2026-10-05 | the review covers the five remaining families; the edge-family adoption is its own action |
@@ -96,19 +96,17 @@ widget-free review of intersection source rows. New presentation rows:
 
 Review row counts after 5.10: **T 18, Cross 30, Roundabout 24**, all reaching `n of n` from
 `Accept Reviewed Rows` alone. For T, `IntersectionBoundaryOwnerStatus` reaches `ready` (15 owners)
-only after `Adopt Edge Families From Subassembly` as well. Cross stays `missing`: its corner arcs
-are not built (`cross_intersection_corner_arc_gap:missing=4`), which is a separate gap that the
+only after `Adopt Edge Families From Subassembly` as well. Cross stays `missing`: its boundary takes the
+curb return envelope path, which assigns no boundary owners and whose edges the slope face does not consume
+(not missing arcs; the plan's section 5.10 Outcome has the measurement), which is a separate gap that the
 plan's §5.10 Outcome records and a strict `xfail` pins.
 
 ## 5. What is left
 
 ### Intersection plan, in order
 
-1. **Audit and constraint matching** — not yet an item. `SharedBreaklineAuditService.audit` runs 5 times
-   at about 1.2 s each and `intersection_patch_constraint_build_service` about 0.7 s each, both on
-   quadratic point-to-polyline tests; the plan's §5.7 Outcome has the profile.
-2. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
-3. **Cross corner arcs** — not yet an item. A Cross builds no curb return arcs, so it has no
+1. **5.4** — the largest, and what the Roundabout needs to be more than a symmetric starter.
+2. **Cross boundary owners** — not yet an item. A Cross takes the curb return envelope path, which assigns no owner refs and has none of its loop edges consumed by the slope face; it has no
    boundary owners whatever the review state; found while closing 5.10.
 
 ### Repository-wide
@@ -227,6 +225,10 @@ that was **before** items 5.9, 5.11 and 5.10 landed. 5.11 changed the review tab
 to 8 for a T preset and from 7 to 12 for a Cross, and 5.10 took them to 18 and 30 and added the
 `Adopt Edge Families From Subassembly` button, whose confirmation dialog was stubbed in the harness. Sections 7 and 9 of the procedure were
 updated to the new numbers and have **not** been re-run in the GUI. Section 5 is unaffected.
+
+The user confirmed the 5.10 procedure (QA section 7: 18 review rows and the `Adopt Edge Families From
+Subassembly` button) in the GUI on 2026-10-07. The 5.8 procedure (QA section 6a, `Use Existing
+Alignments`) has not been reported yet.
 
 `AGENTS.md` is explicit that GUI integration must not be claimed when only headless tests
 ran.

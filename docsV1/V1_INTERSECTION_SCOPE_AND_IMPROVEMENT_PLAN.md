@@ -419,8 +419,46 @@ What does take the time, from a profile of the same T pass:
 
 So the real item is the point-to-polyline matching in those two services, which is
 quadratic in boundary points times segments and runs five times over unchanged inputs.
-That is an optimisation of geometry matching, it needs its own measurement and its own
-test that the match rows are identical, and it is not started.
+
+#### Follow-up: the matching, done on 2026-10-07
+
+Done as its own change, with the constraint that no answer may change. Before touching
+anything, every `SharedBreaklineAuditService.audit` result and every
+`constraint_rows` output of a full T, Cross and Roundabout build was recorded; after it,
+all of them were identical. That comparison was a one-off check on those three builds;
+no permanent test holds the matchers to the earlier algorithm, so a later change to them
+should repeat it.
+
+What changed, in the order it mattered:
+
+- the audit rebuilt each consumer surface's vertex lookup, edge list and parsed constraint
+  rows for every breakline x consumer pair, 245 times on a T. They are built once per audit;
+- `_boundary_edge_matches` evaluated `_boundary_min_distance`, a scan of every vertex
+  against every segment, as the default argument of a `dict.get`, so it ran whenever a
+  breakline was not matched. It is now evaluated only when the coverage pass gave no distance;
+- a vertex's projection onto a breakline, and whether it is near it, were recomputed for
+  each of the six or so edges sharing it. They are computed once per vertex;
+- a vertex outside the breakline's bounding box widened by the tolerance and a margin well
+  above floating-point error is certainly not near it, so the exact distance is skipped. The
+  constraint build applies the same box to the edges it tests a segment against, which is
+  exact because it reads only `matched`, and the audit's coverage pass does not skip
+  vertices because it also reports the minimum distance;
+- the constraint build recomputed the edge rows of every triangle for each segment. They are
+  rebuilt only when a support triangle is appended;
+- the point-to-segment projection built a tuple, a generator and a dict per call. It is
+  written per axis with the same arithmetic order, so results are bit-identical to the
+earlier form.
+
+Measured on the same machine, which varies by about 30% run to run, so read the ratios:
+
+| kind | whole build + previews | audit | constraint build |
+| --- | --- | --- | --- |
+| T | 7.0 s to 4.5 s | 2.8 s to 0.3 s | 1.6 s to 0.5 s |
+| Cross | 10.5 s to 6.7 s | 4.3 s to 0.6 s | 2.1 s to 0.6 s |
+| Roundabout | 17.0 s to 6.4 s | 10.0 s to 1.2 s | 3.3 s to 0.9 s |
+
+What remains of a build is mostly the TIN clip against the Intersection exclusion (about
+1 s a call) and the breakline TIN builder, neither of which was touched.
 
 ### 5.8 Make the starter geometry usable on a real route: done on 2026-10-06
 
@@ -601,14 +639,66 @@ Review rows are now **T 18, Cross 30, Roundabout 24**, all reaching `n of n` fro
 **Measured result.** For a T preset, accepting alone leaves `IntersectionBoundaryOwnerStatus`
 short of `ready`; accepting and then adopting gives `ready` with 15 owners.
 
-**Cross does not reach `ready`, and this item does not explain why.** The same document
-measured through the T smoke's manual acceptance also reads `missing`, with zero owners. Its
-slope face preview reports `curb_return_arcs=0/4` and `cross_intersection_corner_arc_gap:
-missing=4`, and the Design and Daylight previews report `boundary_loop_refs_missing`. The
-corner arcs are not built for a Cross, so the boundary loop carries no owners whatever the
-review state. That is a separate gap, pinned by a strict `xfail` in
-`test_intersection_policy_family_review.py` so that fixing it forces the test to be updated.
-The acceptance line above is therefore met for T and not for Cross.
+**Cross does not reach `ready`, for a reason that is not the review.** The same document
+measured through the T smoke's manual acceptance also reads `missing`, with zero owners. It
+is pinned by a strict `xfail` in `test_intersection_policy_family_review.py`, so that fixing
+it forces the test to be updated. The acceptance line above is therefore met for T and not
+for Cross.
+
+The first explanation written here, that the corner arcs are not built, was wrong and is
+corrected on 2026-10-07 after measuring both kinds. The evaluation is sound for a Cross:
+topology reports 4 corners and 4 curb return arcs, and the boundary loop is a `ready` closed
+loop of 33 points and 32 segments, the curb return envelope. The two kinds take different
+paths through `evaluate_boundary_loops`:
+
+| | T | Cross |
+| --- | --- | --- |
+| boundary source | `rectilinear_edge_network_envelope` | `curb_return_envelope_ready` (4 corners, 32 points) |
+| graph edges carrying an `intersection-boundary-owner:` ref | 18 of 18 | 0 of 32 |
+| graph edges consumed by the slope face surface | 18 of 18 | 0 of 32 (`GraphMissingEdgeCount` 32) |
+| slope face fill | upper panel triangles | strip triangles |
+
+Owner refs are assigned only by the rectilinear path
+(`_intersection_boundary_rectilinear_side_owner_refs`, which matches a loop side to the
+side of a perimeter rectangle). The curb return envelope path never assigns one, and the
+slope face surface built for a Cross consumes none of the loop's edges. So the missing
+owners are a missing feature of the curb return envelope path, not a regression and not
+something the review can supply: it needs a decision about what owns each envelope segment,
+and a slope face fill that consumes the envelope. The `curb_return_arcs=0/4` and
+`cross_intersection_corner_arc_gap` diagnostics belong to the intersection surface patch
+triangulation, which counts arcs by its own rule, and are a separate observation.
+
+#### What "filled" and "owner" mean, and what a Cross lacks
+
+Measured on 2026-10-07 while scoping a fix, because the first reading above, that giving
+the envelope owner refs would be enough, did not survive it.
+
+- `IntersectionBoundaryOwnerStatus` is `ready` when owner rows exist and no owner is missing
+  an expected consumer. The rows are the graph edges of the shared boundary graph, grouped by
+  their `intersection-boundary-owner:` refs.
+- A boundary-loop graph edge is "filled" when it appears in the `boundary_edge_refs` of one of
+  the graph's `upper_*` cells, or among the transition strip refs
+  (`_intersection_boundary_loop_graph_fill_coverage`). The code marks those cells
+  `graph_upper_cell_metadata_only`: for a T, `ready` is a consistency check between the
+  graph, the loop and the panel metadata, not a measurement of a slope face mesh. The T
+  slope face preview is 4 triangles, one upper panel.
+- A Cross has 32 loop edges and none appear in any upper cell's refs, so 0 are filled.
+- The T-only guard `_intersection_upper_slope_face_panel_supported` is not the cause. Lifting
+  it, tried without committing the change, makes the same generator produce its 4 upper
+  panel triangles for a Cross, and the numbers do not move: 0 of 32 filled, 0 owners.
+- The inputs are not smaller for a Cross. The shared breakline set holds one
+  `patch_to_intersection_slope_face`, one `intersection_slope_face_to_corridor_slope_face`
+  and one `intersection_slope_face_to_design_surface` for both kinds, all on the primary
+  alignment's left side; the panel generator groups by alignment and side, so for a Cross it
+  would panel one side of one road.
+
+So making a Cross `ready` honestly needs three things together: shared-boundary graph upper
+cells that reference the curb return envelope's edges, an owner for each envelope segment (the
+rectilinear owner is a perimeter rectangle side, which an arc does not have), and a decision
+about whether the upper panels should cover all four arms rather than one side. None of the
+three is a defect fix; each is new behaviour with a design question, and it can be checked only
+by the metadata, not by looking at the surface. It is recorded here as a candidate item rather
+than started.
 
 ### 5.11 Two preset values land where no review state exists: done on 2026-09-28
 

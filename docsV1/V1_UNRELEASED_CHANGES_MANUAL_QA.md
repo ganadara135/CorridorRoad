@@ -256,7 +256,7 @@ Expected:
 Expected: the same as T, with **30 review rows** rather than 18, because a Cross has four
 legs, so four arm policies, four corners, eight edge policies and four lane connections.
 `IntersectionBoundaryOwnerStatus` stays `missing` for a Cross even after adoption: its corner
-arcs are not built (`cross_intersection_corner_arc_gap:missing=4`), which is a separate gap
+boundary takes the curb return envelope path, which assigns no boundary owners, which is a separate gap
 from the review.
 
 3. Repeat for `Roundabout - Single Lane`.
