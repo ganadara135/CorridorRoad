@@ -166,7 +166,14 @@ class RoadContext(Protocol):
     def finished_grade_z(self, road_ref, station) -> float | None: ...
     def vertex_stations(self, road_ref, start, end) -> tuple[float, ...]: ...
     def fingerprint_rows(self, road_ref) -> tuple[str, ...]: ...
+    def surface_profile(self, road_ref, station) -> SurfaceProfile | None: ...   # R5
 ```
+
+`SurfaceProfile` is the finished grade cut across the road at a station: the `fg_surface` points
+`(lateral offset, z)` from right to left, and per side the daylight point (`daylight_marker`, else
+the outermost `side_slope_surface` point). Between two Applied Sections it is linear point by point,
+which is what the corridor surface between two sections is; when their points do not pair up the
+nearer section is returned with `exact = False` (diagnostic `mouth_section_points_do_not_pair`).
 
 `PolylineRoadContext` implements it from plain data: one `PolylineRoad` per road (stations and XY
 of the alignment's sampled geometry; station rows of the pavement half width left and right; FG
@@ -222,6 +229,42 @@ station on the same edge line). The inner station is the tangent station of the 
 that side, or the anchor station for a `none` corner. Checks: closed, positive CCW area, no self
 crossing (`boundary_self_crossing` blocks).
 
+**K3 heights (R5).** A boundary vertex on a pavement edge takes the edge height of the road's
+surface profile at its station; the mouth is crossed through every `fg_surface` point of the cut
+there. The boundary is therefore the corridor surface's own edge, point for point.
+
+**K4, vertical (R5).** The boundary is never graded. One crown breakline per leg runs from the
+road's crown at the mouth to the anchor:
+
+| grading mode | primary road crown | other crowns | anchor height |
+| --- | --- | --- | --- |
+| `blend_primary_side`, `keep_primary_crown`, `use_normal_superelevation` | its own profile | straight from the mouth crown | primary profile at the anchor |
+| `flatten_intersection` | straight from the mouth crown | straight from the mouth crown | mean of the mouth crowns |
+
+The three primary-crown modes give the same surface: the current pipeline told them apart only by
+moving boundary heights (a plane fit, an average), which tore the patch from the corridor at the
+mouths. An unknown mode falls back to `blend_primary_side` (`grading_mode_unknown`).
+
+**K5, patch (R5).** Constrained Delaunay triangulation of the boundary with the crown lines as
+breaklines (`intersection_kernel/cdt.py`: Bowyer-Watson, constraint recovery by flips, outside
+triangles dropped, Delaunay flips on the free edges). Coordinates are centred and scaled to about
+1 first, so the fixed tolerances are relative and world coordinates lose no precision. Checks: the
+triangles cover the boundary area to 1e-6 relative (`patch_area_mismatch`), a crown that cannot be
+recovered (`patch_breakline_not_recovered`). Quality rows use the current review's skinny threshold,
+0.08.
+
+**K6, side slope (R5).** The boundary is split at the mouths into runs, one per pair of
+neighbouring legs. Each run gets a strip from the boundary to an outer toe line:
+
+- on a pavement edge: the road's daylight point at that station, so at a mouth the strip ends on
+  the corridor's own side slope line;
+- on a curb return: the two joined roads' side slopes (width and fall) blended along the arc, laid
+  toward the fillet centre; where wider than the distance to the centre it stops there
+  (`corner_side_slope_wider_than_radius`, partial).
+
+The corner daylight is the blend of the legs' daylight, not a fresh intersection with the existing
+ground; that refinement is not in R5.
+
 **K7 (planar part).** Clip span per road: from the `back` mouth to the `ahead` mouth (the anchor
 station where a side has no leg). Supplemental stations: the mouth stations.
 
@@ -248,6 +291,10 @@ class IntersectionGeometryResult:
     supplemental_stations: tuple[tuple[str, float], ...]
     resolved_values: tuple[ResolvedValue, ...]
     diagnostics: tuple[KernelDiagnostic, ...]
+    patch_vertices_xyz / patch_triangles      # K5
+    slope_vertices_xyz / slope_triangles      # K6
+    breaklines: tuple[(role, subject, points)] # crown, boundary, slope_toe
+    quality_rows: tuple[(name, value)]        # triangle counts, minimum quality, skinny counts
 
 @dataclass(frozen=True)
 class KernelDiagnostic:
@@ -291,7 +338,11 @@ core square (130 m2 for the starter T), not the curb return envelope the kernel 
   threshold well above the micrometre noise of the sampled alignments), `differ`, `skipped`
   (roundabout, or no target), `blocked` (kernel blocked), `error`.
 - rows: kernel status and fingerprint, legs and mouth stations, corners, every resolved value with
-  its origin, clip spans, kernel diagnostics, both deviations and areas.
+  its origin, clip spans, kernel diagnostics, both deviations and areas; since R5 also `patch|`
+  (kernel triangles, minimum quality and skinny count next to the current patch's
+  `PatchTriangleMinQuality` / `PatchTriangleSkinnyCount`), `slope|` (kernel strip figures) and
+  `clip_compare|` (kernel clip span next to the current control area ranges). These are measured,
+  not judged: the status still comes from the fillet and envelope targets.
 
 Build Parametric writes `IntersectionKernelShadowStatus`, `IntersectionKernelShadowFilletDeviationM`,
 `IntersectionKernelShadowEnvelopeDeviationM` (-1 = not compared) and `IntersectionKernelShadowRows`
@@ -307,11 +358,11 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R2 | K1 to K3 and K7 planar on curved and straight roads | analytic tests: straight T and Cross exact, 60 degree skew, curved primary road, radius too large |
 | R3 | builder context service from `AlignmentModel` + `AppliedSectionSet`; `spec_from_intersection_model` | starter T, Cross, turned T resolve with the Applied Sections' 5 m |
 | R4 | shadow comparison in Build Parametric | starter T and Cross report their difference; full gate green |
-| R5 | K4 to K6 (heights, patch TIN, side slope) in the kernel, still shadow | unfilled arcs, skinny triangles and the 49 m gap measured on the kernel output |
+| R5 | K4 to K6 (heights, patch TIN, side slope) in the kernel, still shadow | unfilled arcs, skinny triangles and the clip span measured on the kernel output (done, §8) |
 | R6 | roundabout in the kernel | roundabout shadow `agree` or explained |
 | R7 | switch: Build Parametric consumes the kernel; the spec becomes the stored source (`SpecJson`); the panel edits the spec; lane connection, edge policy and surface zone rows and the services only they feed are deleted (D2) | full gate and GUI manual QA |
 
-R1 to R4 are implemented with this plan. R5 onwards each start from the measurements R4 records.
+R1 to R5 are implemented. R6 and R7 start from the measurements §8 records.
 
 ## 8. Shadow measurements
 
@@ -345,14 +396,42 @@ Validation at R4: flake8 clean, architecture 9 passed, kernel 13 and shadow 5 co
 `test_intersection_command.py` 78 passed, all three smoke runners PASS, full contract suite (without
 the command chunk) 1,429 passed / 18 skipped / 0 failed. No GUI check was run.
 
-### Next: R5
+### R5, 2026-10-08
 
-K4 to K6 move heights, the patch TIN and the side slope into the kernel, still in shadow. The
-first measurements to take are the three open defects of `SESSION_HANDOFF.md` §5 on the kernel's
-output: the curb return slope face fill, the skinny constraint triangles, and the 49 m side slope
-gap beside the stem.
+Kernel heights, patch and side slope against the current pipeline, starter presets after `Accept
+Reviewed Rows`, full headless build (`test_intersection_kernel_shadow.py`, figures from the shadow
+rows and the slope face preview):
 
-## 9. Out of scope
+| | T current | T kernel | Cross current | Cross kernel |
+| --- | --- | --- | --- | --- |
+| patch triangles | 164 | 178 | 207 | 200 |
+| patch minimum quality | 0.0080 | 0.179 | 0.0122 | 0.170 |
+| skinny patch triangles (< 0.08) | 125 | 0 | 160 | 0 |
+| boundary edges with a side slope | 27 of 43 (the 16 arc edges unfilled) | every edge but the mouths | 20 of 52 (32 arc edges unfilled) | every edge but the mouths |
+| curb return vertices with a side slope | 0 | 34 | 0 | 68 |
+| side slope triangles, minimum quality | 44, not recorded | 140, 0.291 | 64, not recorded | 144, 0.221 |
+| corridor clipped beyond the mouths | main 14 m (96 to 144), side 18 m (65 to 100) | 0 (103 to 137, 83 to 100) | 18 m on each road (96 to 144) | 0 (105 to 135) |
 
-Signals, lane operation and turn lane design (taper widths belong to Assembly and Region), Ramp,
-Watertight Solid, grade separation.
+Kernel time 0.06 s (T) and 0.08 s (Cross).
+
+Reading the three open defects of `SESSION_HANDOFF.md` §5 against this:
+
+1. **Unfilled curb return slope faces**: the kernel's strip runs round every arc; there is no
+   unfilled edge to report because the strip is built along the boundary, not fitted to it.
+2. **Skinny triangles**: the current 125 and 160 are the patch's fan and constraint-support
+   triangles; the kernel's constrained Delaunay has none, minimum quality 0.17.
+3. **Side slope missing beside the stem**: not re-measured, since the 49 m comes from the user's GUI
+   capture. What is measured: the current pipeline clips the corridor over the control area (48 m
+   on the main road, 35 m on the side road) while the intersection's own surfaces end at the
+   curb return tangent points, so 14 m and 18 m of corridor side slope are clipped with nothing in
+   their place. The kernel's clip spans end exactly at its mouths, where its strips meet the
+   corridor's side slope line, so after the switch the gap cannot occur by construction.
+
+Validation at R5: flake8 clean, architecture 9 passed, kernel 13 + surfaces 11 + shadow 7 contract
+tests, `test_intersection_command.py` 78 passed, all three smoke runners PASS, full contract suite
+(without the command chunk) 1,442 passed / 18 skipped / 0 failed. No GUI check was run.
+
+### Next: R6
+
+The roundabout in the kernel: the circulatory ring as a virtual road in `RoadContext`, each
+approach's entry and exit fillets against it (K1), and K2 to K7 unchanged.

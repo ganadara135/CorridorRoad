@@ -9,6 +9,8 @@ from ....models.source.intersection_spec import IntersectionSpec
 from .planar import build_planar_geometry
 from .resolve import resolve_intersection
 from .road_context import RoadContext
+from .surface import build_surfaces
+from .vertical import crown_lines
 
 
 INTERSECTION_GEOMETRY_SCHEMA_VERSION = 1
@@ -47,7 +49,13 @@ def build_intersection_geometry(spec: IntersectionSpec, context: RoadContext) ->
         return IntersectionGeometryResult(status="not_implemented", diagnostics=tuple(resolved.diagnostics), **common)
 
     planar = build_planar_geometry(resolved, context)
-    diagnostics = tuple(resolved.diagnostics) + tuple(planar.diagnostics)
+    surface_diagnostics = []
+    surfaces = None
+    if planar.boundary_vertices:
+        crowns = crown_lines(resolved, context, planar, surface_diagnostics)
+        surfaces = build_surfaces(planar, crowns, context, spec.intersection_id)
+        surface_diagnostics += surfaces.diagnostics
+    diagnostics = tuple(resolved.diagnostics) + tuple(planar.diagnostics) + tuple(surface_diagnostics)
     if any(row.effect == "blocked" for row in diagnostics):
         status = "blocked"
     elif any(row.effect in {"partial", "fallback"} for row in diagnostics):
@@ -63,5 +71,11 @@ def build_intersection_geometry(spec: IntersectionSpec, context: RoadContext) ->
         clip_spans=tuple(planar.clip_spans),
         supplemental_stations=tuple(planar.supplemental_stations),
         diagnostics=diagnostics,
+        patch_vertices_xyz=tuple(surfaces.patch_vertices_xyz) if surfaces else (),
+        patch_triangles=tuple(surfaces.patch_triangles) if surfaces else (),
+        slope_vertices_xyz=tuple(surfaces.slope_vertices_xyz) if surfaces else (),
+        slope_triangles=tuple(surfaces.slope_triangles) if surfaces else (),
+        breaklines=tuple(surfaces.breaklines) if surfaces else (),
+        quality_rows=tuple(surfaces.quality_rows) if surfaces else (),
         **common,
     )

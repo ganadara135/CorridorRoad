@@ -1,4 +1,4 @@
-"""The parametric intersection kernel on analytic roads (plan phases R1 and R2).
+"""The parametric intersection kernel on analytic roads (plan phases R1, R2 and R5).
 
 No FreeCAD document takes part: the roads are plain polylines with pavement half widths, as
 the Applied Sections would give them. Straight roads give exact results; the expected areas are
@@ -18,17 +18,31 @@ from freecad.Corridor_Road.v1.models.source.intersection_spec import (
 from freecad.Corridor_Road.v1.services.evaluation.intersection_kernel import (
     PolylineRoad,
     PolylineRoadContext,
+    SurfaceProfile,
     build_intersection_geometry,
     intersection_input_fingerprint,
 )
 
 
-def _road(ref, points, *, left=5.0, right=5.0, z=10.0, widths=None):
+def _road(ref, points, *, left=5.0, right=5.0, z=10.0, widths=None, grade=0.0, z_station=0.0, crossfall=0.0, slope_width=4.0, slope_fall=2.0):
+    """A road as the Applied Sections would give it: a section every 10 m with a crown at the
+    centreline, `crossfall` down to both edges, and a side slope `slope_width` wide falling
+    `slope_fall` beyond each edge. The centreline grade is `z + grade (station - z_station)`."""
+
     stations = [0.0]
     for (x0, y0), (x1, y1) in zip(points, points[1:]):
         stations.append(stations[-1] + math.hypot(x1 - x0, y1 - y0))
     rows = widths if widths is not None else ((stations[0], left, right), (stations[-1], left, right))
-    return PolylineRoad(ref, tuple(stations), tuple(points), tuple(rows), ((stations[0], z), (stations[-1], z)))
+    section_stations = sorted({*(s for s in range(0, int(stations[-1]) + 1, 10)), stations[-1]})
+    profiles, grades = [], []
+    for s in section_stations:
+        zc = z + grade * (s - z_station)
+        zl, zr = zc - crossfall * left, zc - crossfall * right
+        profiles.append(
+            SurfaceProfile(float(s), ((-right, zr), (0.0, zc), (left, zl)), (left + slope_width, zl - slope_fall), (-(right + slope_width), zr - slope_fall))
+        )
+        grades.append((float(s), zc))
+    return PolylineRoad(ref, tuple(stations), tuple(points), tuple(rows), tuple(grades), profile_rows=tuple(profiles))
 
 
 def _context(*roads):

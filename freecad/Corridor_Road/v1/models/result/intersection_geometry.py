@@ -87,3 +87,13 @@ class IntersectionGeometryResult:
     supplemental_stations: tuple[tuple[str, float], ...] = ()
     resolved_values: tuple[ResolvedValue, ...] = ()
     diagnostics: tuple[KernelDiagnostic, ...] = ()
+    # K5: the patch TIN inside the boundary (counter-clockwise index triples)
+    patch_vertices_xyz: tuple[tuple[float, float, float], ...] = ()
+    patch_triangles: tuple[tuple[int, int, int], ...] = ()
+    # K6: the side slope strips from the boundary to daylight
+    slope_vertices_xyz: tuple[tuple[float, float, float], ...] = ()
+    slope_triangles: tuple[tuple[int, int, int], ...] = ()
+    # (role, subject, points): crown lines, the boundary, the slope toe lines
+    breaklines: tuple[tuple[str, str, tuple[tuple[float, float, float], ...]], ...] = ()
+    # (name, value): triangle counts and qualities of the patch and the slope
+    quality_rows: tuple[tuple[str, float], ...] = ()

@@ -21,6 +21,35 @@ STATION_TOLERANCE_M = 1.0e-6
 
 
 @dataclass(frozen=True)
+class SurfaceProfile:
+    """The finished grade cut across a road at one station, as the corridor surface has it.
+
+    `fg` are `(lateral offset, z)` from right to left (offset positive to the left).
+    `left_daylight` / `right_daylight` are the side slope's outer `(offset, z)` on that side, or
+    None. `exact` is False when the station lies between two Applied Sections whose points do not
+    pair up, so the nearer section is returned instead of the interpolated cut.
+    """
+
+    station: float
+    fg: tuple[tuple[float, float], ...]
+    left_daylight: tuple[float, float] | None = None
+    right_daylight: tuple[float, float] | None = None
+    exact: bool = True
+
+    def edge(self, side: str) -> tuple[float, float]:
+        return self.fg[-1] if side == "left" else self.fg[0]
+
+    def daylight(self, side: str) -> tuple[float, float] | None:
+        return self.left_daylight if side == "left" else self.right_daylight
+
+    def center_z(self) -> float | None:
+        for (o0, z0), (o1, z1) in zip(self.fg, self.fg[1:]):
+            if o0 <= 0.0 <= o1:
+                return z0 if o1 - o0 <= 0.0 else z0 + (z1 - z0) * (0.0 - o0) / (o1 - o0)
+        return None
+
+
+@dataclass(frozen=True)
 class Crossing:
     """A plan-view crossing of two roads."""
 
@@ -49,6 +78,8 @@ class RoadContext(Protocol):
 
     def fingerprint_rows(self, road_ref: str) -> tuple[str, ...]: ...
 
+    def surface_profile(self, road_ref: str, station: float) -> SurfaceProfile | None: ...
+
 
 @dataclass(frozen=True)
 class PolylineRoad:
@@ -65,6 +96,8 @@ class PolylineRoad:
     half_width_rows: tuple[tuple[float, float, float], ...] = ()
     grade_rows: tuple[tuple[float, float], ...] = ()
     width_source: str = ""
+    # one SurfaceProfile per Applied Section, in increasing station
+    profile_rows: tuple[SurfaceProfile, ...] = ()
 
 
 @dataclass
@@ -157,7 +190,42 @@ class PolylineRoadContext:
         rows += [f"c|{s:.6f}|{x:.6f}|{y:.6f}" for s, (x, y) in zip(road.stations, road.xy)]
         rows += [f"w|{s:.6f}|{left:.6f}|{right:.6f}" for s, left, right in road.half_width_rows]
         rows += [f"z|{s:.6f}|{z:.6f}" for s, z in road.grade_rows]
+        rows += [f"p|{row.station:.6f}|{row.fg!r}|{row.left_daylight!r}|{row.right_daylight!r}" for row in road.profile_rows]
         return tuple(rows)
+
+    def surface_profile(self, road_ref: str, station: float) -> SurfaceProfile | None:
+        """The cut at `station`: linear between the two neighbouring sections point by point, which
+        is what the corridor surface between two sections is; beyond the first or last section, that
+        section."""
+
+        rows = self.road(road_ref).profile_rows
+        if not rows:
+            return None
+        value = float(station)
+        stations = [row.station for row in rows]
+        if value <= stations[0]:
+            return rows[0]
+        if value >= stations[-1]:
+            return rows[-1]
+        index = bisect.bisect_right(stations, value) - 1
+        first, second = rows[index], rows[index + 1]
+        span = second.station - first.station
+        if abs(value - first.station) <= STATION_TOLERANCE_M or span <= 0.0:
+            return first
+        if abs(value - second.station) <= STATION_TOLERANCE_M:
+            return second
+        ratio = (value - first.station) / span
+        if len(first.fg) != len(second.fg) or (first.left_daylight is None) != (second.left_daylight is None) or (
+            first.right_daylight is None
+        ) != (second.right_daylight is None):
+            nearer = first if ratio <= 0.5 else second
+            return SurfaceProfile(value, nearer.fg, nearer.left_daylight, nearer.right_daylight, exact=False)
+        return SurfaceProfile(
+            value,
+            tuple(_lerp2(a, b, ratio) for a, b in zip(first.fg, second.fg)),
+            _lerp2(first.left_daylight, second.left_daylight, ratio) if first.left_daylight else None,
+            _lerp2(first.right_daylight, second.right_daylight, ratio) if first.right_daylight else None,
+        )
 
 
 def left_normal(direction: tuple[float, float]) -> tuple[float, float]:
@@ -179,6 +247,10 @@ def segment_intersection(p0, p1, q0, q1) -> tuple[float, float] | None:
     if -1.0e-9 <= t <= 1.0 + 1.0e-9 and -1.0e-9 <= u <= 1.0 + 1.0e-9:
         return min(max(t, 0.0), 1.0), min(max(u, 0.0), 1.0)
     return None
+
+
+def _lerp2(a, b, ratio: float) -> tuple[float, float]:
+    return a[0] + (b[0] - a[0]) * ratio, a[1] + (b[1] - a[1]) * ratio
 
 
 def _segment_at(stations: tuple[float, ...], station: float) -> tuple[int, float]:

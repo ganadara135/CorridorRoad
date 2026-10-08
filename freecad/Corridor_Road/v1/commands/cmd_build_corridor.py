@@ -5999,6 +5999,10 @@ def _attach_intersection_kernel_shadow(doc, preview_obj, *, intersection_model, 
             alignment_models,
             applied_section_set,
             boundary_result,
+            current_patch_quality={
+                "min_quality": float(getattr(preview_obj, "PatchTriangleMinQuality", 0.0) or 0.0),
+                "skinny_count": float(getattr(preview_obj, "PatchTriangleSkinnyCount", 0) or 0),
+            },
         )
         status = comparison.status
         fillet_deviation, envelope_deviation = comparison.fillet_deviation_m, comparison.envelope_deviation_m

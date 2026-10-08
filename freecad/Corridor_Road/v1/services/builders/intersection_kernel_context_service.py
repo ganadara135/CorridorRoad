@@ -17,7 +17,7 @@ import math
 from ...models.source.intersection_spec import AnchorSpec, IntersectionSpec
 from ..evaluation.intersection_evaluation_service import IntersectionEvaluationService
 from ..evaluation.intersection_kernel import build_intersection_geometry
-from ..evaluation.intersection_kernel.road_context import STATION_TOLERANCE_M, PolylineRoad, PolylineRoadContext
+from ..evaluation.intersection_kernel.road_context import STATION_TOLERANCE_M, PolylineRoad, PolylineRoadContext, SurfaceProfile
 from ..evaluation.intersection_kernel_shadow_service import (
     IntersectionKernelShadowComparison,
     IntersectionKernelShadowService,
@@ -46,11 +46,16 @@ def road_context_from_models(alignment_models, applied_section_set=None) -> Poly
         if len(stations) < 2:
             continue
         sections = sorted(sections_by_alignment.get(alignment_id, []), key=_section_station)
-        widths, grades = [], []
+        widths, grades, profiles = [], [], []
+        last_station = None
         for section in sections:
             station = _section_station(section)
-            if widths and abs(station - widths[-1][0]) <= STATION_TOLERANCE_M:
+            if last_station is not None and abs(station - last_station) <= STATION_TOLERANCE_M:
                 continue
+            last_station = station
+            profile = _surface_profile(section, station)
+            if profile is not None:
+                profiles.append(profile)
             left = abs(float(getattr(section, "surface_left_width", 0.0) or 0.0))
             right = abs(float(getattr(section, "surface_right_width", 0.0) or 0.0))
             if left > 0.0 and right > 0.0:
@@ -65,6 +70,7 @@ def road_context_from_models(alignment_models, applied_section_set=None) -> Poly
             tuple(widths),
             tuple(grades),
             width_source=str(getattr(applied_section_set, "applied_section_set_id", "") or ""),
+            profile_rows=tuple(profiles),
         )
     return PolylineRoadContext(roads)
 
@@ -114,6 +120,7 @@ def intersection_kernel_shadow_comparison(
     alignment_models,
     applied_section_set,
     boundary_segment_result=None,
+    current_patch_quality: dict[str, float] | None = None,
 ) -> IntersectionKernelShadowComparison:
     """Run the kernel on the document's current inputs and compare it with the current pipeline.
 
@@ -136,7 +143,22 @@ def intersection_kernel_shadow_comparison(
         kernel_result,
         boundary_segment_result=boundary_segment_result,
         boundary_loop_result=boundary_loop_result,
+        current_patch_quality=current_patch_quality,
+        current_clip_ranges=_control_area_ranges(intersection_model, spec.intersection_id),
     )
+
+
+def _control_area_ranges(intersection_model, intersection_id: str) -> dict[str, list[tuple[float, float]]]:
+    """The station ranges the current pipeline clips the corridor over, per Alignment."""
+
+    ranges: dict[str, list[tuple[float, float]]] = {}
+    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
+        if str(getattr(area, "intersection_id", "") or "") != intersection_id:
+            continue
+        ref = str(getattr(area, "alignment_ref", "") or "")
+        for start, end in list(getattr(area, "station_ranges", []) or []):
+            ranges.setdefault(ref, []).append((min(float(start), float(end)), max(float(start), float(end))))
+    return ranges
 
 
 def _alignment_polyline(model) -> tuple[list[float], list[tuple[float, float]]]:
@@ -166,6 +188,39 @@ def _alignment_polyline(model) -> tuple[list[float], list[tuple[float, float]]]:
             stations.append(station)
             xy.append(point)
     return stations, xy
+
+
+def _surface_profile(section, station: float) -> SurfaceProfile | None:
+    """The section's finished grade points and, per side, where its side slope reaches daylight.
+
+    The daylight point is the section's `daylight_marker` on that side, else its outermost
+    `side_slope_surface` point there. Lateral offsets are positive to the left, as the Applied
+    Sections store them.
+    """
+
+    fg: dict[float, float] = {}
+    sides: dict[str, dict[str, tuple[float, float]]] = {"left": {}, "right": {}}
+    for point in list(getattr(section, "point_rows", []) or []):
+        role = str(getattr(point, "point_role", "") or "")
+        offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        z = float(getattr(point, "z", 0.0) or 0.0)
+        if role == "fg_surface":
+            fg.setdefault(round(offset, 9), z)
+            continue
+        side = str(getattr(point, "side", "") or "").lower()
+        if side not in sides:
+            continue
+        if role == "daylight_marker":
+            sides[side]["marker"] = (offset, z)
+        elif role == "side_slope_surface":
+            outer = sides[side].get("slope")
+            if outer is None or abs(offset) > abs(outer[0]):
+                sides[side]["slope"] = (offset, z)
+    if len(fg) < 2:
+        return None
+    left = sides["left"].get("marker") or sides["left"].get("slope")
+    right = sides["right"].get("marker") or sides["right"].get("slope")
+    return SurfaceProfile(station, tuple(sorted(fg.items())), left, right)
 
 
 def _floats(values) -> list[float]:

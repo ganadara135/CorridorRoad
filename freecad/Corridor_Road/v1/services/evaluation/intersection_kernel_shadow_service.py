@@ -41,13 +41,22 @@ class IntersectionKernelShadowService:
     `SHADOW_AGREE_TOLERANCE_M`, `differ` otherwise; a deviation of -1 means not compared.
     """
 
-    def compare(self, kernel_result, *, boundary_segment_result=None, boundary_loop_result=None) -> IntersectionKernelShadowComparison:
+    def compare(
+        self,
+        kernel_result,
+        *,
+        boundary_segment_result=None,
+        boundary_loop_result=None,
+        current_patch_quality: dict[str, float] | None = None,
+        current_clip_ranges: dict[str, list[tuple[float, float]]] | None = None,
+    ) -> IntersectionKernelShadowComparison:
         rows = [f"kernel_status|{kernel_result.status}", f"kernel_fingerprint|{kernel_result.input_fingerprint}"]
         rows += [f"leg|{leg.leg_id}|enabled={leg.enabled}|mouth_station={_text(leg.mouth_station)}" for leg in kernel_result.legs]
         rows += [f"corner|{corner.corner_key}|{corner.treatment}|radius={corner.radius_m:.3f}" for corner in kernel_result.corners]
         rows += [f"value|{v.name}|{v.subject}|{v.value}|{v.origin}" for v in kernel_result.resolved_values]
         rows += [f"clip|{ref}|{start:.3f}|{end:.3f}" for ref, start, end in kernel_result.clip_spans]
         rows += [f"diagnostic|{d.as_text()}" for d in kernel_result.diagnostics]
+        rows += _surface_rows(kernel_result, current_patch_quality or {}, current_clip_ranges or {})
         if kernel_result.status == "not_implemented":
             return IntersectionKernelShadowComparison("skipped", rows=tuple(rows + ["reason|the kernel builds no geometry for this kind yet"]))
         if kernel_result.status == "blocked" or not kernel_result.boundary_xyz:
@@ -75,6 +84,46 @@ class IntersectionKernelShadowService:
         return IntersectionKernelShadowComparison(
             status, fillet_deviation, envelope_deviation, kernel_result.boundary_area_m2, current_area, tuple(rows)
         )
+
+
+def _surface_rows(kernel_result, current_patch_quality, current_clip_ranges) -> list[str]:
+    """Figures of the kernel's patch, side slope and clip spans next to the current pipeline's.
+
+    Measured, not judged: they go into the status only through the fillet and envelope targets.
+    """
+
+    quality = dict(kernel_result.quality_rows)
+    rows = []
+    if quality:
+        rows.append(
+            "patch|kernel_triangles={:.0f}|kernel_min_quality={:.4f}|kernel_skinny={:.0f}|current_min_quality={}|current_skinny={}".format(
+                quality.get("patch_triangle_count", 0.0),
+                quality.get("patch_triangle_min_quality", 0.0),
+                quality.get("patch_triangle_skinny_count", 0.0),
+                _text(current_patch_quality.get("min_quality")),
+                _count(current_patch_quality.get("skinny_count")),
+            )
+        )
+        rows.append(
+            "slope|kernel_triangles={:.0f}|kernel_min_quality={:.4f}|arc_vertices={:.0f}|vertices_without_daylight={:.0f}".format(
+                quality.get("slope_triangle_count", 0.0),
+                quality.get("slope_triangle_min_quality", 0.0),
+                quality.get("slope_arc_vertex_count", 0.0),
+                quality.get("slope_vertex_without_daylight_count", 0.0),
+            )
+        )
+    for ref, start, end in kernel_result.clip_spans:
+        current = current_clip_ranges.get(ref, [])
+        rows.append(
+            f"clip_compare|{ref}|kernel={start:.3f}-{end:.3f}|current="
+            + ",".join(f"{a:.3f}-{b:.3f}" for a, b in current)
+            + f"|current_beyond_kernel_m={sum(max(0.0, start - a) + max(0.0, b - end) for a, b in current):.3f}"
+        )
+    return rows
+
+
+def _count(value) -> str:
+    return "-" if value is None else f"{float(value):.0f}"
 
 
 def current_outer_loop_xy(boundary_loop_result) -> list[tuple[float, float]]:

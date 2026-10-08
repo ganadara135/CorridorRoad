@@ -136,3 +136,37 @@ def test_the_road_context_takes_the_pavement_width_from_the_applied_sections_onl
         assert bare.pavement_half_width(spec.road_refs[0], 10.0, "left") is None
     finally:
         App.closeDocument(doc.Name)
+
+
+def _row(rows, prefix):
+    return {
+        part.split("=", 1)[0]: part.split("=", 1)[1]
+        for part in next(row for row in rows if row.startswith(prefix + "|")).split("|")[1:]
+        if "=" in part
+    }
+
+
+@pytest.mark.parametrize(
+    "label, current_skinny, current_beyond",
+    [
+        # measured 2026-10-08: the current patch has 125 of 164 and 160 of 207 triangles skinny, and
+        # clips the corridor 14 m + 18 m (T) and 2 x 18 m (Cross) further than the mouths
+        ("T Intersection - Basic", 125, {"alignment:intersection-primary": 14.0, "alignment:intersection-secondary": 18.0}),
+        ("Cross Intersection - Basic", 160, {"alignment:intersection-primary": 18.0, "alignment:intersection-secondary": 18.0}),
+    ],
+)
+def test_the_shadow_records_the_kernel_surfaces_next_to_the_current_ones(label, current_skinny, current_beyond) -> None:
+    doc = _build(label)
+    try:
+        _status, _fillet, _envelope, rows = _shadow(doc)
+        patch = _row(rows, "patch")
+        assert patch["kernel_skinny"] == "0" and float(patch["kernel_min_quality"]) > 0.08, patch
+        assert int(patch["current_skinny"]) == current_skinny, patch
+        slope = _row(rows, "slope")
+        assert slope["vertices_without_daylight"] == "0" and int(slope["kernel_triangles"]) > 0, slope
+        assert int(slope["arc_vertices"]) > 0
+        for ref, beyond in current_beyond.items():
+            compare = next(row for row in rows if row.startswith(f"clip_compare|{ref}|"))
+            assert compare.endswith(f"current_beyond_kernel_m={beyond:.3f}"), compare
+    finally:
+        App.closeDocument(doc.Name)

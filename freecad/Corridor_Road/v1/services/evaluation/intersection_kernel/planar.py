@@ -7,7 +7,9 @@ the fillets are tangent to the edges the corridor actually builds.
 
 Leg frame: a leg looks outward from the anchor. Its left edge faces its counter-clockwise
 neighbour. For an `ahead` leg that is the road's left side, for a `back` leg the road's right.
-Elevations here are the centreline finished grade at each station; stage K4 replaces them.
+Elevations: a vertex on a pavement edge or across a mouth takes the finished grade of the road's
+surface profile at that station (the Applied Sections, linear between two of them), so the boundary
+is the corridor surface's own edge. Without a profile it takes the centreline finished grade.
 """
 
 from __future__ import annotations
@@ -22,11 +24,44 @@ from .resolve import ResolvedCorner, ResolvedIntersection, ResolvedLeg
 from .road_context import STATION_TOLERANCE_M, RoadContext, left_normal, segment_intersection
 
 
+@dataclass(frozen=True)
+class BoundaryVertex:
+    """One boundary vertex and what it lies on: a pavement `edge` (road, station, road side), a
+    `mouth` cut (road, station) or a curb return `arc` (corner, position 0..1 along it)."""
+
+    xyz: tuple[float, float, float]
+    kind: str
+    road_ref: str = ""
+    station: float = 0.0
+    road_side: str = ""
+    corner_key: str = ""
+    arc_ratio: float = 0.0
+
+
+@dataclass(frozen=True)
+class FilletFrame:
+    """A solved curb return, with the edge points it is tangent to."""
+
+    corner_key: str
+    center_xy: tuple[float, float]
+    radius_m: float
+    from_road: str
+    from_station: float
+    from_side: str
+    to_road: str
+    to_station: float
+    to_side: str
+
+
 @dataclass
 class PlanarGeometry:
     legs: list[LegGeometry] = field(default_factory=list)
     corners: list[CornerGeometry] = field(default_factory=list)
     boundary_xyz: list[tuple[float, float, float]] = field(default_factory=list)
+    boundary_vertices: list[BoundaryVertex] = field(default_factory=list)
+    fillet_frames: dict[str, FilletFrame] = field(default_factory=dict)
+    # leg id -> distance of its mouth from the anchor
+    mouth_distance: dict[str, float] = field(default_factory=dict)
     boundary_area_m2: float = 0.0
     clip_spans: list[tuple[str, float, float]] = field(default_factory=list)
     supplemental_stations: list[tuple[str, float]] = field(default_factory=list)
@@ -108,8 +143,21 @@ def build_planar_geometry(resolved: ResolvedIntersection, context: RoadContext) 
     if any(row.effect == "blocked" for row in out.diagnostics):
         return out
 
+    out.mouth_distance = dict(mouth_distance)
+    for corner in resolved.corners:
+        fillet = fillets.get(corner.corner_key)
+        if fillet is None:
+            continue
+        a, b = resolved.leg(corner.from_leg_id), resolved.leg(corner.to_leg_id)
+        out.fillet_frames[corner.corner_key] = FilletFrame(
+            corner.corner_key, fillet.center_xy, corner.radius_m,
+            a.road_ref, _station(resolved, a, fillet.from_distance), _road_side(a, "left"),
+            b.road_ref, _station(resolved, b, fillet.to_distance), _road_side(b, "right"),
+        )
+
     # K3
-    boundary = _boundary(resolved, context, fillets, mouth_distance)
+    vertices = _boundary(resolved, context, fillets, mouth_distance, out.diagnostics)
+    boundary = [vertex.xyz for vertex in vertices]
     area = _signed_area(boundary)
     if len(boundary) < 3 or area <= 0.0:
         out.diagnostics.append(
@@ -123,6 +171,7 @@ def build_planar_geometry(resolved: ResolvedIntersection, context: RoadContext) 
         )
         return out
     out.boundary_xyz = boundary
+    out.boundary_vertices = vertices
     out.boundary_area_m2 = area
 
     # K7, planar: the span of each road the intersection owns, and the stations it hands back at
@@ -167,10 +216,14 @@ def _edge_xyz(context: RoadContext, road_ref: str, station: float, road_side: st
     xy = _edge_xy(context, road_ref, station, road_side)
     if xy is None:
         return None
-    return xy[0], xy[1], _grade(context, road_ref, station)
+    return xy[0], xy[1], _grade(context, road_ref, station, road_side)
 
 
-def _grade(context: RoadContext, road_ref: str, station: float) -> float:
+def _grade(context: RoadContext, road_ref: str, station: float, road_side: str = "") -> float:
+    if road_side:
+        profile = context.surface_profile(road_ref, station)
+        if profile is not None and profile.fg:
+            return float(profile.edge(road_side)[1])
     value = context.finished_grade_z(road_ref, station)
     return float(value) if value is not None else 0.0
 
@@ -264,15 +317,17 @@ def _arc(center, start, end) -> tuple[tuple[float, float, float], ...]:
     return tuple(points)
 
 
-def _boundary(resolved, context, fillets, mouth_distance) -> list[tuple[float, float, float]]:
+def _boundary(resolved, context, fillets, mouth_distance, diagnostics) -> list[BoundaryVertex]:
     """K3: walk the legs counter-clockwise, out along each right edge, across the mouth, back along
     the left edge, then round the corner to the next leg. A `none` corner adds nothing: the two
-    edge pieces meet at the anchor station on the same edge line."""
+    edge pieces meet at the anchor station on the same edge line. The mouth is crossed through
+    every finished grade point of the road's cut there, so the patch meets the corridor surface
+    point for point."""
 
     enabled = resolved.enabled_legs()
     corners = {corner.from_leg_id: corner for corner in resolved.corners}
     incoming = {corner.to_leg_id: corner for corner in resolved.corners}
-    points: list[tuple[float, float, float]] = []
+    vertices: list[BoundaryVertex] = []
     for leg in enabled:
         before, after = incoming.get(leg.leg_id), corners.get(leg.leg_id)
         inner_right = fillets[before.corner_key].to_distance if before is not None and before.corner_key in fillets else 0.0
@@ -280,20 +335,51 @@ def _boundary(resolved, context, fillets, mouth_distance) -> list[tuple[float, f
         mouth = mouth_distance[leg.leg_id]
         right_side, left_side = _road_side(leg, "right"), _road_side(leg, "left")
         for distance in _leg_distances(resolved, context, leg, inner_right, mouth):
-            _append(points, _edge_xyz(context, leg.road_ref, _station(resolved, leg, distance), right_side))
+            station = _station(resolved, leg, distance)
+            _append(vertices, _edge_xyz(context, leg.road_ref, station, right_side), "edge", leg.road_ref, station, right_side)
+        for vertex in _mouth_cut(context, leg, _station(resolved, leg, mouth), diagnostics):
+            _append(vertices, vertex.xyz, vertex.kind, vertex.road_ref, vertex.station, vertex.road_side)
         for distance in reversed(_leg_distances(resolved, context, leg, inner_left, mouth)):
-            _append(points, _edge_xyz(context, leg.road_ref, _station(resolved, leg, distance), left_side))
+            station = _station(resolved, leg, distance)
+            _append(vertices, _edge_xyz(context, leg.road_ref, station, left_side), "edge", leg.road_ref, station, left_side)
         if after is not None and after.corner_key in fillets:
-            for point in fillets[after.corner_key].arc_xyz[1:-1]:
-                _append(points, point)
-    if len(points) > 1 and _same_xy(points[0], points[-1]):
-        points.pop()
-    return points
+            arc = fillets[after.corner_key].arc_xyz
+            for index in range(1, len(arc) - 1):
+                _append(vertices, arc[index], "arc", corner_key=after.corner_key, arc_ratio=index / (len(arc) - 1))
+    if len(vertices) > 1 and _same_xy(vertices[0].xyz, vertices[-1].xyz):
+        vertices.pop()
+    return vertices
 
 
-def _append(points: list, point) -> None:
-    if point is not None and not (points and _same_xy(points[-1], point)):
-        points.append(point)
+def _mouth_cut(context, leg: ResolvedLeg, station: float, diagnostics) -> list[BoundaryVertex]:
+    """The finished grade points strictly between the two pavement edges at a leg's mouth, from the
+    leg's right edge to its left edge."""
+
+    profile = context.surface_profile(leg.road_ref, station)
+    if profile is None or len(profile.fg) < 3:
+        return []
+    if not profile.exact:
+        diagnostics.append(
+            KernelDiagnostic(
+                "mouth_section_points_do_not_pair", "warning", leg.leg_id, station,
+                "the Applied Sections either side of the mouth have different points; the nearer one is used", "fallback",
+            )
+        )
+    interior = list(profile.fg[1:-1])
+    if leg.side == "back":
+        interior.reverse()
+    x, y = context.point_xy(leg.road_ref, station)
+    normal = left_normal(context.tangent_xy(leg.road_ref, station))
+    return [
+        BoundaryVertex((x + normal[0] * offset, y + normal[1] * offset, z), "mouth", leg.road_ref, station)
+        for offset, z in interior
+    ]
+
+
+def _append(vertices: list, xyz, kind: str, road_ref: str = "", station: float = 0.0, road_side: str = "", *, corner_key: str = "", arc_ratio: float = 0.0) -> None:
+    if xyz is None or (vertices and _same_xy(vertices[-1].xyz, xyz)):
+        return
+    vertices.append(BoundaryVertex(tuple(xyz), kind, road_ref, station, road_side, corner_key, arc_ratio))
 
 
 def _same_xy(a, b) -> bool:
@@ -325,3 +411,9 @@ def _first_self_crossing(points) -> tuple[int, int] | None:
                 continue
             return i, j
     return None
+
+
+# public names for the later kernel stages
+leg_distances = _leg_distances
+station_on_leg = _station
+road_side_of_leg = _road_side
