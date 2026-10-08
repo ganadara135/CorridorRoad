@@ -25,6 +25,7 @@ from ..models.source.intersection_model import (
     IntersectionRow,
     IntersectionSlopeFacePolicyRow,
 )
+from ..models.source.intersection_spec import IntersectionSpec, intersection_spec_from_dict, intersection_spec_to_dict
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
@@ -86,6 +87,8 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "DrainagePolicyRowsJson", "Intersections", "intersection drainage policy rows")
     _add_property(obj, "App::PropertyStringList", "ControlRegionRefs", "Intersections", "linked control region refs")
     _ensure_geometry_engine_property(obj)
+    # the parametric spec (plan phase R7b); empty: the spec is read from the rows
+    _add_property(obj, "App::PropertyString", "SpecJson", "Intersections", "parametric intersection spec")
     _add_property(obj, "App::PropertyInteger", "AnchorCount", "Summary", "anchor row count")
     _add_property(obj, "App::PropertyInteger", "IntersectionCount", "Summary", "intersection row count")
     _add_property(obj, "App::PropertyInteger", "ControlAreaCount", "Summary", "control area row count")
@@ -570,6 +573,32 @@ def _is_v1_intersection_model(obj) -> bool:
 
 
 INTERSECTION_GEOMETRY_ENGINES = ("legacy", "kernel")
+
+
+def stored_intersection_spec(obj) -> IntersectionSpec | None:
+    """The parametric spec stored on the object, or None when none is stored or it does not read.
+
+    None sends the caller back to the spec read from the rows (`spec_from_intersection_model`).
+    """
+
+    text = str(getattr(obj, "SpecJson", "") or "").strip()
+    if not text:
+        return None
+    try:
+        return intersection_spec_from_dict(json.loads(text))
+    except (ValueError, TypeError, KeyError):
+        return None
+
+
+def store_intersection_spec(obj, spec: IntersectionSpec | None) -> None:
+    """Write the spec to the object (None clears it, so the rows speak again)."""
+
+    ensure_v1_intersection_properties(obj)
+    obj.SpecJson = "" if spec is None else json.dumps(intersection_spec_to_dict(spec), sort_keys=True)
+    try:
+        obj.touch()
+    except Exception:
+        pass
 
 
 def _ensure_geometry_engine_property(obj) -> None:

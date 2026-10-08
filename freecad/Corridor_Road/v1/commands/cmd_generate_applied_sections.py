@@ -40,7 +40,12 @@ from ..objects.obj_subassembly_assembly import (
 from ..objects.obj_subassembly_library import list_v1_subassembly_libraries, to_subassembly_library
 from ..objects.obj_subassembly_preset_library import list_v1_subassembly_preset_libraries, to_subassembly_preset_library
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
-from ..objects.obj_intersection import find_v1_intersection_model, intersection_geometry_engine, to_intersection_model
+from ..objects.obj_intersection import (
+    find_v1_intersection_model,
+    intersection_geometry_engine,
+    stored_intersection_spec,
+    to_intersection_model,
+)
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
@@ -117,6 +122,7 @@ def build_document_applied_section_set(
         to_intersection_model(intersection_obj),
         [model for model in (to_alignment_model(obj) for obj in list(getattr(doc, "Objects", []) or [])) if model is not None],
         first,
+        spec=stored_intersection_spec(intersection_obj),
     )
     stations = kernel_mouth_stations(result)
     if not missing_mouth_stations(first, stations):

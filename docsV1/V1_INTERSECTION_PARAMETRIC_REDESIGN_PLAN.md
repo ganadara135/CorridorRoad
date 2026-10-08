@@ -399,10 +399,10 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R5 | K4 to K6 (heights, patch TIN, side slope) in the kernel, still shadow | unfilled arcs, skinny triangles and the clip span measured on the kernel output (done, §8) |
 | R6 | roundabout in the kernel | roundabout shadow `agree` or explained (done, §8) |
 | R7a | the kernel engine, selectable per intersection (`GeometryEngine` = `kernel`), default `legacy`: mouth sections in Applied Sections, corridor clipped by station span, kernel patch and side slope as the intersection surfaces | full gate; the user's GUI comparison of both engines (done, §8, GUI pending) |
-| R7b | the spec becomes the stored source (`SpecJson` on the Intersection object) and the panel edits it | full gate and GUI |
+| R7b | the spec becomes the stored source (`SpecJson` on the Intersection object) and the panel edits it | full gate and GUI (done, §8, GUI pending) |
 | R7c | the default becomes `kernel`; the legacy pipeline, its lane connection, edge policy and surface zone rows, the services only they feed, and their tests are deleted (D2) | full gate and GUI manual QA |
 
-R1 to R7a are implemented. R7 is split because the switch and the deletion cannot be one step:
+R1 to R7b are implemented. R7 is split because the switch and the deletion cannot be one step:
 the legacy previews carry 341 metadata properties that the review rows, the 78 command tests and
 the regression smokes read, so replacing them breaks all of that at once. R7a puts the kernel
 engine next to the legacy one, selectable per intersection, so the two can be compared in the GUI on
@@ -558,8 +558,61 @@ engine is set on the second. `GeometryEngine` is a drop-down since then.
    curb returns and along a T's closed side, and the roundabout's flares; and at the Results tab rows.
 5. Set it back to `legacy` and rebuild: the legacy result returns.
 
-### Next: R7b
+### R7b, 2026-10-08
 
-The spec becomes the stored source: `SpecJson` on the Intersection object, written from the current
-rows once and then edited by the panel; the panel's kind, roads, anchor, radius, grading mode,
-roundabout ring and per-approach flare fields write it. Then R7c.
+**Stored source.** `SpecJson` on the Intersection object holds the `IntersectionSpec`
+(`intersection_spec_to_dict` / `intersection_spec_from_dict`). Creating an intersection from a preset
+or from existing Alignments writes it, read from the rows just created. With the kernel engine the
+two-pass Applied Sections and Build Parametric take the stored spec; a document without one (or with
+one that does not read) falls back to the spec read from the rows. The legacy engine still reads the
+rows until R7c.
+
+**Panel.** The Intersection panel has a Parametric Spec group:
+
+| Field | Spec |
+| --- | --- |
+| Geometry Engine | the object's `GeometryEngine` |
+| Kind, Primary Road, Secondary Road | `kind`, `road_refs` |
+| Anchor (detected / manual), Primary / Secondary Station | `anchor` |
+| Corner Radius (0 = default) | `corner_radius_m` |
+| Grading Mode ((default) = constant) | `grading_mode` |
+| Roundabout Ring: inscribed radius, circulatory width, outer apron, entry / exit radius (0 = default), circulation | `roundabout` |
+| Legs table: open, entry R, exit R | `leg_overrides`; a row that changes nothing is not stored |
+
+`Load Spec` reads the stored spec, or the rows' one; `Check Spec` runs the kernel on the form with
+the current Applied Sections and lists the legs with their mouth stations, the corners, every value
+with its origin (`spec`, `override`, `constant`, `derived:...`), the quality figures and the
+diagnostics, and fills the legs table; `Apply Spec` stores the spec and the engine. Corner overrides
+and the anchor search hint are not shown and are kept as loaded. The form logic is widget-free
+(`services/editing/intersection_spec_editing_service.py`).
+
+Measured (`test_intersection_spec_editing.py`): a spec survives its JSON round trip and the form's;
+the form names what is wrong (one road twice, a negative radius, a circulatory width that leaves no
+island); a newly created T stores the spec its rows give; with the kernel, storing a 15 m radius moves
+the main road's mouth sections from 103 / 137 to 100 / 140; the panel loads, checks (3 legs, `ready`,
+`corner_radius_m ... (spec)`), applies and closes a leg.
+
+Validation at R7b: flake8 clean on the touched files, architecture 9 passed, R7b 7 contract tests,
+all three smoke runners PASS, full contract suite (command chunk included) 1,552 passed / 18
+skipped / 0 failed. No GUI check was run.
+
+#### GUI check for R7b
+
+1. New document, Intersection panel, Preset `T Intersection - Basic`, Create Sources, Accept Reviewed
+   Rows; Applied Sections, Build Sections.
+2. In the panel's Parametric Spec group press Load Spec: Kind `t`, both roads, Corner Radius 12.
+3. Press Check Spec: the status lists 3 legs with mouth stations 137, 103 and 83, `corner_radius_m ...
+   = 12.000 (spec)`, and the legs table fills.
+4. Set Corner Radius 15 and Geometry Engine `kernel`, press Apply Spec; run Build Sections and Build
+   Parametric: the curb returns are larger and the mouths move to 100 / 140 and 80.
+5. Untick the side road's leg in the table, Apply Spec, Check Spec: the kernel blocks, with
+   `intersection_leg_count` and `leg_mouth_without_corner` (a T without its side road has no corner
+   to end the main road's legs at). Tick it again and Apply. On a Cross, closing one leg gives
+   `partial` with `intersection_leg_count` and still builds.
+6. Save, close and reopen: Load Spec shows the 15 m radius.
+
+### Next: R7c
+
+The default becomes `kernel`; the legacy pipeline, the lane connection, edge policy and surface zone
+rows (D2), the services only they feed, the shadow comparison and their tests are deleted; the panel's
+row review gives way to the spec group.

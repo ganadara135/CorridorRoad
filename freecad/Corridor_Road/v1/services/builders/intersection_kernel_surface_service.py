@@ -26,10 +26,14 @@ from .intersection_kernel_context_service import road_context_from_models, spec_
 _STATION_TOLERANCE_M = 1.0e-6
 
 
-def intersection_geometry_from_models(intersection_model, alignment_models, applied_section_set) -> IntersectionGeometryResult | None:
-    """The kernel result for the document's first intersection, or None when it has none."""
+def intersection_geometry_from_models(intersection_model, alignment_models, applied_section_set, *, spec=None) -> IntersectionGeometryResult | None:
+    """The kernel result for the document's intersection, or None when it has none.
 
-    spec = spec_from_intersection_model(intersection_model)
+    `spec` is the stored parametric spec (plan phase R7b); without one, the spec is read from the
+    intersection rows.
+    """
+
+    spec = spec or spec_from_intersection_model(intersection_model)
     if spec is None:
         return None
     wanted = set(spec.road_refs)

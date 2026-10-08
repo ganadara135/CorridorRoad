@@ -31,7 +31,12 @@ from ..objects.obj_applied_section import find_v1_applied_section_set, to_applie
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model, to_corridor_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_exchange_package import create_or_update_v1_exchange_package_object, find_v1_exchange_package
-from ..objects.obj_intersection import find_v1_intersection_model, intersection_geometry_engine, to_intersection_model
+from ..objects.obj_intersection import (
+    find_v1_intersection_model,
+    intersection_geometry_engine,
+    stored_intersection_spec,
+    to_intersection_model,
+)
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import create_or_update_v1_surface_model_object, find_v1_surface_model, to_surface_model
@@ -6066,10 +6071,12 @@ def _intersection_engine_is_kernel(document) -> bool:
 def _intersection_kernel_result(document, applied_section_set):
     """The kernel's result on the document's intersection, Alignments and Applied Sections."""
 
+    intersection_obj = find_v1_intersection_model(document)
     return intersection_geometry_from_models(
-        to_intersection_model(find_v1_intersection_model(document)),
+        to_intersection_model(intersection_obj),
         [model for model in (to_alignment_model(obj) for obj in list(getattr(document, "Objects", []) or [])) if model is not None],
         applied_section_set,
+        spec=stored_intersection_spec(intersection_obj),
     )
 
 

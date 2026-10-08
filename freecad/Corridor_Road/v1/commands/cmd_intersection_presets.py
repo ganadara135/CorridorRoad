@@ -41,10 +41,30 @@ from ..services.editing import (
     intersection_review_summary,
 )
 from ..objects.obj_intersection import (
+    INTERSECTION_GEOMETRY_ENGINES,
     create_or_update_v1_intersection_model_object,
     find_v1_intersection_model,
+    intersection_geometry_engine,
+    store_intersection_spec,
+    stored_intersection_spec,
     to_intersection_model,
 )
+from ..objects.obj_alignment import to_alignment_model
+from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
+from ..services.builders.intersection_kernel_context_service import spec_from_intersection_model
+from ..services.builders.intersection_kernel_surface_service import intersection_geometry_from_models
+from ..services.editing.intersection_spec_editing_service import (
+    SPEC_ANCHOR_METHODS,
+    SPEC_CIRCULATIONS,
+    SPEC_GRADING_MODES,
+    IntersectionSpecForm,
+    LegFormRow,
+    form_from_spec,
+    leg_rows_for_result,
+    spec_check_lines,
+    spec_from_form,
+)
+from ..models.source.intersection_spec import INTERSECTION_SPEC_KINDS
 from ..objects.obj_region import create_or_update_v1_region_model_object, to_region_model
 from ..objects.obj_superelevation import create_or_update_v1_superelevation_source_object, to_superelevation_model
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
@@ -236,6 +256,8 @@ class V1IntersectionPresetsTaskPanel:
         self._capability_note = QtWidgets.QLabel("")
         self._capability_note.setWordWrap(True)
         layout.addWidget(self._capability_note)
+
+        layout.addWidget(self._build_spec_group())
 
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
@@ -550,6 +572,224 @@ class V1IntersectionPresetsTaskPanel:
     def _show_preset_sources(self):
         count = _set_intersection_preset_sources_visible(self.document, visible=True)
         self._update_status(f"Preset source objects shown: {count}.")
+
+    # -- parametric spec (plan phase R7b) ---------------------------------------------------
+
+    def _build_spec_group(self):
+        """The parametric spec of the document's intersection, edited directly.
+
+        Load Spec reads the stored spec (or the one the rows give); Check Spec runs the kernel on it
+        with the current Applied Sections and lists every value with its origin; Apply Spec stores it
+        and the engine choice. A radius or width of 0 means the kernel's default.
+        """
+
+        group = QtWidgets.QGroupBox("Parametric Spec (kernel engine)")
+        outer = QtWidgets.QVBoxLayout(group)
+        form = QtWidgets.QFormLayout()
+
+        self._spec_engine_combo = QtWidgets.QComboBox()
+        for value in INTERSECTION_GEOMETRY_ENGINES:
+            self._spec_engine_combo.addItem(value, value)
+        form.addRow("Geometry Engine:", self._spec_engine_combo)
+
+        self._spec_kind_combo = QtWidgets.QComboBox()
+        for value in INTERSECTION_SPEC_KINDS:
+            self._spec_kind_combo.addItem(value, value)
+        self._spec_kind_combo.currentIndexChanged.connect(self._update_spec_kind_controls)
+        form.addRow("Kind:", self._spec_kind_combo)
+
+        self._spec_primary_combo = QtWidgets.QComboBox()
+        self._spec_secondary_combo = QtWidgets.QComboBox()
+        _populate_alignment_combo(self._spec_primary_combo, self._alignment_choices)
+        _populate_alignment_combo(self._spec_secondary_combo, self._alignment_choices)
+        form.addRow("Primary Road:", self._spec_primary_combo)
+        form.addRow("Secondary Road:", self._spec_secondary_combo)
+
+        self._spec_anchor_combo = QtWidgets.QComboBox()
+        for value in SPEC_ANCHOR_METHODS:
+            self._spec_anchor_combo.addItem(value, value)
+        self._spec_anchor_combo.currentIndexChanged.connect(self._update_spec_kind_controls)
+        form.addRow("Anchor:", self._spec_anchor_combo)
+        self._spec_primary_station = _spec_spin(0.0, 1.0e7, " m")
+        self._spec_secondary_station = _spec_spin(0.0, 1.0e7, " m")
+        form.addRow("Primary Station:", self._spec_primary_station)
+        form.addRow("Secondary Station:", self._spec_secondary_station)
+
+        self._spec_corner_radius = _spec_spin(0.0, 500.0, " m")
+        form.addRow("Corner Radius (0 = default):", self._spec_corner_radius)
+        self._spec_grading_combo = QtWidgets.QComboBox()
+        for value in SPEC_GRADING_MODES:
+            self._spec_grading_combo.addItem(value or "(default)", value)
+        form.addRow("Grading Mode:", self._spec_grading_combo)
+        outer.addLayout(form)
+
+        self._spec_ring_group = QtWidgets.QGroupBox("Roundabout Ring")
+        ring = QtWidgets.QFormLayout(self._spec_ring_group)
+        self._spec_inscribed = _spec_spin(0.0, 500.0, " m")
+        self._spec_circulatory = _spec_spin(0.0, 500.0, " m")
+        self._spec_apron = _spec_spin(0.0, 100.0, " m")
+        self._spec_entry = _spec_spin(0.0, 500.0, " m")
+        self._spec_exit = _spec_spin(0.0, 500.0, " m")
+        self._spec_circulation_combo = QtWidgets.QComboBox()
+        for value in SPEC_CIRCULATIONS:
+            self._spec_circulation_combo.addItem(value, value)
+        ring.addRow("Inscribed Radius:", self._spec_inscribed)
+        ring.addRow("Circulatory Width:", self._spec_circulatory)
+        ring.addRow("Outer Apron Width:", self._spec_apron)
+        ring.addRow("Entry Radius (0 = default):", self._spec_entry)
+        ring.addRow("Exit Radius (0 = default):", self._spec_exit)
+        ring.addRow("Circulation:", self._spec_circulation_combo)
+        outer.addWidget(self._spec_ring_group)
+
+        outer.addWidget(QtWidgets.QLabel("Legs (Check Spec lists them; untick to close one, radii for a roundabout approach):"))
+        self._spec_leg_table = QtWidgets.QTableWidget(0, 5)
+        self._spec_leg_table.setHorizontalHeaderLabels(["Road", "Side", "Open", "Entry R", "Exit R"])
+        self._spec_leg_table.setMinimumHeight(110)
+        outer.addWidget(self._spec_leg_table)
+
+        buttons = QtWidgets.QHBoxLayout()
+        self._spec_load_button = QtWidgets.QPushButton("Load Spec")
+        self._spec_load_button.clicked.connect(self._load_spec)
+        buttons.addWidget(self._spec_load_button)
+        self._spec_check_button = QtWidgets.QPushButton("Check Spec")
+        self._spec_check_button.clicked.connect(self._check_spec)
+        buttons.addWidget(self._spec_check_button)
+        self._spec_apply_button = QtWidgets.QPushButton("Apply Spec")
+        self._spec_apply_button.clicked.connect(self._apply_spec)
+        buttons.addWidget(self._spec_apply_button)
+        buttons.addStretch(1)
+        outer.addLayout(buttons)
+        self._spec_base = None
+        self._update_spec_kind_controls()
+        return group
+
+    def _update_spec_kind_controls(self, *args) -> None:
+        self._spec_ring_group.setVisible(_combo_data_or_text(self._spec_kind_combo) == "roundabout")
+        manual = _combo_data_or_text(self._spec_anchor_combo) == "manual"
+        self._spec_primary_station.setEnabled(manual)
+        self._spec_secondary_station.setEnabled(manual)
+
+    def _spec_form(self) -> IntersectionSpecForm:
+        legs = []
+        for row in range(self._spec_leg_table.rowCount()):
+            def text(column, row=row):
+                item = self._spec_leg_table.item(row, column)
+                return item.text() if item is not None else ""
+            open_item = self._spec_leg_table.item(row, 2)
+            legs.append(
+                LegFormRow(
+                    text(0),
+                    text(1),
+                    open_item is None or open_item.checkState() == _checked(),
+                    _float_text(text(3)),
+                    _float_text(text(4)),
+                )
+            )
+        return IntersectionSpecForm(
+            intersection_id=str(getattr(self._spec_base, "intersection_id", "") or ""),
+            kind=_combo_data_or_text(self._spec_kind_combo),
+            primary_road=_combo_data_or_text(self._spec_primary_combo),
+            secondary_road=_combo_data_or_text(self._spec_secondary_combo),
+            anchor_method=_combo_data_or_text(self._spec_anchor_combo),
+            primary_station=float(self._spec_primary_station.value()),
+            secondary_station=float(self._spec_secondary_station.value()),
+            corner_radius_m=float(self._spec_corner_radius.value()),
+            grading_mode=str(self._spec_grading_combo.currentData() or ""),
+            inscribed_radius_m=float(self._spec_inscribed.value()),
+            circulatory_width_m=float(self._spec_circulatory.value()),
+            apron_width_m=float(self._spec_apron.value()),
+            entry_radius_m=float(self._spec_entry.value()),
+            exit_radius_m=float(self._spec_exit.value()),
+            circulation=_combo_data_or_text(self._spec_circulation_combo),
+            leg_rows=legs,
+        )
+
+    def _fill_spec_widgets(self, form: IntersectionSpecForm, engine: str) -> None:
+        _select_combo_data(self._spec_engine_combo, engine)
+        _select_combo_data(self._spec_kind_combo, form.kind)
+        _select_combo_data(self._spec_primary_combo, form.primary_road)
+        _select_combo_data(self._spec_secondary_combo, form.secondary_road)
+        _select_combo_data(self._spec_anchor_combo, form.anchor_method)
+        self._spec_primary_station.setValue(form.primary_station)
+        self._spec_secondary_station.setValue(form.secondary_station)
+        self._spec_corner_radius.setValue(form.corner_radius_m)
+        _select_combo_data(self._spec_grading_combo, form.grading_mode)
+        self._spec_inscribed.setValue(form.inscribed_radius_m)
+        self._spec_circulatory.setValue(form.circulatory_width_m)
+        self._spec_apron.setValue(form.apron_width_m)
+        self._spec_entry.setValue(form.entry_radius_m)
+        self._spec_exit.setValue(form.exit_radius_m)
+        _select_combo_data(self._spec_circulation_combo, form.circulation)
+        self._fill_spec_leg_table(form.leg_rows)
+        self._update_spec_kind_controls()
+
+    def _fill_spec_leg_table(self, rows: list[LegFormRow]) -> None:
+        self._spec_leg_table.setRowCount(len(rows))
+        for index, row in enumerate(rows):
+            for column, value in enumerate((row.road_ref, row.side)):
+                item = QtWidgets.QTableWidgetItem(value)
+                item.setFlags(item.flags() & ~_editable_flag())
+                self._spec_leg_table.setItem(index, column, item)
+            open_item = QtWidgets.QTableWidgetItem("")
+            open_item.setFlags(open_item.flags() | _checkable_flag())
+            open_item.setCheckState(_checked() if row.enabled else _unchecked())
+            self._spec_leg_table.setItem(index, 2, open_item)
+            self._spec_leg_table.setItem(index, 3, QtWidgets.QTableWidgetItem(f"{row.entry_radius_m:g}"))
+            self._spec_leg_table.setItem(index, 4, QtWidgets.QTableWidgetItem(f"{row.exit_radius_m:g}"))
+
+    def _load_spec(self) -> bool:
+        obj = find_v1_intersection_model(self.document)
+        if obj is None:
+            self._status.setPlainText("No Intersection source in this document. Create one from a preset or from existing Alignments first.")
+            return False
+        self._refresh_alignment_choices()
+        _populate_alignment_combo(self._spec_primary_combo, self._alignment_choices)
+        _populate_alignment_combo(self._spec_secondary_combo, self._alignment_choices)
+        spec = stored_intersection_spec(obj)
+        origin = "stored spec"
+        if spec is None:
+            spec = spec_from_intersection_model(to_intersection_model(obj))
+            origin = "spec read from the intersection rows (not stored yet)"
+        if spec is None:
+            self._status.setPlainText("The Intersection source holds no intersection row.")
+            return False
+        self._spec_base = spec
+        self._fill_spec_widgets(form_from_spec(spec), intersection_geometry_engine(obj))
+        self._status.setPlainText(f"Loaded the {origin}: {spec.intersection_id}.")
+        return True
+
+    def _check_spec(self):
+        spec, errors = spec_from_form(self._spec_form(), base=self._spec_base)
+        if spec is None:
+            self._status.setPlainText("The spec is not complete:\n" + "\n".join(errors))
+            return None
+        applied = to_applied_section_set(find_v1_applied_section_set(self.document))
+        if applied is None:
+            self._status.setPlainText("Run Applied Sections first: the kernel takes the roads' pavement widths from them.")
+            return None
+        alignments = [model for model in (to_alignment_model(obj) for obj in list(getattr(self.document, "Objects", []) or [])) if model is not None]
+        result = intersection_geometry_from_models(to_intersection_model(find_v1_intersection_model(self.document)), alignments, applied, spec=spec)
+        self._fill_spec_leg_table(leg_rows_for_result(result, self._spec_form()))
+        self._status.setPlainText("\n".join(spec_check_lines(result)))
+        return result
+
+    def _apply_spec(self) -> bool:
+        obj = find_v1_intersection_model(self.document)
+        if obj is None:
+            self._status.setPlainText("No Intersection source in this document.")
+            return False
+        spec, errors = spec_from_form(self._spec_form(), base=self._spec_base)
+        if spec is None:
+            self._status.setPlainText("The spec was not stored:\n" + "\n".join(errors))
+            return False
+        store_intersection_spec(obj, spec)
+        obj.GeometryEngine = _combo_data_or_text(self._spec_engine_combo)
+        self._spec_base = spec
+        self._status.setPlainText(
+            f"Stored the spec of {spec.intersection_id}; engine {intersection_geometry_engine(obj)}.\n"
+            "Next: Applied Sections (Build Sections), then Build Parametric."
+        )
+        return True
 
     def _update_status(self, *args, prefix: str = ""):
         if args and not prefix and isinstance(args[0], str):
@@ -883,6 +1123,7 @@ def create_intersection_from_existing_alignments(
         project=project,
         label="Intersections",
     )
+    store_intersection_spec(obj, spec_from_intersection_model(model))
     kind = intersection_preset_kind_from_label(preset_label)
     control_regions = list_intersection_control_region_choices(document, intersection_ref_for_kind(kind))
     detail_lines.extend(
@@ -1207,6 +1448,7 @@ def _create_preset_intersection_model(
         project=project,
         label="Intersections",
     )
+    store_intersection_spec(obj, spec_from_intersection_model(model))
     details = [
         f"IntersectionModel: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {getattr(obj, 'IntersectionModelId', '')}",
         f"IntersectionModel refs: primary={primary_ref}; secondary={secondary_ref}; control_regions={len(control_regions)}",
@@ -1950,6 +2192,52 @@ def _safe_id(value: str) -> str:
 
 def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
+
+
+def _spec_spin(minimum: float, maximum: float, suffix: str):
+    spin = QtWidgets.QDoubleSpinBox()
+    spin.setRange(minimum, maximum)
+    spin.setDecimals(3)
+    spin.setSuffix(suffix)
+    return spin
+
+
+def _select_combo_data(combo, value: str) -> None:
+    index = combo.findData(value)
+    if index < 0:
+        index = combo.findText(str(value or ""))
+    if index >= 0:
+        combo.setCurrentIndex(index)
+
+
+def _float_text(text: str) -> float:
+    try:
+        return float(str(text or "0").strip() or 0.0)
+    except ValueError:
+        return -1.0
+
+
+def _qt_flag(group: str, name: str):
+    from freecad.Corridor_Road.qt_compat import QtCore
+
+    holder = getattr(QtCore.Qt, group, QtCore.Qt)
+    return getattr(holder, name, getattr(QtCore.Qt, name))
+
+
+def _checked():
+    return _qt_flag("CheckState", "Checked")
+
+
+def _unchecked():
+    return _qt_flag("CheckState", "Unchecked")
+
+
+def _editable_flag():
+    return _qt_flag("ItemFlag", "ItemIsEditable")
+
+
+def _checkable_flag():
+    return _qt_flag("ItemFlag", "ItemIsUserCheckable")
 
 
 def _populate_alignment_combo(combo, choices: list[tuple[str, str]]) -> None:

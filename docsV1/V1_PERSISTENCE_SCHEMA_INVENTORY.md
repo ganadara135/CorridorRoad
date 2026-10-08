@@ -113,6 +113,14 @@ anything else as `legacy`. The kernel-built previews carry `IntersectionGeometry
 `IntersectionKernelStatus`, `IntersectionKernelFingerprint` and four `IntersectionKernel*Rows`
 string lists; they are result metadata and are rebuilt on every Build Parametric.
 
+`SpecJson` was added to the Intersection object on 2026-10-08 (phase R7b): the parametric
+`IntersectionSpec` as JSON, schema version 1, written by `intersection_spec_to_dict` and read by
+`intersection_spec_from_dict` (`models/source/intersection_spec.py`). It is design intent: with the
+kernel engine it, not the rows, decides the geometry. It is written when an intersection is created
+from a preset or from existing Alignments, and by the panel's Apply Spec. Empty, or text that does
+not read as a spec, falls back to the spec read from the rows (`spec_from_intersection_model`), which
+is how a document from before the property builds; nothing is written until Apply Spec.
+
 ## Output Compatibility
 
 Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packaged output ids together with chunk-safe JSON payloads. Existing FreeCAD save/reopen coverage verifies large output payload and traceability survival. This Phase does not expand exchange formats.
