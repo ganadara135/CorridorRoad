@@ -398,9 +398,15 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R4 | shadow comparison in Build Parametric | starter T and Cross report their difference; full gate green |
 | R5 | K4 to K6 (heights, patch TIN, side slope) in the kernel, still shadow | unfilled arcs, skinny triangles and the clip span measured on the kernel output (done, §8) |
 | R6 | roundabout in the kernel | roundabout shadow `agree` or explained (done, §8) |
-| R7 | switch: Build Parametric consumes the kernel; the spec becomes the stored source (`SpecJson`); the panel edits the spec; lane connection, edge policy and surface zone rows and the services only they feed are deleted (D2) | full gate and GUI manual QA |
+| R7a | the kernel engine, selectable per intersection (`GeometryEngine` = `kernel`), default `legacy`: mouth sections in Applied Sections, corridor clipped by station span, kernel patch and side slope as the intersection surfaces | full gate; the user's GUI comparison of both engines (done, §8, GUI pending) |
+| R7b | the spec becomes the stored source (`SpecJson` on the Intersection object) and the panel edits it | full gate and GUI |
+| R7c | the default becomes `kernel`; the legacy pipeline, its lane connection, edge policy and surface zone rows, the services only they feed, and their tests are deleted (D2) | full gate and GUI manual QA |
 
-R1 to R6 are implemented. R7 starts from the measurements §8 records.
+R1 to R7a are implemented. R7 is split because the switch and the deletion cannot be one step:
+the legacy previews carry 341 metadata properties that the review rows, the 78 command tests and
+the regression smokes read, so replacing them breaks all of that at once. R7a puts the kernel
+engine next to the legacy one, selectable per intersection, so the two can be compared in the GUI on
+the same document before R7c deletes the legacy one.
 
 ## 8. Shadow measurements
 
@@ -498,10 +504,62 @@ roundabout 8 + shadow 7 contract tests, `test_intersection_command.py` 78 passed
 runners PASS, full contract suite (without the command chunk) 1,449 passed / 18 skipped / 0 failed.
 No GUI check was run.
 
-### Next: R7
+### R7a, 2026-10-08
 
-The switch. Build Parametric consumes the kernel result instead of the evaluation chain; the spec
-becomes the stored source (`SpecJson` on the `IntersectionModel` object) and the panel edits it;
-the lane connection, edge policy and surface zone rows go, with the services only they feed (D2).
-It is the first phase that changes what a user sees, so it needs the GUI pass the earlier phases
-did not.
+`GeometryEngine = "kernel"` on the Intersection object (empty or `legacy`: unchanged behaviour)
+changes Build Parametric in four places, all driven by the one kernel result:
+
+| Step | Legacy | Kernel |
+| --- | --- | --- |
+| Applied Sections | intersection supplemental stations from control areas, curb return contacts, centre +- radius | first pass without them; the kernel's leg mouth stations; a second pass only if a mouth has no section yet |
+| corridor design / slope / subgrade surfaces | tie-in sections added; exclusion polygon clip; roundabout ownership clip; daylight suppressed, trimmed and patched against the intersection surfaces | each road's triangles between its two mouths removed, read from the vertices' Applied Section; nothing else |
+| intersection surfaces | patch build, slope face loops, tie slope, roundabout apron / subgrade / slope face | the kernel's patch (`V1CorridorIntersectionSurfacePreview`) and side slope (`V1CorridorIntersectionSlopeFaceSurfacePreview`) |
+| review rows | readiness, tie-in continuity, grading, drainage handoff gate, roundabout rows | one row per kernel surface: status, triangles, minimum quality, skinny count, diagnostics |
+
+Measured on the starter presets (`test_intersection_kernel_engine.py`):
+
+- every mouth has an Applied Section (T 3, Cross 4, roundabout 4 intersection supplemental rows);
+- no design, slope or (roundabout) subgrade triangle lies inside the kernel boundary;
+- at every mouth the corridor's design surface has the kernel's edge vertices at the same height,
+  and the slope surfaces share their daylight points: the joins are vertex for vertex;
+- the full build reports `ready` for design, subgrade, slope, intersection and intersection slope
+  surfaces, none skinny; a roundabout's subgrade ownership check finds 0 intruding triangles;
+- a kernel document saves and reopens with its engine and surfaces;
+- full Build Parametric with every preview: T 2.6 s, roundabout 3.6 s.
+
+Not built by the kernel yet, and so absent in kernel mode: an intersection subgrade surface (a
+T's and a Cross's subgrade overlapped under the legacy engine too), the drainage handoff gate row
+(K7's drainage candidates), the shared breakline audit of the intersection.
+
+Validation at R7a: flake8 clean on the new and changed lines (three unused variables in
+`cmd_generate_applied_sections.py` predate this change), architecture 9 passed, kernel engine 17
+contract tests, `test_intersection_command.py` 78 passed, all three smoke runners PASS, full
+contract suite (without the command chunk) 1,466 passed / 18 skipped / 0 failed. No GUI check
+was run.
+
+#### GUI check for R7a
+
+**T, 2026-10-08, done by the user.** Legacy first, then `GeometryEngine = kernel` on the same
+document, with captures of the whole intersection, the design surface and the slope surface. With
+the kernel the design surface ends in straight cuts at the three mouths; the side slope runs as one
+strip along the closed side, joined to the roads' slopes at both ends, and round both curb returns
+into the side road's slope; the wedge-shaped gap beside the side road and the partial curb return
+slope of the legacy capture are gone. The Cross and the roundabout are still to be checked.
+
+Found on the way: the tree has two objects labelled `Intersections`, the result folder under
+`04_Parametric Model` and, inside it, the Intersection source object (`Intersections001`); the
+engine is set on the second. `GeometryEngine` is a drop-down since then.
+
+1. Create a T, a Cross and a Roundabout from the Intersection presets, accept the reviewed rows.
+2. Run Applied Sections and Build Parametric: the legacy result.
+3. Select the Intersection object, set the property `GeometryEngine` (group Intersections) to
+   `kernel`, run Applied Sections and Build Parametric again.
+4. Look at the joins at the curb return tangent points and the mouths, the side slope round the
+   curb returns and along a T's closed side, and the roundabout's flares; and at the Results tab rows.
+5. Set it back to `legacy` and rebuild: the legacy result returns.
+
+### Next: R7b
+
+The spec becomes the stored source: `SpecJson` on the Intersection object, written from the current
+rows once and then edited by the panel; the panel's kind, roads, anchor, radius, grading mode,
+roundabout ring and per-approach flare fields write it. Then R7c.

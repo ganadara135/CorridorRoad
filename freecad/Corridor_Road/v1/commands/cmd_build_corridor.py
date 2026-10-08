@@ -31,7 +31,7 @@ from ..objects.obj_applied_section import find_v1_applied_section_set, to_applie
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model, to_corridor_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_exchange_package import create_or_update_v1_exchange_package_object, find_v1_exchange_package
-from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+from ..objects.obj_intersection import find_v1_intersection_model, intersection_geometry_engine, to_intersection_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import create_or_update_v1_surface_model_object, find_v1_surface_model, to_surface_model
@@ -117,6 +117,11 @@ from ..services.builders.corridor_surface_geometry_service import (
 from ..services.builders.intersection_kernel_context_service import (
     intersection_kernel_shadow_comparison,
     spec_from_intersection_model,
+)
+from ..services.builders.intersection_kernel_surface_service import (
+    clip_tin_surface_by_station_spans,
+    intersection_geometry_from_models,
+    kernel_tin_surface,
 )
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService, IntersectionPatchPrerequisiteResult
@@ -853,8 +858,10 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
     is_roundabout_preview = (
         str(getattr(intersection_preview, "IntersectionKind", "") or "").strip().lower() == "roundabout"
     )
+    # the kernel engine builds no tie slope and none of the legacy pipeline's readiness contracts
+    kernel = _intersection_engine_is_kernel(doc)
     for role, title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
-        if is_roundabout_preview and role == "intersection_tie_slope":
+        if (is_roundabout_preview or kernel) and role == "intersection_tie_slope":
             continue
         obj = doc.getObject(object_name) if doc is not None else None
         diagnostic = _corridor_build_preview_diagnostic_object(doc, role)
@@ -870,12 +877,16 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
             row,
             lambda surface_role: _subassembly_surface_role_review_note(doc, surface_role=surface_role),
         )
+        if kernel and role in {"intersection", "intersection_slope"}:
+            row = _with_intersection_kernel_review_note(row, obj)
         rows.append(
             _with_applied_section_review_summary(
                 row,
                 applied_summary,
             )
         )
+        if kernel:
+            continue
         if role == "intersection_slope":
             upper_panel_row = _corridor_intersection_upper_slope_face_panel_review_row(doc)
             if upper_panel_row is not None:
@@ -926,6 +937,31 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
                     )
                 )
     return rows
+
+
+def _with_intersection_kernel_review_note(row: dict[str, object], obj) -> dict[str, object]:
+    """The review note of a kernel-built intersection surface: its status, triangles and quality."""
+
+    if obj is None:
+        return row
+    quality = dict(
+        (parts[0], parts[1])
+        for parts in (str(value).split("|", 1) for value in list(getattr(obj, "IntersectionKernelQualityRows", []) or []))
+        if len(parts) == 2
+    )
+    prefix = "patch" if str(row.get("role", "")) == "intersection" else "slope"
+    notes = (
+        f"Built by the intersection kernel; status={getattr(obj, 'IntersectionKernelStatus', '') or '-'}; "
+        f"triangles={quality.get(prefix + '_triangle_count', '-')}; "
+        f"min_quality={quality.get(prefix + '_triangle_min_quality', '-')}; "
+        f"skinny={quality.get(prefix + '_triangle_skinny_count', '-')}"
+    )
+    diagnostics = [str(value) for value in list(getattr(obj, "IntersectionKernelDiagnosticRows", []) or [])]
+    if diagnostics:
+        notes += "; diagnostics=" + " / ".join(diagnostics)
+    updated = dict(row)
+    updated["notes"] = notes
+    return updated
 
 
 def _corridor_roundabout_build_review_rows(document=None) -> list[dict[str, object]]:
@@ -5639,7 +5675,7 @@ def create_corridor_design_surface_preview(
         intersection_shared_boundary_graph_result = None
         try:
             design_prerequisite = corridor_intersection_patch_prerequisite_result(doc)
-            if str(getattr(design_prerequisite, "status", "") or "") != "missing":
+            if not _intersection_engine_is_kernel(doc) and str(getattr(design_prerequisite, "status", "") or "") != "missing":
                 design_intersection_model = to_intersection_model(find_v1_intersection_model(doc))
                 intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
                     applied_section_set,
@@ -5822,6 +5858,8 @@ def create_corridor_intersection_surface_preview(
             notes="Intersection Surface preview was not created because Applied Sections are required.",
         )
         return None
+    if _intersection_engine_is_kernel(doc):
+        return _create_kernel_intersection_surface_previews(doc, project=project, applied_section_set=applied_section_set)
     intersection_model = to_intersection_model(find_v1_intersection_model(doc))
     prerequisite = corridor_intersection_patch_prerequisite_result(doc)
     if str(getattr(prerequisite, "status", "") or "") == "missing":
@@ -6014,6 +6052,98 @@ def _attach_intersection_kernel_shadow(doc, preview_obj, *, intersection_model, 
     _set_preview_float_property(preview_obj, "IntersectionKernelShadowFilletDeviationM", float(fillet_deviation))
     _set_preview_float_property(preview_obj, "IntersectionKernelShadowEnvelopeDeviationM", float(envelope_deviation))
     _set_preview_string_list_property(preview_obj, "IntersectionKernelShadowRows", rows)
+
+
+def _intersection_engine_is_kernel(document) -> bool:
+    """True when the document's intersection is built by the parametric kernel (plan phase R7a)."""
+
+    if document is None:
+        return False
+    intersection_obj = find_v1_intersection_model(document)
+    return intersection_obj is not None and intersection_geometry_engine(intersection_obj) == "kernel"
+
+
+def _intersection_kernel_result(document, applied_section_set):
+    """The kernel's result on the document's intersection, Alignments and Applied Sections."""
+
+    return intersection_geometry_from_models(
+        to_intersection_model(find_v1_intersection_model(document)),
+        [model for model in (to_alignment_model(obj) for obj in list(getattr(document, "Objects", []) or [])) if model is not None],
+        applied_section_set,
+    )
+
+
+def _clip_tin_surface_by_kernel_spans(surface, document, *, applied_section_set):
+    applied = applied_section_set if applied_section_set is not None else to_applied_section_set(find_v1_applied_section_set(document))
+    result = _intersection_kernel_result(document, applied)
+    if result is None or result.status == "blocked":
+        return surface
+    return clip_tin_surface_by_station_spans(surface, applied, result.clip_spans)
+
+
+def _create_kernel_intersection_surface_previews(doc, *, project, applied_section_set):
+    """The kernel engine's intersection surfaces: its patch and its side slope.
+
+    Every legacy intersection preview is removed first; the kernel builds two surfaces and keeps
+    its own figures on them. A blocked kernel leaves no surface and records its diagnostics.
+    """
+
+    for name in (
+        "V1CorridorIntersectionCurbReturnSlopePreview",
+        "V1CorridorIntersectionTieInEdgePreview",
+        "V1CorridorIntersectionBoundarySegmentPreview",
+        "V1CorridorIntersectionExclusionZonePreview",
+        "V1CorridorIntersectionSlopeFaceLoopPreview",
+        "V1CorridorIntersectionTieSlopeSurfacePreview",
+    ):
+        _remove_preview_object(doc, name)
+    project_obj = project or find_project(doc)
+    result = _intersection_kernel_result(doc, applied_section_set)
+    if result is None or result.status == "blocked" or not result.patch_triangles:
+        _clear_intersection_surface_previews_with_diagnostic(
+            doc,
+            project=project_obj,
+            status="error" if result is not None else "missing",
+            notes="Intersection Surface was not built by the kernel: "
+            + ("; ".join(row.as_text() for row in result.diagnostics) if result is not None else "no intersection row"),
+        )
+        return None
+    intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+    kind = str(getattr((list(getattr(intersection_model, "intersection_rows", []) or []) or [None])[0], "intersection_kind", "") or "")
+    rows = {
+        "IntersectionKernelDiagnosticRows": [row.as_text() for row in result.diagnostics],
+        "IntersectionKernelQualityRows": [f"{name}|{value:.6g}" for name, value in result.quality_rows],
+        "IntersectionKernelClipSpanRows": [f"{ref}|{start:.6f}|{end:.6f}" for ref, start, end in result.clip_spans],
+        "IntersectionKernelResolvedValueRows": [f"{v.name}|{v.subject}|{v.value}|{v.origin}" for v in result.resolved_values],
+    }
+    preview = None
+    for part, object_name, label in (
+        ("patch", "V1CorridorIntersectionSurfacePreview", "Intersection Surface"),
+        ("slope", "V1CorridorIntersectionSlopeFaceSurfacePreview", "Intersection Slope Face Surface"),
+    ):
+        surface = kernel_tin_surface(result, part=part, surface_id=f"{result.intersection_id}:{part}", project_id=_project_id(project_obj))
+        if not surface.triangle_rows:
+            _remove_preview_object(doc, object_name)
+            continue
+        mapped = TINMeshPreviewMapper().create_or_update_preview_object(
+            doc, surface, object_name=object_name, label_prefix=label, surface_role="intersection", recompute=False,
+        )
+        obj = doc.getObject(mapped.object_name) if str(getattr(mapped, "object_name", "") or "") else None
+        if obj is None:
+            continue
+        _set_preview_property(obj, "IntersectionGeometryEngine", "kernel")
+        _set_preview_property(obj, "IntersectionKind", kind)
+        _set_preview_property(obj, "IntersectionKernelStatus", result.status)
+        _set_preview_property(obj, "IntersectionKernelFingerprint", result.input_fingerprint)
+        for name, values in rows.items():
+            _set_preview_string_list_property(obj, name, values)
+        try:
+            route_object_to_project_tree(project_obj, obj)
+        except Exception:
+            pass
+        if part == "patch":
+            preview = obj
+    return preview
 
 
 def _clear_intersection_surface_previews_with_diagnostic(
@@ -8496,8 +8626,14 @@ def _clip_daylight_surface_against_intersection_surfaces(
     surface_model,
     tin_surface,
 ) -> tuple:
-    """Clip, suppress, and trim the daylight surface against the intersection surfaces."""
+    """Clip, suppress, and trim the daylight surface against the intersection surfaces.
 
+    With the kernel engine the slope surface is only clipped by the station spans: the kernel's side
+    slope strips meet it at the mouths, so there is nothing to suppress, trim or patch.
+    """
+
+    if _intersection_engine_is_kernel(doc):
+        return (None, None, None, _clip_tin_surface_by_kernel_spans(tin_surface, doc, applied_section_set=applied_section_set))
     intersection_slope_trim_display_segments = None
     intersection_slope_trim_triangle_count = None
     intersection_tin_surface = None
@@ -8571,7 +8707,7 @@ def _build_daylight_surface_shared_breaklines(
     region_shared_breakline_result = corridor_region_transition_shared_breakline_result(applied_section_set)
     try:
         slope_prerequisite = corridor_intersection_patch_prerequisite_result(doc)
-        if str(getattr(slope_prerequisite, "status", "") or "") != "missing":
+        if not _intersection_engine_is_kernel(doc) and str(getattr(slope_prerequisite, "status", "") or "") != "missing":
             slope_intersection_model = to_intersection_model(find_v1_intersection_model(doc))
             intersection_shared_breakline_result = corridor_intersection_shared_breakline_result(
                 applied_section_set,
@@ -10067,9 +10203,12 @@ def _region_surface_role_uses_intersection_exclusion(role: str) -> bool:
 
 
 def _applied_section_set_with_intersection_tie_in_sections(applied_section_set, *, document=None):
-    """Return a build-time section set with generated intersection tie-in stations."""
+    """Return a build-time section set with generated intersection tie-in stations.
 
-    if applied_section_set is None:
+    The kernel engine has none: its leg mouths are real Applied Sections.
+    """
+
+    if applied_section_set is None or _intersection_engine_is_kernel(document):
         return applied_section_set
     sections = list(getattr(applied_section_set, "sections", []) or [])
     if len(sections) < 2:
@@ -13409,8 +13548,14 @@ def _clip_tin_surface_by_roundabout_ownership(
     applied_section_set=None,
     surface_role: str,
 ) -> TINSurface | None:
-    """Resolve source context and invoke the typed roundabout TIN clip service."""
+    """Resolve source context and invoke the typed roundabout TIN clip service.
 
+    The kernel engine clips by its station spans instead, like any other intersection; a surface
+    the exclusion step already clipped loses nothing more.
+    """
+
+    if _intersection_engine_is_kernel(document):
+        return _clip_tin_surface_by_kernel_spans(tin_surface, document, applied_section_set=applied_section_set)
     # both helpers resolve the boundary loops from the document themselves, and the
     # service reads the result only to derive the two of them, so it needs none here
     return clip_tin_surface_by_roundabout_ownership(
@@ -16058,8 +16203,13 @@ def _clip_tin_surface_by_intersection_exclusion(
     source_applied_section_set=None,
     surface_role: str,
 ):
-    """Resolve source context and invoke the typed Intersection TIN clip service."""
+    """Resolve source context and invoke the typed Intersection TIN clip service.
 
+    With the kernel engine the corridor loses each road's triangles inside its clip span instead.
+    """
+
+    if _intersection_engine_is_kernel(document):
+        return _clip_tin_surface_by_kernel_spans(surface, document, applied_section_set=source_applied_section_set or applied_section_set)
     exclusion = _intersection_exclusion_polygon_from_sources(
         document,
         applied_section_set=applied_section_set,

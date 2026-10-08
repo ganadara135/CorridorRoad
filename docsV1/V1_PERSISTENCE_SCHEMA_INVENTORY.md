@@ -103,6 +103,16 @@ the evaluation then keeps the fixed X and Y frame it used before the field exist
 detected with the anchor point and its stations, and is as stale as they are when an alignment
 moves; recreating the intersection from its alignments refreshes all three.
 
+`GeometryEngine` was added to the Intersection object on 2026-10-08 (plan
+`V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md`, phase R7a): a drop-down (`App::PropertyEnumeration`)
+of `legacy` and `kernel`, `kernel` to build the intersection with the parametric kernel. It is a
+transitional build option, not design intent. A document saved before it existed gets the drop-down
+on `legacy`, the behaviour it was saved with; one that holds it as a free string (a development
+build of the same day) gets the drop-down with its value kept. `intersection_geometry_engine` reads
+anything else as `legacy`. The kernel-built previews carry `IntersectionGeometryEngine`,
+`IntersectionKernelStatus`, `IntersectionKernelFingerprint` and four `IntersectionKernel*Rows`
+string lists; they are result metadata and are rebuilt on every Build Parametric.
+
 ## Output Compatibility
 
 Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packaged output ids together with chunk-safe JSON payloads. Existing FreeCAD save/reopen coverage verifies large output payload and traceability survival. This Phase does not expand exchange formats.

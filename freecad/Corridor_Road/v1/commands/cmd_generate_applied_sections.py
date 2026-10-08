@@ -40,7 +40,7 @@ from ..objects.obj_subassembly_assembly import (
 from ..objects.obj_subassembly_library import list_v1_subassembly_libraries, to_subassembly_library
 from ..objects.obj_subassembly_preset_library import list_v1_subassembly_preset_libraries, to_subassembly_preset_library
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
-from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+from ..objects.obj_intersection import find_v1_intersection_model, intersection_geometry_engine, to_intersection_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
@@ -54,6 +54,11 @@ from ..services.builders.corridor_surface_geometry_service import (
 )
 from ..services.evaluation import Centerline3DFrameService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
+from ..services.builders.intersection_kernel_surface_service import (
+    intersection_geometry_from_models,
+    kernel_mouth_stations,
+    missing_mouth_stations,
+)
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
@@ -81,11 +86,57 @@ def build_document_applied_section_set(
     supplemental_sections_vertical_chord_deviation: float = APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT,
     supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
 ):
-    """Build an AppliedSectionSet result from the active v1 source objects."""
+    """Build an AppliedSectionSet result from the active v1 source objects.
+
+    An intersection built by the parametric kernel (`GeometryEngine` "kernel", plan phase R7a)
+    needs a section at each of its leg mouths, and the mouths depend on the roads' widths, which
+    the sections give. So it takes two passes: the first, without intersection stations, gives the
+    kernel its widths; the second, only when a mouth has no section yet, adds them. The mouth
+    stations follow from plan geometry and widths, never from heights, so the second pass does not
+    move them. Without a kernel intersection this is the one pass it always was.
+    """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    options = dict(
+        project=project,
+        corridor_id=corridor_id,
+        supplemental_sections_enabled=supplemental_sections_enabled,
+        supplemental_sections_max_spacing=supplemental_sections_max_spacing,
+        supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
+        supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
+        supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
+        supplemental_sections_grade_delta=supplemental_sections_grade_delta,
+    )
+    intersection_obj = find_v1_intersection_model(doc)
+    if intersection_obj is None or intersection_geometry_engine(intersection_obj) != "kernel":
+        return _build_applied_section_set_pass(doc, kernel_stations=None, **options)
+    first = _build_applied_section_set_pass(doc, kernel_stations={}, **options)
+    result = intersection_geometry_from_models(
+        to_intersection_model(intersection_obj),
+        [model for model in (to_alignment_model(obj) for obj in list(getattr(doc, "Objects", []) or [])) if model is not None],
+        first,
+    )
+    stations = kernel_mouth_stations(result)
+    if not missing_mouth_stations(first, stations):
+        return first
+    return _build_applied_section_set_pass(doc, kernel_stations=stations, **options)
+
+
+def _build_applied_section_set_pass(
+    doc,
+    *,
+    project=None,
+    corridor_id: str = "corridor:main",
+    supplemental_sections_enabled: bool = True,
+    supplemental_sections_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
+    supplemental_sections_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    supplemental_sections_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    supplemental_sections_vertical_chord_deviation: float = APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT,
+    supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
+    kernel_stations: dict[str, list[float]] | None = None,
+):
     source_bundles = _applied_section_source_bundles(doc)
     alignment_obj = find_v1_alignment(doc)
     profile_obj = find_v1_profile(doc)
@@ -130,6 +181,7 @@ def build_document_applied_section_set(
         source_stations,
         intersection_model,
         str(getattr(alignment, "alignment_id", "") or ""),
+        kernel_stations=kernel_stations,
     )
     station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
 
@@ -171,6 +223,7 @@ def build_document_applied_section_set(
             supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
             supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
             supplemental_sections_grade_delta=supplemental_sections_grade_delta,
+            kernel_stations=kernel_stations,
         )
     override_model = OverrideModel(
         schema_version=1,
@@ -233,6 +286,7 @@ def _build_multi_alignment_applied_section_set(
     supplemental_sections_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
     supplemental_sections_vertical_chord_deviation: float = APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT,
     supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
+    kernel_stations: dict[str, list[float]] | None = None,
 ) -> AppliedSectionSet:
     """Build one AppliedSectionSet from multiple alignment-scoped source bundles."""
 
@@ -249,6 +303,7 @@ def _build_multi_alignment_applied_section_set(
             source_stations,
             intersection_model,
             str(getattr(bundle["alignment"], "alignment_id", "") or ""),
+            kernel_stations=kernel_stations,
         )
         station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
         alignment_id = str(getattr(alignment, "alignment_id", "") or f"alignment:{bundle_index}")
@@ -1441,14 +1496,23 @@ def _with_intersection_supplemental_stations(
     stations: list[float],
     intersection_model,
     alignment_id: str,
+    *,
+    kernel_stations: dict[str, list[float]] | None = None,
 ) -> list[float]:
-    """Merge intersection boundary and curb-return control stations into a station list."""
+    """Merge intersection boundary and curb-return control stations into a station list.
+
+    With the kernel engine (`kernel_stations` given, possibly empty) the only intersection
+    stations are the kernel's leg mouths for this alignment.
+    """
 
     base = _unique_station_values(stations)
     if intersection_model is None or not base:
         return base
     low = min(base)
     high = max(base)
+    if kernel_stations is not None:
+        mouths = [_clamp_station(value, station_min=low, station_max=high) for value in kernel_stations.get(str(alignment_id or ""), [])]
+        return _unique_station_values([*base, *mouths])
     supplemental = _intersection_supplemental_stations_for_alignment(
         intersection_model,
         alignment_id,
