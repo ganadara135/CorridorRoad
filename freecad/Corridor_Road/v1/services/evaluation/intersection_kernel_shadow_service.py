@@ -62,6 +62,8 @@ class IntersectionKernelShadowService:
         if kernel_result.status == "blocked" or not kernel_result.boundary_xyz:
             return IntersectionKernelShadowComparison("blocked", rows=tuple(rows))
 
+        if kernel_result.kind == "roundabout":
+            return _compare_roundabout(kernel_result, boundary_loop_result, rows)
         compared: list[float] = []
         fillet_deviation = _fillet_deviation(kernel_result, boundary_segment_result, rows)
         if fillet_deviation >= 0.0:
@@ -84,6 +86,50 @@ class IntersectionKernelShadowService:
         return IntersectionKernelShadowComparison(
             status, fillet_deviation, envelope_deviation, kernel_result.boundary_area_m2, current_area, tuple(rows)
         )
+
+
+def _compare_roundabout(kernel_result, boundary_loop_result, rows: list[str]) -> IntersectionKernelShadowComparison:
+    """A roundabout is compared ring for ring: the central island and the ring's paved outer edge
+    against the current loops of those roles. The approaches have no current counterpart to compare
+    with (the current connectors are fixed-width rectangles that build no surface); their widths
+    are recorded."""
+
+    loops = {}
+    for row in list(getattr(boundary_loop_result, "loop_rows", []) or []):
+        loops.setdefault(str(getattr(row, "loop_role", "") or ""), []).append([(float(p[0]), float(p[1])) for p in row.loop_points_xyz])
+    deviations = []
+    cx, cy = kernel_result.anchor_xy
+
+    def radial(points, radius) -> float:
+        # a circle against a circle: how far the current polygon's vertices lie off the kernel's
+        # circle; the chord sag of either polygon is not a difference between the two designs
+        return max(abs(math.hypot(x - cx, y - cy) - radius) for x, y in points)
+
+    island_current = (loops.get("roundabout_central_island_boundary") or [[]])[0]
+    if kernel_result.boundary_holes_xyz and len(island_current) >= 3:
+        island_radius = math.hypot(kernel_result.boundary_holes_xyz[0][0][0] - cx, kernel_result.boundary_holes_xyz[0][0][1] - cy)
+        value = radial(island_current, island_radius)
+        deviations.append(value)
+        rows.append(f"island_deviation_m|{value:.4f}|kernel_radius={island_radius:.3f}")
+    ring_current = (loops.get("roundabout_outer_ownership_boundary") or [[]])[0]
+    values = {v.name: v.value for v in kernel_result.resolved_values}
+    outer = float(values.get("roundabout_inscribed_radius_m", 0.0)) + float(values.get("roundabout_apron_width_m", 0.0))
+    if outer > 0.0 and len(ring_current) >= 3:
+        value = radial(ring_current, outer)
+        deviations.append(value)
+        rows.append(f"ring_outer_edge_deviation_m|{value:.4f}|kernel_radius={outer:.3f}")
+    for connector in loops.get("roundabout_entry_exit_connector_boundary", []):
+        if len(connector) >= 4:
+            sides = sorted(math.dist(connector[i], connector[i + 1]) for i in range(len(connector) - 1))
+            rows.append(f"approach|current_connector_width={sides[0]:.3f}")
+    for leg in kernel_result.legs:
+        if leg.mouth_left_xyz and leg.mouth_right_xyz:
+            rows.append(f"approach|{leg.leg_id}|kernel_mouth_width={math.dist(leg.mouth_left_xyz[:2], leg.mouth_right_xyz[:2]):.3f}")
+    if not deviations:
+        return IntersectionKernelShadowComparison("skipped", kernel_area_m2=kernel_result.boundary_area_m2, rows=tuple(rows + ["reason|no current ring loops"]))
+    worst = max(deviations)
+    status = "agree" if worst <= SHADOW_AGREE_TOLERANCE_M else "differ"
+    return IntersectionKernelShadowComparison(status, -1.0, worst, kernel_result.boundary_area_m2, 0.0, tuple(rows))
 
 
 def _surface_rows(kernel_result, current_patch_quality, current_clip_ranges) -> list[str]:

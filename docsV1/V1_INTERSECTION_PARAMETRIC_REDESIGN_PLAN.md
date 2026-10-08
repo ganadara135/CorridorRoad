@@ -152,6 +152,17 @@ class RoundaboutSpec:
 | `MOUTH_CLEARANCE_M` | 0.0 | the mouth is the curb return tangent point |
 | `ARC_MAX_STEP_DEG` | 5.0 | chord error `R (1 - cos 2.5 deg)` = 0.1 % of R, 12 mm at R = 12 m |
 | `EDGE_SAMPLE_STEP_M` | 1.0 | captures width changes between Applied Section stations; alignment vertices are always kept |
+| `ROUNDABOUT_CIRCULATORY_WIDTH_RATIO` | 0.55 of the inscribed radius | current preset (island 0.45) |
+| `ROUNDABOUT_APRON_WIDTH_RATIO` | 0.15 of the circulatory width | current preset |
+| `ROUNDABOUT_ENTRY_RADIUS_RATIO`, `..._EXIT_...` | 0.5 and 0.6 of the ring's outer edge radius | R6, see below |
+| `ROUNDABOUT_RING_CROSSFALL` | 0.02, falling outward | the current `roundabout_radial_crossfall` intent |
+
+The flare radii are the one place R6 departs from "the current preset's value" (D4): the preset has
+no flare (a square corner where the approach edge meets the ring, which leaves no room for a side
+slope there). A fixed radius cannot suit every ring, since a flare of radius R meets a ring of outer
+radius r at asin((w + R) / (r + R)) off the approach: 15 m and 20 m flares overlap on the starter's
+13 m ring. A fraction of the ring keeps them apart (36 and 38 of the 90 degrees between the
+starter's approaches). A spec or per-approach value replaces them.
 
 ### 5.4 `RoadContext`
 
@@ -268,8 +279,27 @@ ground; that refinement is not in R5.
 **K7 (planar part).** Clip span per road: from the `back` mouth to the `ahead` mouth (the anchor
 station where a side has no leg). Supplemental stations: the mouth stations.
 
-**Roundabout** uses the same K2 to K7 with K1's partner replaced by the circulatory ring (R6). Until
-R6 it resolves but its geometry status is `not_implemented`, and the shadow reports `skipped`.
+**Roundabout (R6).** The same stages, with the ring as K1's partner. The ring is a circle about the
+anchor: its paved outer edge is the inscribed radius plus the outer apron, its central island the
+inscribed radius less the circulatory width. Between two neighbouring approaches the corner (treatment
+`ring`) runs from the first approach's flare onto the ring, counter-clockwise round the ring's outer
+edge, and off it by the second approach's flare. Each flare is the circle tangent to the approach's
+real pavement edge and outside tangent to the ring (found on the edge offset by R, at r + R from the
+centre); radius 0 is a square corner. Circulating counter-clockwise a driver enters on the approach's
+left side looking outward, so that side takes the entry radius and the right side the exit radius;
+`circulation = "cw"` swaps them. The central island is a hole in the boundary.
+
+- K2: the mouth is the outer of the approach's two flare tangent points.
+- K4: whatever the grading mode, the circulatory roadway falls outward from the island's edge (the
+  primary profile at the anchor) at `ROUNDABOUT_RING_CROSSFALL`. Each approach crown runs straight
+  from its mouth to where the road crosses the ring's outer edge; across each approach's throat the
+  outer edge is a breakline (`ring_throat`), sampled evenly either side of the crown's end.
+- K6: round a flare the strip runs toward the flare's centre as at a curb return; beyond the ring it
+  runs straight out from the roundabout centre.
+
+Diagnostics: `roundabout_flares_overlap` (two flares pass each other on the ring),
+`roundabout_flare_no_solution`, `roundabout_approach_wider_than_ring`,
+`roundabout_island_not_positive`, `roundabout_island_outside_boundary`; all block.
 
 ### 5.7 Result
 
@@ -344,6 +374,14 @@ core square (130 m2 for the starter T), not the curb return envelope the kernel 
   `clip_compare|` (kernel clip span next to the current control area ranges). These are measured,
   not judged: the status still comes from the fillet and envelope targets.
 
+A roundabout is compared ring for ring (R6): the central island against the current
+`roundabout_central_island_boundary` loop and the ring's paved outer edge against
+`roundabout_outer_ownership_boundary`, each as the largest distance of the current loop's vertices
+from the kernel's circle, so the polygons' chord sag is not counted. The worst of the two goes into
+`IntersectionKernelShadowEnvelopeDeviationM`; the fillet deviation is -1. The approaches have no
+current counterpart (the current connectors are fixed-width rectangles that build no surface), so
+their widths are recorded as `approach|` rows.
+
 Build Parametric writes `IntersectionKernelShadowStatus`, `IntersectionKernelShadowFilletDeviationM`,
 `IntersectionKernelShadowEnvelopeDeviationM` (-1 = not compared) and `IntersectionKernelShadowRows`
 to `V1CorridorIntersectionSurfacePreview`. Nothing reads them back. A `differ` is expected where the
@@ -359,10 +397,10 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R3 | builder context service from `AlignmentModel` + `AppliedSectionSet`; `spec_from_intersection_model` | starter T, Cross, turned T resolve with the Applied Sections' 5 m |
 | R4 | shadow comparison in Build Parametric | starter T and Cross report their difference; full gate green |
 | R5 | K4 to K6 (heights, patch TIN, side slope) in the kernel, still shadow | unfilled arcs, skinny triangles and the clip span measured on the kernel output (done, §8) |
-| R6 | roundabout in the kernel | roundabout shadow `agree` or explained |
+| R6 | roundabout in the kernel | roundabout shadow `agree` or explained (done, §8) |
 | R7 | switch: Build Parametric consumes the kernel; the spec becomes the stored source (`SpecJson`); the panel edits the spec; lane connection, edge policy and surface zone rows and the services only they feed are deleted (D2) | full gate and GUI manual QA |
 
-R1 to R5 are implemented. R6 and R7 start from the measurements §8 records.
+R1 to R6 are implemented. R7 starts from the measurements §8 records.
 
 ## 8. Shadow measurements
 
@@ -431,7 +469,39 @@ Validation at R5: flake8 clean, architecture 9 passed, kernel 13 + surfaces 11 +
 tests, `test_intersection_command.py` 78 passed, all three smoke runners PASS, full contract suite
 (without the command chunk) 1,442 passed / 18 skipped / 0 failed. No GUI check was run.
 
-### Next: R6
+### R6, 2026-10-08
 
-The roundabout in the kernel: the circulatory ring as a virtual road in `RoadContext`, each
-approach's entry and exit fillets against it (K1), and K2 to K7 unchanged.
+The starter roundabout (`Roundabout - Single Lane`): 12 m inscribed radius, 6.6 m circulatory
+roadway, 0.99 m outer apron, two 10 m roads crossing at its centre.
+
+| | current | kernel |
+| --- | --- | --- |
+| shadow status | | agree |
+| central island radius | 5.4 m | 5.4 m, deviation 0.0000 m |
+| paved outer edge radius | 12.99 m | 12.99 m, deviation 0.0000 m |
+| approaches | four 6.6 m rectangles, 15 m long, no surface built (0 triangles) | 10 m wide (the Applied Sections), joined to the ring by 6.5 m entry and 7.8 m exit flares |
+| patch | ring and apron (apron surface 128 triangles); the connectors build none; minimum quality 0.265, none skinny | ring, flares and approaches in one TIN with the island as a hole, 340 triangles, minimum quality 0.102, none skinny |
+| side slope | `RoundaboutSlopeFaceSurface` 64 triangles | 216 triangles round flares and ring, minimum quality 0.092 |
+| corridor clipped beyond the mouths | 19.2 m on each road (104 to 156) | 0 (113.6 to 146.4) |
+
+Kernel time 0.25 s. The ring is the same design; everything that differs is something the current
+pipeline does not build (the approaches and their joins to the ring) or builds with a width that
+is not the road's (6.6 m connectors on 10 m roads, a third case of problem P2).
+
+Two things found on the way and fixed in the kernel: crown samples within a centimetre of the ring
+crossing made slivers (now samples within half a step of it are dropped), and the throat breakline
+sampled from the flare tangent left a 0.35 m interval next to the crown's end (now each side of the
+crown end is sampled evenly). Before: 8 skinny triangles, minimum 0.023; after: none, minimum 0.102.
+
+Validation at R6: flake8 clean on the touched files, architecture 9 passed, kernel 12 + surfaces 11 +
+roundabout 8 + shadow 7 contract tests, `test_intersection_command.py` 78 passed, all three smoke
+runners PASS, full contract suite (without the command chunk) 1,449 passed / 18 skipped / 0 failed.
+No GUI check was run.
+
+### Next: R7
+
+The switch. Build Parametric consumes the kernel result instead of the evaluation chain; the spec
+becomes the stored source (`SpecJson` on the `IntersectionModel` object) and the panel edits it;
+the lane connection, edge policy and surface zone rows go, with the services only they feed (D2).
+It is the first phase that changes what a user sees, so it needs the GUI pass the earlier phases
+did not.

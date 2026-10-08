@@ -65,11 +65,22 @@ def _patch(planar: PlanarGeometry, crowns: list[CrownLine], out: SurfaceGeometry
                 points.append(point)
             indices.append(index_by_key[key])
         breaklines += [(a, b) for a, b in zip(indices, indices[1:]) if a != b]
-        out.breaklines.append(("crown", crown.leg_id, tuple(points[i] for i in indices)))
+        out.breaklines.append((crown.role, crown.leg_id, tuple(points[i] for i in indices)))
     out.breaklines.append(("boundary", intersection_id, tuple(planar.boundary_xyz) + (planar.boundary_xyz[0],)))
+    holes: list[list[int]] = []
+    for hole in planar.holes_xyz:
+        indices = []
+        for point in hole:
+            key = _xy_key(point)
+            if key not in index_by_key:
+                index_by_key[key] = len(points)
+                points.append(point)
+            indices.append(index_by_key[key])
+        holes.append(indices)
+        out.breaklines.append(("island", intersection_id, tuple(hole) + (hole[0],)))
     xy = [(p[0], p[1]) for p in points]
     try:
-        triangles = constrained_delaunay(xy, list(range(len(planar.boundary_xyz))), breaklines)
+        triangles = constrained_delaunay(xy, list(range(len(planar.boundary_xyz))), breaklines, holes)
     except ConstraintRecoveryError as exc:
         out.diagnostics.append(
             KernelDiagnostic("patch_breakline_not_recovered", "error", intersection_id, None, f"{exc}; a crown line crosses the boundary", "partial")
@@ -187,7 +198,7 @@ def _outer_point(vertex: BoundaryVertex, frames: dict[str, FilletFrame], context
         x, y = context.point_xy(vertex.road_ref, vertex.station)
         normal = left_normal(context.tangent_xy(vertex.road_ref, vertex.station))
         return (x + normal[0] * offset, y + normal[1] * offset, z), False
-    if vertex.kind == "arc":
+    if vertex.kind in {"arc", "ring"}:
         frame = frames.get(vertex.corner_key)
         if frame is None:
             return None, False
@@ -198,10 +209,14 @@ def _outer_point(vertex: BoundaryVertex, frames: dict[str, FilletFrame], context
         ratio = vertex.arc_ratio
         width = a[0] + (b[0] - a[0]) * ratio
         fall = a[1] + (b[1] - a[1]) * ratio
-        dx, dy = frame.center_xy[0] - vertex.xyz[0], frame.center_xy[1] - vertex.xyz[1]
+        center = vertex.center_xy or frame.center_xy
+        dx, dy = center[0] - vertex.xyz[0], center[1] - vertex.xyz[1]
         distance = math.hypot(dx, dy)
         if distance <= 1.0e-12:
             return None, False
+        if vertex.kind == "ring":
+            # outside the ring the slope runs away from the roundabout centre, with nothing to meet
+            return (vertex.xyz[0] - dx / distance * width, vertex.xyz[1] - dy / distance * width, vertex.xyz[2] + fall), False
         reach = min(width, distance)
         return (vertex.xyz[0] + dx / distance * reach, vertex.xyz[1] + dy / distance * reach, vertex.xyz[2] + fall), width > distance
     return None, False

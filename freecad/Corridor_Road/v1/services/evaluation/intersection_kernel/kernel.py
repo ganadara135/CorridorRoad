@@ -44,10 +44,6 @@ def build_intersection_geometry(spec: IntersectionSpec, context: RoadContext) ->
     )
     if resolved.blocked:
         return IntersectionGeometryResult(status="blocked", diagnostics=tuple(resolved.diagnostics), **common)
-    if spec.kind == "roundabout":
-        # plan phase R6; until then a roundabout resolves its legs but builds no geometry
-        return IntersectionGeometryResult(status="not_implemented", diagnostics=tuple(resolved.diagnostics), **common)
-
     planar = build_planar_geometry(resolved, context)
     surface_diagnostics = []
     surfaces = None
@@ -67,6 +63,7 @@ def build_intersection_geometry(spec: IntersectionSpec, context: RoadContext) ->
         legs=tuple(planar.legs),
         corners=tuple(planar.corners),
         boundary_xyz=tuple(planar.boundary_xyz),
+        boundary_holes_xyz=tuple(tuple(hole) for hole in planar.holes_xyz),
         boundary_area_m2=planar.boundary_area_m2,
         clip_spans=tuple(planar.clip_spans),
         supplemental_stations=tuple(planar.supplemental_stations),

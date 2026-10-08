@@ -18,6 +18,12 @@ from .constants import (
     CROSS_CORNER_RADIUS_M,
     DEFAULT_GRADING_MODE,
     LEG_MIN_LENGTH_M,
+    ROUNDABOUT_APRON_WIDTH_RATIO,
+    ROUNDABOUT_CIRCULATORY_WIDTH_RATIO,
+    ROUNDABOUT_ENTRY_RADIUS_RATIO,
+    ROUNDABOUT_EXIT_RADIUS_RATIO,
+    ROUNDABOUT_INSCRIBED_RADIUS_M,
+    ROUNDABOUT_RING_CROSSFALL,
     T_CORNER_RADIUS_M,
 )
 from .road_context import RoadContext
@@ -43,6 +49,21 @@ class ResolvedCorner:
     radius_m: float
     treatment_origin: str
     radius_origin: str
+    # treatment "ring" (roundabout): the from leg's flare and the to leg's flare onto the ring;
+    # 0 is a square corner where the pavement edge meets the ring
+    from_flare_radius_m: float = 0.0
+    to_flare_radius_m: float = 0.0
+
+
+@dataclass(frozen=True)
+class ResolvedRing:
+    """The circulatory roadway of a roundabout, about the anchor."""
+
+    outer_edge_radius_m: float      # the paved outer edge: inscribed radius plus the outer apron
+    island_radius_m: float          # the central island's edge
+    island_z: float
+    outer_edge_z: float
+    circulation: str
 
 
 @dataclass
@@ -53,6 +74,7 @@ class ResolvedIntersection:
     legs: list[ResolvedLeg] = field(default_factory=list)
     corners: list[ResolvedCorner] = field(default_factory=list)
     grading_mode: str = DEFAULT_GRADING_MODE
+    ring: ResolvedRing | None = None
     resolved_values: list[ResolvedValue] = field(default_factory=list)
     diagnostics: list[KernelDiagnostic] = field(default_factory=list)
 
@@ -93,7 +115,9 @@ def resolve_intersection(spec: IntersectionSpec, context: RoadContext) -> Resolv
     _resolve_legs(resolved, roads, context)
     if resolved.blocked:
         return resolved
-    if kind != "roundabout":
+    if kind == "roundabout":
+        _resolve_ring(resolved, context)
+    else:
         _resolve_corners(resolved)
     resolved.grading_mode = spec.grading_mode or DEFAULT_GRADING_MODE
     resolved.resolved_values.append(
@@ -233,6 +257,72 @@ def _resolve_corners(resolved: ResolvedIntersection) -> None:
             KernelDiagnostic("corner_override_unmatched", "warning", key, None, "no such pair of neighbouring legs", "none")
         )
     resolved.corners = corners
+
+
+def _resolve_ring(resolved: ResolvedIntersection, context: RoadContext) -> None:
+    """A roundabout: the ring about the anchor, and between each pair of neighbouring approaches a
+    corner that runs from the first approach's flare round the ring to the second's.
+
+    Circulating counter-clockwise (right-hand traffic) a driver enters on the approach's left
+    side, looking outward, and leaves on its right; clockwise swaps them.
+    """
+
+    spec = resolved.spec
+    ring_spec = spec.roundabout
+    subject = spec.intersection_id
+    if ring_spec is not None and ring_spec.inscribed_radius_m > 0.0:
+        inscribed, inscribed_origin = float(ring_spec.inscribed_radius_m), "spec"
+    else:
+        inscribed, inscribed_origin = ROUNDABOUT_INSCRIBED_RADIUS_M, "constant"
+    if ring_spec is not None and ring_spec.circulatory_width_m > 0.0:
+        width, width_origin = float(ring_spec.circulatory_width_m), "spec"
+    else:
+        width, width_origin = inscribed * ROUNDABOUT_CIRCULATORY_WIDTH_RATIO, "constant"
+    if ring_spec is not None:
+        apron, apron_origin = max(float(ring_spec.apron_width_m), 0.0), "spec"
+    else:
+        apron, apron_origin = width * ROUNDABOUT_APRON_WIDTH_RATIO, "constant"
+    circulation = (ring_spec.circulation if ring_spec is not None else "ccw") or "ccw"
+    island = inscribed - width
+    if island <= 0.0:
+        resolved.diagnostics.append(_blocked("roundabout_island_not_positive", subject, f"circulatory width {width:.3f} m fills the {inscribed:.3f} m ring"))
+        return
+    primary = spec.road_refs[0]
+    island_z = context.finished_grade_z(primary, resolved.anchor_station_by_road[primary])
+    island_z = float(island_z) if island_z is not None else 0.0
+    outer = inscribed + apron
+    resolved.ring = ResolvedRing(outer, island, island_z, island_z - ROUNDABOUT_RING_CROSSFALL * (outer - island), circulation)
+    resolved.resolved_values += [
+        ResolvedValue("roundabout_inscribed_radius_m", subject, inscribed, inscribed_origin),
+        ResolvedValue("roundabout_circulatory_width_m", subject, width, width_origin),
+        ResolvedValue("roundabout_apron_width_m", subject, apron, apron_origin),
+        ResolvedValue("roundabout_circulation", subject, circulation, "spec" if ring_spec is not None else "constant"),
+    ]
+
+    overrides = {(row.road_ref, row.side): row for row in spec.leg_overrides}
+
+    def flare(leg: ResolvedLeg, entry: bool) -> tuple[float, str]:
+        override = overrides.get((leg.road_ref, leg.side))
+        value = getattr(override, "entry_radius_m" if entry else "exit_radius_m", None) if override is not None else None
+        if value is not None:
+            return max(float(value), 0.0), "override"
+        value = getattr(ring_spec, "entry_radius_m" if entry else "exit_radius_m", None) if ring_spec is not None else None
+        if value is not None:
+            return max(float(value), 0.0), "spec"
+        return outer * (ROUNDABOUT_ENTRY_RADIUS_RATIO if entry else ROUNDABOUT_EXIT_RADIUS_RATIO), "constant"
+
+    counter_clockwise = circulation != "cw"
+    enabled = resolved.enabled_legs()
+    for index, leg in enumerate(enabled):
+        successor = enabled[(index + 1) % len(enabled)]
+        key = f"{leg.leg_id}|{successor.leg_id}"
+        # the from leg's left side and the to leg's right side face this corner
+        from_radius, from_origin = flare(leg, counter_clockwise)
+        to_radius, to_origin = flare(successor, not counter_clockwise)
+        resolved.corners.append(ResolvedCorner(key, leg.leg_id, successor.leg_id, "ring", 0.0, "derived:roundabout", "-", from_radius, to_radius))
+        resolved.resolved_values.append(ResolvedValue("corner_treatment", key, "ring", "derived:roundabout"))
+        resolved.resolved_values.append(ResolvedValue("flare_radius_m", f"{key}:from", from_radius, from_origin))
+        resolved.resolved_values.append(ResolvedValue("flare_radius_m", f"{key}:to", to_radius, to_origin))
 
 
 def _with_enabled(leg: ResolvedLeg, enabled: bool, origin: str) -> ResolvedLeg:

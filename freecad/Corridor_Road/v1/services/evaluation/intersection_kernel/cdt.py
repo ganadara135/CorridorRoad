@@ -28,11 +28,12 @@ def constrained_delaunay(
     points: list[tuple[float, float]],
     polygon: list[int],
     breaklines: list[tuple[int, int]],
+    holes: list[list[int]] | None = None,
 ) -> list[tuple[int, int, int]]:
-    """Return counter-clockwise triangles (point indices) covering the polygon.
+    """Return counter-clockwise triangles (point indices) covering the polygon less its holes.
 
     `polygon` lists the boundary point indices counter-clockwise; `breaklines` are extra edges
-    between point indices inside it.
+    between point indices inside it; each hole is a ring of point indices inside it.
     """
 
     count = len(points)
@@ -42,13 +43,18 @@ def constrained_delaunay(
     triangles = _bowyer_watson(points)
     constraints = {_key(polygon[i], polygon[(i + 1) % len(polygon)]) for i in range(len(polygon))}
     constraints |= {_key(a, b) for a, b in breaklines if a != b}
+    for hole in holes or []:
+        constraints |= {_key(hole[i], hole[(i + 1) % len(hole)]) for i in range(len(hole))}
     all_points = list(points) + _super_points(points)
     for a, b in sorted(constraints):
         triangles = _recover(all_points, triangles, a, b, constraints)
     boundary = [points[index] for index in polygon]
+    hole_rings = [[points[index] for index in hole] for hole in holes or []]
     triangles = [
         tri for tri in triangles
-        if max(tri) < count and _inside(_centroid(points, tri), boundary)
+        if max(tri) < count
+        and _inside(_centroid(points, tri), boundary)
+        and not any(_inside(_centroid(points, tri), ring) for ring in hole_rings)
     ]
     return _delaunay_flips(points, triangles, constraints)
 

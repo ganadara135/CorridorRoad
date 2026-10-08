@@ -81,6 +81,8 @@ class IntersectionGeometryResult:
     corners: tuple[CornerGeometry, ...] = ()
     # closed counter-clockwise polygon; the first point is not repeated at the end
     boundary_xyz: tuple[tuple[float, float, float], ...] = ()
+    # roundabout: the central island, clockwise; the area excludes it
+    boundary_holes_xyz: tuple[tuple[tuple[float, float, float], ...], ...] = ()
     boundary_area_m2: float = 0.0
     # (road ref, station start, station end) the intersection owns on that road
     clip_spans: tuple[tuple[str, float, float], ...] = ()

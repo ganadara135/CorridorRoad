@@ -5,6 +5,7 @@ and only records how it compares:
 
 - its curb return fillets coincide with the arcs the build draws from the Applied Sections'
   tie-in edges (both use the 5 m pavement edge);
+- a roundabout's ring and central island coincide with the current ones (plan phase R6);
 - its envelope differs from the evaluation chain's outer boundary loop by exactly the arm
   policy's error (problem P2, decision D1 of the plan): the loop's sides are 4.5 m from the
   centreline instead of 5.0 m, and its mouths, 4.5 m + R from the anchor, are 0.5 m short too,
@@ -104,14 +105,20 @@ def test_the_shadow_follows_turned_roads(turned_starters) -> None:
         App.closeDocument(doc.Name)
 
 
-def test_a_roundabout_is_skipped_until_the_kernel_builds_one() -> None:
+def test_a_roundabout_agrees_ring_for_ring_and_records_its_approaches() -> None:
     doc = _build("Roundabout - Single Lane")
     try:
-        preview = doc.getObject("V1CorridorIntersectionSurfacePreview")
-        if preview is None:
-            pytest.skip("this roundabout build creates no intersection surface preview")
-        status, _fillet, _envelope, rows = _shadow(doc)
-        assert status == "skipped", rows
+        status, _fillet, ring, rows = _shadow(doc)
+        assert "kernel_status|ready" in rows, rows
+        # the same central island (5.4 m) and paved outer edge (12 m ring + 0.99 m apron)
+        assert status == "agree" and ring <= 1.0e-9, rows
+        # the current connectors are 6.6 m rectangles; the roads, per the Applied Sections, 10 m
+        assert sum(1 for row in rows if row == "approach|current_connector_width=6.600") == 4
+        assert sum(1 for row in rows if row.startswith("approach|") and row.endswith("kernel_mouth_width=10.000")) == 4
+        # the current control areas clip 19.2 m more of each road than the flares reach
+        assert any(row.endswith("current_beyond_kernel_m=19.241") for row in rows if row.startswith("clip_compare|"))
+        patch = _row(rows, "patch")
+        assert patch["kernel_skinny"] == "0", patch
     finally:
         App.closeDocument(doc.Name)
 

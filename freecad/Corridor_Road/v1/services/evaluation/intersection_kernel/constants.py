@@ -8,6 +8,21 @@ Lengths in metres, angles in degrees.
 T_CORNER_RADIUS_M = 12.0
 CROSS_CORNER_RADIUS_M = 10.0
 ROUNDABOUT_INSCRIBED_RADIUS_M = 18.0
+# the starter preset derives the central island as 0.45 of the outer radius, so the circulatory
+# roadway is the other 0.55, and its outer apron as 0.15 of the circulatory width
+ROUNDABOUT_CIRCULATORY_WIDTH_RATIO = 0.55
+ROUNDABOUT_APRON_WIDTH_RATIO = 0.15
+# entry and exit flare radii, as a fraction of the ring's outer edge radius: the current preset has
+# none (a square corner, which leaves no room for a side slope where the approach edge meets the
+# ring), and a fixed radius cannot suit every ring: a flare of radius R meets a ring of outer radius
+# r at asin((w + R) / (r + R)) off the approach, so on the starter's 13 m ring 15 m flares would
+# overlap their neighbours. Half the ring for the entry and a little more for the exit leave ring
+# between the flares of two approaches at right angles to each other (36 + 38 of the 90 degrees
+# there); the exit is the larger, as usual
+ROUNDABOUT_ENTRY_RADIUS_RATIO = 0.5
+ROUNDABOUT_EXIT_RADIUS_RATIO = 0.6
+# the circulatory roadway falls outward from the central island at this crossfall (2 %)
+ROUNDABOUT_RING_CROSSFALL = 0.02
 
 DEFAULT_GRADING_MODE = "flatten_intersection"
 

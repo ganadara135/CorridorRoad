@@ -36,6 +36,9 @@ class BoundaryVertex:
     road_side: str = ""
     corner_key: str = ""
     arc_ratio: float = 0.0
+    # an `arc` vertex's circle centre (its side slope runs toward it); a `ring` vertex's ring
+    # centre (its side slope runs away from it)
+    center_xy: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,9 @@ class PlanarGeometry:
     fillet_frames: dict[str, FilletFrame] = field(default_factory=dict)
     # leg id -> distance of its mouth from the anchor
     mouth_distance: dict[str, float] = field(default_factory=dict)
+    # roundabout: the central island, clockwise, and the ring's tangent points of each corner
+    holes_xyz: list[list[tuple[float, float, float]]] = field(default_factory=list)
+    ring_tangents: dict[str, tuple[tuple[float, float], tuple[float, float]]] = field(default_factory=dict)
     boundary_area_m2: float = 0.0
     clip_spans: list[tuple[str, float, float]] = field(default_factory=list)
     supplemental_stations: list[tuple[str, float]] = field(default_factory=list)
@@ -74,6 +80,11 @@ class _Fillet:
     from_distance: float
     to_distance: float
     arc_xyz: tuple[tuple[float, float, float], ...]
+    # per arc point: (kind, centre); empty for a plain fillet ("arc" about center_xy)
+    point_tags: tuple[tuple[str, tuple[float, float]], ...] = ()
+    # roundabout: where the from and to flares touch the ring
+    ring_from_xy: tuple[float, float] | None = None
+    ring_to_xy: tuple[float, float] | None = None
 
 
 def build_planar_geometry(resolved: ResolvedIntersection, context: RoadContext) -> PlanarGeometry:
@@ -83,9 +94,12 @@ def build_planar_geometry(resolved: ResolvedIntersection, context: RoadContext) 
     # K1
     fillets: dict[str, _Fillet] = {}
     for corner in resolved.corners:
-        if corner.treatment != "fillet":
+        if corner.treatment == "ring":
+            fillet = _ring_corner(resolved, context, corner, out.diagnostics)
+        elif corner.treatment == "fillet":
+            fillet = _corner_fillet(resolved, context, corner, out.diagnostics)
+        else:
             continue
-        fillet = _corner_fillet(resolved, context, corner, out.diagnostics)
         if fillet is not None:
             fillets[corner.corner_key] = fillet
 
@@ -148,6 +162,8 @@ def build_planar_geometry(resolved: ResolvedIntersection, context: RoadContext) 
         fillet = fillets.get(corner.corner_key)
         if fillet is None:
             continue
+        if fillet.ring_from_xy is not None:
+            out.ring_tangents[corner.corner_key] = (fillet.ring_from_xy, fillet.ring_to_xy)
         a, b = resolved.leg(corner.from_leg_id), resolved.leg(corner.to_leg_id)
         out.fillet_frames[corner.corner_key] = FilletFrame(
             corner.corner_key, fillet.center_xy, corner.radius_m,
@@ -173,6 +189,15 @@ def build_planar_geometry(resolved: ResolvedIntersection, context: RoadContext) 
     out.boundary_xyz = boundary
     out.boundary_vertices = vertices
     out.boundary_area_m2 = area
+    if resolved.ring is not None:
+        island = _circle(resolved.anchor_xy, resolved.ring.island_radius_m, resolved.ring.island_z, clockwise=True)
+        if not all(_inside_xy(point, boundary) for point in island):
+            out.diagnostics.append(
+                KernelDiagnostic("roundabout_island_outside_boundary", "error", resolved.spec.intersection_id, None, "the central island does not lie inside the paved boundary", "blocked")
+            )
+            return out
+        out.holes_xyz = [island]
+        out.boundary_area_m2 = area + _signed_area(island)
 
     # K7, planar: the span of each road the intersection owns, and the stations it hands back at
     for road_ref, anchor_station in resolved.anchor_station_by_road.items():
@@ -343,9 +368,12 @@ def _boundary(resolved, context, fillets, mouth_distance, diagnostics) -> list[B
             station = _station(resolved, leg, distance)
             _append(vertices, _edge_xyz(context, leg.road_ref, station, left_side), "edge", leg.road_ref, station, left_side)
         if after is not None and after.corner_key in fillets:
-            arc = fillets[after.corner_key].arc_xyz
+            fillet = fillets[after.corner_key]
+            arc = fillet.arc_xyz
+            ratios = _cumulative_ratios(arc)
             for index in range(1, len(arc) - 1):
-                _append(vertices, arc[index], "arc", corner_key=after.corner_key, arc_ratio=index / (len(arc) - 1))
+                kind, center = fillet.point_tags[index] if fillet.point_tags else ("arc", fillet.center_xy)
+                _append(vertices, arc[index], kind, corner_key=after.corner_key, arc_ratio=ratios[index], center_xy=center)
     if len(vertices) > 1 and _same_xy(vertices[0].xyz, vertices[-1].xyz):
         vertices.pop()
     return vertices
@@ -376,10 +404,149 @@ def _mouth_cut(context, leg: ResolvedLeg, station: float, diagnostics) -> list[B
     ]
 
 
-def _append(vertices: list, xyz, kind: str, road_ref: str = "", station: float = 0.0, road_side: str = "", *, corner_key: str = "", arc_ratio: float = 0.0) -> None:
+def _append(vertices: list, xyz, kind: str, road_ref: str = "", station: float = 0.0, road_side: str = "", *, corner_key: str = "", arc_ratio: float = 0.0, center_xy=None) -> None:
     if xyz is None or (vertices and _same_xy(vertices[-1].xyz, xyz)):
         return
-    vertices.append(BoundaryVertex(tuple(xyz), kind, road_ref, station, road_side, corner_key, arc_ratio))
+    vertices.append(BoundaryVertex(tuple(xyz), kind, road_ref, station, road_side, corner_key, arc_ratio, center_xy))
+
+
+def _cumulative_ratios(points) -> list[float]:
+    lengths = [0.0]
+    for a, b in zip(points, points[1:]):
+        lengths.append(lengths[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    total = lengths[-1] or 1.0
+    return [value / total for value in lengths]
+
+
+def _circle(center, radius: float, z: float, *, clockwise: bool = False) -> list[tuple[float, float, float]]:
+    count = max(8, int(math.ceil(360.0 / ARC_MAX_STEP_DEG - 1.0e-9)))
+    sign = -1.0 if clockwise else 1.0
+    return [
+        (center[0] + radius * math.cos(sign * math.tau * k / count), center[1] + radius * math.sin(sign * math.tau * k / count), z)
+        for k in range(count)
+    ]
+
+
+def _inside_xy(point, polygon) -> bool:
+    x, y = point[0], point[1]
+    inside = False
+    for index, a in enumerate(polygon):
+        b = polygon[(index + 1) % len(polygon)]
+        if (a[1] > y) != (b[1] > y) and a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]) > x:
+            inside = not inside
+    return inside
+
+
+def _ring_flare(resolved, context, leg: ResolvedLeg, leg_side: str, radius: float, diagnostics, subject: str):
+    """One approach's flare onto the ring: the circle of `radius` tangent to the leg's pavement edge
+    on `leg_side` and outside tangent to the ring's outer edge. Returns (distance of the edge
+    tangent point from the anchor, its station, the flare centre or None, the ring tangent point).
+    A radius of 0 is a square corner: where the pavement edge meets the ring."""
+
+    ring = resolved.ring
+    center = resolved.anchor_xy
+    side = _road_side(leg, leg_side)
+    target = ring.outer_edge_radius_m + radius
+    distances = _leg_distances(resolved, context, leg, 0.0, min(leg.length_m, FILLET_SEARCH_LENGTH_M))
+    previous = None
+    for distance in distances:
+        xy = _edge_xy(context, leg.road_ref, _station(resolved, leg, distance), side, radius)
+        if xy is None:
+            diagnostics.append(
+                KernelDiagnostic("pavement_edge_owner_missing", "error", leg.road_ref, _station(resolved, leg, distance),
+                                 "the road has no Applied Section pavement width here; generate Applied Sections for it", "blocked")
+            )
+            return None
+        reach = math.hypot(xy[0] - center[0], xy[1] - center[1])
+        if previous is None and reach >= target:
+            diagnostics.append(
+                KernelDiagnostic("roundabout_approach_wider_than_ring", "error", leg.leg_id, None,
+                                 "the approach's pavement edge already lies outside the ring at the centre; enlarge the ring", "blocked")
+            )
+            return None
+        if previous is not None and reach >= target:
+            d0, xy0, r0 = previous
+            # solve |xy0 + (xy - xy0) t - c| = target on the segment
+            dx, dy = xy[0] - xy0[0], xy[1] - xy0[1]
+            fx, fy = xy0[0] - center[0], xy0[1] - center[1]
+            a = dx * dx + dy * dy
+            b = 2.0 * (fx * dx + fy * dy)
+            c = fx * fx + fy * fy - target * target
+            root = math.sqrt(max(b * b - 4.0 * a * c, 0.0))
+            t = (-b + root) / (2.0 * a) if a > 0.0 else 0.0
+            t = min(max(t, 0.0), 1.0)
+            hit = (xy0[0] + dx * t, xy0[1] + dy * t)
+            found = d0 + (distance - d0) * t
+            station = _station(resolved, leg, found)
+            scale = ring.outer_edge_radius_m / target
+            ring_point = (center[0] + (hit[0] - center[0]) * scale, center[1] + (hit[1] - center[1]) * scale)
+            return found, station, (hit if radius > 0.0 else None), ring_point
+        previous = (distance, xy, reach)
+    diagnostics.append(
+        KernelDiagnostic("roundabout_flare_no_solution", "error", subject, None,
+                         f"the {leg.leg_id} flare of radius {radius:.3f} m does not reach the ring within the leg", "blocked")
+    )
+    return None
+
+
+def _ring_corner(resolved, context, corner: ResolvedCorner, diagnostics) -> _Fillet | None:
+    """A roundabout corner: the from leg's flare onto the ring, the ring's outer edge counter-
+    clockwise, and the to leg's flare off it."""
+
+    ring = resolved.ring
+    if ring is None:
+        return None
+    a, b = resolved.leg(corner.from_leg_id), resolved.leg(corner.to_leg_id)
+    first = _ring_flare(resolved, context, a, "left", corner.from_flare_radius_m, diagnostics, corner.corner_key)
+    second = _ring_flare(resolved, context, b, "right", corner.to_flare_radius_m, diagnostics, corner.corner_key)
+    if first is None or second is None:
+        return None
+    center = resolved.anchor_xy
+    z_ring = ring.outer_edge_z
+    start = _edge_xyz(context, a.road_ref, first[1], _road_side(a, "left"))
+    end = _edge_xyz(context, b.road_ref, second[1], _road_side(b, "right"))
+    tangent_a = (first[3][0], first[3][1], z_ring)
+    tangent_b = (second[3][0], second[3][1], z_ring)
+    angle_a = math.atan2(tangent_a[1] - center[1], tangent_a[0] - center[0])
+    angle_b = math.atan2(tangent_b[1] - center[1], tangent_b[0] - center[0])
+    sweep = (angle_b - angle_a) % math.tau
+    gap = (math.atan2(math.sin(b.bearing_rad - a.bearing_rad), math.cos(b.bearing_rad - a.bearing_rad))) % math.tau
+    if sweep <= 1.0e-9 or sweep >= gap:
+        diagnostics.append(
+            KernelDiagnostic("roundabout_flares_overlap", "error", corner.corner_key, None,
+                             "the two flares meet the ring past each other; reduce their radii", "blocked")
+        )
+        return None
+    points: list[tuple[float, float, float]] = []
+    tags: list[tuple[str, tuple[float, float]]] = []
+    if first[2] is not None:
+        for point in _arc(first[2], start, tangent_a):
+            points.append(point)
+            tags.append(("arc", first[2]))
+    else:
+        points.append(start)
+        tags.append(("ring", center))
+    count = max(2, int(math.ceil(math.degrees(sweep) / ARC_MAX_STEP_DEG - 1.0e-9)))
+    radius = ring.outer_edge_radius_m
+    for k in range(1, count):
+        angle = angle_a + sweep * k / count
+        points.append((center[0] + radius * math.cos(angle), center[1] + radius * math.sin(angle), z_ring))
+        tags.append(("ring", center))
+    if second[2] is not None:
+        for point in _arc(second[2], tangent_b, end):
+            points.append(point)
+            tags.append(("arc", second[2]))
+    else:
+        points.append(end)
+        tags.append(("ring", center))
+    # one point per position: the flare arcs repeat their ring tangent points
+    merged_points, merged_tags = [], []
+    for point, tag in zip(points, tags):
+        if merged_points and _same_xy(merged_points[-1], point):
+            continue
+        merged_points.append(point)
+        merged_tags.append(tag)
+    return _Fillet(center, first[0], second[0], tuple(merged_points), tuple(merged_tags), first[3], second[3])
 
 
 def _same_xy(a, b) -> bool:

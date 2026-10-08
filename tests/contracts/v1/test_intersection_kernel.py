@@ -220,10 +220,3 @@ def test_the_fingerprint_follows_the_inputs() -> None:
     assert intersection_input_fingerprint(spec, _starter_t()) != intersection_input_fingerprint(
         IntersectionSpec("x1", "t", ("main", "stem"), corner_radius_m=15.0), _starter_t()
     )
-
-
-def test_a_roundabout_resolves_but_builds_no_geometry_yet() -> None:
-    context = _context(_road("ns", [(0.0, -130.0), (0.0, 130.0)]), _road("ew", [(-130.0, 0.0), (130.0, 0.0)]))
-    result = build_intersection_geometry(IntersectionSpec("x11", "roundabout", ("ns", "ew")), context)
-    assert result.status == "not_implemented"
-    assert len(result.legs) == 0 and result.boundary_xyz == ()

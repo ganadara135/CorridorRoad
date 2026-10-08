@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 
-from ...models.source.intersection_spec import AnchorSpec, IntersectionSpec
+from ...models.source.intersection_spec import AnchorSpec, IntersectionSpec, LegOverride, RoundaboutSpec
 from ..evaluation.intersection_evaluation_service import IntersectionEvaluationService
 from ..evaluation.intersection_kernel import build_intersection_geometry
 from ..evaluation.intersection_kernel.road_context import STATION_TOLERANCE_M, PolylineRoad, PolylineRoadContext, SurfaceProfile
@@ -112,7 +112,50 @@ def spec_from_intersection_model(intersection_model, intersection_id: str = "") 
         ),
         None,
     )
-    return IntersectionSpec(row_id, kind, roads, anchor=anchor_spec, corner_radius_m=radius, grading_mode=grading)
+    roundabout, overrides = (None, ()) if kind != "roundabout" else _roundabout_spec(intersection_model, row, row_id)
+    if kind == "roundabout":
+        # the roundabout grades its ring; its curb return row is the preset's ring radius, not a corner
+        radius, grading = None, None
+    return IntersectionSpec(
+        row_id, kind, roads, anchor=anchor_spec, corner_radius_m=radius, grading_mode=grading,
+        roundabout=roundabout, leg_overrides=overrides,
+    )
+
+
+def _roundabout_spec(intersection_model, row, row_id: str):
+    """The ring from the roundabout policy rows, and each approach's entry and exit flare rows as
+    leg overrides. A per-approach row names an old leg row and an endpoint: `start` is the side
+    behind the anchor (`back`), `end` the side ahead, `both` both."""
+
+    values: dict[str, float] = {}
+    per_approach: dict[tuple[str, str], dict[str, float]] = {}
+    alignment_by_leg = {str(leg.leg_id): str(leg.alignment_ref) for leg in list(getattr(row, "leg_rows", []) or [])}
+    for policy in list(getattr(intersection_model, "edge_policy_rows", []) or []):
+        if str(getattr(policy, "intersection_id", "") or "") != row_id or str(getattr(policy, "edge_family_intent", "") or "") != "roundabout":
+            continue
+        if str(getattr(policy, "status", "") or "active") != "active":
+            continue
+        rule = str(getattr(policy, "offset_rule", "") or "")
+        value = float(getattr(policy, "offset_value", 0.0) or 0.0)
+        if rule in {"roundabout_approach_entry_radius", "roundabout_approach_exit_radius"}:
+            road = alignment_by_leg.get(str(getattr(policy, "leg_ref", "") or ""), "")
+            endpoint = str(getattr(policy, "side", "") or "both").lower()
+            sides = {"start": ("back",), "end": ("ahead",)}.get(endpoint, ("back", "ahead"))
+            for side in sides:
+                if road:
+                    per_approach.setdefault((road, side), {})["entry" if rule.endswith("entry_radius") else "exit"] = value
+        else:
+            values[rule] = value
+    outer = values.get("roundabout_circulatory_outer_radius", 0.0)
+    island = values.get("roundabout_central_island_radius", 0.0)
+    ring = None
+    if outer > 0.0 and 0.0 < island < outer:
+        ring = RoundaboutSpec(outer, outer - island, max(values.get("roundabout_outer_apron_width", 0.0), 0.0))
+    overrides = tuple(
+        LegOverride(road, side, True, radii.get("entry"), radii.get("exit"))
+        for (road, side), radii in sorted(per_approach.items())
+    )
+    return ring, overrides
 
 
 def intersection_kernel_shadow_comparison(

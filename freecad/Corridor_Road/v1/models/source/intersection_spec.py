@@ -34,6 +34,9 @@ class LegOverride:
     road_ref: str
     side: str
     enabled: bool = True
+    # roundabout only: this approach's entry and exit flare radii
+    entry_radius_m: float | None = None
+    exit_radius_m: float | None = None
 
 
 @dataclass(frozen=True)
