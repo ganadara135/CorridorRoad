@@ -71,6 +71,7 @@ The following precedence prevents historical plans from being read as current co
 Current active plan:
 
 - `V1_SIDE_SLOPE_REVIEW_UX_PLAN.md`, result-backed ordinary-road and Intersection Side Slope review
+- `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md`, the single Intersection specification: a parametric spec and the evaluated roads in, one deterministic geometry result out, introduced in shadow mode
 
 Completed architecture record:
 
@@ -83,6 +84,7 @@ Current operational release status:
 Special classifications:
 
 - `V1_RAMP_MODEL.md` and Ramp-related plan content are historical compatibility references only.
+- every other `V1_INTERSECTION_*_PLAN.md`, `V1_CROSS_INTERSECTION_*_PLAN.md` and `V1_ROUNDABOUT_*_PLAN.md` is a historical proposal since 2026-10-08; `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md` supersedes them where they disagree.
 - `V1_WATERTIGHT_SOLID_*.md` documents preserve existing compatibility behavior but are not active development plans while the pause is in effect.
 - the v0 documents were removed on 2026-09-24 and are reachable only through git history.
 - `V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` records which legacy `commands` modules are still registered, which are stable-id bridges to v1 engines, and which are retirement candidates. It is an inventory record: no command is retired and the retirement decision itself remains open.

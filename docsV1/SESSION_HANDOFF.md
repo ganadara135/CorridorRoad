@@ -12,9 +12,12 @@ do, the decisions that were taken and should not be re-litigated, what changed, 
 left, and the traps that cost time. It does not repeat what the code, the git history or
 `AGENTS.md` already say.
 
-The authoritative plan for the intersection work is
-[V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md](./V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md).
-Where this document and that plan disagree, the plan is right: it carries the measurements.
+Since 2026-10-08 the authoritative plan for the intersection work is
+[V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md](./V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md): the
+parametric kernel, introduced in shadow mode. The intersection items in sections 4 and 5 below
+are the record of the earlier plan,
+[V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md](./V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md),
+now historical. Where this document and the active plan disagree, the plan is right.
 
 ## 2. Goals, in the order they were set
 

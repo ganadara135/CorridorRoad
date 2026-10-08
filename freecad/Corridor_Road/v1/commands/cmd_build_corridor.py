@@ -114,6 +114,10 @@ from ..services.builders.corridor_surface_geometry_service import (
     SUPPLEMENTAL_SAMPLING_MAX_SPACING,
     supplemental_sampling_summary,
 )
+from ..services.builders.intersection_kernel_context_service import (
+    intersection_kernel_shadow_comparison,
+    spec_from_intersection_model,
+)
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService, IntersectionPatchPrerequisiteResult
 from ..services.evaluation.region_boundary_continuity_evaluation_service import (
@@ -5961,11 +5965,51 @@ def create_corridor_intersection_surface_preview(
             surface_boundary_review=surface_boundary_review,
             tin_surface=tin_surface,
         )
+        _attach_intersection_kernel_shadow(
+            doc,
+            preview_obj,
+            intersection_model=intersection_model,
+            applied_section_set=applied_section_set,
+            boundary_result=boundary_result,
+        )
         try:
             route_object_to_project_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
     return preview_obj
+
+
+def _attach_intersection_kernel_shadow(doc, preview_obj, *, intersection_model, applied_section_set, boundary_result) -> None:
+    """Record how the parametric intersection kernel compares with this build (shadow mode).
+
+    `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md` section 6: the kernel only measures here and nothing
+    reads these properties back. Any failure is recorded as `error` instead of raised, because a
+    shadow computation must never block or change the production build it observes.
+    """
+
+    try:
+        spec = spec_from_intersection_model(intersection_model)
+        alignment_models = [
+            model
+            for model in (_intersection_contract_alignment_model_by_ref(doc, ref) for ref in (spec.road_refs if spec else ()))
+            if model is not None
+        ]
+        comparison = intersection_kernel_shadow_comparison(
+            intersection_model,
+            alignment_models,
+            applied_section_set,
+            boundary_result,
+        )
+        status = comparison.status
+        fillet_deviation, envelope_deviation = comparison.fillet_deviation_m, comparison.envelope_deviation_m
+        rows = list(comparison.rows)
+    except Exception as exc:
+        status, fillet_deviation, envelope_deviation = "error", -1.0, -1.0
+        rows = [f"error|{type(exc).__name__}: {str(exc)[:200]}"]
+    _set_preview_property(preview_obj, "IntersectionKernelShadowStatus", status)
+    _set_preview_float_property(preview_obj, "IntersectionKernelShadowFilletDeviationM", float(fillet_deviation))
+    _set_preview_float_property(preview_obj, "IntersectionKernelShadowEnvelopeDeviationM", float(envelope_deviation))
+    _set_preview_string_list_property(preview_obj, "IntersectionKernelShadowRows", rows)
 
 
 def _clear_intersection_surface_previews_with_diagnostic(
