@@ -115,18 +115,16 @@ function Invoke-FastValidation {
             tests/contracts/v1/test_polygon_boundary_service.py `
             tests/contracts/v1/test_corridor_surface_orchestration_service.py `
             tests/contracts/v1/test_shared_breakline_audit_service.py `
+            tests/contracts/v1/test_intersection_kernel.py `
+            tests/contracts/v1/test_intersection_kernel_surfaces.py `
+            tests/contracts/v1/test_intersection_kernel_roundabout.py `
             tests/contracts/v1/test_intersection_surface_patch_build_service.py `
             tests/contracts/v1/test_intersection_patch_input_preparation_service.py `
-            tests/contracts/v1/test_intersection_patch_grading_service.py `
             tests/contracts/v1/test_intersection_patch_boundary_selection_service.py `
             tests/contracts/v1/test_intersection_patch_triangulation_service.py `
             tests/contracts/v1/test_intersection_patch_shape_quality_service.py `
-            tests/contracts/v1/test_intersection_patch_drainage_review_service.py `
-            tests/contracts/v1/test_intersection_patch_boundary_context_service.py `
             tests/contracts/v1/test_intersection_patch_constraint_build_service.py `
             tests/contracts/v1/test_intersection_patch_tin_assembly_service.py `
-            tests/contracts/v1/test_intersection_patch_pipeline_service.py `
-            tests/contracts/v1/test_intersection_patch_preparation_pipeline_service.py `
             tests/contracts/v1/test_intersection_tie_in_edge_evaluation_service.py `
             tests/contracts/v1/test_intersection_boundary_segment_evaluation_service.py `
             tests/contracts/v1/test_intersection_patch_boundary_evaluation_service.py `

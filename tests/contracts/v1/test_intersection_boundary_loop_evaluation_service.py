@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result import (
     IntersectionBoundaryLoopEvaluationChainResult,
 )
@@ -167,23 +165,3 @@ def test_context_adapter_extends_diagnostics_and_returns_boundary_result() -> No
         "existing:diagnostic",
         "intersection_boundary_loop_model_missing",
     ]
-
-
-def test_command_pipeline_uses_service_and_compatibility_wrapper_is_thin() -> None:
-    pipeline_source = inspect.getsource(
-        cmd_build_corridor._build_intersection_surface_patch_tin
-    )
-    wrapper_source = inspect.getsource(
-        cmd_build_corridor._intersection_boundary_loop_result_for_shared_breaklines
-    )
-
-    assert (
-        "IntersectionBoundaryLoopEvaluationService().evaluate_context"
-        in pipeline_source
-    )
-    assert (
-        "IntersectionBoundaryLoopEvaluationService().evaluate_context"
-        in wrapper_source
-    )
-    assert "IntersectionEvaluationService()" not in wrapper_source
-    assert "evaluate_topology(" not in wrapper_source

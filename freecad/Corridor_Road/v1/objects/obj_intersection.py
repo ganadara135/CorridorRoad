@@ -86,7 +86,6 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "SlopeFacePolicyRowsJson", "Intersections", "intersection slope-face policy rows")
     _add_property(obj, "App::PropertyString", "DrainagePolicyRowsJson", "Intersections", "intersection drainage policy rows")
     _add_property(obj, "App::PropertyStringList", "ControlRegionRefs", "Intersections", "linked control region refs")
-    _ensure_geometry_engine_property(obj)
     # the parametric spec (plan phase R7b); empty: the spec is read from the rows
     _add_property(obj, "App::PropertyString", "SpecJson", "Intersections", "parametric intersection spec")
     _add_property(obj, "App::PropertyInteger", "AnchorCount", "Summary", "anchor row count")
@@ -572,9 +571,6 @@ def _is_v1_intersection_model(obj) -> bool:
     return proxy_type == "IntersectionModel" or name.startswith("V1IntersectionModel")
 
 
-INTERSECTION_GEOMETRY_ENGINES = ("legacy", "kernel")
-
-
 def stored_intersection_spec(obj) -> IntersectionSpec | None:
     """The parametric spec stored on the object, or None when none is stored or it does not read.
 
@@ -599,40 +595,6 @@ def store_intersection_spec(obj, spec: IntersectionSpec | None) -> None:
         obj.touch()
     except Exception:
         pass
-
-
-def _ensure_geometry_engine_property(obj) -> None:
-    """The transitional build option of plan phase R7: a drop-down of the two engines.
-
-    "kernel" builds this intersection with the parametric kernel, "legacy" with the row-based
-    pipeline; it is not design intent. An object from before the drop-down holds the option as a
-    free string: it is replaced by the drop-down, keeping a valid value.
-    """
-
-    current = "legacy"
-    if hasattr(obj, "GeometryEngine"):
-        if obj.getTypeIdOfProperty("GeometryEngine") == "App::PropertyEnumeration":
-            return
-        current = intersection_geometry_engine(obj)
-        try:
-            obj.removeProperty("GeometryEngine")
-        except Exception:
-            # a property that cannot be removed keeps working as a string
-            return
-    try:
-        obj.addProperty("App::PropertyEnumeration", "GeometryEngine", "Intersections", "intersection geometry engine: legacy or kernel")
-    except Exception:
-        return
-    obj.GeometryEngine = list(INTERSECTION_GEOMETRY_ENGINES)
-    obj.GeometryEngine = current
-
-
-def intersection_geometry_engine(obj) -> str:
-    """The engine that builds this intersection: "kernel" or "legacy" (the default, also for an
-    object saved before the property existed or holding an unknown value)."""
-
-    value = str(getattr(obj, "GeometryEngine", "") or "").strip().lower()
-    return value if value in INTERSECTION_GEOMETRY_ENGINES else "legacy"
 
 
 def _add_property(obj, property_type: str, name: str, group: str, doc: str = "") -> None:

@@ -37,10 +37,6 @@ from .intersection_patch_triangulation_service import (
     IntersectionPatchTriangulationRequest,
     IntersectionPatchTriangulationService,
 )
-from .intersection_patch_boundary_context_service import (
-    IntersectionPatchBoundaryContextRequest,
-    IntersectionPatchBoundaryContextService,
-)
 from .intersection_patch_constraint_build_service import (
     IntersectionPatchConstraintBuildRequest,
     IntersectionPatchConstraintBuildService,
@@ -48,14 +44,6 @@ from .intersection_patch_constraint_build_service import (
 from .intersection_patch_tin_assembly_service import (
     IntersectionPatchTinAssemblyRequest,
     IntersectionPatchTinAssemblyService,
-)
-from .intersection_patch_pipeline_service import (
-    IntersectionPatchPipelineRequest,
-    IntersectionPatchPipelineService,
-)
-from .intersection_patch_preparation_pipeline_service import (
-    IntersectionPatchPreparationPipelineRequest,
-    IntersectionPatchPreparationPipelineService,
 )
 from .corridor_solid_service import StructureSolidBuildRequest, StructureSolidOutputService
 from .corridor_model_service import CorridorModelBuildRequest, CorridorModelService
@@ -137,16 +125,10 @@ __all__ = [
     "IntersectionPatchBoundarySelectionService",
     "IntersectionPatchTriangulationRequest",
     "IntersectionPatchTriangulationService",
-    "IntersectionPatchBoundaryContextRequest",
-    "IntersectionPatchBoundaryContextService",
     "IntersectionPatchConstraintBuildRequest",
     "IntersectionPatchConstraintBuildService",
     "IntersectionPatchTinAssemblyRequest",
     "IntersectionPatchTinAssemblyService",
-    "IntersectionPatchPipelineRequest",
-    "IntersectionPatchPipelineService",
-    "IntersectionPatchPreparationPipelineRequest",
-    "IntersectionPatchPreparationPipelineService",
     "StructureSolidBuildRequest",
     "StructureSolidOutputService",
     "CorridorModelBuildRequest",

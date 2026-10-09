@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result import (
     IntersectionPatchTinAssemblyResult,
 )
@@ -263,13 +261,3 @@ def test_tin_assembly_returns_typed_error_for_invalid_result_contract() -> None:
         "intersection_patch_tin_assembly_failed:AttributeError:"
         "'types.SimpleNamespace' object has no attribute 'triangulation_mode'",
     )
-
-
-def test_command_non_roundabout_builder_delegates_preparation_pipeline() -> None:
-    source = inspect.getsource(
-        cmd_build_corridor._build_intersection_surface_patch_tin
-    )
-
-    assert "IntersectionPatchPreparationPipelineService(" in source
-    assert "IntersectionPatchPreparationPipelineRequest(" in source
-    assert "return TINSurface(" not in source

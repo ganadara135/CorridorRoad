@@ -113,6 +113,10 @@ anything else as `legacy`. The kernel-built previews carry `IntersectionGeometry
 `IntersectionKernelStatus`, `IntersectionKernelFingerprint` and four `IntersectionKernel*Rows`
 string lists; they are result metadata and are rebuilt on every Build Parametric.
 
+Since phase R7c the kernel is the only intersection engine: `GeometryEngine` is no longer created,
+and a document that has it keeps a dynamic property nothing reads. The kernel previews no longer
+carry `IntersectionGeometryEngine`.
+
 `SpecJson` was added to the Intersection object on 2026-10-08 (phase R7b): the parametric
 `IntersectionSpec` as JSON, schema version 1, written by `intersection_spec_to_dict` and read by
 `intersection_spec_from_dict` (`models/source/intersection_spec.py`). It is design intent: with the

@@ -2,7 +2,7 @@
 
 The spec is stored on the Intersection object (`SpecJson`), written when an intersection is created
 from a preset or from existing Alignments, and edited in the Intersection panel's Parametric Spec
-group. With the kernel engine the stored spec, not the rows, decides the geometry.
+group. The stored spec, not the rows, decides the geometry the kernel builds.
 """
 
 import json
@@ -33,7 +33,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_spec import (
 )
 from freecad.Corridor_Road.v1.objects.obj_intersection import (
     find_v1_intersection_model,
-    intersection_geometry_engine,
     store_intersection_spec,
     stored_intersection_spec,
     to_intersection_model,
@@ -117,12 +116,11 @@ def test_creating_an_intersection_stores_its_spec_and_a_bad_spec_falls_back_to_t
         App.closeDocument(doc.Name)
 
 
-def test_with_the_kernel_the_stored_spec_decides_the_geometry() -> None:
+def test_the_stored_spec_decides_the_geometry() -> None:
     doc = App.newDocument("CRV1SpecDecides")
     try:
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
         obj = find_v1_intersection_model(doc)
-        obj.GeometryEngine = "kernel"
         spec = stored_intersection_spec(obj)
         main = spec.road_refs[0]
         assert {103.0, 137.0} <= set(_section_stations(doc, main))
@@ -155,10 +153,8 @@ def test_the_panel_loads_checks_and_applies_the_spec() -> None:
         assert "Kernel status: ready" in text and "corner_radius_m" in text and "(spec)" in text
 
         panel._spec_corner_radius.setValue(15.0)
-        panel._spec_engine_combo.setCurrentIndex(panel._spec_engine_combo.findData("kernel"))
         assert panel._apply_spec()
         obj = find_v1_intersection_model(doc)
-        assert intersection_geometry_engine(obj) == "kernel"
         assert stored_intersection_spec(obj).corner_radius_m == 15.0
 
         # a closed leg: untick the side road, check, and the kernel no longer has it

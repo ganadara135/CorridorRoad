@@ -42,7 +42,6 @@ from ..objects.obj_subassembly_preset_library import list_v1_subassembly_preset_
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_intersection import (
     find_v1_intersection_model,
-    intersection_geometry_engine,
     stored_intersection_spec,
     to_intersection_model,
 )
@@ -58,7 +57,6 @@ from ..services.builders.corridor_surface_geometry_service import (
     SUPPLEMENTAL_SAMPLING_MAX_SPACING,
 )
 from ..services.evaluation import Centerline3DFrameService
-from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 from ..services.builders.intersection_kernel_surface_service import (
     intersection_geometry_from_models,
     kernel_mouth_stations,
@@ -93,12 +91,11 @@ def build_document_applied_section_set(
 ):
     """Build an AppliedSectionSet result from the active v1 source objects.
 
-    An intersection built by the parametric kernel (`GeometryEngine` "kernel", plan phase R7a)
-    needs a section at each of its leg mouths, and the mouths depend on the roads' widths, which
-    the sections give. So it takes two passes: the first, without intersection stations, gives the
-    kernel its widths; the second, only when a mouth has no section yet, adds them. The mouth
-    stations follow from plan geometry and widths, never from heights, so the second pass does not
-    move them. Without a kernel intersection this is the one pass it always was.
+    An intersection needs a section at each of its leg mouths, and the mouths depend on the roads'
+    widths, which the sections give. So it takes two passes: the first, without intersection
+    stations, gives the intersection kernel its widths; the second, only when a mouth has no
+    section yet, adds them. The mouth stations follow from plan geometry and widths, never from
+    heights, so the second pass does not move them. Without an intersection this is one pass.
     """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -115,7 +112,7 @@ def build_document_applied_section_set(
         supplemental_sections_grade_delta=supplemental_sections_grade_delta,
     )
     intersection_obj = find_v1_intersection_model(doc)
-    if intersection_obj is None or intersection_geometry_engine(intersection_obj) != "kernel":
+    if intersection_obj is None:
         return _build_applied_section_set_pass(doc, kernel_stations=None, **options)
     first = _build_applied_section_set_pass(doc, kernel_stations={}, **options)
     result = intersection_geometry_from_models(
@@ -1505,27 +1502,15 @@ def _with_intersection_supplemental_stations(
     *,
     kernel_stations: dict[str, list[float]] | None = None,
 ) -> list[float]:
-    """Merge intersection boundary and curb-return control stations into a station list.
-
-    With the kernel engine (`kernel_stations` given, possibly empty) the only intersection
-    stations are the kernel's leg mouths for this alignment.
-    """
+    """Merge the intersection's leg mouth stations for this alignment into a station list."""
 
     base = _unique_station_values(stations)
-    if intersection_model is None or not base:
+    if intersection_model is None or kernel_stations is None or not base:
         return base
     low = min(base)
     high = max(base)
-    if kernel_stations is not None:
-        mouths = [_clamp_station(value, station_min=low, station_max=high) for value in kernel_stations.get(str(alignment_id or ""), [])]
-        return _unique_station_values([*base, *mouths])
-    supplemental = _intersection_supplemental_stations_for_alignment(
-        intersection_model,
-        alignment_id,
-        station_min=low,
-        station_max=high,
-    )
-    return _unique_station_values([*base, *supplemental])
+    mouths = [_clamp_station(value, station_min=low, station_max=high) for value in kernel_stations.get(str(alignment_id or ""), [])]
+    return _unique_station_values([*base, *mouths])
 
 
 def _intersection_supplemental_station_kind_map(source_stations: list[float], built_stations: list[float]) -> dict[float, str]:
@@ -1555,103 +1540,6 @@ def _station_in_list(station: float, stations: list[float], *, tolerance: float 
         except Exception:
             continue
     return False
-
-
-def _intersection_supplemental_stations_for_alignment(
-    intersection_model,
-    alignment_id: str,
-    *,
-    station_min: float,
-    station_max: float,
-) -> list[float]:
-    """Return result-only Applied Section stations needed for intersection handoff."""
-
-    alignment_ref = str(alignment_id or "").strip()
-    if not alignment_ref:
-        return []
-    output: list[float] = []
-    output.extend(
-        _intersection_edge_network_contact_stations_for_alignment(
-            intersection_model,
-            alignment_ref,
-        )
-    )
-    curb_radius = _intersection_default_curb_radius(intersection_model)
-
-    for row in list(getattr(intersection_model, "intersection_rows", []) or []):
-        center_station = None
-        if alignment_ref == str(getattr(row, "primary_alignment_ref", "") or "").strip():
-            center_station = _float_or_none(getattr(row, "primary_station", None))
-        else:
-            secondary_refs = dict(getattr(row, "secondary_station_refs", {}) or {})
-            center_station = _float_or_none(secondary_refs.get(alignment_ref))
-        if center_station is not None:
-            output.extend(_intersection_center_control_stations(center_station, curb_radius))
-        for leg in list(getattr(row, "leg_rows", []) or []):
-            if alignment_ref != str(getattr(leg, "alignment_ref", "") or "").strip():
-                continue
-            output.append(float(getattr(leg, "approach_station_start", 0.0) or 0.0))
-            output.append(float(getattr(leg, "approach_station_end", 0.0) or 0.0))
-
-    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
-        if alignment_ref != str(getattr(area, "alignment_ref", "") or "").strip():
-            continue
-        for start, end in list(getattr(area, "station_ranges", []) or []):
-            output.extend([float(start), float(end), (float(start) + float(end)) * 0.5])
-        for start, end in list(getattr(area, "influence_ranges", []) or []):
-            output.extend([float(start), float(end)])
-
-    return _unique_station_values(
-        [
-            _clamp_station(value, station_min=station_min, station_max=station_max)
-            for value in output
-            if _is_finite_number(value)
-        ]
-    )
-
-
-def _intersection_edge_network_contact_stations_for_alignment(
-    intersection_model,
-    alignment_id: str,
-) -> list[float]:
-    """Read exact intersection edge-network contact stations when the contract exposes them."""
-
-    alignment_ref = str(alignment_id or "").strip()
-    if intersection_model is None or not alignment_ref:
-        return []
-    output: list[float] = []
-    try:
-        edge_network = IntersectionEvaluationService().evaluate_edge_network(intersection_model)
-    except Exception:
-        return []
-    for row in list(getattr(edge_network, "edge_rows", []) or []):
-        if str(getattr(row, "edge_family", "") or "") != "curb_return":
-            continue
-        contact_refs = dict(getattr(row, "contact_station_refs", {}) or {})
-        output.extend([float(value) for value in list(contact_refs.get(alignment_ref, ()) or ()) if _is_finite_number(value)])
-    return _unique_station_values(output)
-
-
-def _intersection_center_control_stations(center_station: float, curb_radius: float) -> list[float]:
-    radius = max(float(curb_radius or 0.0), 0.0)
-    if radius <= 1.0e-9:
-        return [float(center_station)]
-    return [
-        float(center_station) - radius,
-        float(center_station) - radius * 0.5,
-        float(center_station),
-        float(center_station) + radius * 0.5,
-        float(center_station) + radius,
-    ]
-
-
-def _intersection_default_curb_radius(intersection_model) -> float:
-    radii = [
-        max(float(getattr(row, "radius", 0.0) or 0.0), 0.0)
-        for row in list(getattr(intersection_model, "curb_return_policy_rows", []) or [])
-        if str(getattr(row, "status", "active") or "active") != "disabled"
-    ]
-    return max(radii) if radii else 0.0
 
 
 def _unique_station_values(values: list[float], *, tolerance: float = 1.0e-6) -> list[float]:

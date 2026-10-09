@@ -400,9 +400,11 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R6 | roundabout in the kernel | roundabout shadow `agree` or explained (done, §8) |
 | R7a | the kernel engine, selectable per intersection (`GeometryEngine` = `kernel`), default `legacy`: mouth sections in Applied Sections, corridor clipped by station span, kernel patch and side slope as the intersection surfaces | full gate; the user's GUI comparison of both engines (done, §8, GUI pending) |
 | R7b | the spec becomes the stored source (`SpecJson` on the Intersection object) and the panel edits it | full gate and GUI (done, §8, GUI pending) |
-| R7c | the default becomes `kernel`; the legacy pipeline, its lane connection, edge policy and surface zone rows, the services only they feed, and their tests are deleted (D2) | full gate and GUI manual QA |
+| R7c-1 | the kernel is the only engine: the legacy build in Build Parametric and Applied Sections, the code only it reached, and the tests of it are deleted | full gate and GUI (done, §8) |
+| R7c-2 | the review surfaces still reading the legacy evaluation chain (the Build Parametric Intersections, Breakline Audit and Drainage tabs) read the kernel result; the chain and the services only it feeds are deleted; the kernel's drainage candidates (K7) feed the drainage review | full gate and GUI |
+| R7c-3 | the lane connection and edge policy rows (D2) leave the source, and the panel's row review gives way to the spec group | full gate and GUI manual QA |
 
-R1 to R7b are implemented. R7 is split because the switch and the deletion cannot be one step:
+R1 to R7c-1 are implemented. R7 is split because the switch and the deletion cannot be one step:
 the legacy previews carry 341 metadata properties that the review rows, the 78 command tests and
 the regression smokes read, so replacing them breaks all of that at once. R7a puts the kernel
 engine next to the legacy one, selectable per intersection, so the two can be compared in the GUI on
@@ -611,8 +613,46 @@ skipped / 0 failed. No GUI check was run.
    `partial` with `intersection_leg_count` and still builds.
 6. Save, close and reopen: Load Spec shows the 15 m radius.
 
-### Next: R7c
+### R7c-1, 2026-10-08
 
-The default becomes `kernel`; the legacy pipeline, the lane connection, edge policy and surface zone
-rows (D2), the services only they feed, the shadow comparison and their tests are deleted; the panel's
-row review gives way to the spec group.
+The kernel is the only engine. `GeometryEngine` and its panel field are gone; a document with an
+Intersection source is built by the kernel, one without is untouched.
+
+What went, found by an AST reference graph rather than by name: a definition of
+`cmd_build_corridor.py` goes when nothing in production code reaches it any more and something did
+before this phase (so code that only tests reached before is left alone, unless it is legacy
+intersection code that now calls into deleted code). The graph counts a name as used wherever a
+production module names it, as a Name, an attribute or a string, which keeps the functions the
+Build Parametric viewer binds by name.
+
+| | lines |
+| --- | --- |
+| `cmd_build_corridor.py`: the legacy branches and the 170 definitions only they reached | +26 / -6,747 |
+| `cmd_generate_applied_sections.py`: the legacy intersection stations | +10 / -122 |
+| ten patch pipeline / grading / drainage review modules nothing reached | -1,235 |
+| the shadow comparison (its service, and its part of the context service) | -312 |
+| production, all told | +45 / -8,515 |
+| tests: 6 files of deleted modules, the legacy frame test, 77 tests of the legacy build | +143 / -7,428 |
+
+The two intersection regression smokes keep their names and runner slots and now check the kernel:
+the starter T, Cross and roundabout built end to end, both surfaces ready with no skinny triangle,
+no missing daylight, no corridor triangle inside the intersection, the mouths' vertices shared.
+The architecture ratchet lists the deleted roundabout wrappers as names that must not return.
+`scripts/run_local_validation.ps1`'s Fast set drops the five deleted test files and takes the three
+pure kernel test files.
+
+Known gaps, left for R7c-2: the intersection drainage review and its handoff gate row read the
+legacy chain's drainage hints, which nothing produces now (four tests of them went); the kernel's
+K7 drainage candidates are to replace them. The Build Parametric Intersections and Breakline Audit
+tabs still evaluate the legacy chain from the rows. Watertight Solids' intersection patch body reads
+the intersection surface object, which keeps its name; its tests pass unchanged.
+
+Validation at R7c-1: flake8 clean on the touched files, architecture 9 passed, all three smoke
+runners PASS (with the rewritten intersection smokes), full contract suite (command chunk included)
+1,440 passed / 18 skipped / 0 failed. GUI: the user built the starter T, Cross and roundabout
+with the kernel as the only engine and reported all three as working (2026-10-09).
+
+### Next: R7c-2
+
+The review surfaces on the kernel result, the legacy evaluation chain deleted, K7's drainage
+candidates for the drainage review.

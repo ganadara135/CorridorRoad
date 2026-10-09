@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result import (
     IntersectionSurfacePatchBuildResult,
 )
@@ -105,25 +103,3 @@ def test_intersection_patch_service_reports_missing_builder() -> None:
     assert result.diagnostic_rows == (
         "intersection_surface_patch_builder_missing",
     )
-
-
-def test_command_result_adapter_preserves_ready_surface_and_failure_message() -> None:
-    surface = _surface()
-    ready = IntersectionSurfacePatchBuildResult(
-        status="ready",
-        surface_id="surface:intersection",
-        intersection_id="intersection:test",
-        tin_surface=surface,
-    )
-    failed = IntersectionSurfacePatchBuildResult(
-        status="error",
-        surface_id="surface:intersection",
-        intersection_id="intersection:test",
-        error_message="original patch failure",
-    )
-
-    assert cmd_build_corridor._tin_surface_from_intersection_patch_build_result(
-        ready
-    ) is surface
-    with pytest.raises(RuntimeError, match="^original patch failure$"):
-        cmd_build_corridor._tin_surface_from_intersection_patch_build_result(failed)

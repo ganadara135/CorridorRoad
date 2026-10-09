@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.services.geometry import (
     xy_polygon_boundaries_intersect,
     xy_polygon_self_intersects,
@@ -61,19 +59,3 @@ def test_polygon_boundary_intersection_distinguishes_containment_touch_and_overl
     assert xy_polygon_boundaries_intersect(outer, endpoint_touch)
     assert xy_polygon_boundaries_intersect(outer, edge_overlap)
     assert not xy_polygon_boundaries_intersect(outer[:1], contained)
-
-
-def test_build_corridor_polygon_topology_wrappers_match_service() -> None:
-    crossing_xyz = [
-        (0.0, 0.0, 10.0),
-        (4.0, 4.0, 11.0),
-        (0.0, 4.0, 12.0),
-        (4.0, 0.0, 13.0),
-    ]
-    first = [SimpleNamespace(x=0.0, y=0.0), SimpleNamespace(x=4.0, y=0.0)]
-    second = [SimpleNamespace(x=2.0, y=0.0), SimpleNamespace(x=2.0, y=2.0)]
-
-    assert cmd_build_corridor._intersection_patch_boundary_has_self_crossing(
-        [SimpleNamespace(x=point[0], y=point[1]) for point in crossing_xyz]
-    )
-    assert cmd_build_corridor._intersection_patch_boundary_rings_intersect(first, second)

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import inspect
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result.intersection_boundary_segment import (
     IntersectionBoundarySegmentResult,
     IntersectionBoundarySegmentRow,
@@ -192,21 +190,4 @@ def test_service_rejects_zero_area_ordered_outer_boundary() -> None:
     assert any(
         row.startswith("intersection_patch_boundary_zero_area:")
         for row in result.diagnostic_rows
-    )
-
-
-def test_command_wrapper_and_preparation_pipeline_use_patch_boundary_service() -> None:
-    wrapper_source = inspect.getsource(
-        cmd_build_corridor.corridor_intersection_patch_boundary_result
-    )
-    pipeline_source = inspect.getsource(
-        cmd_build_corridor._build_intersection_surface_patch_tin
-    )
-
-    assert "IntersectionPatchBoundaryEvaluationService().evaluate(" in wrapper_source
-    assert "IntersectionPatchBoundaryEvaluationRequest(" in wrapper_source
-    assert "IntersectionPatchBoundaryPointRow(" not in wrapper_source
-    assert (
-        "IntersectionPatchBoundaryEvaluationService().evaluate_context"
-        in pipeline_source
     )

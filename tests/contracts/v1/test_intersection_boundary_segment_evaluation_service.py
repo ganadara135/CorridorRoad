@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result.intersection_boundary_segment import (
     IntersectionBoundarySegmentResult,
 )
@@ -206,23 +204,4 @@ def test_service_reports_large_radius_without_blocking_ready_result() -> None:
     assert any(
         row.startswith("warning:intersection_curb_return_radius_large:")
         for row in result.diagnostic_rows
-    )
-
-
-def test_command_wrapper_and_preparation_pipeline_use_boundary_service() -> None:
-    wrapper_source = inspect.getsource(
-        cmd_build_corridor.corridor_intersection_boundary_segment_result
-    )
-    pipeline_source = inspect.getsource(
-        cmd_build_corridor._build_intersection_surface_patch_tin
-    )
-
-    assert "IntersectionBoundarySegmentEvaluationService().evaluate(" in (
-        wrapper_source
-    )
-    assert "IntersectionBoundarySegmentEvaluationRequest(" in wrapper_source
-    assert "IntersectionBoundarySegmentRow(" not in wrapper_source
-    assert (
-        "IntersectionBoundarySegmentEvaluationService().evaluate_context"
-        in pipeline_source
     )

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
-from freecad.Corridor_Road.v1.commands import cmd_build_corridor
 from freecad.Corridor_Road.v1.models.result.intersection_tie_in_edge import (
     IntersectionTieInEdgeResult,
 )
@@ -172,20 +170,3 @@ def test_service_reports_missing_expected_alignment_and_incomplete_count() -> No
         "intersection_tie_in_edge_incomplete: expected 2 left/right edge "
         "candidate(s), found 0.",
     ]
-
-
-def test_command_wrapper_and_preparation_pipeline_use_typed_service() -> None:
-    wrapper_source = inspect.getsource(
-        cmd_build_corridor.corridor_intersection_tie_in_edge_result
-    )
-    pipeline_source = inspect.getsource(
-        cmd_build_corridor._build_intersection_surface_patch_tin
-    )
-
-    assert "IntersectionTieInEdgeEvaluationService().evaluate(" in wrapper_source
-    assert "IntersectionTieInEdgeEvaluationRequest(" in wrapper_source
-    assert "IntersectionTieInEdgeRow(" not in wrapper_source
-    assert (
-        "IntersectionTieInEdgeEvaluationService().evaluate_context"
-        in pipeline_source
-    )

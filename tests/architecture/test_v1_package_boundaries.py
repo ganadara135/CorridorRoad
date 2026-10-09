@@ -228,17 +228,21 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
     wrapper_limits = {
         "_clip_tin_surface_by_intersection_exclusion": 35,
         "_clip_tin_surface_by_roundabout_ownership": 35,
-        "_build_roundabout_circulatory_surface_tin": 25,
-        "_build_roundabout_apron_surface_tin": 25,
-        "_build_roundabout_entry_exit_connector_surface_tin": 25,
-        "_build_roundabout_subgrade_surface_tin": 25,
-        "_build_roundabout_slope_face_surface_tin": 25,
     }
     for name, maximum_lines in wrapper_limits.items():
         node = command_functions[name]
         assert node.end_lineno - node.lineno + 1 <= maximum_lines, name
 
     removed_implementation_names = {
+        # Deleted by plan phase R7c (V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md): the legacy
+        # intersection build, replaced by the parametric kernel's surfaces.
+        "_build_roundabout_circulatory_surface_tin",
+        "_build_roundabout_apron_surface_tin",
+        "_build_roundabout_entry_exit_connector_surface_tin",
+        "_build_roundabout_subgrade_surface_tin",
+        "_build_roundabout_slope_face_surface_tin",
+        "_attach_intersection_kernel_shadow",
+        "_intersection_engine_is_kernel",
         # Moved on 2026-09-20: the region boundary continuity rule, now owned by
         # services/evaluation/region_boundary_continuity_evaluation_service, and the pure
         # model-row readers it shares with the command in common/model_fields.

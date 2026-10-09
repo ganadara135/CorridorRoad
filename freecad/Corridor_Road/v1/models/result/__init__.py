@@ -32,7 +32,6 @@ from .intersection_patch_input import (
     IntersectionPatchInputPreparationResult,
     IntersectionPatchSuperelevationContext,
 )
-from .intersection_patch_grading import IntersectionPatchGradingResult
 from .intersection_patch_boundary_selection import (
     IntersectionPatchBoundarySelectionResult,
 )
@@ -42,21 +41,11 @@ from .intersection_patch_triangulation import (
 from .intersection_patch_shape_quality import (
     IntersectionPatchShapeQualityResult,
 )
-from .intersection_patch_drainage_review import (
-    IntersectionPatchDrainageReviewResult,
-)
-from .intersection_patch_boundary_context import (
-    IntersectionPatchBoundaryContextResult,
-)
 from .intersection_patch_constraint_build import (
     IntersectionPatchConstraintBuildResult,
 )
 from .intersection_patch_tin_assembly import (
     IntersectionPatchTinAssemblyResult,
-)
-from .intersection_patch_pipeline import IntersectionPatchPipelineResult
-from .intersection_patch_preparation_pipeline import (
-    IntersectionPatchPreparationPipelineResult,
 )
 from .intersection_boundary_loop_evaluation_chain import (
     IntersectionBoundaryLoopEvaluationChainResult,
@@ -151,16 +140,11 @@ __all__ = [
     "IntersectionSurfacePatchBuildResult",
     "IntersectionPatchInputPreparationResult",
     "IntersectionPatchSuperelevationContext",
-    "IntersectionPatchGradingResult",
     "IntersectionPatchBoundarySelectionResult",
     "IntersectionPatchTriangulationResult",
     "IntersectionPatchShapeQualityResult",
-    "IntersectionPatchDrainageReviewResult",
-    "IntersectionPatchBoundaryContextResult",
     "IntersectionPatchConstraintBuildResult",
     "IntersectionPatchTinAssemblyResult",
-    "IntersectionPatchPipelineResult",
-    "IntersectionPatchPreparationPipelineResult",
     "IntersectionBoundaryLoopEvaluationChainResult",
     "IntersectionSharedBreaklineContributionResult",
     "IntersectionBoundarySegmentRow",

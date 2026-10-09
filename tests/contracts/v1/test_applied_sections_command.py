@@ -20,7 +20,6 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
 )
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionControlArea,
-    IntersectionCurbReturnPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -480,76 +479,6 @@ def test_applied_sections_validate_requires_centerline3d_ready_sources() -> None
     finally:
         applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)
-
-
-def test_intersection_supplemental_stations_are_added_to_applied_sections() -> None:
-    model = IntersectionModel(
-        schema_version=1,
-        project_id="proj-1",
-        intersection_model_id="intersections:main",
-        intersection_rows=[
-            IntersectionRow(
-                intersection_id="intersection:t-01",
-                intersection_kind="t_intersection",
-                primary_alignment_ref="alignment:main",
-                secondary_alignment_refs=["alignment:side"],
-                primary_station=100.0,
-                secondary_station_refs={"alignment:side": 40.0},
-            )
-        ],
-        control_area_rows=[
-            IntersectionControlArea(
-                control_area_id="intersection:t-01:main-area",
-                intersection_id="intersection:t-01",
-                alignment_ref="alignment:main",
-                station_ranges=[(90.0, 110.0)],
-            ),
-            IntersectionControlArea(
-                control_area_id="intersection:t-01:side-area",
-                intersection_id="intersection:t-01",
-                alignment_ref="alignment:side",
-                station_ranges=[(30.0, 50.0)],
-            ),
-        ],
-        curb_return_policy_rows=[
-            IntersectionCurbReturnPolicyRow(
-                policy_id="curb-return:intersection:t-01:default",
-                intersection_id="intersection:t-01",
-                radius=12.0,
-            )
-        ],
-    )
-
-    main_stations = applied_sections_command._with_intersection_supplemental_stations(
-        [0.0, 120.0],
-        model,
-        "alignment:main",
-    )
-    main_kinds = applied_sections_command._intersection_supplemental_station_kind_map([0.0, 120.0], main_stations)
-    side_stations = applied_sections_command._with_intersection_supplemental_stations(
-        [0.0, 80.0],
-        model,
-        "alignment:side",
-    )
-    side_kinds = applied_sections_command._intersection_supplemental_station_kind_map([0.0, 80.0], side_stations)
-
-    assert 88.0 in main_stations
-    assert 94.0 in main_stations
-    assert 100.0 in main_stations
-    assert 106.0 in main_stations
-    assert 112.0 in main_stations
-    assert 90.0 in main_stations
-    assert 110.0 in main_stations
-    assert 28.0 in side_stations
-    assert 34.0 in side_stations
-    assert 40.0 in side_stations
-    assert 46.0 in side_stations
-    assert 52.0 in side_stations
-    assert 30.0 in side_stations
-    assert 50.0 in side_stations
-    assert main_kinds[0.0] == "regular_sample"
-    assert main_kinds[100.0] == "intersection_supplemental"
-    assert side_kinds[40.0] == "intersection_supplemental"
 
 
 def test_applied_sections_carry_intersection_source_status_diagnostics() -> None:

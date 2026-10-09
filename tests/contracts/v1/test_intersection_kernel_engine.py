@@ -1,10 +1,9 @@
-"""Build Parametric with the parametric intersection kernel (plan phase R7a).
+"""Build Parametric builds every intersection with the parametric kernel (plan phases R7a, R7c).
 
-`GeometryEngine = "kernel"` on the Intersection object: Applied Sections gain a section at each leg
-mouth, the corridor's design and slope surfaces lose each road's triangles between its mouths, and
-the kernel's patch and side slope take their place. Checked on the starter T, Cross and roundabout:
-the corridor and the kernel neither overlap nor leave a gap; at every mouth they share their
-vertices. Without the property, or with "legacy", nothing changes (the rest of the suite).
+Applied Sections gain a section at each leg mouth, the corridor's design and slope surfaces lose
+each road's triangles between its mouths, and the kernel's patch and side slope take their place.
+Checked on the starter T, Cross and roundabout: the corridor and the kernel neither overlap nor
+leave a gap; at every mouth they share their vertices.
 """
 
 import math
@@ -19,7 +18,6 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     build_document_applied_section_set,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
-from freecad.Corridor_Road.v1.objects.obj_intersection import find_v1_intersection_model, intersection_geometry_engine
 
 from test_intersection_policy_family_review import _reviewed_model, _store
 
@@ -29,7 +27,6 @@ LABELS = ["T Intersection - Basic", "Cross Intersection - Basic", "Roundabout - 
 def _kernel_build(label):
     doc = App.newDocument("CRV1KernelEngine")
     _store(doc, _reviewed_model(doc, label))
-    find_v1_intersection_model(doc).GeometryEngine = "kernel"
     project = find_project(doc)
     applied = build_document_applied_section_set(doc, project=project)
     apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
@@ -85,11 +82,14 @@ def test_the_kernel_surfaces_replace_the_legacy_ones(kernel_doc) -> None:
     doc, result = kernel_doc
     patch = doc.getObject("V1CorridorIntersectionSurfacePreview")
     slope = doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview")
-    assert patch.IntersectionGeometryEngine == "kernel" and patch.IntersectionKernelStatus == "ready"
+    assert patch.IntersectionKernelStatus == "ready"
     assert patch.Mesh.CountFacets == len(result.patch_triangles)
     assert slope.Mesh.CountFacets == len(result.slope_triangles)
     assert doc.getObject("V1CorridorIntersectionTieSlopeSurfacePreview") is None
     assert doc.getObject("V1CorridorIntersectionExclusionZonePreview") is None
+    # both surfaces go to the project tree's Intersections folder
+    folder = doc.getObject("CRV1_Intersections")
+    assert folder is not None and patch in folder.Group and slope in folder.Group
 
 
 def test_no_corridor_triangle_lies_inside_the_patch(kernel_doc) -> None:
@@ -122,40 +122,6 @@ def test_at_every_mouth_the_corridor_and_the_kernel_share_their_vertices(kernel_
     assert len(shared) >= 2 * sum(1 for leg in result.legs if leg.mouth_station is not None)
 
 
-def test_the_engine_defaults_to_legacy() -> None:
-    doc = App.newDocument("CRV1KernelEngineDefault")
-    try:
-        _store(doc, _reviewed_model(doc, "T Intersection - Basic"))
-        obj = find_v1_intersection_model(doc)
-        # a drop-down of the two engines, on legacy by default
-        assert obj.getTypeIdOfProperty("GeometryEngine") == "App::PropertyEnumeration"
-        assert list(obj.getEnumerationsOfProperty("GeometryEngine")) == ["legacy", "kernel"]
-        assert intersection_geometry_engine(obj) == "legacy"
-        with pytest.raises(ValueError):
-            obj.GeometryEngine = "something else"
-        obj.GeometryEngine = "kernel"
-        assert intersection_geometry_engine(obj) == "kernel"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_an_engine_saved_as_a_string_becomes_the_drop_down_and_keeps_its_value() -> None:
-    from freecad.Corridor_Road.v1.objects.obj_intersection import ensure_v1_intersection_properties
-
-    doc = App.newDocument("CRV1KernelEngineString")
-    try:
-        _store(doc, _reviewed_model(doc, "T Intersection - Basic"))
-        obj = find_v1_intersection_model(doc)
-        obj.removeProperty("GeometryEngine")
-        obj.addProperty("App::PropertyString", "GeometryEngine", "Intersections", "")
-        obj.GeometryEngine = "kernel"
-        ensure_v1_intersection_properties(obj)
-        assert obj.getTypeIdOfProperty("GeometryEngine") == "App::PropertyEnumeration"
-        assert intersection_geometry_engine(obj) == "kernel"
-    finally:
-        App.closeDocument(doc.Name)
-
-
 def test_a_kernel_document_survives_save_and_reopen(tmp_path) -> None:
     doc, _result = _kernel_build("T Intersection - Basic")
     path = str(tmp_path / "kernel_t.FCStd")
@@ -165,9 +131,8 @@ def test_a_kernel_document_survives_save_and_reopen(tmp_path) -> None:
         App.closeDocument(doc.Name)
     reopened = App.openDocument(path)
     try:
-        assert intersection_geometry_engine(find_v1_intersection_model(reopened)) == "kernel"
         patch = reopened.getObject("V1CorridorIntersectionSurfacePreview")
-        assert patch is not None and patch.IntersectionGeometryEngine == "kernel" and patch.Mesh.CountFacets > 0
+        assert patch is not None and patch.IntersectionKernelStatus == "ready" and patch.Mesh.CountFacets > 0
         assert not math.isnan(patch.Mesh.BoundBox.XLength)
     finally:
         App.closeDocument(reopened.Name)
@@ -178,7 +143,6 @@ def test_the_full_build_reports_the_kernel_surfaces_and_no_warning(label) -> Non
     doc = App.newDocument("CRV1KernelEngineFull")
     try:
         _store(doc, _reviewed_model(doc, label))
-        find_v1_intersection_model(doc).GeometryEngine = "kernel"
         project = find_project(doc)
         applied = build_document_applied_section_set(doc, project=project)
         apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)

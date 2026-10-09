@@ -6,8 +6,9 @@
 of each section of that Alignment, by station. Stations and coordinates are metres, as the
 Alignment's sampled geometry and the Applied Sections already carry them.
 
-`spec_from_intersection_model` reads an `IntersectionSpec` out of the current row-based
-`IntersectionModel`. It exists for shadow mode only and goes away with the switch (phase R7).
+`spec_from_intersection_model` reads an `IntersectionSpec` out of the row-based
+`IntersectionModel`: the spec a new intersection stores, and the one a document without a stored
+spec builds with (phase R7b).
 """
 
 from __future__ import annotations
@@ -15,13 +16,7 @@ from __future__ import annotations
 import math
 
 from ...models.source.intersection_spec import AnchorSpec, IntersectionSpec, LegOverride, RoundaboutSpec
-from ..evaluation.intersection_evaluation_service import IntersectionEvaluationService
-from ..evaluation.intersection_kernel import build_intersection_geometry
 from ..evaluation.intersection_kernel.road_context import STATION_TOLERANCE_M, PolylineRoad, PolylineRoadContext, SurfaceProfile
-from ..evaluation.intersection_kernel_shadow_service import (
-    IntersectionKernelShadowComparison,
-    IntersectionKernelShadowService,
-)
 
 
 _KIND_BY_MODEL_KIND = {
@@ -156,52 +151,6 @@ def _roundabout_spec(intersection_model, row, row_id: str):
         for (road, side), radii in sorted(per_approach.items())
     )
     return ring, overrides
-
-
-def intersection_kernel_shadow_comparison(
-    intersection_model,
-    alignment_models,
-    applied_section_set,
-    boundary_segment_result=None,
-    current_patch_quality: dict[str, float] | None = None,
-) -> IntersectionKernelShadowComparison:
-    """Run the kernel on the document's current inputs and compare it with the current pipeline.
-
-    Shadow mode (plan section 6). The evaluation chain's outer boundary loop is evaluated here
-    for the envelope comparison; nothing it produces is kept.
-    """
-
-    spec = spec_from_intersection_model(intersection_model)
-    if spec is None:
-        return IntersectionKernelShadowComparison("skipped", rows=("reason|the Intersection model has no intersection row",))
-    context = road_context_from_models(alignment_models, applied_section_set)
-    kernel_result = build_intersection_geometry(spec, context)
-    boundary_loop_result = None
-    if kernel_result.status not in {"blocked", "not_implemented"}:
-        service = IntersectionEvaluationService()
-        edge_network = service.evaluate_edge_network(intersection_model, intersection_id=spec.intersection_id)
-        surface_zones = service.evaluate_surface_zones(intersection_model, edge_network, intersection_id=spec.intersection_id)
-        boundary_loop_result = service.evaluate_boundary_loops(intersection_model, surface_zones, edge_network, intersection_id=spec.intersection_id)
-    return IntersectionKernelShadowService().compare(
-        kernel_result,
-        boundary_segment_result=boundary_segment_result,
-        boundary_loop_result=boundary_loop_result,
-        current_patch_quality=current_patch_quality,
-        current_clip_ranges=_control_area_ranges(intersection_model, spec.intersection_id),
-    )
-
-
-def _control_area_ranges(intersection_model, intersection_id: str) -> dict[str, list[tuple[float, float]]]:
-    """The station ranges the current pipeline clips the corridor over, per Alignment."""
-
-    ranges: dict[str, list[tuple[float, float]]] = {}
-    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
-        if str(getattr(area, "intersection_id", "") or "") != intersection_id:
-            continue
-        ref = str(getattr(area, "alignment_ref", "") or "")
-        for start, end in list(getattr(area, "station_ranges", []) or []):
-            ranges.setdefault(ref, []).append((min(float(start), float(end)), max(float(start), float(end))))
-    return ranges
 
 
 def _alignment_polyline(model) -> tuple[list[float], list[tuple[float, float]]]:

@@ -41,10 +41,8 @@ from ..services.editing import (
     intersection_review_summary,
 )
 from ..objects.obj_intersection import (
-    INTERSECTION_GEOMETRY_ENGINES,
     create_or_update_v1_intersection_model_object,
     find_v1_intersection_model,
-    intersection_geometry_engine,
     store_intersection_spec,
     stored_intersection_spec,
     to_intersection_model,
@@ -579,18 +577,13 @@ class V1IntersectionPresetsTaskPanel:
         """The parametric spec of the document's intersection, edited directly.
 
         Load Spec reads the stored spec (or the one the rows give); Check Spec runs the kernel on it
-        with the current Applied Sections and lists every value with its origin; Apply Spec stores it
-        and the engine choice. A radius or width of 0 means the kernel's default.
+        with the current Applied Sections and lists every value with its origin; Apply Spec stores it.
+        A radius or width of 0 means the kernel's default.
         """
 
-        group = QtWidgets.QGroupBox("Parametric Spec (kernel engine)")
+        group = QtWidgets.QGroupBox("Parametric Spec")
         outer = QtWidgets.QVBoxLayout(group)
         form = QtWidgets.QFormLayout()
-
-        self._spec_engine_combo = QtWidgets.QComboBox()
-        for value in INTERSECTION_GEOMETRY_ENGINES:
-            self._spec_engine_combo.addItem(value, value)
-        form.addRow("Geometry Engine:", self._spec_engine_combo)
 
         self._spec_kind_combo = QtWidgets.QComboBox()
         for value in INTERSECTION_SPEC_KINDS:
@@ -704,8 +697,7 @@ class V1IntersectionPresetsTaskPanel:
             leg_rows=legs,
         )
 
-    def _fill_spec_widgets(self, form: IntersectionSpecForm, engine: str) -> None:
-        _select_combo_data(self._spec_engine_combo, engine)
+    def _fill_spec_widgets(self, form: IntersectionSpecForm) -> None:
         _select_combo_data(self._spec_kind_combo, form.kind)
         _select_combo_data(self._spec_primary_combo, form.primary_road)
         _select_combo_data(self._spec_secondary_combo, form.secondary_road)
@@ -754,7 +746,7 @@ class V1IntersectionPresetsTaskPanel:
             self._status.setPlainText("The Intersection source holds no intersection row.")
             return False
         self._spec_base = spec
-        self._fill_spec_widgets(form_from_spec(spec), intersection_geometry_engine(obj))
+        self._fill_spec_widgets(form_from_spec(spec))
         self._status.setPlainText(f"Loaded the {origin}: {spec.intersection_id}.")
         return True
 
@@ -783,10 +775,9 @@ class V1IntersectionPresetsTaskPanel:
             self._status.setPlainText("The spec was not stored:\n" + "\n".join(errors))
             return False
         store_intersection_spec(obj, spec)
-        obj.GeometryEngine = _combo_data_or_text(self._spec_engine_combo)
         self._spec_base = spec
         self._status.setPlainText(
-            f"Stored the spec of {spec.intersection_id}; engine {intersection_geometry_engine(obj)}.\n"
+            f"Stored the spec of {spec.intersection_id}.\n"
             "Next: Applied Sections (Build Sections), then Build Parametric."
         )
         return True
