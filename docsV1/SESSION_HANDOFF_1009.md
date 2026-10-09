@@ -1,8 +1,8 @@
 # V1 Session Handoff
 
 Date: 2026-10-09
-Branch: `ganada_0902`, 51 commits ahead of `main` (`1abad47`, the 1.1.0 release)
-Head: `8fbbae0` Remove edge policy and lane connection rows and the row review (plan R7c-3)
+Branch: `ganada_0902`, 53 commits ahead of `main` (`1abad47`, the 1.1.0 release)
+Head: `6200cea` Label the Intersection source object "Intersection Source"
 Work covered: 2026-09-24 to 2026-10-09
 
 ## 1. What this document is
@@ -10,6 +10,8 @@ Work covered: 2026-09-24 to 2026-10-09
 A handoff for whoever picks this branch up next. It records the decisions that were taken and
 should not be re-litigated, the state of the branch, what is left, and the traps that cost time.
 It does not repeat what the code, the git history or `AGENTS.md` already say.
+
+To continue on another PC, start with section 8 (setup), then section 4 (what to do next).
 
 The authoritative specification of intersections is
 [V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md](./V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md). Its
@@ -38,8 +40,18 @@ deleted, with the review of its source rows.
 - **Review.** The Build Parametric Intersections tab, its highlight, the guided review, the
   drainage review (the kernel's low points), the roundabout intrusion check and the cross section
   viewer's intersection rows all read the kernel result.
+- **Legacy cleanup** (`275ca65`). The Build Parametric metadata, highlights and Breakline Audit
+  rows that only the deleted pipeline produced are gone, with three modules
+  (`intersection_shared_boundary_graph_evaluation_service`, `intersection_daylight_tin_service`,
+  `models/result/intersection_shared_boundary_graph`). The daylight surface is clipped by the
+  kernel's station spans like the other corridor surfaces. Plan, section 8.
+- **Label** (`6200cea`). The Intersection source object is labelled `Intersection Source`
+  (`INTERSECTION_SOURCE_LABEL` in `objects/obj_intersection.py`). It used to share the label
+  `Intersections` with its tree folder, so FreeCAD showed it as `Intersections001`. The object
+  name `V1IntersectionModel` and the folder are unchanged.
 - **GUI.** The user built the starter T, Cross and roundabout after R7c-1, checked the
-  Intersections tab and its highlight after R7c-2, and the tab's `ready` after R7c-3.
+  Intersections tab and its highlight after R7c-2, and the tab's `ready` after R7c-3. Nothing
+  after `8fbbae0` has been checked in a window.
 
 ## 3. Decisions taken
 
@@ -70,15 +82,33 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 ## 4. What is left
 
-### Intersections
+### Next steps, in order
 
-- **GUI checks not yet reported:** a roundabout document created before R7c-3 rebuilding the
-  same ring (it now comes from the curb return radius when no spec is stored); the drainage
-  review's low point and the cross section viewer's intersection rows (R7c-2).
+1. **GUI checks (user, in FreeCAD).** Procedure in
+   [V1_INTERSECTION_MANUAL_QA.md](./V1_INTERSECTION_MANUAL_QA.md); record results in its table.
+   - after Create Sources from a preset, the `Intersections` folder holds `Intersection Source`;
+   - a roundabout document created before R7c-3 rebuilds the same ring (it now comes from the
+     curb return radius when no spec is stored), section 7 step 4;
+   - the Drainage tab's low point and `Suggested Inlet` marker, section 5;
+   - the cross section viewer's intersection rows, section 6;
+   - the Breakline Audit tab shows one row per surface and no errors after a rebuild.
+2. **Remaining dead intersection code** (same method as `275ca65`, section 5 "Finding dead
+   code"): the intersection and roundabout rows of `ui/presentation/build_review_presentation.py`;
+   `intersection_surface_tin_with_shared_breakline_constraint_edges` and its private helper in
+   `services/builders/shared_breakline_tin_builder_service.py`; `_project_to_segment` in
+   `intersection_patch_constraint_build_service`; the `IntersectionSurfaceZone*` classes of the
+   surface output model; dead helpers in `cmd_intersection_editor` and
+   `cmd_intersection_presets`; `intersection_kind_from_label` and `intersection_preset_labels` in
+   `models/source/intersection_model.py`. Confirm each is unreachable before deleting.
+3. **Broken lazy imports**, being fixed in a separate session when this was written:
+   `ui/viewers/build_corridor_view.py` imports `.cmd_structure_output` (Structure Output button)
+   and `ui/editors/tin_editor.py` imports `.cmd_review_tin`, both relative to the `ui` package where
+   those modules do not exist. Check `git log` for the fix before starting on it.
+
+### Open questions for the user
+
 - **Circulation direction** of a roundabout is in the spec (`ccw`/`cw`); there is no project
-  setting for it.
-- **The Breakline Audit tab** shows the corridor's own breaklines only; its intersection parsing
-  and the command's legacy intersection metadata were removed after R7c-3 (plan, section 8).
+  setting for it. Whether to add one is undecided.
 
 ### Repository-wide
 
@@ -172,8 +202,9 @@ every Python command in this repository:
 .\tests\regression\run_loft_retirement_gate_smokes.ps1
 ```
 
-Result at `8fbbae0`: flake8 clean on the touched files, 9 architecture tests, **1,179 passed /
-18 skipped / 0 failed**, all three runners PASS. The contract suite takes about 6 minutes.
+Result at `6200cea`: flake8 clean on the touched files, 9 architecture tests, **1,163 passed /
+18 skipped / 0 failed** (fewer than the 1,179 at `8fbbae0` because the tests of the deleted code
+went with it), all three runners PASS. The contract suite takes about 6 minutes.
 
 The architecture ratchet forbids removed names reappearing and forbids a command importing an
 underscore-prefixed service symbol. A service may not import from a command.
@@ -185,3 +216,50 @@ No part of the above opens a window.
 procedure and [V1_UNRELEASED_CHANGES_MANUAL_QA.md](./V1_UNRELEASED_CHANGES_MANUAL_QA.md) the one
 for the rest of the branch. `AGENTS.md` is explicit that GUI integration must not be claimed when
 only headless tests ran.
+
+## 8. Resuming on another PC
+
+### Get the branch
+
+Push the branch from the first PC before switching (`git push origin ganada_0902`) and check
+that `git status -sb` no longer says `ahead`.
+
+On the other PC the workbench must sit in FreeCAD's user `Mod` folder, under the name
+`CorridorRoad`:
+
+```powershell
+cd "$env:APPDATA\FreeCAD\v1-1\Mod"
+git clone https://github.com/ganadara135/CorridorRoad.git CorridorRoad
+cd CorridorRoad
+git checkout ganada_0902
+```
+
+If the folder already exists, run `git fetch origin`, `git checkout ganada_0902` and
+`git pull --ff-only`. Check that `git log --oneline -1` shows the head named at the top of this
+document. Keep `core.autocrlf` as on the first PC (`true`): a different setting rewrites the
+line endings of every file (section 5).
+
+### Environment
+
+- FreeCAD 1.1 installed at `C:\Program Files\FreeCAD 1.1`. Every Python command uses
+  `C:\Program Files\FreeCAD 1.1\bin\python.exe` (`AGENTS.md`). If it is installed elsewhere,
+  adjust the paths in `scripts\freecad_environment.ps1`.
+- Development tools, once:
+  `& "C:\Program Files\FreeCAD 1.1\bin\python.exe" -m pip install -r requirements-dev.txt`
+- Check `scripts\check_freecad_environment.ps1`, then run the gate of section 6. The numbers
+  of section 6 mean the checkout is complete.
+- Start FreeCAD, choose the Parametric Road workbench and look for Python errors in the Report
+  view.
+
+### What does not travel
+
+- **Helper scripts.** The reachability analysis, the import and viewer binding checks, the test
+  pruning and the line-ending repair used from R7c-2 to `275ca65` lived in a temporary folder of
+  the first PC and are not in the repository. Section 5 describes what they did; rebuild them
+  from it if the next cleanup needs them. The line-ending rule is the snippet in section 5.
+- **Test documents.** The FCStd files made during the GUI checks are not committed. Make new
+  ones from the presets. A roundabout document from before R7c-3 (step 1 of section 4) can be
+  made by checking out `fdc36d0`, creating the roundabout preset, saving, and returning to
+  `ganada_0902`.
+- **Claude Code memory and sessions** are per PC. This document, `AGENTS.md` and the redesign
+  plan carry everything needed.

@@ -32,7 +32,7 @@ alter the current intersection output until the switch phase (R5) is explicitly 
 - A failure inside the shadow comparison is caught and recorded as `IntersectionKernelShadowStatus =
   error` with its message. The documented reason for the catch: a shadow computation must never
   block or change the production build it observes.
-- Every phase runs the full validation gate of `SESSION_HANDOFF.md` §7 (contract suite, intersection
+- Every phase runs the full validation gate of `SESSION_HANDOFF_1009.md` §7 (contract suite, intersection
   command chunk, three smoke runners) before it is closed.
 
 ## 3. Decisions (taken 2026-10-08, not open)
@@ -60,7 +60,7 @@ Measured on `f8543bd`.
 | P6 | Engineering logic in commands. | 349 intersection functions in `cmd_build_corridor.py` (20,389 lines) |
 | P7 | Review state inside the geometry path. | 70 `approval_status` references in `intersection_evaluation_service.py` |
 | P8 | Roundabout is a separate world. | `roundabout_surface_builder_service.py` 1,158 lines, `roundabout_tin_clip_service.py` 882 lines |
-| P9 | Open defects are symptoms of stitching partial graphs: unfilled curb return slope faces (Cross 0 of 32), 160 skinny constraint triangles, about 49 m of missing side slope. | `SESSION_HANDOFF.md` §5 |
+| P9 | Open defects are symptoms of stitching partial graphs: unfilled curb return slope faces (Cross 0 of 32), 160 skinny constraint triangles, about 49 m of missing side slope. | `SESSION_HANDOFF_1009.md` §5 |
 
 ## 5. Interfaces
 
@@ -460,7 +460,7 @@ rows and the slope face preview):
 
 Kernel time 0.06 s (T) and 0.08 s (Cross).
 
-Reading the three open defects of `SESSION_HANDOFF.md` §5 against this:
+Reading the three open defects of `SESSION_HANDOFF_1009.md` §5 against this:
 
 1. **Unfilled curb return slope faces**: the kernel's strip runs round every arc; there is no
    unfilled edge to report because the strip is built along the boundary, not fitted to it.
