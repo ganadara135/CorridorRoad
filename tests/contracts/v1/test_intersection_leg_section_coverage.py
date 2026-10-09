@@ -23,9 +23,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionRow,
 )
 from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model
-from freecad.Corridor_Road.v1.ui.presentation.intersection_contract_review_presentation import (
-    intersection_leg_section_coverage_rows,
-)
 
 
 def _intersection_model(*alignment_refs: str) -> IntersectionModel:
@@ -68,40 +65,6 @@ def _applied_section_set(*alignment_ids: str) -> AppliedSectionSet:
             for index, alignment_id in enumerate(alignment_ids, start=1)
         ],
     )
-
-
-def test_leg_section_coverage_reports_a_leg_whose_alignment_has_no_sections() -> None:
-    rows = intersection_leg_section_coverage_rows(
-        _intersection_model("alignment:main", "alignment:side"),
-        _applied_section_set("alignment:main"),
-    )
-
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["contract_family"] == "leg_section_coverage"
-    assert row["status"] == "warning"
-    assert row["source_status"] == "missing"
-    assert row["output_path"] == "missing_applied_sections"
-    assert row["source_diagnostics"] == "warning:leg_alignment_has_no_applied_sections:alignment:side"
-    assert "alignment:side" in str(row["source_refs"])
-    assert "Profile" in str(row["notes"]) and "Region" in str(row["notes"])
-
-
-def test_leg_section_coverage_is_silent_when_every_leg_alignment_has_sections() -> None:
-    rows = intersection_leg_section_coverage_rows(
-        _intersection_model("alignment:main", "alignment:side"),
-        _applied_section_set("alignment:main", "alignment:side"),
-    )
-
-    assert rows == []
-
-
-def test_leg_section_coverage_is_silent_without_a_model_or_a_section_set() -> None:
-    model = _intersection_model("alignment:main")
-    assert intersection_leg_section_coverage_rows(None, _applied_section_set("alignment:main")) == []
-    assert intersection_leg_section_coverage_rows(model, None) == []
-    # an empty set means Applied Sections has not run, which is a different report
-    assert intersection_leg_section_coverage_rows(model, _applied_section_set()) == []
 
 
 def test_incomplete_alignment_bundle_rows_is_empty_for_a_complete_preset() -> None:

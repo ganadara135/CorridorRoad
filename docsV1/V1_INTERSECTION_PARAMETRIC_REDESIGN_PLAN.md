@@ -401,10 +401,10 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R7a | the kernel engine, selectable per intersection (`GeometryEngine` = `kernel`), default `legacy`: mouth sections in Applied Sections, corridor clipped by station span, kernel patch and side slope as the intersection surfaces | full gate; the user's GUI comparison of both engines (done, §8, GUI pending) |
 | R7b | the spec becomes the stored source (`SpecJson` on the Intersection object) and the panel edits it | full gate and GUI (done, §8, GUI pending) |
 | R7c-1 | the kernel is the only engine: the legacy build in Build Parametric and Applied Sections, the code only it reached, and the tests of it are deleted | full gate and GUI (done, §8) |
-| R7c-2 | the review surfaces still reading the legacy evaluation chain (the Build Parametric Intersections, Breakline Audit and Drainage tabs) read the kernel result; the chain and the services only it feeds are deleted; the kernel's drainage candidates (K7) feed the drainage review | full gate and GUI |
+| R7c-2 | the review surfaces still reading the legacy evaluation chain (the Build Parametric Intersections, Breakline Audit and Drainage tabs) read the kernel result; the chain and the services only it feeds are deleted; the kernel's drainage candidates (K7) feed the drainage review | full gate and GUI (done, §8, GUI pending) |
 | R7c-3 | the lane connection and edge policy rows (D2) leave the source, and the panel's row review gives way to the spec group | full gate and GUI manual QA |
 
-R1 to R7c-1 are implemented. R7 is split because the switch and the deletion cannot be one step:
+R1 to R7c-2 are implemented. R7 is split because the switch and the deletion cannot be one step:
 the legacy previews carry 341 metadata properties that the review rows, the 78 command tests and
 the regression smokes read, so replacing them breaks all of that at once. R7a puts the kernel
 engine next to the legacy one, selectable per intersection, so the two can be compared in the GUI on
@@ -652,7 +652,55 @@ runners PASS (with the rewritten intersection smokes), full contract suite (comm
 1,440 passed / 18 skipped / 0 failed. GUI: the user built the starter T, Cross and roundabout
 with the kernel as the only engine and reported all three as working (2026-10-09).
 
-### Next: R7c-2
+### R7c-2, 2026-10-09
 
-The review surfaces on the kernel result, the legacy evaluation chain deleted, K7's drainage
-candidates for the drainage review.
+The review surfaces read the kernel result, and the legacy evaluation chain is gone.
+
+- K7 drainage candidates: `IntersectionGeometryResult.drainage_candidates`, the lowest vertices of
+  the intersection surface (within `LOW_POINT_TOLERANCE_M` = 1 mm of the minimum), each with its
+  nearest road and station (`PolylineRoadContext.nearest_station`).
+- Build Parametric Intersections tab: `ui/presentation/intersection_kernel_review_presentation.py`
+  lists the intersection, each leg and its mouth, each corner and its radius origin, the boundary,
+  both surfaces with their quality, the clip spans, the drainage candidates, the resolved values and
+  the diagnostics. Selecting a row draws its linework (mouth line, corner arc, boundary, low point).
+- The guided review's Intersections step, the absent-preview notes, the drainage review (K7's low
+  points against the Drainage Elements), the roundabout ownership intrusion check and the lane and
+  shoulder review clip all read the kernel result. The lane and shoulder review now skips a strip
+  only when its midpoint lies strictly inside the kernel boundary, so the strips on the mouth
+  sections, which lie on the boundary, are kept.
+- The cross section viewer's intersection rows: the kernel's status, this road's legs, whether the
+  station is inside the span the intersection surface replaces, the low points nearest this road,
+  the kernel diagnostics, and the section's own leg (`active_leg`).
+- The Intersection editor panel the Presets panel replaced is deleted with its helpers.
+
+What went was found by a whole-program reachability analysis this time, not by name: roots are the
+module-level code of every module (command registration), modules named in string tables, and the
+names a viewer declares as `name = None` placeholders that `configure_*_runtime(globals())` fills
+from a command module; names resolve through the real imports and package re-exports. Deleted: every
+wholly unreachable module of the legacy intersection chain, and every definition that became
+unreachable since R7c-1 (shared geometry primitives excepted). An import check over the package and
+the tests (every `from X import name` must exist) guards the result.
+
+| | lines |
+| --- | --- |
+| 35 unreachable modules: the patch boundary / triangulation / TIN assembly pipeline, the boundary segment and loop, tie-in edge, slope face boundary and cell, tie slope and shared breakline evaluation, the exclusion / TIN clip / roundabout builders, the two legacy review presentations | -17,252 |
+| `cmd_build_corridor.py` | +269 / -3,306 |
+| `cmd_intersection_editor.py`: the editor panel and its helpers | +2 / -1,485 |
+| production, all told (kernel K7 and the review presentation included) | +546 / -22,823 |
+| tests: 14 files of deleted modules; the legacy review tests replaced by kernel ones | +250 / -7,175 |
+
+Kept on purpose: `AlignmentIntersectionDetectionService` (the Presets panel's Auto Detect), the
+shared boundary graph audit (read by the preview audit mapper), and the Breakline Audit tab's
+parsers; nothing produces intersection rows for that tab any more, so it lists the corridor's own
+breaklines. Watertight Solids keep reading the intersection surface object.
+
+Validation at R7c-2: flake8 clean on the touched files, architecture 9 passed, all three smoke
+runners PASS, full contract suite 1,297 passed / 18 skipped / 0 failed (143 fewer tests than at
+R7c-1, those of the deleted chain). GUI checks still to do: the Intersections tab rows and
+highlights, the drainage review's low point, and the cross section viewer's intersection rows, on
+the starter T, Cross and roundabout.
+
+### Next: R7c-3
+
+The lane connection and edge policy rows (D2) leave the source, the panel's row review gives way
+to the spec group; Watertight Solids' legacy zone targets need a decision first.

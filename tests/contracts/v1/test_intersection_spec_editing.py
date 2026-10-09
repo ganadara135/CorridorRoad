@@ -168,6 +168,39 @@ def test_the_panel_loads_checks_and_applies_the_spec() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_the_spec_kind_follows_the_preset_and_then_the_created_source(monkeypatch) -> None:
+    _ensure_qapp()
+    doc = App.newDocument("CRV1SpecPanelPreset")
+    try:
+        panel = V1IntersectionPresetsTaskPanel(document=doc)
+        assert not panel._spec_kind_combo.isEnabled()
+        for label, kind in (("Cross Intersection - Basic", "cross"), ("Roundabout - Single Lane", "roundabout"), ("T Intersection - Basic", "t")):
+            panel._preset_combo.setCurrentText(label)
+            assert panel._spec_kind_combo.currentData() == kind
+
+        # Create Sources loads the new source's spec into the group
+        panel._preset_combo.setCurrentText("Roundabout - Single Lane")
+        monkeypatch.setattr(
+            "freecad.Corridor_Road.v1.commands.cmd_intersection_presets._show_message", lambda *args, **kwargs: None
+        )
+        panel._create_sources()
+        assert panel._spec_base is not None and panel._spec_base.kind == "roundabout"
+        assert panel._spec_kind_combo.currentData() == "roundabout"
+        assert panel._spec_ring_group.isVisibleTo(panel.form)
+        assert "Preset source creation complete" in panel._status.toPlainText()
+
+        # once loaded, browsing the Preset no longer changes the loaded source's kind
+        panel._preset_combo.setCurrentText("T Intersection - Basic")
+        assert panel._spec_kind_combo.currentData() == "roundabout"
+
+        # reopening the panel selects the source's preset and loads its spec
+        reopened = V1IntersectionPresetsTaskPanel(document=doc)
+        assert reopened._preset_combo.currentText() == "Roundabout - Single Lane"
+        assert reopened._spec_base is not None and reopened._spec_kind_combo.currentData() == "roundabout"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def _unchecked_state():
     from freecad.Corridor_Road.qt_compat import QtCore
 

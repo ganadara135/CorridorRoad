@@ -21,29 +21,9 @@ from .corridor_surface_orchestration_service import (
     CorridorSurfaceGeometryBuildResult,
     CorridorSurfaceOrchestrationService,
 )
-from .intersection_surface_patch_build_service import (
-    IntersectionSurfacePatchBuildRequest,
-    IntersectionSurfacePatchBuildService,
-)
-from .intersection_patch_input_preparation_service import (
-    IntersectionPatchInputPreparationRequest,
-    IntersectionPatchInputPreparationService,
-)
-from .intersection_patch_boundary_selection_service import (
-    IntersectionPatchBoundarySelectionRequest,
-    IntersectionPatchBoundarySelectionService,
-)
-from .intersection_patch_triangulation_service import (
-    IntersectionPatchTriangulationRequest,
-    IntersectionPatchTriangulationService,
-)
 from .intersection_patch_constraint_build_service import (
     IntersectionPatchConstraintBuildRequest,
     IntersectionPatchConstraintBuildService,
-)
-from .intersection_patch_tin_assembly_service import (
-    IntersectionPatchTinAssemblyRequest,
-    IntersectionPatchTinAssemblyService,
 )
 from .corridor_solid_service import StructureSolidBuildRequest, StructureSolidOutputService
 from .corridor_model_service import CorridorModelBuildRequest, CorridorModelService
@@ -66,22 +46,6 @@ from .earthwork_report_service import (
     EarthworkReportService,
 )
 from .mass_haul_service import MassHaulBuildRequest, MassHaulService
-from .roundabout_surface_builder_service import (
-    build_roundabout_apron_surface_tin,
-    build_roundabout_circulatory_surface_tin,
-    build_roundabout_entry_exit_connector_surface_tin,
-    build_roundabout_slope_face_surface_tin,
-    build_roundabout_subgrade_surface_tin,
-)
-from .roundabout_tin_clip_service import (
-    clip_tin_surface_by_roundabout_ownership,
-)
-from .intersection_tin_clip_service import (
-    clip_tin_surface_by_intersection_exclusion,
-)
-from .intersection_slope_face_tin_builder_service import (
-    build_intersection_slope_face_surface_from_ready_loops,
-)
 from .intersection_daylight_tin_service import (
     suppress_daylight_triangles_above_intersection_surface,
     suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint,
@@ -117,18 +81,8 @@ __all__ = [
     "CorridorSurfaceGeometryBuildRequest",
     "CorridorSurfaceGeometryBuildResult",
     "CorridorSurfaceOrchestrationService",
-    "IntersectionSurfacePatchBuildRequest",
-    "IntersectionSurfacePatchBuildService",
-    "IntersectionPatchInputPreparationRequest",
-    "IntersectionPatchInputPreparationService",
-    "IntersectionPatchBoundarySelectionRequest",
-    "IntersectionPatchBoundarySelectionService",
-    "IntersectionPatchTriangulationRequest",
-    "IntersectionPatchTriangulationService",
     "IntersectionPatchConstraintBuildRequest",
     "IntersectionPatchConstraintBuildService",
-    "IntersectionPatchTinAssemblyRequest",
-    "IntersectionPatchTinAssemblyService",
     "StructureSolidBuildRequest",
     "StructureSolidOutputService",
     "CorridorModelBuildRequest",
@@ -145,14 +99,6 @@ __all__ = [
     "EarthworkReportService",
     "MassHaulBuildRequest",
     "MassHaulService",
-    "build_roundabout_apron_surface_tin",
-    "build_roundabout_circulatory_surface_tin",
-    "build_roundabout_entry_exit_connector_surface_tin",
-    "build_roundabout_slope_face_surface_tin",
-    "build_roundabout_subgrade_surface_tin",
-    "clip_tin_surface_by_roundabout_ownership",
-    "clip_tin_surface_by_intersection_exclusion",
-    "build_intersection_slope_face_surface_from_ready_loops",
     "suppress_daylight_triangles_above_intersection_surface",
     "suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint",
     "suppress_daylight_triangles_inside_intersection_surface_footprint",

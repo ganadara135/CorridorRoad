@@ -118,19 +118,7 @@ function Invoke-FastValidation {
             tests/contracts/v1/test_intersection_kernel.py `
             tests/contracts/v1/test_intersection_kernel_surfaces.py `
             tests/contracts/v1/test_intersection_kernel_roundabout.py `
-            tests/contracts/v1/test_intersection_surface_patch_build_service.py `
-            tests/contracts/v1/test_intersection_patch_input_preparation_service.py `
-            tests/contracts/v1/test_intersection_patch_boundary_selection_service.py `
-            tests/contracts/v1/test_intersection_patch_triangulation_service.py `
-            tests/contracts/v1/test_intersection_patch_shape_quality_service.py `
             tests/contracts/v1/test_intersection_patch_constraint_build_service.py `
-            tests/contracts/v1/test_intersection_patch_tin_assembly_service.py `
-            tests/contracts/v1/test_intersection_tie_in_edge_evaluation_service.py `
-            tests/contracts/v1/test_intersection_boundary_segment_evaluation_service.py `
-            tests/contracts/v1/test_intersection_patch_boundary_evaluation_service.py `
-            tests/contracts/v1/test_intersection_boundary_loop_evaluation_service.py `
-            tests/contracts/v1/test_intersection_shared_breakline_service.py `
-            tests/contracts/v1/test_intersection_slope_face_topology_services.py `
             tests/contracts/v1/test_build_corridor_tin_builder_services.py `
             tests/contracts/v1/test_build_corridor_presentation_boundaries.py `
             "tests/contracts/v1/test_structure_editor_command.py::test_structure_editor_normalizes_connection_points_after_station_edits" `

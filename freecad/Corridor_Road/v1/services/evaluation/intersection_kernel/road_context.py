@@ -80,6 +80,8 @@ class RoadContext(Protocol):
 
     def surface_profile(self, road_ref: str, station: float) -> SurfaceProfile | None: ...
 
+    def nearest_station(self, road_ref: str, xy: tuple[float, float]) -> tuple[float, float]: ...
+
 
 @dataclass(frozen=True)
 class PolylineRoad:
@@ -192,6 +194,21 @@ class PolylineRoadContext:
         rows += [f"z|{s:.6f}|{z:.6f}" for s, z in road.grade_rows]
         rows += [f"p|{row.station:.6f}|{row.fg!r}|{row.left_daylight!r}|{row.right_daylight!r}" for row in road.profile_rows]
         return tuple(rows)
+
+    def nearest_station(self, road_ref: str, xy: tuple[float, float]) -> tuple[float, float]:
+        """The station of the centreline point nearest to `xy`, and the distance to it."""
+
+        road = self.road(road_ref)
+        best = (road.stations[0], math.inf)
+        for i in range(len(road.stations) - 1):
+            (x0, y0), (x1, y1) = road.xy[i], road.xy[i + 1]
+            dx, dy = x1 - x0, y1 - y0
+            length_sq = dx * dx + dy * dy
+            t = 0.0 if length_sq <= 0.0 else max(0.0, min(1.0, ((xy[0] - x0) * dx + (xy[1] - y0) * dy) / length_sq))
+            distance = math.hypot(xy[0] - (x0 + dx * t), xy[1] - (y0 + dy * t))
+            if distance < best[1]:
+                best = (road.stations[i] + (road.stations[i + 1] - road.stations[i]) * t, distance)
+        return best
 
     def surface_profile(self, road_ref: str, station: float) -> SurfaceProfile | None:
         """The cut at `station`: linear between the two neighbouring sections point by point, which

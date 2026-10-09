@@ -156,3 +156,17 @@ def test_the_surfaces_turn_with_the_roads() -> None:
     turned, _ = _t(turn=30.0)
     for name in ("patch_triangle_count", "patch_triangle_min_quality", "slope_triangle_count"):
         assert _quality(turned, name) == pytest.approx(_quality(straight, name), rel=1.0e-6), name
+
+
+def test_the_drainage_candidate_is_the_lowest_point_of_the_patch_with_its_road_and_station() -> None:
+    # the main road rises 2 % with station, the side road is level: water collects at the main road's
+    # back mouth (station 103), on both pavement edges, 2 % crossfall below the crown
+    result, _context_ = _t(main_grade=0.02)
+    candidates = result.drainage_candidates
+    assert len(candidates) == 2
+    expected_z = 10.0 + 0.02 * (103.0 - 120.0) - 0.02 * 5.0
+    for candidate in candidates:
+        assert candidate.road_ref == "main"
+        assert candidate.station == pytest.approx(103.0, abs=1.0e-6)
+        assert candidate.z == pytest.approx(expected_z, abs=1.0e-9)
+        assert abs(candidate.y) == pytest.approx(5.0)

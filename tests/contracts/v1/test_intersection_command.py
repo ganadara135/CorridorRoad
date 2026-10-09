@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import FreeCAD as App
-from types import SimpleNamespace
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.qt_compat import QtWidgets
@@ -20,17 +19,10 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
     INTERSECTION_COMMAND_ID,
     INTERSECTION_SOURCE_MODES,
     NEXT_INTERSECTION_WORKFLOW_TEXT,
-    V1IntersectionEditorTaskPanel,
     alignment_model_by_ref,
-    create_starter_intersection_sources,
-    intersection_read_only_preview_rows,
-    intersection_source_completeness_rows,
-    intersection_source_completeness_summary,
-    show_intersection_review_overlay,
     starter_intersection_source_specs,
     list_v1_alignment_choices,
     validate_existing_alignment_selection,
-    INTERSECTION_REVIEW_MAX_REGION_SPAN,
     _starter_region_model_for_alignment,
     _unique_alignment_id,
 )
@@ -51,22 +43,11 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     build_document_applied_section_set,
 )
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
-    build_document_corridor_model,
-    build_document_corridor_surface_model,
-    corridor_intersection_contract_review_rows,
     corridor_subassembly_kind_guided_review_rows,
-    create_corridor_intersection_surface_preview,
     focus_corridor_build_guided_review_step,
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
-from freecad.Corridor_Road.v1.objects.obj_drainage import to_drainage_model
 from freecad.Corridor_Road.v1.objects.obj_intersection import find_v1_intersection_model, to_intersection_model
-from freecad.Corridor_Road.v1.objects.obj_region import to_region_model
-from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
-    find_v1_assembly_subassembly_model,
-    to_assembly_subassembly_model,
-)
-from freecad.Corridor_Road.v1.objects.obj_superelevation import to_superelevation_model
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionAnchorRow,
     IntersectionControlArea,
@@ -134,54 +115,6 @@ def test_intersection_starter_source_specs_cover_first_slice_types() -> None:
         assert all(len(row["points"]) >= 2 for row in alignments)
 
 
-def test_intersection_source_completeness_rows_cover_staged_workflow() -> None:
-    rows = intersection_source_completeness_rows(None, alignment_errors=["Primary Alignment is required."], control_region_count=0)
-    summary = intersection_source_completeness_summary(rows)
-
-    assert [row["stage"] for row in rows] == [
-        "Participants",
-        "Anchor",
-        "Legs",
-        "Control Areas",
-        "Corners",
-        "Edge Families",
-        "Lane Connections",
-        "Grading",
-        "Drainage",
-        "Preview",
-    ]
-    assert rows[0]["status"] == "missing"
-    assert rows[0]["approval_state"] == "missing"
-    assert rows[0]["stage_id"] == "participants"
-    assert rows[0]["handoff_target"] == "intersection-source-stage:participants"
-    assert "Primary Alignment is required." in rows[0]["diagnostics"]
-    assert rows[-1]["status"] == "missing"
-    assert summary["status"] == "missing"
-    assert summary["missing_count"] == 10
-    assert summary["next_stage"] == "Participants"
-    assert summary["preview_ready"] is False
-    assert summary["apply_ready"] is False
-
-
-def test_intersection_read_only_preview_rows_cover_result_sequence() -> None:
-    rows = intersection_read_only_preview_rows(None, alignment_errors=["Primary Alignment is required."], control_region_count=0)
-
-    assert [row["stage"] for row in rows] == [
-        "Source Validation",
-        "Topology",
-        "Edge Network",
-        "Surface Zones",
-        "Grading",
-        "Drainage",
-        "Slope Loops",
-    ]
-    assert rows[0]["status"] == "missing"
-    assert rows[0]["contract"] == "IntersectionModel source stages"
-    assert rows[0]["handoff_target"] == "intersection-preview-stage:source_validation"
-    assert rows[1]["contract"] == "IntersectionTopologyResult"
-    assert all(row["status"] == "missing" for row in rows[1:])
-
-
 def test_intersection_preset_panel_labels_map_to_source_kinds() -> None:
     labels = intersection_preset_labels()
 
@@ -194,260 +127,6 @@ def test_intersection_preset_panel_labels_map_to_source_kinds() -> None:
     assert intersection_preset_kind_from_label("T Intersection - Basic") == "t_intersection"
     assert intersection_preset_kind_from_label("Cross Intersection - Basic") == "cross_intersection"
     assert intersection_preset_kind_from_label("Roundabout - Single Lane") == "roundabout"
-
-
-def test_intersection_preset_source_creation_stores_intersection_model() -> None:
-    doc = App.newDocument("CRV1IntersectionPresetSources")
-    try:
-        created = create_intersection_preset_sources(
-            doc,
-            preset_label="T Intersection - Basic",
-            grading_policy="blend_primary_side",
-            drainage_mode="outside_gutter",
-        )
-        obj = find_v1_intersection_model(doc)
-        model = to_intersection_model(obj)
-
-        assert any(line.startswith("IntersectionModel:") for line in created)
-        assert obj is not None
-        assert model is not None
-        assert "intersection-preset:t_intersection:source-completeness" in model.source_refs
-        assert len(model.intersection_rows) == 1
-        row = model.intersection_rows[0]
-        assert row.intersection_kind == "t_intersection"
-        assert "Preset source completeness" in row.notes
-        assert "source_completeness_ref=intersection-preset:t_intersection:source-completeness" in row.notes
-        assert row.primary_alignment_ref
-        assert row.secondary_alignment_refs
-        assert len(row.control_region_refs) == 2
-        assert "preset_anchor_review_required" in model.anchor_rows[0].diagnostic_rows
-        assert all("preset_control_area_review_required" in control.diagnostic_rows for control in model.control_area_rows)
-        assert all("preset_corner_review_required" in corner.diagnostic_rows for corner in model.corner_rows)
-        assert all("preset_edge_family_review_required" in edge.diagnostic_rows for edge in model.edge_policy_rows)
-        assert len(model.arm_policy_rows) == 2
-        assert len(model.edge_policy_rows) == 4
-        assert len(model.curb_return_policy_rows) == 1
-        assert len(model.corner_rows) == 2
-        assert model.curb_return_policy_rows[0].corner_refs == [row.corner_id for row in model.corner_rows]
-        assert len(model.lane_connection_rows) == 2
-        assert model.lane_connection_rows[0].approval_status == "draft"
-        assert all("preset_lane_connection_review_required" in lane.diagnostic_rows for lane in model.lane_connection_rows)
-        assert len(model.grading_policy_rows) == 1
-        assert model.grading_policy_rows[0].mode == "blend_primary_side"
-        assert "preset_grading_policy_review_required" in model.grading_policy_rows[0].diagnostic_rows
-        assert len(model.drainage_policy_rows) == 1
-        assert model.drainage_policy_rows[0].capture_mode == "outside_gutter"
-        assert "preset_drainage_policy_review_required" in model.drainage_policy_rows[0].diagnostic_rows
-
-        superelevation = to_superelevation_model(doc.getObject("V1IntersectionPresetSuperelevationPrimary"))
-        drainage = to_drainage_model(doc.getObject("V1IntersectionPresetDrainage"))
-        assembly = to_assembly_subassembly_model(find_v1_assembly_subassembly_model(doc))
-        region_models = [
-            to_region_model(region_obj)
-            for region_obj in list(getattr(doc, "Objects", []) or [])
-            if str(getattr(region_obj, "V1ObjectType", "") or "") == "V1RegionModel"
-        ]
-        region_models = [region_model for region_model in region_models if region_model is not None]
-        assert superelevation is not None
-        assert superelevation.superelevation_kind == "intersection_superelevation_handoff"
-        assert len(superelevation.control_rows) == 0
-        assert len(superelevation.constraint_rows) == 2
-        assert superelevation.constraint_rows[0].value == "blend_primary_side"
-        assert drainage is not None
-        assert drainage.drainage_model_id == "drainage:intersection-preset-t-intersection"
-        assert len(drainage.element_rows) == 2
-        assert len(drainage.policy_rows) == 1
-        assert len(drainage.flow_route_rows) == 1
-        assert assembly is not None
-        assert assembly.assembly_id
-        assert assembly.active_template_id
-        assert any(
-            row.kind == "lane" for template in assembly.template_rows for row in template.subassembly_rows
-        )
-        assert any(
-            row.kind == "shoulder" for template in assembly.template_rows for row in template.subassembly_rows
-        )
-        assert any(
-            row.kind == "side_slope" for template in assembly.template_rows for row in template.subassembly_rows
-        )
-        assert region_models
-        assert all(
-            region_row.assembly_ref == assembly.assembly_id
-            and region_row.template_ref == assembly.active_template_id
-            for region_model in region_models
-            for region_row in region_model.region_rows
-        )
-
-        completeness_rows = intersection_source_completeness_rows(model, control_region_count=len(row.control_region_refs))
-        completeness_summary = intersection_source_completeness_summary(completeness_rows)
-        rows_by_stage = {stage_row["stage"]: stage_row for stage_row in completeness_rows}
-        assert rows_by_stage["Participants"]["status"] == "accepted"
-        assert rows_by_stage["Anchor"]["status"] == "warning"
-        assert rows_by_stage["Anchor"]["approval_state"] == "draft"
-        assert rows_by_stage["Anchor"]["source_methods"] == ["detected"]
-        assert rows_by_stage["Lane Connections"]["count"] == 2
-        assert rows_by_stage["Lane Connections"]["approval_state"] == "draft"
-        assert rows_by_stage["Drainage"]["status"] == "warning"
-        assert rows_by_stage["Drainage"]["approval_state"] == "draft"
-        assert completeness_summary["status"] == "warning"
-        assert completeness_summary["missing_count"] == 0
-        assert completeness_summary["next_stage"] == "Anchor"
-        assert completeness_summary["preview_ready"] is True
-        preview_rows = intersection_read_only_preview_rows(model, source_rows=completeness_rows)
-        preview_by_stage = {stage_row["stage"]: stage_row for stage_row in preview_rows}
-        assert preview_by_stage["Source Validation"]["status"] == "warning"
-        assert preview_by_stage["Topology"]["contract"] == "IntersectionTopologyResult"
-        assert preview_by_stage["Edge Network"]["count"] > 0
-        assert preview_by_stage["Surface Zones"]["contract"] == "IntersectionSurfaceZoneResult"
-        assert preview_by_stage["Grading"]["contract"] == "IntersectionGradingContextResult"
-        assert preview_by_stage["Drainage"]["contract"] == "IntersectionDrainageHintResult"
-        assert preview_by_stage["Slope Loops"]["contract"] == "IntersectionSlopeFaceLoopResult"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_cross_intersection_preset_source_completeness_marks_default_rows_for_review() -> None:
-    doc = App.newDocument("CRV1CrossIntersectionPresetSourceCompleteness")
-    try:
-        created = create_intersection_preset_sources(
-            doc,
-            preset_label="Cross Intersection - Basic",
-            grading_policy="blend_primary_side",
-            drainage_mode="review_low_points",
-        )
-        model = to_intersection_model(find_v1_intersection_model(doc))
-
-        assert any("Source completeness: preset default/draft rows require review" in line for line in created)
-        assert model is not None
-        assert "intersection-preset:cross_intersection:source-completeness" in model.source_refs
-        assert model.intersection_rows[0].intersection_kind == "cross_intersection"
-        assert "source_completeness_ref=intersection-preset:cross_intersection:source-completeness" in model.intersection_rows[0].notes
-        assert all(
-            "source_completeness_ref=intersection-preset:cross_intersection:source-completeness" in row.notes
-            for row in [
-                *model.control_area_rows,
-                *model.corner_rows,
-                *model.edge_policy_rows,
-                *model.lane_connection_rows,
-                *model.grading_policy_rows,
-                *model.drainage_policy_rows,
-            ]
-        )
-        assert len(model.corner_rows) == 4
-        assert len(model.edge_policy_rows) >= 4
-        assert len(model.lane_connection_rows) >= 2
-        assert all(row.approval_status == "draft" for row in model.control_area_rows)
-        assert all("preset_control_area_review_required" in row.diagnostic_rows for row in model.control_area_rows)
-        assert all("preset_corner_review_required" in row.diagnostic_rows for row in model.corner_rows)
-        assert all("preset_edge_family_review_required" in row.diagnostic_rows for row in model.edge_policy_rows)
-        assert all("preset_lane_connection_review_required" in row.diagnostic_rows for row in model.lane_connection_rows)
-        assert "preset_grading_policy_review_required" in model.grading_policy_rows[0].diagnostic_rows
-        assert "preset_drainage_policy_review_required" in model.drainage_policy_rows[0].diagnostic_rows
-
-        completeness_rows = intersection_source_completeness_rows(
-            model,
-            control_region_count=len(model.intersection_rows[0].control_region_refs),
-        )
-        rows_by_stage = {stage_row["stage"]: stage_row for stage_row in completeness_rows}
-        assert rows_by_stage["Control Areas"]["approval_state"] == "draft"
-        assert rows_by_stage["Corners"]["approval_state"] == "draft"
-        assert rows_by_stage["Edge Families"]["approval_state"] == "draft"
-        assert rows_by_stage["Lane Connections"]["approval_state"] == "draft"
-        assert rows_by_stage["Grading"]["approval_state"] == "draft"
-        assert rows_by_stage["Drainage"]["approval_state"] == "draft"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_intersection_editor_panel_exposes_source_completeness_table() -> None:
-    doc = App.newDocument("CRV1IntersectionPanelSourceCompleteness")
-    try:
-        _ensure_qapp()
-        panel = V1IntersectionEditorTaskPanel(document=doc)
-
-        assert panel._source_stage_table.rowCount() == 10
-        assert panel._source_stage_table.columnCount() == 6
-        assert panel._source_stage_table.item(0, 0).text() == "Participants"
-        assert panel._source_stage_table.item(0, 1).text() == "missing"
-        assert panel._source_stage_table.item(0, 2).text() == "missing"
-        assert panel._source_stage_table.item(0, 4).text() == "intersection-source-stage:participants"
-        assert panel._preview_stage_table.rowCount() == 7
-        assert panel._preview_stage_table.columnCount() == 5
-        assert panel._preview_stage_table.item(0, 0).text() == "Source Validation"
-        assert panel._preview_stage_table.item(0, 3).text() == "IntersectionModel source stages"
-        assert "Source Summary: missing" in panel._status.toPlainText()
-        assert "Next Source Stage: Participants" in panel._status.toPlainText()
-        assert "Preview Ready: no" in panel._status.toPlainText()
-        assert "Read-only Preview Sequence:" in panel._status.toPlainText()
-
-        assert panel.focus_source_stage("intersection-source-stage:anchor") is True
-        assert panel._source_stage_table.currentRow() == 1
-        assert "Focused source stage: Anchor" in panel._status.toPlainText()
-        assert panel.focus_source_stage("does-not-exist") is False
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_intersection_editor_panel_smoke_reports_preset_warning_stages_without_output_geometry() -> None:
-    doc = App.newDocument("CRV1IntersectionPanelPresetSourceSmoke")
-    try:
-        create_starter_intersection_sources(doc, "cross_intersection")
-        _ensure_qapp()
-        panel = V1IntersectionEditorTaskPanel(document=doc)
-        panel._type_combo.setCurrentText("Cross Intersection")
-        panel._source_mode_combo.setCurrentText("Create Starter Sources")
-        if panel._primary_alignment_combo.count() > 1:
-            panel._primary_alignment_combo.setCurrentIndex(1)
-        if panel._secondary_alignment_combo.count() > 2:
-            panel._secondary_alignment_combo.setCurrentIndex(2)
-        panel._update_status()
-
-        assert find_v1_intersection_model(doc) is None
-        assert panel._source_stage_table.rowCount() == 10
-        rows_by_stage = {row["stage"]: row for row in panel._last_source_stage_rows}
-        assert rows_by_stage["Participants"]["status"] == "accepted"
-        assert rows_by_stage["Anchor"]["status"] == "warning"
-        assert rows_by_stage["Anchor"]["approval_state"] == "draft"
-        assert rows_by_stage["Corners"]["approval_state"] == "draft"
-        assert rows_by_stage["Edge Families"]["approval_state"] == "draft"
-        assert rows_by_stage["Lane Connections"]["approval_state"] == "draft"
-        assert rows_by_stage["Grading"]["approval_state"] == "draft"
-        assert rows_by_stage["Drainage"]["approval_state"] == "draft"
-        assert any(
-            diagnostic.startswith("handoff_target:intersection-source-stage:anchor:")
-            for diagnostic in rows_by_stage["Anchor"]["diagnostics"]
-        )
-        assert any(
-            diagnostic.startswith("handoff_target:intersection-source-stage:lane_connections:")
-            for diagnostic in rows_by_stage["Lane Connections"]["diagnostics"]
-        )
-        assert any(
-            diagnostic.startswith("handoff_target:intersection-source-stage:drainage:")
-            for diagnostic in rows_by_stage["Drainage"]["diagnostics"]
-        )
-
-        preview_by_stage = {row["stage"]: row for row in panel._last_preview_stage_rows}
-        assert preview_by_stage["Source Validation"]["status"] == "warning"
-        assert preview_by_stage["Topology"]["contract"] == "IntersectionTopologyResult"
-        assert preview_by_stage["Edge Network"]["contract"] == "IntersectionEdgeNetworkResult"
-        assert any(
-            diagnostic.startswith("handoff_target:intersection-preview-stage:grading:")
-            for diagnostic in preview_by_stage["Grading"]["diagnostics"]
-        )
-        assert any(
-            diagnostic.startswith("handoff_target:intersection-source-stage:drainage:")
-            for diagnostic in preview_by_stage["Drainage"]["diagnostics"]
-        )
-        assert "source_lineage_status:source_warning" in preview_by_stage["Slope Loops"]["diagnostics"]
-        assert "Source Summary: warning" in panel._status.toPlainText()
-        assert "Preview Ready: yes" in panel._status.toPlainText()
-        assert "Apply Ready: yes" in panel._status.toPlainText()
-        assert panel.focus_source_stage("intersection-source-stage:drainage") is True
-        assert panel._source_stage_table.currentRow() == 8
-        assert "Focused source stage: Drainage" in panel._status.toPlainText()
-        assert find_v1_intersection_model(doc) is None
-    finally:
-        App.closeDocument(doc.Name)
 
 
 def test_intersection_preset_existing_alignment_mode_builds_model_from_selected_refs() -> None:
@@ -2097,7 +1776,7 @@ def test_roundabout_boundary_loops_include_ownership_and_clip_handoff_boundaries
         App.closeDocument(doc.Name)
 
 
-def test_roundabout_lane_shoulder_guided_review_clips_to_approach_boundary() -> None:
+def test_roundabout_lane_shoulder_guided_review_clips_to_the_kernel_boundary() -> None:
     doc = App.newDocument("CRV1RoundaboutLaneShoulderGuidedReviewClip")
     try:
         create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
@@ -2109,11 +1788,11 @@ def test_roundabout_lane_shoulder_guided_review_clips_to_approach_boundary() -> 
         assert lane_preview is not None
         assert lane_preview.Label == "Applied Section Highlight - Lane"
         assert lane_preview.DisplayMode == "section_surface_strips"
-        assert lane_preview.RoundaboutClipBoundaryRole == "roundabout_approach_clip_boundary"
-        assert lane_preview.RoundaboutReportedBoundaryRole == "roundabout_approach_clip_boundary"
-        assert lane_preview.RoundaboutActualClipBoundaryRole == "roundabout_outer_ownership_boundary"
-        assert lane_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
-        assert lane_preview.RoundaboutReviewClipMode == "actual_ownership_boundary"
+        assert lane_preview.RoundaboutClipBoundaryRole == "intersection_kernel_boundary"
+        assert lane_preview.RoundaboutReportedBoundaryRole == "intersection_kernel_boundary"
+        assert lane_preview.RoundaboutActualClipBoundaryRole == "intersection_kernel_boundary"
+        assert lane_preview.RoundaboutActualClipBoundaryRoles == "intersection_kernel_boundary"
+        assert lane_preview.RoundaboutReviewClipMode == "intersection_kernel_boundary"
         assert lane_preview.RoundaboutClipBoundaryStatus == "ready"
         assert lane_preview.RoundaboutClipFallbackReason == ""
         assert int(lane_preview.RoundaboutClipBoundaryLoopCount) > 0
@@ -2125,11 +1804,11 @@ def test_roundabout_lane_shoulder_guided_review_clips_to_approach_boundary() -> 
         assert shoulder_preview is not None
         assert shoulder_preview.Label == "Applied Section Highlight - Shoulder"
         assert shoulder_preview.DisplayMode == "section_surface_strips"
-        assert shoulder_preview.RoundaboutClipBoundaryRole == "roundabout_approach_clip_boundary"
-        assert shoulder_preview.RoundaboutReportedBoundaryRole == "roundabout_approach_clip_boundary"
-        assert shoulder_preview.RoundaboutActualClipBoundaryRole == "roundabout_outer_ownership_boundary"
-        assert shoulder_preview.RoundaboutActualClipBoundaryRoles == "roundabout_outer_ownership_boundary"
-        assert shoulder_preview.RoundaboutReviewClipMode == "actual_ownership_boundary"
+        assert shoulder_preview.RoundaboutClipBoundaryRole == "intersection_kernel_boundary"
+        assert shoulder_preview.RoundaboutReportedBoundaryRole == "intersection_kernel_boundary"
+        assert shoulder_preview.RoundaboutActualClipBoundaryRole == "intersection_kernel_boundary"
+        assert shoulder_preview.RoundaboutActualClipBoundaryRoles == "intersection_kernel_boundary"
+        assert shoulder_preview.RoundaboutReviewClipMode == "intersection_kernel_boundary"
         assert shoulder_preview.RoundaboutClipBoundaryStatus == "ready"
         assert shoulder_preview.RoundaboutClipFallbackReason == ""
         assert int(shoulder_preview.RoundaboutClipBoundaryLoopCount) > 0
@@ -2152,71 +1831,6 @@ def test_roundabout_side_slope_is_not_an_applied_section_guided_review_row() -> 
 
         assert all(str(row.get("step_id", "")) != "subassembly_kind:side_slope" for row in rows)
         assert doc.getObject("ReviewIssueSubassemblyKind_side_slope") is None
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_roundabout_intersections_tab_hides_internal_contract_rows_by_default() -> None:
-    doc = App.newDocument("CRV1RoundaboutIntersectionsTabProductionRows")
-    try:
-        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
-        project = find_project(doc)
-        applied = build_document_applied_section_set(doc, project=project)
-        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
-        corridor_model = build_document_corridor_model(doc, project=project)
-        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
-        create_corridor_intersection_surface_preview(
-            document=doc,
-            project=project,
-            corridor_model=corridor_model,
-            surface_model=surface_model,
-        )
-
-        default_rows = corridor_intersection_contract_review_rows(doc)
-        internal_rows = corridor_intersection_contract_review_rows(doc, include_internal=True)
-        default_families = {str(row.get("contract_family", "") or "") for row in default_rows}
-        internal_families = {str(row.get("contract_family", "") or "") for row in internal_rows}
-
-        assert "drainage_hint" not in default_families
-        assert "shared_boundary_graph" not in default_families
-        assert "slope_face_cell" not in default_families
-        assert "intersection_tie_slope_window" not in default_families
-        assert "intersection_tie_slope_window" not in internal_families
-        assert "drainage_hint" in internal_families
-        assert any(str(row.get("contract_family", "") or "") == "boundary_loop" for row in default_rows)
-        assert any(str(row.get("contract_family", "") or "") == "roundabout_boundary_readiness" for row in default_rows)
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_roundabout_intersections_tab_exposes_boundary_readiness_row() -> None:
-    doc = App.newDocument("CRV1RoundaboutBoundaryReadinessRow")
-    try:
-        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=20.0)
-
-        rows = corridor_intersection_contract_review_rows(doc)
-        readiness_rows = [
-            row
-            for row in rows
-            if str(row.get("contract_family", "") or "") == "roundabout_boundary_readiness"
-        ]
-
-        assert len(readiness_rows) == 1
-        row = readiness_rows[0]
-        assert row["status"] == "ready"
-        assert row["source_status"] == "accepted"
-        assert row["role"] == "approach_clip_and_slope_handoff"
-        assert row["output_path"] == "roundabout_boundary_readiness"
-        assert "intersection-roundabout-approach-legs:" in str(row["source_refs"])
-        assert "intersection-boundary-loop:" in str(row["boundary_refs"])
-        notes = str(row["notes"])
-        assert "approach_legs=4/4" in notes
-        assert "primary_start" in notes
-        assert "secondary_end" in notes
-        assert "roundabout_approach_clip_boundary=4/4" in notes
-        assert "roundabout_subgrade_clip_boundary=4/4" in notes
-        assert "roundabout_slope_handoff_boundary=4/4" in notes
-        assert "Roundabout ordinary-surface clip and slope handoff boundaries are ready." in notes
     finally:
         App.closeDocument(doc.Name)
 
@@ -2686,76 +2300,6 @@ def test_intersection_alignment_model_by_ref_returns_selected_alignment_model() 
 
         assert model is not None
         assert model.alignment_id == alignment.AlignmentId
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_intersection_review_overlay_includes_curb_return_preview_arcs() -> None:
-    doc = App.newDocument("CRV1IntersectionCurbReturnOverlay")
-    try:
-        primary = create_sample_v1_alignment(doc, label="Primary Road")
-        secondary = create_sample_v1_alignment(doc, label="Side Road")
-        secondary.AlignmentId = "alignment:side-road"
-        detection = SimpleNamespace(x=10.0, y=0.0, primary_station=10.0, secondary_station=10.0)
-
-        obj = show_intersection_review_overlay(
-            doc,
-            intersection_kind="t_intersection",
-            primary_alignment_ref=primary.AlignmentId,
-            secondary_alignment_ref=secondary.AlignmentId,
-            control_region_choices=[
-                {
-                    "control_region_ref": "regions:primary/region:primary-intersection",
-                    "alignment_ref": primary.AlignmentId,
-                    "station_start": 0.0,
-                    "station_end": 20.0,
-                },
-                {
-                    "control_region_ref": "regions:side/region:side-intersection",
-                    "alignment_ref": secondary.AlignmentId,
-                    "station_start": 0.0,
-                    "station_end": 20.0,
-                },
-            ],
-            detection_result=detection,
-        )
-
-        assert obj.Name == "V1IntersectionReviewOverlay"
-        assert obj.CurbReturnPolicyRef == "curb-return:starter-t_intersection:default"
-        assert obj.CurbReturnRadius == "12.000"
-        assert int(obj.CurbReturnArcCount) == 2
-        assert list(obj.CurbReturnDiagnostics) == []
-        assert int(obj.ShapePartCount) >= 2
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_intersection_review_overlay_clips_long_control_region_highlight() -> None:
-    doc = App.newDocument("CRV1IntersectionOverlayClipsLongRegion")
-    try:
-        primary = create_sample_v1_alignment(doc, label="Primary Road")
-        secondary = create_sample_v1_alignment(doc, label="Side Road")
-        secondary.AlignmentId = "alignment:side-road"
-        detection = SimpleNamespace(x=10.0, y=0.0, primary_station=10.0, secondary_station=10.0)
-
-        obj = show_intersection_review_overlay(
-            doc,
-            intersection_kind="t_intersection",
-            primary_alignment_ref=primary.AlignmentId,
-            secondary_alignment_ref=secondary.AlignmentId,
-            control_region_choices=[
-                {
-                    "control_region_ref": "regions:primary/region:primary-intersection",
-                    "alignment_ref": primary.AlignmentId,
-                    "station_start": 0.0,
-                    "station_end": 180.0,
-                },
-            ],
-            detection_result=detection,
-        )
-
-        bound_box = obj.Shape.BoundBox
-        assert float(bound_box.XLength) <= INTERSECTION_REVIEW_MAX_REGION_SPAN + 7.0
     finally:
         App.closeDocument(doc.Name)
 

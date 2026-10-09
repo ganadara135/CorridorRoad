@@ -156,3 +156,28 @@ def test_the_full_build_reports_the_kernel_surfaces_and_no_warning(label) -> Non
             assert rows[role]["status"] == "ready", (role, rows[role]["notes"][-400:])
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_the_intersections_tab_reads_the_kernel_result(kernel_doc) -> None:
+    # plan phase R7c-2: the Build Parametric Intersections tab lists the kernel's own result
+    doc, result = kernel_doc
+    rows = build.corridor_intersection_contract_review_rows(doc)
+    assert rows[0]["contract_family"] == "intersection" and rows[0]["status"] == "ready"
+    families = [row["contract_family"] for row in rows]
+    assert families.count("leg") == len(result.legs)
+    assert "boundary" in families and "corridor_clip" in families
+    leg_row = next(row for row in rows if row["contract_family"] == "leg")
+    highlight = build._create_intersection_contract_review_highlight(document=doc, row=leg_row)
+    assert highlight is not None and highlight.Name == "ReviewIntersectionContractHighlight"
+    assert highlight.ContractRowId == leg_row["row_id"]
+
+
+def test_the_guided_review_and_the_drainage_review_read_the_kernel_result(kernel_doc) -> None:
+    doc, result = kernel_doc
+    summary = build.corridor_intersection_review_summary(doc)
+    assert summary["status"] == "ready", summary
+    assert result.intersection_id in summary["notes"]
+    assert result.drainage_candidates
+    rows = build.corridor_intersection_drainage_review_rows(doc)
+    assert rows and all(row["review_kind"] == "intersection_drainage" for row in rows)
+    assert rows[0]["intersection_id"] == result.intersection_id

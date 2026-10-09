@@ -13,48 +13,6 @@ from .centerline3d_frame_service import Centerline3DFrame, Centerline3DFrameServ
 from .centerline3d_source_geometry_service import Centerline3DSourceGeometryService, Centerline3DSourceStationResult
 from .drainage_resolution_service import DrainageResolutionService, DrainageValidationService
 from .intersection_evaluation_service import IntersectionEvaluationService
-from .intersection_patch_shape_quality_service import (
-    IntersectionPatchShapeQualityRequest,
-    IntersectionPatchShapeQualityService,
-)
-from .intersection_tie_in_edge_evaluation_service import (
-    IntersectionTieInEdgeEvaluationRequest,
-    IntersectionTieInEdgeEvaluationService,
-)
-from .intersection_boundary_segment_evaluation_service import (
-    IntersectionBoundarySegmentEvaluationRequest,
-    IntersectionBoundarySegmentEvaluationService,
-)
-from .intersection_patch_boundary_evaluation_service import (
-    IntersectionPatchBoundaryEvaluationRequest,
-    IntersectionPatchBoundaryEvaluationService,
-)
-from .intersection_boundary_loop_evaluation_service import (
-    IntersectionBoundaryLoopEvaluationRequest,
-    IntersectionBoundaryLoopEvaluationService,
-)
-from .intersection_shared_breakline_service import (
-    IntersectionSharedBreaklineAssemblyRequest,
-    IntersectionSharedBreaklineContributionRequest,
-    IntersectionSharedBreaklineEvaluationRequest,
-    IntersectionSharedBreaklineService,
-)
-from .intersection_slope_face_cell_evaluation_service import (
-    IntersectionSlopeFaceCellEvaluationRequest,
-    IntersectionSlopeFaceCellEvaluationService,
-)
-from .intersection_shared_boundary_graph_evaluation_service import (
-    IntersectionSharedBoundaryGraphEvaluationRequest,
-    IntersectionSharedBoundaryGraphEvaluationService,
-)
-from .intersection_slope_face_boundary_evaluation_service import (
-    IntersectionSlopeFaceBoundaryEvaluationRequest,
-    IntersectionSlopeFaceBoundaryEvaluationService,
-)
-from .intersection_tie_slope_evaluation_service import (
-    IntersectionTieSlopeEvaluationRequest,
-    IntersectionTieSlopeEvaluationService,
-)
 from ...models.result.intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
 from .intersection_alignment_detection_service import (
     AlignmentIntersectionDetectionResult,
@@ -123,28 +81,6 @@ __all__ = [
     "DrainageResolutionService",
     "DrainageValidationService",
     "IntersectionEvaluationService",
-    "IntersectionPatchShapeQualityRequest",
-    "IntersectionPatchShapeQualityService",
-    "IntersectionTieInEdgeEvaluationRequest",
-    "IntersectionTieInEdgeEvaluationService",
-    "IntersectionBoundarySegmentEvaluationRequest",
-    "IntersectionBoundarySegmentEvaluationService",
-    "IntersectionPatchBoundaryEvaluationRequest",
-    "IntersectionPatchBoundaryEvaluationService",
-    "IntersectionBoundaryLoopEvaluationRequest",
-    "IntersectionBoundaryLoopEvaluationService",
-    "IntersectionSharedBreaklineAssemblyRequest",
-    "IntersectionSharedBreaklineContributionRequest",
-    "IntersectionSharedBreaklineEvaluationRequest",
-    "IntersectionSharedBreaklineService",
-    "IntersectionSlopeFaceCellEvaluationRequest",
-    "IntersectionSlopeFaceCellEvaluationService",
-    "IntersectionSharedBoundaryGraphEvaluationRequest",
-    "IntersectionSharedBoundaryGraphEvaluationService",
-    "IntersectionSlopeFaceBoundaryEvaluationRequest",
-    "IntersectionSlopeFaceBoundaryEvaluationService",
-    "IntersectionTieSlopeEvaluationRequest",
-    "IntersectionTieSlopeEvaluationService",
     "IntersectionGradingContextResult",
     "IntersectionGradingContextRow",
     "AlignmentIntersectionDetectionResult",

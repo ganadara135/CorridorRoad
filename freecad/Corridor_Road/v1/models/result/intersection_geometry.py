@@ -67,6 +67,22 @@ class CornerGeometry:
 
 
 @dataclass(frozen=True)
+class DrainageCandidate:
+    """A low point of the intersection surface, where water collects (stage K7).
+
+    `road_ref` and `station` are the nearest road centreline and its station there, so a Drainage
+    Element, which runs along a road by station, can be checked against it.
+    """
+
+    x: float
+    y: float
+    z: float
+    road_ref: str
+    station: float
+    kind: str = "low_point"
+
+
+@dataclass(frozen=True)
 class IntersectionGeometryResult:
     """The evaluated plan geometry of one intersection."""
 
@@ -99,3 +115,5 @@ class IntersectionGeometryResult:
     breaklines: tuple[tuple[str, str, tuple[tuple[float, float, float], ...]], ...] = ()
     # (name, value): triangle counts and qualities of the patch and the slope
     quality_rows: tuple[tuple[str, float], ...] = ()
+    # K7: where the intersection surface collects water
+    drainage_candidates: tuple[DrainageCandidate, ...] = ()

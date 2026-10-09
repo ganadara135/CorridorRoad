@@ -1122,14 +1122,13 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
         assert "source_status" in families
         assert "frame_source" in families
         assert "source_stage" in families
-        assert "topology" in families
-        assert "edge_network" in families
-        assert "surface_zone" in families
-        assert "corridor_clip" in families
-        assert "drainage_hint" in families
+        assert "active_leg" in families
+        assert "kernel" in families
         assert "grading" in families
         assert "drainage" in families
-        assert any(row[3] == "primary_through" for row in context_rows)
+        # no Alignment objects, so the intersection kernel cannot build: it reports, never passes
+        assert any(row[0] == "kernel" and row[1] in {"missing", "error"} for row in context_rows)
+        assert any(row[0] == "active_leg" and row[3] == "primary_through" for row in context_rows)
         assert any(row[3] == "Edge Families" and row[1] == "warning" for row in context_rows)
         assert any(row[0] == "frame_source" and row[1] == "fallback" and row[3] == "alignment_profile_fallback" for row in context_rows)
         assert any(
@@ -1148,18 +1147,6 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
             for row in context_rows
         )
         assert any(
-            row[0] == "surface_zone"
-            and row[6] == "Build Parametric"
-            and row[7].startswith("build-parametric:intersection:surface_zone:")
-            and row[8] in {"accepted_source", "source_warning"}
-            for row in context_rows
-        )
-        assert any(row[3] == "pavement_edge" for row in context_rows)
-        assert any(row[3] == "main_pavement" for row in context_rows)
-        assert any(row[3] == "design" for row in context_rows)
-        assert any(row[3] == "low_point_candidate" for row in context_rows)
-        assert any(row[3] == "inlet_recommendation" for row in context_rows)
-        assert any(
             row[0] == "Intersection: Edge Families"
             and row[1] == "ready"
             and row[2] == "intersection-source-stage:edge_families"
@@ -1170,11 +1157,6 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
             row[0].startswith("Applied Sections:")
             and row[2] == "applied-sections:frame-source:section:96"
             and "Lineage=fallback" in row[3]
-            for row in handoff_rows
-        )
-        assert any(
-            row[0].startswith("Build Parametric:")
-            and row[2].startswith("build-parametric:intersection:surface_zone:")
             for row in handoff_rows
         )
         assert "Intersection Context Rows:" in summary_text

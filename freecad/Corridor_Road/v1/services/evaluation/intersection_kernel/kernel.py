@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 
-from ....models.result.intersection_geometry import IntersectionGeometryResult
+from ....models.result.intersection_geometry import DrainageCandidate, IntersectionGeometryResult
+from .constants import LOW_POINT_TOLERANCE_M
 from ....models.source.intersection_spec import IntersectionSpec
 from .planar import build_planar_geometry
 from .resolve import resolve_intersection
@@ -74,5 +75,26 @@ def build_intersection_geometry(spec: IntersectionSpec, context: RoadContext) ->
         slope_triangles=tuple(surfaces.slope_triangles) if surfaces else (),
         breaklines=tuple(surfaces.breaklines) if surfaces else (),
         quality_rows=tuple(surfaces.quality_rows) if surfaces else (),
+        drainage_candidates=drainage_candidates(surfaces.patch_vertices_xyz if surfaces else (), spec.road_refs, context),
         **common,
     )
+
+
+def drainage_candidates(points, road_refs, context: RoadContext) -> tuple[DrainageCandidate, ...]:
+    """K7: the lowest vertices of the intersection surface, each with its nearest road and station.
+
+    The patch is the paved area inside the boundary, so its lowest vertex is where water standing on
+    the intersection ends up; vertices within `LOW_POINT_TOLERANCE_M` of it are the same low point.
+    """
+
+    if not points:
+        return ()
+    low = min(point[2] for point in points)
+    candidates = []
+    for x, y, z in points:
+        if z - low > LOW_POINT_TOLERANCE_M:
+            continue
+        nearest = min(((ref, *context.nearest_station(ref, (x, y))) for ref in road_refs), key=lambda row: row[2])
+        candidates.append(DrainageCandidate(x, y, z, nearest[0], nearest[1]))
+    candidates.sort(key=lambda row: (row.z, row.road_ref, row.station))
+    return tuple(candidates)

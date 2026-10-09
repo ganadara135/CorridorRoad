@@ -21,12 +21,8 @@ from freecad.Corridor_Road.v1.objects.obj_intersection import (
     find_v1_intersection_model,
     to_intersection_model,
 )
-from freecad.Corridor_Road.v1.services.builders.roundabout_surface_builder_service import (
-    build_roundabout_entry_exit_connector_surface_tin,
-)
 from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import (
     IntersectionEvaluationService,
-    IntersectionPatchPrerequisiteResult,
 )
 
 ROUNDABOUT = "Roundabout - Single Lane"
@@ -161,52 +157,5 @@ def test_an_exit_radius_flares_the_other_side_and_a_flare_that_does_not_fit_fall
         for approach in huge.approach_leg_rows:
             loop, _suffix = _connector_loop(loops, approach)
             assert loop.point_count == 4
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_the_connector_surface_triangulates_a_flared_loop_without_overlap_and_keeps_the_rectangle() -> None:
-    doc = App.newDocument("CRV1RoundaboutFlareSurface")
-    try:
-        model = _model(doc)
-        legs, _loops = _evaluate(model)
-        leg = legs.approach_leg_rows[0].source_leg_ref
-        intersection_id = model.intersection_rows[0].intersection_id
-        prerequisite = IntersectionPatchPrerequisiteResult(status="ready", intersection_id=intersection_id)
-
-        def build(source):
-            return build_roundabout_entry_exit_connector_surface_tin(
-                project_id="corridorroad-v1",
-                corridor_model=None,
-                applied_section_set=None,
-                prerequisite=prerequisite,
-                intersection_model=source,
-                surface_id="test-connector",
-            )
-
-        plain = build(model)
-        flared_model = replace(
-            model,
-            edge_policy_rows=[*model.edge_policy_rows, _flare_row(model, leg, "roundabout_approach_entry_radius", 6.0)],
-        )
-        flared = build(flared_model)
-
-        def area(surface):
-            vertices = {row.vertex_id: row for row in surface.vertex_rows}
-            total = 0.0
-            for triangle in surface.triangle_rows:
-                a, b, c = (vertices[triangle.v1], vertices[triangle.v2], vertices[triangle.v3])
-                total += abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) * 0.5
-            return total
-
-        assert len(plain.triangle_rows) == 8  # four approaches, two triangles each
-        assert len(flared.triangle_rows) > len(plain.triangle_rows)
-        assert area(flared) > area(plain)
-        # triangles of a loop add up to its polygon area: no overlap, no gap
-        loops_by_ref = {}
-        for row in _evaluate(flared_model)[1].loop_rows:
-            if row.loop_role == "roundabout_entry_exit_connector_boundary":
-                loops_by_ref[row.loop_id] = abs(row.area_xy)
-        assert abs(area(flared) - sum(loops_by_ref.values())) < 1.0e-6
     finally:
         App.closeDocument(doc.Name)

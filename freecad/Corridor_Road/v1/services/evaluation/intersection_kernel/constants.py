@@ -43,5 +43,9 @@ EDGE_SAMPLE_STEP_M = 1.0
 # a fillet is searched along each leg at most this far from the anchor
 FILLET_SEARCH_LENGTH_M = 200.0
 
+# patch vertices within this height of the lowest one are the same low point (1 mm, below any
+# design tolerance for a sag, above the rounding of the Applied Section heights)
+LOW_POINT_TOLERANCE_M = 0.001
+
 # manual anchor stations whose road points are further apart than this do not meet
 ANCHOR_MEET_TOLERANCE_M = 0.05

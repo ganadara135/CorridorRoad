@@ -49,7 +49,7 @@ from ..objects.obj_intersection import (
 )
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
-from ..services.builders.intersection_kernel_context_service import spec_from_intersection_model
+from ..services.builders.intersection_kernel_context_service import spec_from_intersection_model, spec_kind_for_model_kind
 from ..services.builders.intersection_kernel_surface_service import intersection_geometry_from_models
 from ..services.editing.intersection_spec_editing_service import (
     SPEC_ANCHOR_METHODS,
@@ -160,9 +160,14 @@ class V1IntersectionPresetsTaskPanel:
         self._alignment_choices = list_v1_alignment_choices(self.document) if self.document is not None else []
         self.form = self._build_ui()
         _route_intersection_preset_objects(self.document, project=self.project)
+        self._select_preset_of_existing_intersection()
         self._update_capability_note()
         self._update_source_mode_controls()
         self._update_status("Select a source mode, then create or link intersection source objects.")
+        # a document that already has an Intersection opens with its spec in the Parametric Spec
+        # group; reading it writes nothing
+        if find_v1_intersection_model(self.document) is not None:
+            self._load_spec(report=False)
 
     def getStandardButtons(self):
         return 0
@@ -494,6 +499,31 @@ class V1IntersectionPresetsTaskPanel:
             f"legs={row.get('legs', '-')}; {row.get('edge_note', '-')}; "
             f"grading={row.get('grading', '-')}; drainage={row.get('drainage', '-')}."
         )
+        self._sync_spec_kind_to_preset()
+
+    def _select_preset_of_existing_intersection(self) -> None:
+        """Point the Preset combo at the kind of the document's Intersection, if there is one."""
+
+        model = to_intersection_model(find_v1_intersection_model(self.document)) if self.document is not None else None
+        rows = list(getattr(model, "intersection_rows", []) or [])
+        if not rows:
+            return
+        kind = str(getattr(rows[0], "intersection_kind", "") or "")
+        for index in range(self._preset_combo.count()):
+            if str(self._preset_combo.itemData(index) or "") == kind:
+                self._preset_combo.setCurrentIndex(index)
+                return
+
+    def _sync_spec_kind_to_preset(self) -> None:
+        """The spec's kind follows the Preset until a spec is loaded from the document; a loaded
+        spec keeps the kind its Intersection source was built with."""
+
+        if not hasattr(self, "_spec_kind_combo") or self._spec_base is not None:
+            return
+        spec_kind = spec_kind_for_model_kind(self._selected_kind())
+        if spec_kind:
+            _select_combo_data(self._spec_kind_combo, spec_kind)
+            self._update_spec_kind_controls()
 
     def _create_sources(self):
         try:
@@ -506,6 +536,7 @@ class V1IntersectionPresetsTaskPanel:
             _route_intersection_preset_objects(self.document, project=_ensure_intersection_preset_project(self.document))
             _refresh_intersection_tree_view(self.document)
             self._update_status("Preset source creation complete, including Assembly / Subassembly source.")
+            self._reload_spec_after_source_change()
             _show_message(
                 self.form,
                 "Intersection",
@@ -547,6 +578,7 @@ class V1IntersectionPresetsTaskPanel:
             )
             self._last_applied_intersection = f"{getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {getattr(obj, 'IntersectionModelId', '')}"
             self._update_status("Existing Alignment intersection applied.")
+            self._reload_spec_after_source_change()
             _show_message(
                 self.form,
                 "Intersection",
@@ -589,6 +621,9 @@ class V1IntersectionPresetsTaskPanel:
         for value in INTERSECTION_SPEC_KINDS:
             self._spec_kind_combo.addItem(value, value)
         self._spec_kind_combo.currentIndexChanged.connect(self._update_spec_kind_controls)
+        # the kind is the Intersection source's: it follows the Preset, then the loaded spec
+        self._spec_kind_combo.setEnabled(False)
+        self._spec_kind_combo.setToolTip("Follows the Preset; after Create Sources or Apply, the Intersection source's kind.")
         form.addRow("Kind:", self._spec_kind_combo)
 
         self._spec_primary_combo = QtWidgets.QComboBox()
@@ -729,12 +764,21 @@ class V1IntersectionPresetsTaskPanel:
             self._spec_leg_table.setItem(index, 3, QtWidgets.QTableWidgetItem(f"{row.entry_radius_m:g}"))
             self._spec_leg_table.setItem(index, 4, QtWidgets.QTableWidgetItem(f"{row.exit_radius_m:g}"))
 
-    def _load_spec(self) -> bool:
+    def _reload_spec_after_source_change(self) -> None:
+        """Show the spec of the Intersection source just created or applied: a new source replaces
+        whatever spec the group held, so the group starts from the new rows."""
+
+        self._spec_base = None
+        self._load_spec(report=False)
+
+    def _load_spec(self, report: bool = True) -> bool:
         obj = find_v1_intersection_model(self.document)
         if obj is None:
-            self._status.setPlainText("No Intersection source in this document. Create one from a preset or from existing Alignments first.")
+            if report:
+                self._status.setPlainText("No Intersection source in this document. Create one from a preset or from existing Alignments first.")
             return False
-        self._refresh_alignment_choices()
+        # the new source may have added Alignments; refreshing them here keeps the status text
+        self._alignment_choices = list_v1_alignment_choices(self.document) if self.document is not None else []
         _populate_alignment_combo(self._spec_primary_combo, self._alignment_choices)
         _populate_alignment_combo(self._spec_secondary_combo, self._alignment_choices)
         spec = stored_intersection_spec(obj)
@@ -743,11 +787,13 @@ class V1IntersectionPresetsTaskPanel:
             spec = spec_from_intersection_model(to_intersection_model(obj))
             origin = "spec read from the intersection rows (not stored yet)"
         if spec is None:
-            self._status.setPlainText("The Intersection source holds no intersection row.")
+            if report:
+                self._status.setPlainText("The Intersection source holds no intersection row.")
             return False
         self._spec_base = spec
         self._fill_spec_widgets(form_from_spec(spec))
-        self._status.setPlainText(f"Loaded the {origin}: {spec.intersection_id}.")
+        if report:
+            self._status.setPlainText(f"Loaded the {origin}: {spec.intersection_id}.")
         return True
 
     def _check_spec(self):

@@ -26,6 +26,12 @@ _KIND_BY_MODEL_KIND = {
 }
 
 
+def spec_kind_for_model_kind(model_kind: str) -> str:
+    """The spec kind (`t`, `cross`, `roundabout`) of an Intersection row / preset kind; '' if none."""
+
+    return _KIND_BY_MODEL_KIND.get(str(model_kind or "").strip(), "")
+
+
 def road_context_from_models(alignment_models, applied_section_set=None) -> PolylineRoadContext:
     sections_by_alignment: dict[str, list[object]] = {}
     for section in list(getattr(applied_section_set, "sections", []) or []):

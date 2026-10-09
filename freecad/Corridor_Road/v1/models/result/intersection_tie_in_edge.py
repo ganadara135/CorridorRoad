@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-from .base import ResultModelBase
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -25,16 +23,3 @@ class IntersectionTieInEdgeRow:
     end_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     status: str = "candidate"
     notes: str = ""
-
-
-@dataclass
-class IntersectionTieInEdgeResult(ResultModelBase):
-    """Rebuildable result contract for intersection patch tie-in edge candidates."""
-
-    tie_in_edge_result_id: str = "intersection-tie-in-edges:build-parametric"
-    intersection_id: str = ""
-    boundary_mode: str = "tie_in_edges"
-    status: str = "not_evaluated"
-    edge_count: int = 0
-    diagnostic_rows: list[str] = field(default_factory=list)
-    edge_rows: list[IntersectionTieInEdgeRow] = field(default_factory=list)

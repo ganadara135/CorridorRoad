@@ -180,11 +180,9 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         "V1BuildCorridorTaskPanel",
     } <= viewer_classes
 
+    # plan phase R7c-2 deleted the legacy intersection evaluation chain (shared breakline,
+    # slope face boundary/cell, tie slope); the intersection kernel package replaces it
     service_names = {
-        "intersection_shared_breakline_service.py",
-        "intersection_slope_face_boundary_evaluation_service.py",
-        "intersection_tie_slope_evaluation_service.py",
-        "intersection_slope_face_cell_evaluation_service.py",
         "intersection_shared_boundary_graph_evaluation_service.py",
     }
     available = {
@@ -195,11 +193,6 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
 
     builder_names = {
         "intersection_daylight_tin_service.py",
-        "intersection_exclusion_geometry_service.py",
-        "intersection_slope_face_tin_builder_service.py",
-        "intersection_tin_clip_service.py",
-        "roundabout_surface_builder_service.py",
-        "roundabout_tin_clip_service.py",
         "shared_breakline_tin_builder_service.py",
     }
     available_builders = {
@@ -243,6 +236,13 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         "_build_roundabout_slope_face_surface_tin",
         "_attach_intersection_kernel_shadow",
         "_intersection_engine_is_kernel",
+        # Deleted by plan phase R7c-2: the legacy intersection contract chain the kernel replaced.
+        "corridor_intersection_boundary_segment_result",
+        "corridor_intersection_tie_in_edge_result",
+        "corridor_intersection_slope_face_boundary_result",
+        "corridor_intersection_shared_boundary_graph_result",
+        "_roundabout_clip_boundary_polygons",
+        "_intersection_tie_slope_gap_specs",
         # Moved on 2026-09-20: the region boundary continuity rule, now owned by
         # services/evaluation/region_boundary_continuity_evaluation_service, and the pure
         # model-row readers it shares with the command in common/model_fields.
