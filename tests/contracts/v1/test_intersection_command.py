@@ -297,7 +297,7 @@ def test_intersection_preset_sources_route_to_project_tree_folders_by_kind() -> 
             assert label not in root_labels
         # the intersection model itself is what the Intersections folder holds
         assert any(
-            label.startswith("Intersections")
+            label == "Intersection Source"
             for label in _tree_folder_labels(tree, V1_TREE_INTERSECTIONS)
         )
     finally:
@@ -381,7 +381,7 @@ def test_intersection_preset_sources_find_parametric_road_project_by_label() -> 
             assert label in _tree_folder_labels(tree, tree_key)
             assert label not in root_labels
         assert any(
-            label.startswith("Intersections")
+            label == "Intersection Source"
             for label in _tree_folder_labels(tree, V1_TREE_INTERSECTIONS)
         )
     finally:

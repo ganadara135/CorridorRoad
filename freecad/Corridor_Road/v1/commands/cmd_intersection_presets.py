@@ -32,6 +32,7 @@ from .cmd_intersection_editor import (
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
 from ..services.editing import build_control_region_overlay
 from ..objects.obj_intersection import (
+    INTERSECTION_SOURCE_LABEL,
     create_or_update_v1_intersection_model_object,
     find_v1_intersection_model,
     store_intersection_spec,
@@ -998,7 +999,7 @@ def create_intersection_from_existing_alignments(
         document,
         intersection_model=model,
         project=project,
-        label="Intersections",
+        label=INTERSECTION_SOURCE_LABEL,
     )
     store_intersection_spec(obj, spec_from_intersection_model(model))
     kind = intersection_preset_kind_from_label(preset_label)
@@ -1194,7 +1195,7 @@ def _create_preset_intersection_model(
         document,
         intersection_model=model,
         project=project,
-        label="Intersections",
+        label=INTERSECTION_SOURCE_LABEL,
     )
     store_intersection_spec(obj, spec_from_intersection_model(model))
     details = [

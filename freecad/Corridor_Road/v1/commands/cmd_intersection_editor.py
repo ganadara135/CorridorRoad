@@ -34,6 +34,7 @@ from ..models.source.intersection_model import (
     IntersectionSlopeFacePolicyRow,
 )
 from ..objects.obj_alignment import to_alignment_model
+from ..objects.obj_intersection import INTERSECTION_SOURCE_LABEL
 from ..objects.obj_alignment import V1AlignmentObject, ViewProviderV1Alignment
 from ..objects.obj_profile import create_sample_v1_profile
 from ..objects.obj_region import create_or_update_v1_region_model_object, to_region_model
@@ -245,7 +246,7 @@ def build_intersection_model_from_sources(
     return IntersectionModel(
         schema_version=1,
         project_id=project_id,
-        label="Intersections",
+        label=INTERSECTION_SOURCE_LABEL,
         intersection_model_id="intersections:main",
         anchor_rows=[anchor_row],
         intersection_rows=[row],

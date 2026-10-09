@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - The Intersection panel has a Parametric Spec group: Load Spec, Check Spec (runs the kernel and lists every value with its origin and every diagnostic) and Apply Spec. The spec's kind follows the Preset and then the created Intersection source.
 - The Build Parametric Intersections and Drainage tabs, the guided review and the cross section viewer's intersection rows read the kernel's result, including its low points for the drainage review.
 - Applied Sections now names the Alignments it skips. An Alignment without a Profile, a Region model or a Stationing was dropped from the build silently; the panel lists it under `Skipped Alignments:` with what it lacks, and Build Parametric adds an intersection review row for a leg whose Alignment has no sections.
+- The Intersection source object is labelled `Intersection Source`. It was labelled `Intersections` like its project tree folder, and FreeCAD showed it as `Intersections001`; an existing document takes the new label the next time the intersection is created from a preset or from existing Alignments.
 - Swapped the first two v1 project tree roots: Surfaces is now `02_Surfaces` and alignment work is `03_Alignment & Profile`. Existing documents keep their folders and are relabeled and reordered the next time the project tree is ensured.
 
 ### Removed

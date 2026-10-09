@@ -27,6 +27,11 @@ from ..models.source.intersection_spec import IntersectionSpec, intersection_spe
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
+# The project tree folder holding this object is labelled "Intersections"; FreeCAD keeps labels
+# unique, so the object needs a label of its own or it is shown as "Intersections001".
+INTERSECTION_SOURCE_LABEL = "Intersection Source"
+
+
 class V1IntersectionModelObject:
     """Document object proxy that stores a v1 IntersectionModel contract."""
 
@@ -135,7 +140,7 @@ def create_or_update_v1_intersection_model_object(
     *,
     project=None,
     object_name: str = "V1IntersectionModel",
-    label: str = "Intersections",
+    label: str = INTERSECTION_SOURCE_LABEL,
 ):
     """Create or update the durable v1 IntersectionModel source object."""
 
@@ -171,7 +176,7 @@ def create_or_update_v1_intersection_model_object(
     return obj
 
 
-def update_v1_intersection_model_object(obj, intersection_model: IntersectionModel, *, label: str = "Intersections"):
+def update_v1_intersection_model_object(obj, intersection_model: IntersectionModel, *, label: str = INTERSECTION_SOURCE_LABEL):
     """Write IntersectionModel rows into an existing FreeCAD object."""
 
     ensure_v1_intersection_properties(obj)
@@ -190,7 +195,7 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
             if ref and ref not in control_refs:
                 control_refs.append(str(ref))
 
-    obj.Label = label or str(getattr(intersection_model, "label", "") or "Intersections")
+    obj.Label = label or str(getattr(intersection_model, "label", "") or INTERSECTION_SOURCE_LABEL)
     obj.SchemaVersion = int(getattr(intersection_model, "schema_version", 1) or 1)
     obj.ProjectId = str(getattr(intersection_model, "project_id", "") or "corridorroad-v1")
     obj.IntersectionModelId = str(
@@ -235,7 +240,7 @@ def to_intersection_model(obj) -> IntersectionModel | None:
     return IntersectionModel(
         schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
         project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
-        label=str(getattr(obj, "Label", "") or "Intersections"),
+        label=str(getattr(obj, "Label", "") or INTERSECTION_SOURCE_LABEL),
         intersection_model_id=str(getattr(obj, "IntersectionModelId", "") or "intersections:main"),
         source_refs=[str(ref) for ref in list(getattr(obj, "SourceRefs", []) or []) if str(ref)],
         result_refs=[str(ref) for ref in list(getattr(obj, "ResultRefs", []) or []) if str(ref)],

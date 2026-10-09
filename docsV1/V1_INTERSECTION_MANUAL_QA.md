@@ -32,6 +32,8 @@ Out of scope: Watertight Solids (paused), hydraulics, kinds other than T, Cross 
 - The Intersection panel shows no source review table and no `Refresh Review`,
   `Accept Reviewed Rows` or `Adopt Edge Families From Subassembly` buttons.
 - The spec's Kind cannot be edited; it follows the Preset, then the Intersection source.
+- The `Intersections` tree folder holds an object labelled `Intersection Source`, not
+  `Intersections001`.
 - The tree shows one `Intersection Surface` and one `Intersection Slope Face Surface` per built
   intersection, and no legacy previews (boundary loops, tie-in edges, exclusion zones, tie slope).
 - The corridor surfaces leave no triangles inside the intersection and no gap at the mouths.
