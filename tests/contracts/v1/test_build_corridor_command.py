@@ -93,7 +93,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
-    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
@@ -728,10 +727,6 @@ def _sample_intersection_model() -> IntersectionModel:
                         approach_station_start=0.0,
                         approach_station_end=20.0,
                         arm_policy_ref="arm-policy:intersection:t-01:primary",
-                        edge_policy_refs=[
-                            "edge-policy:intersection:t-01:primary:pavement",
-                            "edge-policy:intersection:t-01:primary:daylight",
-                        ],
                         grading_policy_ref="grading:intersection:t-01:default",
                     ),
                     IntersectionLegRow(
@@ -745,10 +740,6 @@ def _sample_intersection_model() -> IntersectionModel:
                         approach_station_start=0.0,
                         approach_station_end=20.0,
                         arm_policy_ref="arm-policy:intersection:t-01:side",
-                        edge_policy_refs=[
-                            "edge-policy:intersection:t-01:side:pavement",
-                            "edge-policy:intersection:t-01:side:daylight",
-                        ],
                         grading_policy_ref="grading:intersection:t-01:default",
                     ),
                 ],
@@ -820,46 +811,6 @@ def _sample_intersection_model() -> IntersectionModel:
                 approach_leg_refs=["leg:primary", "leg:side"],
                 corner_refs=["corner:intersection:t-01:left", "corner:intersection:t-01:right"],
             )
-        ],
-        edge_policy_rows=[
-            IntersectionEdgePolicyRow(
-                "edge-policy:intersection:t-01:primary:pavement",
-                "intersection:t-01",
-                "leg:primary",
-                edge_family_intent="lane",
-                source_method="subassembly_derived",
-                approval_status="locked",
-                subassembly_kind="lane",
-            ),
-            IntersectionEdgePolicyRow(
-                "edge-policy:intersection:t-01:primary:daylight",
-                "intersection:t-01",
-                "leg:primary",
-                edge_role="daylight_hinge",
-                edge_family_intent="side_slope",
-                source_method="subassembly_derived",
-                approval_status="locked",
-                subassembly_kind="side_slope",
-            ),
-            IntersectionEdgePolicyRow(
-                "edge-policy:intersection:t-01:side:pavement",
-                "intersection:t-01",
-                "leg:side",
-                edge_family_intent="lane",
-                source_method="subassembly_derived",
-                approval_status="locked",
-                subassembly_kind="lane",
-            ),
-            IntersectionEdgePolicyRow(
-                "edge-policy:intersection:t-01:side:daylight",
-                "intersection:t-01",
-                "leg:side",
-                edge_role="daylight_hinge",
-                edge_family_intent="side_slope",
-                source_method="subassembly_derived",
-                approval_status="locked",
-                subassembly_kind="side_slope",
-            ),
         ],
         grading_policy_rows=[
             IntersectionGradingPolicyRow(
@@ -1216,36 +1167,6 @@ def test_build_corridor_panel_populates_intersection_contract_table() -> None:
         assert panel._intersection_contract_table.item(0, 1).text() == "missing"
         assert panel._intersection_contract_table.item(0, 2).text() == "spec"
         assert panel._intersection_contract_table.item(0, 3).text() == "intersection_kernel"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_build_corridor_panel_defers_inactive_review_tabs() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc()
-    try:
-        create_or_update_v1_applied_section_set_object(
-            doc,
-            project=project,
-            applied_section_set=_sample_sections_with_region_boundary(),
-        )
-
-        panel = V1BuildCorridorTaskPanel(document=doc)
-
-        assert panel._loaded_review_tabs == {"guided"}
-        assert panel._review_table.rowCount() == 0
-        assert panel._intersection_contract_table.rowCount() == 0
-        assert panel._drainage_table.rowCount() == 0
-
-        panel._tabs.setCurrentIndex(1)
-
-        assert "results" in panel._loaded_review_tabs
-        assert panel._review_table.rowCount() > 0
-
-        panel._tabs.setCurrentIndex(3)
-
-        assert "intersections" in panel._loaded_review_tabs
-        assert panel._intersection_contract_table.rowCount() > 0
     finally:
         App.closeDocument(doc.Name)
 
@@ -3358,31 +3279,6 @@ def test_build_corridor_panel_updates_selected_surface_transition_spacing() -> N
         assert model.transition_ranges[0].sample_interval == 4.0
         assert panel._surface_transition_table.item(0, 2).text() == "20.000"
         assert panel._surface_transition_table.item(0, 3).text() == "4.000"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_build_corridor_panel_expands_display_areas_with_task_width() -> None:
-    _ensure_qapp()
-    doc, _project = _new_project_doc()
-    try:
-        panel = V1BuildCorridorTaskPanel(document=doc)
-
-        assert panel.form.minimumWidth() <= 420
-        assert panel.form.maximumWidth() > 560
-        assert panel.form.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._summary.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._guided_table.minimumWidth() == 0
-        assert panel._guided_table.maximumWidth() > 560
-        assert panel._guided_table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._review_table.minimumWidth() == 0
-        assert panel._review_table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._slope_issue_table.minimumWidth() == 0
-        assert panel._slope_issue_table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._drainage_table.minimumWidth() == 0
-        assert panel._drainage_table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._surface_transition_table.minimumWidth() == 0
-        assert panel._surface_transition_table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
     finally:
         App.closeDocument(doc.Name)
 

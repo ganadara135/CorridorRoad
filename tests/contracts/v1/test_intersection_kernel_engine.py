@@ -13,20 +13,20 @@ import pytest
 
 from freecad.Corridor_Road.objects.obj_project import find_project
 from freecad.Corridor_Road.v1.commands import cmd_build_corridor as build
+from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import create_intersection_preset_sources
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 
-from test_intersection_policy_family_review import _reviewed_model, _store
 
 LABELS = ["T Intersection - Basic", "Cross Intersection - Basic", "Roundabout - Single Lane"]
 
 
 def _kernel_build(label):
     doc = App.newDocument("CRV1KernelEngine")
-    _store(doc, _reviewed_model(doc, label))
+    create_intersection_preset_sources(doc, preset_label=label)
     project = find_project(doc)
     applied = build_document_applied_section_set(doc, project=project)
     apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
@@ -142,7 +142,7 @@ def test_a_kernel_document_survives_save_and_reopen(tmp_path) -> None:
 def test_the_full_build_reports_the_kernel_surfaces_and_no_warning(label) -> None:
     doc = App.newDocument("CRV1KernelEngineFull")
     try:
-        _store(doc, _reviewed_model(doc, label))
+        create_intersection_preset_sources(doc, preset_label=label)
         project = find_project(doc)
         applied = build_document_applied_section_set(doc, project=project)
         apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)

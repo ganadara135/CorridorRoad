@@ -18,7 +18,6 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_tree, ensure_project_viewprovider, find_project
 from ..models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel, DrainagePolicySet
-from ..models.source.intersection_model import IntersectionEdgePolicyRow
 from ..models.source.superelevation_model import SuperelevationConstraint, SuperelevationModel
 from .cmd_intersection_editor import (
     AlignmentIntersectionDetectionService,
@@ -31,15 +30,7 @@ from .cmd_intersection_editor import (
     validate_existing_alignment_selection,
 )
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
-from ..commands.cmd_intersection_editor import resolve_intersection_review_leg_refs
-from ..services.editing import (
-    build_control_region_overlay,
-    intersection_preset_default_rows,
-    adopt_edge_families_from_subassembly,
-    apply_intersection_review,
-    intersection_review_rows,
-    intersection_review_summary,
-)
+from ..services.editing import build_control_region_overlay
 from ..objects.obj_intersection import (
     create_or_update_v1_intersection_model_object,
     find_v1_intersection_model,
@@ -267,34 +258,6 @@ class V1IntersectionPresetsTaskPanel:
         self._status.setMinimumHeight(190)
         layout.addWidget(self._status)
 
-        review_label = QtWidgets.QLabel("Source review (legs, anchors, control areas, policies):")
-        layout.addWidget(review_label)
-        self._review_table = QtWidgets.QTableWidget(0, 5)
-        self._review_table.setHorizontalHeaderLabels(["Row", "Id", "Approval", "Missing", "Note"])
-        self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._review_table.setMinimumHeight(150)
-        layout.addWidget(self._review_table)
-        self._review_summary = QtWidgets.QLabel("")
-        layout.addWidget(self._review_summary)
-
-        review_buttons = QtWidgets.QHBoxLayout()
-        self._refresh_review_button = QtWidgets.QPushButton("Refresh Review")
-        self._refresh_review_button.clicked.connect(self._refresh_review_table)
-        review_buttons.addWidget(self._refresh_review_button)
-        self._accept_review_button = QtWidgets.QPushButton("Accept Reviewed Rows")
-        self._accept_review_button.clicked.connect(self._accept_reviewed_rows)
-        review_buttons.addWidget(self._accept_review_button)
-        self._adopt_edge_families_button = QtWidgets.QPushButton("Adopt Edge Families From Subassembly")
-        self._adopt_edge_families_button.setToolTip(
-            "Marks the preset's edge policies as derived from the starter Assembly. "
-            "Do this only after reviewing that Assembly; it is not part of Accept Reviewed Rows."
-        )
-        self._adopt_edge_families_button.clicked.connect(self._adopt_edge_families)
-        review_buttons.addWidget(self._adopt_edge_families_button)
-        review_buttons.addStretch(1)
-        layout.addLayout(review_buttons)
-
         buttons = QtWidgets.QHBoxLayout()
         self._create_button = QtWidgets.QPushButton("Create Sources")
         self._create_button.clicked.connect(self._create_sources)
@@ -324,105 +287,6 @@ class V1IntersectionPresetsTaskPanel:
         source_visibility_buttons.addStretch(1)
         layout.addLayout(source_visibility_buttons)
         return root
-
-    def _refresh_review_table(self) -> None:
-        """Show every leg, anchor and control area row with what it still needs."""
-
-        rows = []
-        try:
-            model = to_intersection_model(find_v1_intersection_model(self.document))
-            rows = intersection_review_rows(model)
-        except Exception as error:
-            self._review_summary.setText(f"Source review unavailable: {error}")
-            self._review_table.setRowCount(0)
-            return
-        self._review_table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            values = (
-                row.kind,
-                row.row_id,
-                row.approval_status,
-                ", ".join(row.missing_fields),
-                row.notes,
-            )
-            for column, value in enumerate(values):
-                self._review_table.setItem(index, column, QtWidgets.QTableWidgetItem(str(value)))
-        self._review_summary.setText(intersection_review_summary(rows))
-
-    def _accept_reviewed_rows(self) -> None:
-        """Fill the leg refs the document already holds and accept the complete rows."""
-
-        try:
-            obj = find_v1_intersection_model(self.document)
-            model = to_intersection_model(obj)
-            if model is None:
-                _show_message(self.form, "Intersections", "Create or apply an Intersection source first.")
-                return
-            leg_refs = resolve_intersection_review_leg_refs(self.document, model)
-            prepared = apply_intersection_review(model, leg_refs=leg_refs)
-            create_or_update_v1_intersection_model_object(
-                self.document,
-                intersection_model=prepared.model,
-                project=find_project(self.document),
-                label="Intersections",
-            )
-            self.document.recompute()
-        except Exception as error:
-            _show_message(self.form, "Intersections", f"Source review could not be applied:\n{error}")
-            return
-        self._refresh_review_table()
-        lines = [
-            "Accepted %d row(s)." % len(prepared.accepted_row_ids),
-        ]
-        if prepared.incomplete_row_ids:
-            lines.append("Still incomplete: %s" % ", ".join(prepared.incomplete_row_ids))
-            lines.extend(str(diagnostic) for diagnostic in prepared.diagnostics)
-            lines.append("")
-            lines.append("A row is not accepted while a field it needs is missing, because a ref that names")
-            lines.append("nothing would leave the same gap behind a reviewed status.")
-        _show_message(self.form, "Intersections", "\n".join(lines))
-
-    def _confirm_edge_family_adoption(self) -> bool:
-        """Ask the user to own the claim that the edge families come from the Assembly."""
-
-        try:
-            answer = QtWidgets.QMessageBox.question(
-                self.form,
-                "Intersections",
-                "Mark the edge policies as derived from the Assembly?\n\n"
-                "This states that you have reviewed the starter Assembly and Subassembly "
-                "and that they are the source of the intersection edge families.",
-            )
-        except Exception:
-            return False
-        return answer == QtWidgets.QMessageBox.Yes
-
-    def _adopt_edge_families(self) -> None:
-        """Change the preset edge policies' source method, as its own decision."""
-
-        try:
-            obj = find_v1_intersection_model(self.document)
-            model = to_intersection_model(obj)
-            if model is None:
-                _show_message(self.form, "Intersections", "Create or apply an Intersection source first.")
-                return
-            if not self._confirm_edge_family_adoption():
-                return
-            prepared = adopt_edge_families_from_subassembly(model)
-            create_or_update_v1_intersection_model_object(
-                self.document,
-                intersection_model=prepared.model,
-                project=find_project(self.document),
-                label="Intersections",
-            )
-            self.document.recompute()
-        except Exception as error:
-            _show_message(self.form, "Intersections", f"Edge families could not be adopted:\n{error}")
-            return
-        self._refresh_review_table()
-        lines = ["Adopted %d edge policy row(s) from the Subassembly." % len(prepared.accepted_row_ids)]
-        lines.extend(str(diagnostic) for diagnostic in prepared.diagnostics)
-        _show_message(self.form, "Intersections", "\n".join(lines))
 
     def _selected_label(self) -> str:
         return str(self._preset_combo.currentText() or "")
@@ -853,7 +717,6 @@ class V1IntersectionPresetsTaskPanel:
                 f"Control Length: {self._control_length_spin.value():.3f} m",
                 f"Grading Policy: {self._grading_combo.currentText()}",
                 f"Drainage Mode: {self._drainage_combo.currentText()}",
-                *_preset_default_summary_lines(self.document),
                 f"Primary Alignment: {primary_ref or '-'}",
                 f"Secondary Alignment: {secondary_ref or '-'}",
                 f"Alignment Validation: {'ok' if not alignment_errors else 'error'}",
@@ -882,7 +745,7 @@ class V1IntersectionPresetsTaskPanel:
                 "Note:",
                 "- Create From Preset creates editable Alignment/Profile/Station/Region and Assembly/Subassembly sources.",
                 "- Existing Alignments mode links user-created Alignment and Region sources in this panel.",
-                "- Final surface-zone and roundabout geometry expansion remain planned follow-up phases.",
+                "- Parametric Spec: Check Spec runs the intersection kernel; Apply Spec stores the spec.",
             ]
         )
         self._status.setPlainText("\n".join(str(line) for line in lines if line is not None))
@@ -961,27 +824,6 @@ def _ensure_intersection_preset_project(document):
     return project
 
 
-def _preset_default_summary_lines(document) -> list[str]:
-    """Return the preset-default checklist for the panel, or nothing before Apply."""
-
-    try:
-        model = to_intersection_model(find_v1_intersection_model(document))
-    except Exception:
-        return []
-    rows = intersection_preset_default_rows(model)
-    if not rows:
-        return []
-    lines = ["", "Preset defaults in the document:"]
-    for row in rows:
-        lines.append(
-            "- %s: %s  [%s] %s" % (row.label, row.value, row.carrier, row.review_state)
-        )
-    unreviewable = [row.label for row in rows if not row.reviewable]
-    if unreviewable:
-        lines.append("  (no review state for: %s)" % ", ".join(unreviewable))
-    return lines
-
-
 def _refresh_intersection_tree_view(document) -> None:
     """Best-effort refresh so newly-created preset sources appear in the Tree view."""
 
@@ -1049,7 +891,6 @@ def build_existing_alignment_intersection_model(
         grading_policy=grading_policy or str(row.get("grading", "") or ""),
         drainage_mode=drainage_mode or str(row.get("drainage", "") or ""),
     )
-    _apply_preset_source_completeness_status(model, preset_label=preset_label)
     return model, len(control_regions)
 
 
@@ -1101,7 +942,6 @@ def build_preset_source_intersection_model(
         grading_policy=grading_policy or str(row.get("grading", "") or ""),
         drainage_mode=drainage_mode or str(row.get("drainage", "") or ""),
     )
-    _apply_preset_source_completeness_status(model, preset_label=preset_label)
     return model, len(control_regions), detection_result
 
 
@@ -1306,134 +1146,6 @@ def _alignments_with_superelevation_source(document, alignment_refs) -> list[str
     return found
 
 
-def _apply_preset_source_completeness_status(model, *, preset_label: str) -> None:
-    """Mark preset-authored source rows as explicit review-required defaults."""
-
-    kind = intersection_preset_kind_from_label(preset_label) or str(preset_label or "").strip()
-    if kind not in {"t_intersection", "cross_intersection", "roundabout"}:
-        return
-    preset_ref = f"intersection-preset:{kind}:source-completeness"
-    try:
-        model.source_refs = _unique_text_values([*list(getattr(model, "source_refs", []) or []), preset_ref])
-    except Exception:
-        pass
-    note = f"Preset source completeness: default/draft row requires review before final design; source_completeness_ref={preset_ref}."
-    model.intersection_rows = [
-        replace(
-            row,
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "intersection_rows", []) or [])
-    ]
-    model.anchor_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_anchor_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "anchor_rows", []) or [])
-    ]
-    model.control_area_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_control_area_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "control_area_rows", []) or [])
-    ]
-    model.corner_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_corner_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "corner_rows", []) or [])
-    ]
-    model.edge_policy_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_edge_family_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "edge_policy_rows", []) or [])
-    ]
-    model.lane_connection_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_lane_connection_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "lane_connection_rows", []) or [])
-    ]
-    model.grading_policy_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_grading_policy_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "grading_policy_rows", []) or [])
-    ]
-    model.drainage_policy_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_drainage_policy_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "drainage_policy_rows", []) or [])
-    ]
-    model.curb_return_policy_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_curb_return_policy_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "curb_return_policy_rows", []) or [])
-    ]
-    model.arm_policy_rows = [
-        replace(
-            row,
-            approval_status=str(getattr(row, "approval_status", "") or "draft"),
-            diagnostic_rows=_append_diagnostics(getattr(row, "diagnostic_rows", []) or [], "preset_arm_policy_review_required"),
-            notes=_append_note(str(getattr(row, "notes", "") or ""), note),
-        )
-        for row in list(getattr(model, "arm_policy_rows", []) or [])
-    ]
-
-
-def _append_diagnostics(values, *diagnostics: str) -> list[str]:
-    return _unique_text_values([*[str(value) for value in list(values or [])], *diagnostics])
-
-
-def _append_note(existing: str, addition: str) -> str:
-    existing_text = str(existing or "").strip()
-    addition_text = str(addition or "").strip()
-    if not existing_text:
-        return addition_text
-    if not addition_text or addition_text in existing_text:
-        return existing_text
-    return f"{existing_text} {addition_text}"
-
-
-def _unique_text_values(values) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
-
-
 def _create_preset_intersection_model(
     document,
     *,
@@ -1478,7 +1190,6 @@ def _create_preset_intersection_model(
         grading_policy=grading_policy,
         drainage_mode=drainage_mode,
     )
-    _apply_preset_source_completeness_status(model, preset_label=intersection_kind)
     obj = create_or_update_v1_intersection_model_object(
         document,
         intersection_model=model,
@@ -1592,170 +1303,6 @@ def _apply_preset_policy_options(
             )
             for row in list(getattr(model, "drainage_policy_rows", []) or [])
         ]
-    if _model_intersection_kind(model) == "roundabout":
-        _ensure_roundabout_source_policy_rows(model, radius=radius_value)
-
-
-def _model_intersection_kind(model) -> str:
-    rows = list(getattr(model, "intersection_rows", []) or [])
-    if not rows:
-        return ""
-    return str(getattr(rows[0], "intersection_kind", "") or "").strip()
-
-
-def _model_intersection_id(model) -> str:
-    rows = list(getattr(model, "intersection_rows", []) or [])
-    if not rows:
-        return ""
-    return str(getattr(rows[0], "intersection_id", "") or "").strip()
-
-
-def _ensure_roundabout_source_policy_rows(model, *, radius: float | None = None) -> None:
-    """Add explicit source policy rows for the Roundabout starter contract.
-
-    The first implementation slice keeps the values in EdgePolicy rows so existing
-    object serialization can carry them without introducing a new source model
-    family mid-stream.
-    """
-
-    intersection_id = _model_intersection_id(model)
-    if not intersection_id:
-        return
-    outer_radius = _positive_float_or_none(radius) or _first_curb_return_radius(model) or 18.0
-    central_island_radius = max(outer_radius * 0.45, 1.0)
-    circulatory_lane_width = max(outer_radius - central_island_radius, 1.0)
-    approach_connector_length = max(outer_radius * 1.25, 12.0)
-    apron_width = max(circulatory_lane_width * 0.15, 0.5)
-    slope_face_width = max(apron_width, 0.5)
-    subgrade_depth = 0.30
-    policy_rows = [
-        IntersectionEdgePolicyRow(
-            policy_id=f"roundabout-policy:{intersection_id}:central-island-radius",
-            intersection_id=intersection_id,
-            edge_role="central_island_edge",
-            side="inside",
-            offset_rule="roundabout_central_island_radius",
-            offset_value=central_island_radius,
-            elevation_rule="roundabout_radial_crossfall",
-            edge_family_intent="roundabout",
-            source_method="preset_explicit",
-            approval_status="accepted",
-            diagnostic_rows=[],
-            notes=f"roundabout_policy=central_island_radius; radius={central_island_radius:.3f}m",
-        ),
-        IntersectionEdgePolicyRow(
-            policy_id=f"roundabout-policy:{intersection_id}:circulatory-outer-radius",
-            intersection_id=intersection_id,
-            edge_role="circulatory_outer_edge",
-            side="outside",
-            offset_rule="roundabout_circulatory_outer_radius",
-            offset_value=outer_radius,
-            elevation_rule="roundabout_radial_crossfall",
-            edge_family_intent="roundabout",
-            source_method="preset_explicit",
-            approval_status="accepted",
-            diagnostic_rows=[],
-            notes=(
-                f"roundabout_policy=circulatory_outer_radius; radius={outer_radius:.3f}m; "
-                f"lane_width={circulatory_lane_width:.3f}m"
-            ),
-        ),
-        IntersectionEdgePolicyRow(
-            policy_id=f"roundabout-policy:{intersection_id}:outer-apron-width",
-            intersection_id=intersection_id,
-            edge_role="outer_apron_edge",
-            side="outside",
-            offset_rule="roundabout_outer_apron_width",
-            offset_value=apron_width,
-            elevation_rule="roundabout_radial_crossfall",
-            edge_family_intent="roundabout",
-            source_method="preset_explicit",
-            approval_status="accepted",
-            diagnostic_rows=[],
-            notes=f"roundabout_policy=outer_apron_width; width={apron_width:.3f}m",
-        ),
-        IntersectionEdgePolicyRow(
-            policy_id=f"roundabout-policy:{intersection_id}:slope-face-width",
-            intersection_id=intersection_id,
-            edge_role="slope_face_edge",
-            side="outside",
-            offset_rule="roundabout_slope_face_width",
-            offset_value=slope_face_width,
-            elevation_rule="from_grading_policy",
-            edge_family_intent="roundabout",
-            source_method="preset_explicit",
-            approval_status="accepted",
-            diagnostic_rows=[],
-            notes=f"roundabout_policy=slope_face_width; width={slope_face_width:.3f}m",
-        ),
-        IntersectionEdgePolicyRow(
-            policy_id=f"roundabout-policy:{intersection_id}:approach-connector-length",
-            intersection_id=intersection_id,
-            edge_role="entry_exit_edge",
-            side="both",
-            offset_rule="roundabout_approach_connector_length",
-            offset_value=approach_connector_length,
-            elevation_rule="from_grading_policy",
-            edge_family_intent="roundabout",
-            source_method="preset_explicit",
-            approval_status="accepted",
-            diagnostic_rows=[],
-            notes=f"roundabout_policy=approach_connector_length; length={approach_connector_length:.3f}m",
-        ),
-        IntersectionEdgePolicyRow(
-            policy_id=f"roundabout-policy:{intersection_id}:subgrade-depth",
-            intersection_id=intersection_id,
-            edge_role="subgrade_edge",
-            side="both",
-            offset_rule="roundabout_subgrade_depth",
-            offset_value=subgrade_depth,
-            elevation_rule="below_roundabout_finished_grade",
-            edge_family_intent="roundabout",
-            source_method="preset_explicit",
-            approval_status="accepted",
-            diagnostic_rows=[],
-            notes=f"roundabout_policy=subgrade_depth; depth={subgrade_depth:.3f}m",
-        ),
-    ]
-    existing = {
-        str(getattr(row, "policy_id", "") or ""): row
-        for row in list(getattr(model, "edge_policy_rows", []) or [])
-    }
-    for row in policy_rows:
-        existing[str(getattr(row, "policy_id", "") or "")] = row
-    model.edge_policy_rows = list(existing.values())
-    new_refs = [str(getattr(row, "policy_id", "") or "") for row in policy_rows]
-    model.intersection_rows = [
-        replace(
-            row,
-            policy_refs=_unique_policy_refs([*list(getattr(row, "policy_refs", []) or []), *new_refs]),
-            notes=(
-                str(getattr(row, "notes", "") or "").strip()
-                + " Roundabout explicit source policy rows added."
-            ).strip(),
-        )
-        for row in list(getattr(model, "intersection_rows", []) or [])
-    ]
-
-
-def _first_curb_return_radius(model) -> float | None:
-    for row in list(getattr(model, "curb_return_policy_rows", []) or []):
-        value = _positive_float_or_none(getattr(row, "radius", 0.0))
-        if value is not None:
-            return value
-    return None
-
-
-def _unique_policy_refs(values) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
 
 
 def _grading_crown_behavior(mode: str) -> str:

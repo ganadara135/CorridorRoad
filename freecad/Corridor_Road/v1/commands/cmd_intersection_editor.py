@@ -27,9 +27,7 @@ from ..models.source.intersection_model import (
     IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
-    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
-    IntersectionLaneConnectionRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -37,7 +35,7 @@ from ..models.source.intersection_model import (
 )
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_alignment import V1AlignmentObject, ViewProviderV1Alignment
-from ..objects.obj_profile import create_sample_v1_profile, to_profile_model
+from ..objects.obj_profile import create_sample_v1_profile
 from ..objects.obj_region import create_or_update_v1_region_model_object, to_region_model
 from ..objects.obj_stationing import create_v1_stationing
 from ..models.source.region_model import RegionModel, RegionRow
@@ -219,9 +217,7 @@ def build_intersection_model_from_sources(
     )
     corner_rows = _default_corner_rows(intersection_id, kind, control_area_rows, leg_rows)
     arm_policy_rows = _default_arm_policy_rows(intersection_id, leg_rows)
-    edge_policy_rows = _default_edge_policy_rows(intersection_id, leg_rows)
-    lane_connection_rows = _default_lane_connection_rows(intersection_id, kind, leg_rows)
-    drainage_policy_row = _default_drainage_policy(intersection_id, edge_policy_rows)
+    drainage_policy_row = _default_drainage_policy(intersection_id)
     row = IntersectionRow(
         intersection_id=intersection_id,
         intersection_kind=kind,
@@ -242,7 +238,6 @@ def build_intersection_model_from_sources(
             f"slope-face:{intersection_id}:default",
             drainage_policy_row.policy_id,
             *[row.policy_id for row in arm_policy_rows],
-            *[row.policy_id for row in edge_policy_rows],
         ],
         source_mode=_source_mode_id(source_mode),
         notes="Created by Intersections panel control Region linking.",
@@ -275,8 +270,6 @@ def build_intersection_model_from_sources(
         slope_face_policy_rows=[
             _default_slope_face_policy(intersection_id=intersection_id)
         ],
-        edge_policy_rows=edge_policy_rows,
-        lane_connection_rows=lane_connection_rows,
         drainage_policy_rows=[drainage_policy_row],
     )
 
@@ -321,61 +314,6 @@ def starter_intersection_source_specs(intersection_kind: str) -> dict[str, objec
     raise ValueError(
         f"Unsupported starter intersection kind: {intersection_kind}. Supported kinds: {supported}."
     )
-
-
-def resolve_intersection_review_leg_refs(document, intersection_model) -> dict[str, dict[str, str]]:
-    """Return the Profile and 3D Centerline refs each leg needs, as the document holds them.
-
-    The review service must not invent a ref, so it takes the refs from here. A
-    leg is matched to the Profile whose `alignment_id` is the leg's
-    `alignment_ref`, and to the 3D Centerline object that covers that alignment,
-    whose id may be the shared `centerline3d:multiple` when one preview spans
-    several roads. A leg whose alignment has neither is left out, and the review
-    then reports it as incomplete rather than accepting it.
-    """
-
-    if document is None or intersection_model is None:
-        return {}
-    profile_by_alignment: dict[str, str] = {}
-    for obj in list(getattr(document, "Objects", []) or []):
-        profile = to_profile_model(obj)
-        if profile is None:
-            continue
-        alignment_id = str(getattr(profile, "alignment_id", "") or "").strip()
-        profile_id = str(getattr(profile, "profile_id", "") or "").strip()
-        if alignment_id and profile_id:
-            profile_by_alignment.setdefault(alignment_id, profile_id)
-
-    centerline_by_alignment: dict[str, str] = {}
-    for obj in list(getattr(document, "Objects", []) or []):
-        result_id = str(getattr(obj, "Centerline3DResultId", "") or "").strip()
-        if not result_id:
-            continue
-        covered = [str(value or "").strip() for value in list(getattr(obj, "AlignmentIds", []) or [])]
-        single = str(getattr(obj, "AlignmentId", "") or "").strip()
-        if single and single != "alignment:multiple":
-            covered.append(single)
-        for alignment_id in covered:
-            if alignment_id:
-                centerline_by_alignment.setdefault(alignment_id, result_id)
-
-    output: dict[str, dict[str, str]] = {}
-    for intersection in list(getattr(intersection_model, "intersection_rows", []) or []):
-        for leg in list(getattr(intersection, "leg_rows", []) or []):
-            leg_id = str(getattr(leg, "leg_id", "") or "").strip()
-            alignment_ref = str(getattr(leg, "alignment_ref", "") or "").strip()
-            if not leg_id or not alignment_ref:
-                continue
-            refs = {}
-            profile_ref = profile_by_alignment.get(alignment_ref, "")
-            centerline_ref = centerline_by_alignment.get(alignment_ref, "")
-            if profile_ref:
-                refs["profile_ref"] = profile_ref
-            if centerline_ref:
-                refs["centerline3d_ref"] = centerline_ref
-            if refs:
-                output[leg_id] = refs
-    return output
 
 
 def create_starter_intersection_sources(document, intersection_kind: str, *, project=None) -> list[str]:
@@ -647,10 +585,6 @@ def _intersection_leg_row_from_region_choice(
         approval_status="draft",
         span_source="control_region",
         arm_policy_ref=f"arm-policy:{intersection_id}:leg:{index:02d}",
-        edge_policy_refs=[
-            f"edge-policy:{intersection_id}:leg:{index:02d}:pavement",
-            f"edge-policy:{intersection_id}:leg:{index:02d}:daylight",
-        ],
         grading_policy_ref=f"grading:{intersection_id}:default",
         priority=index,
         diagnostic_rows=["leg_source_region_derived", "leg_approval_pending"],
@@ -682,121 +616,12 @@ def _default_arm_policy_rows(intersection_id: str, leg_rows: list[IntersectionLe
     return rows
 
 
-def _default_edge_policy_rows(intersection_id: str, leg_rows: list[IntersectionLegRow]) -> list[IntersectionEdgePolicyRow]:
-    rows: list[IntersectionEdgePolicyRow] = []
-    for index, leg in enumerate(list(leg_rows or []), start=1):
-        leg_ref = str(getattr(leg, "leg_id", "") or "")
-        edge_refs = [str(ref) for ref in list(getattr(leg, "edge_policy_refs", []) or []) if str(ref)]
-        pavement_ref = edge_refs[0] if edge_refs else f"edge-policy:{intersection_id}:leg:{index:02d}:pavement"
-        daylight_ref = edge_refs[1] if len(edge_refs) > 1 else f"edge-policy:{intersection_id}:leg:{index:02d}:daylight"
-        rows.extend(
-            [
-                IntersectionEdgePolicyRow(
-                    policy_id=pavement_ref,
-                    intersection_id=intersection_id,
-                    leg_ref=leg_ref,
-                    edge_role="pavement_edge",
-                    side="both",
-                    offset_rule="lane_width_from_arm_policy",
-                    elevation_rule="from_grading_policy",
-                    source_policy_ref=str(getattr(leg, "arm_policy_ref", "") or ""),
-                    edge_family_intent="lane",
-                    source_method="subassembly_default",
-                    approval_status="draft",
-                    subassembly_kind="lane",
-                    diagnostic_rows=["edge_family_subassembly_defaulted", "edge_family_approval_pending"],
-                    notes="Pavement edge source policy for future intersection edge network.",
-                ),
-                IntersectionEdgePolicyRow(
-                    policy_id=daylight_ref,
-                    intersection_id=intersection_id,
-                    leg_ref=leg_ref,
-                    edge_role="daylight_hinge",
-                    side="both",
-                    offset_rule="assembly_daylight",
-                    elevation_rule="from_surface_zone",
-                    source_policy_ref=str(getattr(leg, "arm_policy_ref", "") or ""),
-                    edge_family_intent="side_slope",
-                    source_method="subassembly_default",
-                    approval_status="draft",
-                    subassembly_kind="side_slope",
-                    diagnostic_rows=["edge_family_subassembly_defaulted", "edge_family_approval_pending"],
-                    notes="Daylight hinge source policy for future intersection slope face zones.",
-                ),
-            ]
-        )
-    return rows
-
-
-def _default_lane_connection_rows(
-    intersection_id: str,
-    intersection_kind: str,
-    leg_rows: list[IntersectionLegRow],
-) -> list[IntersectionLaneConnectionRow]:
-    legs = [row for row in list(leg_rows or []) if str(getattr(row, "leg_id", "") or "")]
-    if len(legs) < 2:
-        return []
-    rows: list[IntersectionLaneConnectionRow] = []
-    for index, from_leg in enumerate(legs, start=1):
-        to_leg = legs[index % len(legs)]
-        from_leg_ref = str(getattr(from_leg, "leg_id", "") or "")
-        to_leg_ref = str(getattr(to_leg, "leg_id", "") or "")
-        movement_type = _default_lane_movement_type(intersection_kind, from_leg, to_leg, index)
-        rows.append(
-            IntersectionLaneConnectionRow(
-                connection_id=f"lane-connection:{intersection_id}:{index:02d}",
-                intersection_id=intersection_id,
-                movement_type=movement_type,
-                from_leg_ref=from_leg_ref,
-                to_leg_ref=to_leg_ref,
-                from_edge_policy_ref=_first_edge_policy_ref(from_leg),
-                to_edge_policy_ref=_first_edge_policy_ref(to_leg),
-                from_lane_index=1,
-                to_lane_index=1,
-                source_method="preset_default",
-                approval_status="draft",
-                diagnostic_rows=["lane_connection_source_defaulted", "lane_connection_approval_pending"],
-                notes="Default first-slice lane connection source row for topology review.",
-            )
-        )
-    return rows
-
-
-def _default_lane_movement_type(
-    intersection_kind: str,
-    from_leg: IntersectionLegRow,
-    to_leg: IntersectionLegRow,
-    index: int,
-) -> str:
-    from_role = str(getattr(from_leg, "leg_role", "") or "").lower()
-    to_role = str(getattr(to_leg, "leg_role", "") or "").lower()
-    if "before" in from_role and "after" in to_role:
-        return "through"
-    if "after" in from_role and "before" in to_role:
-        return "through"
-    return "turn"
-
-
-def _first_edge_policy_ref(leg: IntersectionLegRow) -> str:
-    refs = [str(ref) for ref in list(getattr(leg, "edge_policy_refs", []) or []) if str(ref)]
-    return refs[0] if refs else ""
-
-
-def _default_drainage_policy(
-    intersection_id: str,
-    edge_policy_rows: list[IntersectionEdgePolicyRow],
-) -> IntersectionDrainagePolicyRow:
-    gutter_refs = [
-        str(getattr(row, "policy_id", "") or "")
-        for row in list(edge_policy_rows or [])
-        if str(getattr(row, "edge_role", "") or "") in {"gutter_edge", "pavement_edge"}
-    ]
+def _default_drainage_policy(intersection_id: str) -> IntersectionDrainagePolicyRow:
     return IntersectionDrainagePolicyRow(
         policy_id=f"drainage-policy:{intersection_id}:default",
         intersection_id=intersection_id,
         capture_mode="review_low_points",
         low_point_tolerance=0.05,
-        gutter_edge_refs=[ref for ref in gutter_refs if ref],
         intent_status="hint_only",
         source_method="preset_default",
         approval_status="draft",

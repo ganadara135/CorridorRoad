@@ -64,7 +64,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionControlArea,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
-    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
@@ -971,7 +970,6 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
                             approach_station_start=90.0,
                             approach_station_end=110.0,
                             arm_policy_ref="arm-policy:primary",
-                            edge_policy_refs=["edge-policy:primary:pavement", "edge-policy:primary:daylight"],
                             grading_policy_ref="grading:intersection:t-01:default",
                         ),
                         IntersectionLegRow(
@@ -983,7 +981,6 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
                             approach_station_start=0.0,
                             approach_station_end=40.0,
                             arm_policy_ref="arm-policy:side",
-                            edge_policy_refs=["edge-policy:side:pavement", "edge-policy:side:daylight"],
                             grading_policy_ref="grading:intersection:t-01:default",
                         ),
                     ],
@@ -1016,22 +1013,6 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
             arm_policy_rows=[
                 IntersectionArmPolicyRow("arm-policy:primary", "intersection:t-01", "leg:primary"),
                 IntersectionArmPolicyRow("arm-policy:side", "intersection:t-01", "leg:side"),
-            ],
-            edge_policy_rows=[
-                IntersectionEdgePolicyRow("edge-policy:primary:pavement", "intersection:t-01", "leg:primary"),
-                IntersectionEdgePolicyRow(
-                    "edge-policy:primary:daylight",
-                    "intersection:t-01",
-                    "leg:primary",
-                    edge_role="daylight_hinge",
-                ),
-                IntersectionEdgePolicyRow("edge-policy:side:pavement", "intersection:t-01", "leg:side"),
-                IntersectionEdgePolicyRow(
-                    "edge-policy:side:daylight",
-                    "intersection:t-01",
-                    "leg:side",
-                    edge_role="daylight_hinge",
-                ),
             ],
             curb_return_policy_rows=[
                 IntersectionCurbReturnPolicyRow(

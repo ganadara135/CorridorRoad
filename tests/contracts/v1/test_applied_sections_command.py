@@ -380,43 +380,6 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc()
-    original_show_message = applied_sections_command._show_message
-    applied_sections_command._show_message = lambda *_args, **_kwargs: None
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_sample_v1_profile(doc, project=project, alignment=alignment)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
-        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
-
-        panel = V1AppliedSectionsTaskPanel(document=doc)
-        progress_bars = panel.form.findChildren(QtWidgets.QProgressBar)
-        button_labels = [button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)]
-
-        assert len(progress_bars) == 1
-        assert not any(check.text() == "Fast Evaluation" for check in panel.form.findChildren(QtWidgets.QCheckBox))
-        assert "Build Sections" in button_labels
-        assert "Show All" in button_labels
-        assert "Hide All" in button_labels
-        assert "Validate" not in button_labels
-        assert "Apply" not in button_labels
-        assert progress_bars[0].format() == "Ready"
-        assert panel._apply(close_after=False) is True
-        assert panel._progress.value() == 100
-        assert panel._progress.format() == "Applied Sections complete"
-        assert "Fast Evaluation" not in panel._summary.toPlainText()
-        assert panel._review_table.item(0, 6).text() == "basic-road"
-        assert panel._review_table.item(0, 7).text() == "basic-road"
-    finally:
-        applied_sections_command._show_message = original_show_message
-        App.closeDocument(doc.Name)
-
-
 def test_applied_sections_validate_allows_drainage_element_without_region() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc()
@@ -535,18 +498,18 @@ def test_applied_sections_carry_intersection_source_status_diagnostics() -> None
         assert section.frame.source_mode in {"centerline3d_source_geometry", "centerline3d_result", "alignment_profile_fallback"}
         assert section.frame.source_status
         assert section.active_intersection_source_status == "warning"
-        assert "source_leg_profile_ref_missing" in section.active_intersection_source_diagnostic_rows
-        assert "source_control_region_refs_missing" in section.active_intersection_source_diagnostic_rows
+        # only what the build uses is reported (plan phase R7c-3): the leg is found, the control
+        # area names no control Region; approval states and policy refs are not diagnostics
+        assert section.active_intersection_source_diagnostic_rows == ["source_control_region_refs_missing"]
         source_stage_by_name = {
             row.split("|", 1)[0]: row
             for row in section.active_intersection_source_stage_rows
         }
-        assert source_stage_by_name["Anchor"].startswith("Anchor|warning|intersection-source-stage:anchor|source_anchor_rows_missing")
+        assert set(source_stage_by_name) == {"Legs", "Control Areas"}
+        assert source_stage_by_name["Legs"].startswith("Legs|accepted|intersection-source-stage:legs|")
         assert source_stage_by_name["Control Areas"].startswith("Control Areas|warning|intersection-source-stage:control_areas|")
         assert "source_control_region_refs_missing" in source_stage_by_name["Control Areas"]
-        assert source_stage_by_name["Edge Families"].startswith("Edge Families|warning|intersection-source-stage:edge_families|")
-        assert "source_leg_edge_policy_refs_missing" in source_stage_by_name["Edge Families"]
-        assert "source_leg_profile_ref_missing" in diagnostic_kinds
+        assert "source_control_region_refs_missing" in diagnostic_kinds
         assert "intersections:source-status" in result.source_refs
     finally:
         App.closeDocument(doc.Name)

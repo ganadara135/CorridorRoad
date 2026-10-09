@@ -40,7 +40,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionArmPolicyRow,
     IntersectionControlArea,
     IntersectionCurbReturnPolicyRow,
-    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
@@ -320,7 +319,6 @@ def _sample_surface_zone_intersection_model() -> IntersectionModel:
                         approach_station_start=90.0,
                         approach_station_end=110.0,
                         arm_policy_ref="arm-policy:primary",
-                        edge_policy_refs=["edge-policy:primary:pavement", "edge-policy:primary:daylight"],
                         grading_policy_ref="grading:intersection:t-01:default",
                     ),
                     IntersectionLegRow(
@@ -332,7 +330,6 @@ def _sample_surface_zone_intersection_model() -> IntersectionModel:
                         approach_station_start=0.0,
                         approach_station_end=30.0,
                         arm_policy_ref="arm-policy:side",
-                        edge_policy_refs=["edge-policy:side:pavement", "edge-policy:side:daylight"],
                         grading_policy_ref="grading:intersection:t-01:default",
                     ),
                 ],
@@ -369,22 +366,6 @@ def _sample_surface_zone_intersection_model() -> IntersectionModel:
                 radius=12.0,
                 approach_leg_refs=["leg:primary", "leg:side"],
             )
-        ],
-        edge_policy_rows=[
-            IntersectionEdgePolicyRow("edge-policy:primary:pavement", "intersection:t-01", "leg:primary"),
-            IntersectionEdgePolicyRow(
-                "edge-policy:primary:daylight",
-                "intersection:t-01",
-                "leg:primary",
-                edge_role="daylight_hinge",
-            ),
-            IntersectionEdgePolicyRow("edge-policy:side:pavement", "intersection:t-01", "leg:side"),
-            IntersectionEdgePolicyRow(
-                "edge-policy:side:daylight",
-                "intersection:t-01",
-                "leg:side",
-                edge_role="daylight_hinge",
-            ),
         ],
         grading_policy_rows=[
             IntersectionGradingPolicyRow(
@@ -893,16 +874,14 @@ def test_watertight_solids_discovers_intersection_surface_zone_target_handoff_ro
         assert "intersection_pavement_body" in families
         assert "intersection_subgrade_body" in families
         assert "intersection_slope_body" in families
-        assert "intersection_curb_return_body" in families
         assert all(row.scope_kind == "intersection" for row in zone_targets)
         assert all(row.readiness_status == "planned" for row in zone_targets)
-        assert all("build_backend=planned_edge_network_zone_solid" in row.notes for row in zone_targets)
+        assert all("build_backend=planned_intersection_kernel_zone_solid" in row.notes for row in zone_targets)
         assert all("builder_state=pending_accepted_zone_solid_builder" in row.notes for row in zone_targets)
         assert all("contract_status=accepted_surface_zone" in row.notes for row in zone_targets)
         assert all("quality_status=accepted_contract_pending_builder" in row.notes for row in zone_targets)
         assert all("digital_twin_handoff=accepted_zone_candidate" in row.notes for row in zone_targets)
-        assert all("intersection-edge-network:intersection:t-01" in row.source_refs for row in zone_targets)
-        assert all("intersection-surface-zones:intersection:t-01" in row.source_refs for row in zone_targets)
+        assert all("intersection:t-01" in row.source_refs for row in zone_targets)
         assert any("intersection-zone:" in ref for row in zone_targets for ref in row.source_refs)
         assert panel._target_table.item(row_index, 2).text() == "Intersection: Pavement"
     finally:
@@ -1140,7 +1119,11 @@ def test_watertight_solids_builds_intersection_patch_from_closed_refined_preview
         App.closeDocument(doc.Name)
 
 
-def test_watertight_solids_reports_intersection_practical_boundary_handoff() -> None:
+def test_watertight_solids_reports_intersection_practical_boundary_handoff(monkeypatch) -> None:
+    # an intersection patch target with no zone target behind it: the handoff stays blocked
+    monkeypatch.setattr(
+        "freecad.Corridor_Road.v1.services.builders.solid_target_discovery_service._INTERSECTION_ZONE_TARGETS", ()
+    )
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionPracticalHandoffTest")
     try:
@@ -1452,7 +1435,11 @@ def test_simulation_package_status_line_reports_trim_handoff_status() -> None:
     assert "trim_fuse=fuse_failed_compound" in status_line
 
 
-def test_simulation_qa_records_intersection_replacement_blocker_before_package_build() -> None:
+def test_simulation_qa_records_intersection_replacement_blocker_before_package_build(monkeypatch) -> None:
+    # an intersection patch target with no zone target behind it: the handoff stays blocked
+    monkeypatch.setattr(
+        "freecad.Corridor_Road.v1.services.builders.solid_target_discovery_service._INTERSECTION_ZONE_TARGETS", ()
+    )
     doc, project = _new_project_doc("V1SimulationQaIntersectionReplacementBlockerTest")
     try:
         preview = doc.addObject("App::FeaturePython", "V1CorridorIntersectionSurfacePreview")

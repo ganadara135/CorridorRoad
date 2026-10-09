@@ -125,6 +125,14 @@ from a preset or from existing Alignments, and by the panel's Apply Spec. Empty,
 not read as a spec, falls back to the spec read from the rows (`spec_from_intersection_model`), which
 is how a document from before the property builds; nothing is written until Apply Spec.
 
+Since phase R7c-3 (2026-10-09) the Intersection source has no edge policy or lane connection rows
+(decision D2, no migration): a new Intersection object no longer gets `EdgePolicyRowsJson`,
+`LaneConnectionRowsJson`, `EdgePolicyCount` or `LaneConnectionCount`, and a leg row no longer has
+`edge_policy_refs`. A document that holds them keeps the properties and the JSON untouched, and
+nothing reads them. A roundabout without a stored spec takes its ring from its curb return row's
+radius with the preset's proportions (`_roundabout_spec` in `intersection_kernel_context_service`),
+which gives the ring the old roundabout edge policy rows carried.
+
 ## Output Compatibility
 
 Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packaged output ids together with chunk-safe JSON payloads. Existing FreeCAD save/reopen coverage verifies large output payload and traceability survival. This Phase does not expand exchange formats.

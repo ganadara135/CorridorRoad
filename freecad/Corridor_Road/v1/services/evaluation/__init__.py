@@ -13,7 +13,6 @@ from .centerline3d_frame_service import Centerline3DFrame, Centerline3DFrameServ
 from .centerline3d_source_geometry_service import Centerline3DSourceGeometryService, Centerline3DSourceStationResult
 from .drainage_resolution_service import DrainageResolutionService, DrainageValidationService
 from .intersection_evaluation_service import IntersectionEvaluationService
-from ...models.result.intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
 from .intersection_alignment_detection_service import (
     AlignmentIntersectionDetectionResult,
     AlignmentIntersectionDetectionService,
@@ -81,8 +80,6 @@ __all__ = [
     "DrainageResolutionService",
     "DrainageValidationService",
     "IntersectionEvaluationService",
-    "IntersectionGradingContextResult",
-    "IntersectionGradingContextRow",
     "AlignmentIntersectionDetectionResult",
     "AlignmentIntersectionDetectionService",
     "LegacyDocumentAdapter",

@@ -14,7 +14,6 @@ from .intersection_model import (
     IntersectionControlArea,
     IntersectionLegRow,
     IntersectionDrainagePolicyRow,
-    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
     IntersectionSlopeFacePolicyRow,
     IntersectionCurbReturnPolicyRow,
@@ -22,7 +21,6 @@ from .intersection_model import (
     IntersectionRow,
     intersection_kind_from_label,
     intersection_preset_labels,
-    intersection_row_from_kind,
 )
 from .override_model import OverrideModel
 from .profile_model import ProfileModel
@@ -83,14 +81,12 @@ __all__ = [
     "IntersectionControlArea",
     "IntersectionArmPolicyRow",
     "IntersectionCurbReturnPolicyRow",
-    "IntersectionEdgePolicyRow",
     "IntersectionGradingPolicyRow",
     "IntersectionSlopeFacePolicyRow",
     "IntersectionDrainagePolicyRow",
     "INTERSECTION_KIND_PRESETS",
     "intersection_preset_labels",
     "intersection_kind_from_label",
-    "intersection_row_from_kind",
     "OverrideModel",
     "ProfileModel",
     "ProjectModel",

@@ -3784,24 +3784,8 @@ def _intersection_source_stage_rows(result: IntersectionEvaluationResult | None)
         if str(value or "").strip()
     ]
     stage_diagnostics = {
-        "Anchor": [item for item in diagnostics if item.startswith("source_anchor")],
-        "Control Areas": [
-            item
-            for item in diagnostics
-            if item.startswith("source_control_area")
-            or item.startswith("source_control_region")
-            or item.startswith("source_curb_return_policy")
-            or item.startswith("source_grading_policy")
-            or item.startswith("source_drainage_policy")
-        ],
-        "Edge Families": [
-            item
-            for item in diagnostics
-            if item.startswith("source_edge")
-            or item.startswith("source_leg_edge_policy")
-            or item == "unresolved_edge_policy"
-            or item == "missing_edge_policy"
-        ],
+        "Legs": [item for item in diagnostics if item.startswith("source_leg")],
+        "Control Areas": [item for item in diagnostics if item.startswith("source_control")],
     }
     active_intersection = str(getattr(result, "active_intersection_id", "") or "")
     rows: list[str] = []

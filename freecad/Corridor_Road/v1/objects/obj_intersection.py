@@ -17,9 +17,7 @@ from ..models.source.intersection_model import (
     IntersectionCornerRow,
     IntersectionCurbReturnPolicyRow,
     IntersectionDrainagePolicyRow,
-    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
-    IntersectionLaneConnectionRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -80,8 +78,6 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "CornerRowsJson", "Intersections", "intersection corner source rows")
     _add_property(obj, "App::PropertyString", "ArmPolicyRowsJson", "Intersections", "intersection arm policy rows")
     _add_property(obj, "App::PropertyString", "CurbReturnPolicyRowsJson", "Intersections", "intersection curb return policy rows")
-    _add_property(obj, "App::PropertyString", "EdgePolicyRowsJson", "Intersections", "intersection edge policy rows")
-    _add_property(obj, "App::PropertyString", "LaneConnectionRowsJson", "Intersections", "intersection lane connection rows")
     _add_property(obj, "App::PropertyString", "GradingPolicyRowsJson", "Intersections", "intersection grading policy rows")
     _add_property(obj, "App::PropertyString", "SlopeFacePolicyRowsJson", "Intersections", "intersection slope-face policy rows")
     _add_property(obj, "App::PropertyString", "DrainagePolicyRowsJson", "Intersections", "intersection drainage policy rows")
@@ -94,8 +90,6 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "CornerCount", "Summary", "corner row count")
     _add_property(obj, "App::PropertyInteger", "ArmPolicyCount", "Summary", "arm policy row count")
     _add_property(obj, "App::PropertyInteger", "CurbReturnPolicyCount", "Summary", "curb return policy row count")
-    _add_property(obj, "App::PropertyInteger", "EdgePolicyCount", "Summary", "edge policy row count")
-    _add_property(obj, "App::PropertyInteger", "LaneConnectionCount", "Summary", "lane connection row count")
     _add_property(obj, "App::PropertyInteger", "GradingPolicyCount", "Summary", "grading policy row count")
     _add_property(obj, "App::PropertyInteger", "SlopeFacePolicyCount", "Summary", "slope-face policy row count")
     _add_property(obj, "App::PropertyInteger", "DrainagePolicyCount", "Summary", "drainage policy row count")
@@ -125,10 +119,6 @@ def ensure_v1_intersection_properties(obj) -> None:
         obj.ArmPolicyRowsJson = "[]"
     if not str(getattr(obj, "CurbReturnPolicyRowsJson", "") or ""):
         obj.CurbReturnPolicyRowsJson = "[]"
-    if not str(getattr(obj, "EdgePolicyRowsJson", "") or ""):
-        obj.EdgePolicyRowsJson = "[]"
-    if not str(getattr(obj, "LaneConnectionRowsJson", "") or ""):
-        obj.LaneConnectionRowsJson = "[]"
     if not str(getattr(obj, "GradingPolicyRowsJson", "") or ""):
         obj.GradingPolicyRowsJson = "[]"
     if not str(getattr(obj, "SlopeFacePolicyRowsJson", "") or ""):
@@ -191,8 +181,6 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     corner_rows = list(getattr(intersection_model, "corner_rows", []) or [])
     arm_policy_rows = list(getattr(intersection_model, "arm_policy_rows", []) or [])
     curb_return_policy_rows = list(getattr(intersection_model, "curb_return_policy_rows", []) or [])
-    edge_policy_rows = list(getattr(intersection_model, "edge_policy_rows", []) or [])
-    lane_connection_rows = list(getattr(intersection_model, "lane_connection_rows", []) or [])
     grading_policy_rows = list(getattr(intersection_model, "grading_policy_rows", []) or [])
     slope_face_policy_rows = list(getattr(intersection_model, "slope_face_policy_rows", []) or [])
     drainage_policy_rows = list(getattr(intersection_model, "drainage_policy_rows", []) or [])
@@ -215,8 +203,6 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     obj.CornerRowsJson = _json_dumps(corner_rows)
     obj.ArmPolicyRowsJson = _json_dumps(arm_policy_rows)
     obj.CurbReturnPolicyRowsJson = _json_dumps(curb_return_policy_rows)
-    obj.EdgePolicyRowsJson = _json_dumps(edge_policy_rows)
-    obj.LaneConnectionRowsJson = _json_dumps(lane_connection_rows)
     obj.GradingPolicyRowsJson = _json_dumps(grading_policy_rows)
     obj.SlopeFacePolicyRowsJson = _json_dumps(slope_face_policy_rows)
     obj.DrainagePolicyRowsJson = _json_dumps(drainage_policy_rows)
@@ -229,8 +215,6 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     obj.CornerCount = len(corner_rows)
     obj.ArmPolicyCount = len(arm_policy_rows)
     obj.CurbReturnPolicyCount = len(curb_return_policy_rows)
-    obj.EdgePolicyCount = len(edge_policy_rows)
-    obj.LaneConnectionCount = len(lane_connection_rows)
     obj.GradingPolicyCount = len(grading_policy_rows)
     obj.SlopeFacePolicyCount = len(slope_face_policy_rows)
     obj.DrainagePolicyCount = len(drainage_policy_rows)
@@ -263,11 +247,6 @@ def to_intersection_model(obj) -> IntersectionModel | None:
         curb_return_policy_rows=[
             _curb_return_policy_from_json(row, index)
             for index, row in enumerate(_json_list(obj.CurbReturnPolicyRowsJson))
-        ],
-        edge_policy_rows=[_edge_policy_from_json(row, index) for index, row in enumerate(_json_list(obj.EdgePolicyRowsJson))],
-        lane_connection_rows=[
-            _lane_connection_from_json(row, index)
-            for index, row in enumerate(_json_list(obj.LaneConnectionRowsJson))
         ],
         grading_policy_rows=[
             _grading_policy_from_json(row, index)
@@ -347,7 +326,6 @@ def _intersection_row_from_json(row: dict[str, object], index: int) -> Intersect
             approval_status=str(leg.get("approval_status", "") or "accepted"),
             span_source=str(leg.get("span_source", "") or "explicit"),
             arm_policy_ref=str(leg.get("arm_policy_ref", "") or ""),
-            edge_policy_refs=[str(value) for value in _any_list(leg.get("edge_policy_refs", []))],
             grading_policy_ref=str(leg.get("grading_policy_ref", "") or ""),
             priority=_int_value(leg.get("priority", leg_index + 1), leg_index + 1),
             diagnostic_rows=[str(value) for value in _any_list(leg.get("diagnostic_rows", []))],
@@ -448,49 +426,6 @@ def _arm_policy_from_json(row: dict[str, object], index: int) -> IntersectionArm
         median_width=_float_value(row.get("median_width", 0.0)),
         turn_lane_policy_ref=str(row.get("turn_lane_policy_ref", "") or ""),
         status=str(row.get("status", "") or "active"),
-        approval_status=str(row.get("approval_status", "") or "accepted"),
-        diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
-        notes=str(row.get("notes", "") or ""),
-    )
-
-
-def _edge_policy_from_json(row: dict[str, object], index: int) -> IntersectionEdgePolicyRow:
-    return IntersectionEdgePolicyRow(
-        policy_id=str(row.get("policy_id", "") or f"edge-policy:policy-{index + 1}"),
-        intersection_id=str(row.get("intersection_id", "") or ""),
-        leg_ref=str(row.get("leg_ref", "") or ""),
-        edge_role=str(row.get("edge_role", "") or "pavement_edge"),
-        side=str(row.get("side", "") or "both"),
-        offset_rule=str(row.get("offset_rule", "") or ""),
-        offset_value=_float_value(row.get("offset_value", 0.0)),
-        elevation_rule=str(row.get("elevation_rule", "") or "from_crossfall"),
-        profile_ref=str(row.get("profile_ref", "") or ""),
-        source_policy_ref=str(row.get("source_policy_ref", "") or ""),
-        edge_family_intent=str(row.get("edge_family_intent", "") or ""),
-        source_method=str(row.get("source_method", "") or "manual"),
-        approval_status=str(row.get("approval_status", "") or "accepted"),
-        assembly_ref=str(row.get("assembly_ref", "") or ""),
-        template_ref=str(row.get("template_ref", "") or ""),
-        subassembly_ref=str(row.get("subassembly_ref", "") or ""),
-        subassembly_kind=str(row.get("subassembly_kind", "") or ""),
-        diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
-        status=str(row.get("status", "") or "active"),
-        notes=str(row.get("notes", "") or ""),
-    )
-
-
-def _lane_connection_from_json(row: dict[str, object], index: int) -> IntersectionLaneConnectionRow:
-    return IntersectionLaneConnectionRow(
-        connection_id=str(row.get("connection_id", "") or f"lane-connection:{index + 1}"),
-        intersection_id=str(row.get("intersection_id", "") or ""),
-        movement_type=str(row.get("movement_type", "") or "through"),
-        from_leg_ref=str(row.get("from_leg_ref", "") or ""),
-        to_leg_ref=str(row.get("to_leg_ref", "") or ""),
-        from_edge_policy_ref=str(row.get("from_edge_policy_ref", "") or ""),
-        to_edge_policy_ref=str(row.get("to_edge_policy_ref", "") or ""),
-        from_lane_index=_int_value(row.get("from_lane_index", 1), 1),
-        to_lane_index=_int_value(row.get("to_lane_index", 1), 1),
-        source_method=str(row.get("source_method", "") or "manual"),
         approval_status=str(row.get("approval_status", "") or "accepted"),
         diagnostic_rows=[str(value) for value in _any_list(row.get("diagnostic_rows", []))],
         notes=str(row.get("notes", "") or ""),

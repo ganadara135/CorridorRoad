@@ -401,10 +401,10 @@ current pipeline is known to be wrong; each one is explained in §8 before the s
 | R7a | the kernel engine, selectable per intersection (`GeometryEngine` = `kernel`), default `legacy`: mouth sections in Applied Sections, corridor clipped by station span, kernel patch and side slope as the intersection surfaces | full gate; the user's GUI comparison of both engines (done, §8, GUI pending) |
 | R7b | the spec becomes the stored source (`SpecJson` on the Intersection object) and the panel edits it | full gate and GUI (done, §8, GUI pending) |
 | R7c-1 | the kernel is the only engine: the legacy build in Build Parametric and Applied Sections, the code only it reached, and the tests of it are deleted | full gate and GUI (done, §8) |
-| R7c-2 | the review surfaces still reading the legacy evaluation chain (the Build Parametric Intersections, Breakline Audit and Drainage tabs) read the kernel result; the chain and the services only it feeds are deleted; the kernel's drainage candidates (K7) feed the drainage review | full gate and GUI (done, §8, GUI pending) |
-| R7c-3 | the lane connection and edge policy rows (D2) leave the source, and the panel's row review gives way to the spec group | full gate and GUI manual QA |
+| R7c-2 | the review surfaces still reading the legacy evaluation chain (the Build Parametric Intersections, Breakline Audit and Drainage tabs) read the kernel result; the chain and the services only it feeds are deleted; the kernel's drainage candidates (K7) feed the drainage review | full gate and GUI (done, §8, GUI: tab and highlight checked) |
+| R7c-3 | the lane connection and edge policy rows (D2) leave the source, and the panel's row review gives way to the spec group | full gate and GUI manual QA (done, §8, GUI: Intersections tab ready) |
 
-R1 to R7c-2 are implemented. R7 is split because the switch and the deletion cannot be one step:
+R1 to R7c-3 are implemented. R7 is split because the switch and the deletion cannot be one step:
 the legacy previews carry 341 metadata properties that the review rows, the 78 command tests and
 the regression smokes read, so replacing them breaks all of that at once. R7a puts the kernel
 engine next to the legacy one, selectable per intersection, so the two can be compared in the GUI on
@@ -700,7 +700,46 @@ R7c-1, those of the deleted chain). GUI checks still to do: the Intersections ta
 highlights, the drainage review's low point, and the cross section viewer's intersection rows, on
 the starter T, Cross and roundabout.
 
-### Next: R7c-3
+### R7c-3, 2026-10-09
 
-The lane connection and edge policy rows (D2) leave the source, the panel's row review gives way
-to the spec group; Watertight Solids' legacy zone targets need a decision first.
+The lane connection and edge policy rows are gone from the source (D2), and with them the row
+review. Measured first: the review buttons changed nothing the kernel builds. The starter T and
+roundabout built with and without Accept Reviewed Rows have the same kernel fingerprint, boundary
+area and triangle count, and the same Build Parametric review rows; only the Applied Sections'
+diagnostic text differed, and accepting even added two `*_policy_ref_missing` warnings.
+
+- Intersection panel: the source review table and Refresh Review, Accept Reviewed Rows and Adopt
+  Edge Families From Subassembly are removed, with the "preset defaults ... review state" status
+  lines. The flow is Preset, Create Sources (or Apply), then Check Spec / Apply Spec. The spec's
+  Kind follows the Preset and then the created source, and cannot be edited on its own.
+- Source: `IntersectionEdgePolicyRow`, `IntersectionLaneConnectionRow`, the model's
+  `edge_policy_rows` / `lane_connection_rows` and the legs' `edge_policy_refs` are deleted, and the
+  presets no longer stamp review states on their rows. Persistence: see
+  `V1_PERSISTENCE_SCHEMA_INVENTORY.md`; old documents keep the properties unread.
+- The roundabout ring of a source without a stored spec comes from its curb return radius with the
+  preset's proportions (island 0.45 of the outer radius, apron 15 % of the ring width, at least
+  0.5 m), which reproduces the ring the roundabout edge policy rows carried (checked at 12, 20 and
+  36 m).
+- Applied Sections' intersection source diagnostics report only what the build uses: a leg not
+  found for the section's alignment, a control area naming no control Region. The source stages
+  are Legs and Control Areas.
+- `IntersectionEvaluationService` keeps `resolve_station` only (7,460 to 178 lines): topology, edge
+  network, surface zones, grading context, drainage hints, corridor clipping, boundary and slope
+  loops and roundabout approach legs are deleted with nine result modules and the review service.
+- Watertight Solids (paused): each intersection gets planned, disabled targets for its pavement with
+  the subgrade under it and its side slope, instead of one per edge-network surface zone. Their
+  handoff now reports `candidate` where it reported `blocked` for lack of zones; the two tests of
+  the blocked path keep it by emptying the zone table.
+
+| | lines |
+| --- | --- |
+| production | +66 / -9,544 (10 files deleted, -1,225) |
+| `intersection_evaluation_service.py` | +10 / -7,292 |
+| `cmd_intersection_presets.py` | +2 / -455 |
+| tests: 6 files and the tests of the deleted rows, review and evaluation | +59 / -6,349 |
+
+Validation at R7c-3: flake8 clean on the touched files, architecture 9 passed, all three smoke
+runners PASS, full contract suite 1,179 passed / 18 skipped / 0 failed. GUI: the user built the
+intersections after this phase and the Build Parametric Intersections tab reports ready
+(2026-10-09). Not checked in the GUI: a roundabout created before this phase rebuilding the same
+ring.

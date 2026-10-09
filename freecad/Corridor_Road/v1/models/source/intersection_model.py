@@ -66,7 +66,6 @@ class IntersectionLegRow:
     approval_status: str = "accepted"
     span_source: str = "explicit"
     arm_policy_ref: str = ""
-    edge_policy_refs: list[str] = field(default_factory=list)
     grading_policy_ref: str = ""
     priority: int = 0
     diagnostic_rows: list[str] = field(default_factory=list)
@@ -148,51 +147,6 @@ class IntersectionArmPolicyRow:
     median_width: float = 0.0
     turn_lane_policy_ref: str = ""
     status: str = "active"
-    approval_status: str = "accepted"
-    diagnostic_rows: list[str] = field(default_factory=list)
-    notes: str = ""
-
-
-@dataclass(frozen=True)
-class IntersectionEdgePolicyRow:
-    """Source policy for an intersection edge family before topology evaluation."""
-
-    policy_id: str
-    intersection_id: str
-    leg_ref: str = ""
-    edge_role: str = "pavement_edge"
-    side: str = "both"
-    offset_rule: str = ""
-    offset_value: float = 0.0
-    elevation_rule: str = "from_crossfall"
-    profile_ref: str = ""
-    source_policy_ref: str = ""
-    edge_family_intent: str = ""
-    source_method: str = "manual"
-    approval_status: str = "accepted"
-    assembly_ref: str = ""
-    template_ref: str = ""
-    subassembly_ref: str = ""
-    subassembly_kind: str = ""
-    diagnostic_rows: list[str] = field(default_factory=list)
-    status: str = "active"
-    notes: str = ""
-
-
-@dataclass(frozen=True)
-class IntersectionLaneConnectionRow:
-    """Source row for lane movement continuity through an intersection."""
-
-    connection_id: str
-    intersection_id: str
-    movement_type: str = "through"
-    from_leg_ref: str = ""
-    to_leg_ref: str = ""
-    from_edge_policy_ref: str = ""
-    to_edge_policy_ref: str = ""
-    from_lane_index: int = 1
-    to_lane_index: int = 1
-    source_method: str = "manual"
     approval_status: str = "accepted"
     diagnostic_rows: list[str] = field(default_factory=list)
     notes: str = ""
@@ -306,8 +260,6 @@ class IntersectionModel(SourceModelBase):
     corner_rows: list[IntersectionCornerRow] = field(default_factory=list)
     arm_policy_rows: list[IntersectionArmPolicyRow] = field(default_factory=list)
     curb_return_policy_rows: list[IntersectionCurbReturnPolicyRow] = field(default_factory=list)
-    edge_policy_rows: list[IntersectionEdgePolicyRow] = field(default_factory=list)
-    lane_connection_rows: list[IntersectionLaneConnectionRow] = field(default_factory=list)
     grading_policy_rows: list[IntersectionGradingPolicyRow] = field(default_factory=list)
     slope_face_policy_rows: list[IntersectionSlopeFacePolicyRow] = field(default_factory=list)
     drainage_policy_rows: list[IntersectionDrainagePolicyRow] = field(default_factory=list)
@@ -327,68 +279,3 @@ def intersection_kind_from_label(label: str) -> str:
         if normalized == str(preset.get("label", "") or "").strip().lower():
             return kind
     return ""
-
-
-def intersection_row_from_kind(
-    *,
-    intersection_id: str,
-    intersection_kind: str,
-    primary_alignment_ref: str = "",
-    secondary_alignment_refs: list[str] | None = None,
-    control_region_refs: list[str] | None = None,
-) -> IntersectionRow:
-    """Create a first-slice intersection row from a supported kind preset."""
-
-    kind = str(intersection_kind or "").strip()
-    preset = INTERSECTION_KIND_PRESETS.get(kind)
-    if preset is None:
-        raise ValueError(f"Unsupported intersection kind: {intersection_kind}")
-
-    secondaries = list(secondary_alignment_refs or [])
-    roles = tuple(preset.get("default_leg_roles", ()) or ())
-    leg_rows: list[IntersectionLegRow] = []
-    for index, role in enumerate(roles):
-        leg_id = f"{intersection_id}:leg-{index + 1:02d}"
-        if str(role).startswith("primary"):
-            alignment_ref = primary_alignment_ref
-        else:
-            alignment_ref = secondaries[0] if secondaries else ""
-        leg_rows.append(
-            IntersectionLegRow(
-                leg_id=leg_id,
-                intersection_id=intersection_id,
-                leg_role=str(role),
-                alignment_ref=alignment_ref,
-                arm_policy_ref=f"arm-policy:{intersection_id}:leg-{index + 1:02d}",
-                edge_policy_refs=[
-                    f"edge-policy:{intersection_id}:leg-{index + 1:02d}:pavement",
-                    f"edge-policy:{intersection_id}:leg-{index + 1:02d}:daylight",
-                ],
-                grading_policy_ref=f"grading:{intersection_id}:default",
-                priority=index + 1,
-            )
-        )
-
-    return IntersectionRow(
-        intersection_id=intersection_id,
-        intersection_kind=kind,
-        primary_alignment_ref=primary_alignment_ref,
-        secondary_alignment_refs=secondaries,
-        control_region_refs=list(control_region_refs or []),
-        leg_rows=leg_rows,
-        control_area_ref=f"{intersection_id}:control-area",
-        grading_policy_ref=f"grading:{intersection_id}:default",
-        policy_refs=[
-            f"curb-return:{intersection_id}:default",
-            f"grading:{intersection_id}:default",
-            f"slope-face:{intersection_id}:default",
-            f"drainage-policy:{intersection_id}:default",
-            *[str(leg.arm_policy_ref) for leg in leg_rows if str(leg.arm_policy_ref)],
-            *[
-                str(edge_ref)
-                for leg in leg_rows
-                for edge_ref in list(getattr(leg, "edge_policy_refs", []) or [])
-                if str(edge_ref)
-            ],
-        ],
-    )
