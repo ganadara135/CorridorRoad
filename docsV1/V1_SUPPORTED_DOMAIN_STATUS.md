@@ -35,7 +35,7 @@ The compatibility floor is package metadata, not a claim that the complete Phase
 | Region | Supported | `RegionModel` | resolved station context | Region table and boundary highlight | no ownership of Structure, Drainage, or Intersection meaning |
 | Applied Sections | Supported | none; generated result | `AppliedSectionSet` | section review and normalized output mapping | supplemental rows remain result-only |
 | Build Parametric | Supported | output/display options only | `CorridorModel` and `SurfaceModel` | previews, review rows, output handoff | no mesh repair as design intent |
-| Intersections | Supported | `IntersectionModel` | typed topology, boundary, grading, TIN, and diagnostic results | intersection review geometry | presets are sample source creation, not engineering branches |
+| Intersections | Supported | `IntersectionModel` with its parametric spec (`IntersectionSpec`) | one kernel result: boundary, intersection surface and side slope TINs, clip spans, drainage candidates, typed diagnostics | Intersections review tab and highlight | T, Cross and Roundabout; presets are sample source creation, not engineering branches |
 | Structures | Supported | `StructureModel` | connection, influence, and output results | source preview and Structure Output | preview geometry is not connection intent |
 | Drainage | Supported | `DrainageModel` | pipeline and review results | Flow Network, Drainage Review, existing handoff | advanced hydraulics and automatic sizing are out of scope |
 | Cross Section | Supported review | none | consumes Applied Sections | read-only viewer and drawing payload | not a geometry editor |
@@ -71,7 +71,7 @@ The following precedence prevents historical plans from being read as current co
 Current active plan:
 
 - `V1_SIDE_SLOPE_REVIEW_UX_PLAN.md`, result-backed ordinary-road and Intersection Side Slope review
-- `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md`, the single Intersection specification: a parametric spec and the evaluated roads in, one deterministic geometry result out, introduced in shadow mode
+- `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md`, the single Intersection specification: a parametric spec and the evaluated roads in, one deterministic geometry result out; the only intersection engine since 2026-10-09 (phase R7c)
 
 Completed architecture record:
 

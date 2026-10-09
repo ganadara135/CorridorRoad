@@ -2,7 +2,15 @@
 
 Date: 2026-04-24
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline; updated 2026-10-09 for the parametric intersection kernel
+
+Since 2026-10-09 the geometry of an intersection comes from its parametric spec
+(`IntersectionSpec`, stored as `SpecJson` on the Intersection object) and the roads' Applied
+Sections, through one kernel. The specification of that path is
+[V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md](./V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md); where
+this document and the plan disagree, the plan is right. The edge policy and lane connection rows
+are removed from the source (decision D2), and the topology, edge network, surface zone, corridor
+clip and drainage hint results with them.
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -115,15 +123,11 @@ Recommended primary object families:
 - `IntersectionControlArea`
 - `IntersectionArmPolicyRow`
 - `IntersectionCurbReturnPolicyRow`
-- `IntersectionEdgePolicyRow`
 - `IntersectionGradingPolicyRow`
 - `IntersectionDrainagePolicyRow`
-- `IntersectionEvaluationResult`
-- `IntersectionTopologyResult`
-- `IntersectionEdgeNetworkResult`
-- `IntersectionSurfaceZoneResult`
-- `IntersectionCorridorClipResult`
-- `IntersectionDrainageHintResult`
+- `IntersectionSpec` (the parametric source of the geometry)
+- `IntersectionEvaluationResult` (the intersection context of one station)
+- `IntersectionGeometryResult` (the kernel's boundary, surfaces, clip spans and drainage candidates)
 
 ## 9. IntersectionModel Root
 
@@ -141,7 +145,6 @@ Recommended primary object families:
 - `control_area_rows`
 - `arm_policy_rows`
 - `curb_return_policy_rows`
-- `edge_policy_rows`
 - `grading_policy_rows`
 - `drainage_policy_rows`
 - `unit_context`
@@ -197,7 +200,6 @@ Each `IntersectionLegRow` preserves one participating corridor leg.
 - `approach_station_start`
 - `approach_station_end`
 - `arm_policy_ref`
-- `edge_policy_refs`
 - `grading_policy_ref`
 - `priority`
 - `notes`
@@ -257,36 +259,23 @@ Intersection behavior often depends on lane-role and edge-return policy.
 
 These policies should preserve engineering intent rather than collapse into display-only geometry.
 
-## 14. Edge-Network Source Policies
+## 14. Arm and Curb Return Policies
 
 ### 14.1 IntersectionArmPolicyRow
 
-`IntersectionArmPolicyRow` defines one road arm's design intent before topology evaluation.
+`IntersectionArmPolicyRow` records one road arm's design intent: lane count, lane width, shoulder
+width, design speed, design vehicle reference, and optional turn-lane policy reference.
 
-It stores lane count, lane width, shoulder width, design speed, design vehicle reference, and optional turn-lane policy reference.
+It does not define geometry. The pavement edge is owned by Applied Sections (decision D1), which
+the kernel reads through its road context.
 
-This row does not create geometry directly. It gives the future edge-network evaluator stable arm-level rules.
+### 14.2 IntersectionCurbReturnPolicyRow
 
-### 14.2 IntersectionEdgePolicyRow
+`IntersectionCurbReturnPolicyRow` defines the curb-return radius, side and approach leg references.
 
-`IntersectionEdgePolicyRow` defines requested edge families such as:
-
-- `pavement_edge`
-- `lane_edge`
-- `shoulder_edge`
-- `curb_return_edge`
-- `gutter_edge`
-- `daylight_hinge`
-
-Each edge policy may reference one leg and specify side, offset rule, elevation rule, source policy reference, and status.
-
-These rows are the source contract for the future `Intersection Edge Network` result.
-
-### 14.3 IntersectionCurbReturnPolicyRow
-
-`IntersectionCurbReturnPolicyRow` defines curb-return radius, side, approach leg references, and boundary sampling controls.
-
-In the redesign path, curb-return arcs are not review decoration. They are edge-network boundaries used by pavement, slope face, drainage, and solid target generation.
+A spec read from the rows takes its corner radius from it; for a roundabout without a stored spec
+it is the outer ring radius, with the preset's proportions for the island and the apron. A stored
+spec's radius wins.
 
 ## 15. Grading and Drainage Context
 
@@ -318,7 +307,8 @@ Superelevation may still control normal road sections, but this policy can overr
 
 `IntersectionDrainagePolicyRow` defines low-point review and drainage handoff intent.
 
-It can reference gutter or pavement edge policies and future drainage element references.
+It can reference drainage elements. The low points it is reviewed against are the kernel's drainage
+candidates: the lowest vertices of the intersection surface, with their nearest road and station.
 
 The first goal is not hydraulic sizing. The first goal is a stable surface and low-point context for later drainage simulation.
 
@@ -548,9 +538,10 @@ Recommended early diagnostics include:
 - unresolved drainage outfall inside control area
 - imported junction geometry with ambiguous ownership
 - missing arm policy for a leg
-- unresolved edge policy reference
-- curb-return edge not connected to a pavement edge
-- slope face zone requested without a daylight hinge edge
+- the kernel's typed diagnostics (`KernelDiagnostic`: code, severity, subject, station, what to
+  inspect, effect), for example `pavement_edge_owner_missing`, `leg_too_short_for_corner`,
+  `corner_fillet_no_solution`, `boundary_self_crossing`, `roundabout_flares_overlap` and
+  `side_slope_daylight_missing`
 
 ## 20. Non-goals
 

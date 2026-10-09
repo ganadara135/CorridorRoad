@@ -30,12 +30,6 @@ from .intersection_patch_constraint_build import (
     IntersectionPatchConstraintBuildResult,
 )
 from .intersection_tie_in_edge import IntersectionTieInEdgeRow
-from .intersection_shared_boundary_graph import (
-    IntersectionSharedBoundaryCellRow,
-    IntersectionSharedBoundaryEdgeRow,
-    IntersectionSharedBoundaryGraphResult,
-    IntersectionSharedBoundaryNodeRow,
-)
 from .intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
 from .mass_haul_model import MassHaulModel
 from .quantity_model import QuantityModel
@@ -81,10 +75,6 @@ __all__ = [
     "EarthworkBalanceModel",
     "IntersectionPatchConstraintBuildResult",
     "IntersectionTieInEdgeRow",
-    "IntersectionSharedBoundaryCellRow",
-    "IntersectionSharedBoundaryEdgeRow",
-    "IntersectionSharedBoundaryGraphResult",
-    "IntersectionSharedBoundaryNodeRow",
     "IntersectionTrimBoundaryPair",
     "IntersectionTrimBoundaryResult",
     "MassHaulModel",

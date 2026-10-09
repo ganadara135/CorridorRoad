@@ -192,8 +192,6 @@ set_corridor_build_visibility_group = None
 set_corridor_guided_review_step_visibility = None
 shared_breakline_audit_display_rows = None
 show_corridor_build_review_object = None
-show_intersection_exclusion_near_boundary_highlight = None
-show_intersection_shared_boundary_graph_highlight = None
 show_shared_breakline_highlight = None
 to_applied_section_set = None
 toggle_corridor_surface_transition_enabled = None
@@ -1244,82 +1242,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         if obj is None:
             _show_message(self.form, "Build Parametric", "Breakline Audit surface object is not available.")
             return
-        row_kind = str(row.get("row_kind", "") or "")
-        graph_edge_refs = [str(value or "") for value in list(row.get("graph_edge_refs", []) or []) if str(value or "")]
-        if row_kind == "roundabout_clip_boundary_diagnostic":
-            try:
-                _remove_preview_object(self.document, "ReviewSharedBreaklineHighlight")
-                _remove_preview_object(self.document, "ReviewIntersectionSharedBoundaryGraphHighlight")
-                _remove_preview_object(self.document, "ReviewIntersectionSharedBoundaryGraphInternalSeamHighlight")
-                _set_object_visibility(obj, True)
-                _select_and_fit_object(obj)
-                self._sync_visibility_checks()
-            except Exception as exc:
-                _show_message(self.form, "Build Parametric", f"Roundabout diagnostic boundary focus was not shown.\n{exc}")
-                return
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Roundabout diagnostic boundary selected.",
-                        f"Surface: {row.get('surface', '')}",
-                        f"Reported role: {row.get('roundabout_clip_boundary_role', '')}",
-                        "This row is not used as an ordinary surface clipping boundary.",
-                        f"Actual clipping roles: {','.join(list(row.get('roundabout_actual_clip_boundary_roles', []) or [])) or 'none'}",
-                        f"Surface Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                    ]
-                )
-            )
-            return
-        if row_kind == "boundary_loop_handoff" and (
-            bool(row.get("boundary_loop_near_kept_warning", False))
-            or int(row.get("intersection_exclusion_near_boundary_kept_triangle_count", 0) or 0) > 0
-        ):
-            try:
-                highlight = show_intersection_exclusion_near_boundary_highlight(self.document, obj)
-                self._sync_visibility_checks()
-            except Exception as exc:
-                _show_message(self.form, "Build Parametric", f"Intersection exclusion residual highlight was not shown.\n{exc}")
-                return
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Intersection exclusion near-boundary kept highlight shown.",
-                        f"Surface: {row.get('surface', '')}",
-                        f"Audit: {row.get('status', '')}",
-                        f"Near-kept triangles: {int(row.get('intersection_exclusion_near_boundary_kept_triangle_count', 0) or 0)}",
-                        f"Recommended Action: {row.get('recommended_action', '')}",
-                        f"Surface Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                        f"Highlight Object: {getattr(highlight, 'Label', getattr(highlight, 'Name', ''))}",
-                    ]
-                )
-            )
-            return
-        if (row_kind == "graph" or row_kind == "graph_pair" or row_kind.startswith("graph_") or row_kind == "boundary_loop_handoff") and graph_edge_refs:
-            try:
-                highlight = show_intersection_shared_boundary_graph_highlight(
-                    self.document,
-                    obj,
-                    edge_refs=graph_edge_refs,
-                    highlight_kind="internal_seam" if row_kind == "graph_internal_seam" else "",
-                )
-                self._sync_visibility_checks()
-            except Exception as exc:
-                _show_message(self.form, "Build Parametric", f"Shared Boundary Graph highlight was not shown.\n{exc}")
-                return
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Shared Boundary Graph highlight shown.",
-                        f"Row: {row.get('surface', '')}",
-                        f"Audit: {row.get('status', '')}",
-                        f"Edges: {len(graph_edge_refs)}",
-                        f"Recommended Action: {row.get('recommended_action', '')}",
-                        f"Source Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                        f"Highlight Object: {getattr(highlight, 'Label', getattr(highlight, 'Name', ''))}",
-                    ]
-                )
-            )
-            return
         if not role_filter:
             role_filter = str(row.get("breakline_role_filter", "") or "")
         if not material_filter:
@@ -1327,8 +1249,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         if _breakline_audit_surface_row_focuses_source_only(row) and not role_filter and not material_filter:
             try:
                 _remove_preview_object(self.document, "ReviewSharedBreaklineHighlight")
-                _remove_preview_object(self.document, "ReviewIntersectionSharedBoundaryGraphHighlight")
-                _remove_preview_object(self.document, "ReviewIntersectionSharedBoundaryGraphInternalSeamHighlight")
                 _set_object_visibility(obj, True)
                 _select_and_fit_object(obj)
                 self._sync_visibility_checks()
@@ -1356,7 +1276,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                 role_filter=role_filter,
                 material_filter=material_filter,
                 consumer_filter=consumer_filter,
-                clip_to_source_bounds=str(row.get("role", "") or "") in {"intersection", "intersection_slope", "intersection_tie_slope"},
+                clip_to_source_bounds=str(row.get("role", "") or "") in {"intersection", "intersection_slope"},
             )
             self._sync_visibility_checks()
         except Exception as exc:

@@ -46,12 +46,6 @@ from .earthwork_report_service import (
     EarthworkReportService,
 )
 from .mass_haul_service import MassHaulBuildRequest, MassHaulService
-from .intersection_daylight_tin_service import (
-    suppress_daylight_triangles_above_intersection_surface,
-    suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint,
-    suppress_daylight_triangles_inside_intersection_surface_footprint,
-    trim_daylight_triangles_above_intersection_surface_by_intersection_lines,
-)
 from .quantity_build_service import QuantityBuildRequest, QuantityBuildService
 from .solid_target_discovery_service import SolidTargetDiscoveryRequest, SolidTargetDiscoveryService
 from .solid_edge_network_service import SolidEdgeNetworkBuildRequest, SolidEdgeNetworkService
@@ -99,10 +93,6 @@ __all__ = [
     "EarthworkReportService",
     "MassHaulBuildRequest",
     "MassHaulService",
-    "suppress_daylight_triangles_above_intersection_surface",
-    "suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint",
-    "suppress_daylight_triangles_inside_intersection_surface_footprint",
-    "trim_daylight_triangles_above_intersection_surface_by_intersection_lines",
     "QuantityBuildRequest",
     "QuantityBuildService",
     "SolidTargetDiscoveryRequest",

@@ -180,19 +180,7 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         "V1BuildCorridorTaskPanel",
     } <= viewer_classes
 
-    # plan phase R7c-2 deleted the legacy intersection evaluation chain (shared breakline,
-    # slope face boundary/cell, tie slope); the intersection kernel package replaces it
-    service_names = {
-        "intersection_shared_boundary_graph_evaluation_service.py",
-    }
-    available = {
-        path.name
-        for path in (V1_ROOT / "services" / "evaluation").glob("*.py")
-    }
-    assert service_names <= available
-
     builder_names = {
-        "intersection_daylight_tin_service.py",
         "shared_breakline_tin_builder_service.py",
     }
     available_builders = {
@@ -243,6 +231,19 @@ def test_build_corridor_phase2_owners_are_outside_the_command_module() -> None:
         "corridor_intersection_shared_boundary_graph_result",
         "_roundabout_clip_boundary_polygons",
         "_intersection_tie_slope_gap_specs",
+        # Deleted after plan phase R7c-3: legacy intersection metadata, highlights and clips nothing produced.
+        "_applied_section_set_with_intersection_tie_in_sections",
+        "_attach_intersection_exclusion_zone_metadata",
+        "_attach_intersection_exclusion_clip_quality",
+        "_attach_intersection_slope_loop_suppression_quality",
+        "_attach_intersection_slope_face_boundary_strip_quality",
+        "_create_intersection_slope_face_overlap_preview",
+        "_attach_intersection_shared_boundary_graph_preview_metadata",
+        "show_intersection_shared_boundary_graph_highlight",
+        "show_intersection_exclusion_near_boundary_highlight",
+        "_clip_daylight_surface_against_intersection_surfaces",
+        "_attach_boundary_loop_shared_breakline_preview_metadata",
+        "_attach_boundary_loop_surface_ownership_preview_metadata",
         # Moved on 2026-09-20: the region boundary continuity rule, now owned by
         # services/evaluation/region_boundary_continuity_evaluation_service, and the pure
         # model-row readers it shares with the command in common/model_fields.

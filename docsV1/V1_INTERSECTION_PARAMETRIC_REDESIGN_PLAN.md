@@ -743,3 +743,28 @@ runners PASS, full contract suite 1,179 passed / 18 skipped / 0 failed. GUI: the
 intersections after this phase and the Build Parametric Intersections tab reports ready
 (2026-10-09). Not checked in the GUI: a roundabout created before this phase rebuilding the same
 ring.
+
+### Legacy cleanup after R7c-3, 2026-10-09
+
+The Build Parametric command, the Breakline Audit and two service modules still carried code for
+previews and metadata that only the deleted pipeline produced. It is removed; nothing it read is
+written any more, so no build or review result changes.
+
+- `cmd_build_corridor.py`: the exclusion zone, exclusion clip, slope loop suppression and Slope
+  Face boundary strip metadata, the Slope Face overlap preview, the shared boundary graph and
+  exclusion near-boundary highlights, the boundary loop ownership metadata, the no-op tie-in
+  wrapper and about 25 private geometry helpers. The daylight surface is clipped by the kernel's
+  station spans like the other corridor surfaces. A rebuild removes the legacy preview and
+  highlight objects an older document may still hold.
+- Breakline Audit: one row per audited surface (and per breakline role for diagnostics); the
+  intersection cell, graph, boundary loop and roundabout clip rows and their parsers are gone.
+- Deleted: `intersection_shared_boundary_graph_evaluation_service`,
+  `intersection_daylight_tin_service`, `models/result/intersection_shared_boundary_graph`.
+
+| | lines |
+| --- | --- |
+| production | +45 / -3,924 (3 files deleted) |
+| tests: 2 files and 9 tests of the deleted code; the Breakline Audit test rewritten | +18 / -1,008 |
+
+Validation: flake8 clean on the touched files, architecture 9 passed, all three smoke runners
+PASS, full contract suite 1,163 passed / 18 skipped / 0 failed. Not checked in the GUI.

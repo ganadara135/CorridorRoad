@@ -56,7 +56,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     toggle_corridor_surface_transition_enabled,
     update_corridor_surface_transition_station_range,
 )
-from freecad.Corridor_Road.v1.models.result.tin_surface import TINQualityRow, TINSurface, TINTriangle, TINVertex
+from freecad.Corridor_Road.v1.models.result.tin_surface import TINSurface, TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import tin_mesh_preview_style
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.applied_section import (
@@ -107,12 +107,6 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 )
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 from dataclasses import replace
-from freecad.Corridor_Road.v1.services.builders import (
-    suppress_daylight_triangles_above_intersection_surface,
-    suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint,
-    suppress_daylight_triangles_inside_intersection_surface_footprint,
-    trim_daylight_triangles_above_intersection_surface_by_intersection_lines,
-)
 from freecad.Corridor_Road.v1.services.builders.shared_breakline_tin_builder_service import (
     intersection_surface_tin_with_shared_breakline_constraint_edges,
     tin_surface_with_shared_breakline_constraint_edges,
@@ -1171,148 +1165,6 @@ def test_build_corridor_panel_populates_intersection_contract_table() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_intersection_slope_loop_suppression_skips_quality_rejected_reference_surface() -> None:
-    daylight = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="slope_face_surface",
-        vertex_rows=[
-            TINVertex("d0", 0.0, 0.0, 10.0),
-            TINVertex("d1", 10.0, 0.0, 10.0),
-            TINVertex("d2", 0.0, 10.0, 9.0),
-        ],
-        triangle_rows=[
-            TINTriangle("daylight:tri:1", "d0", "d1", "d2", quality_ref="side_slope_surface"),
-        ],
-    )
-    rejected_reference = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection-slope-face",
-        surface_kind="intersection_slope_face_surface",
-        boundary_refs=["loop:test:quality-rejected"],
-        quality_rows=[
-            TINQualityRow("q:ready", "ready_loop_count", 1, "count"),
-            TINQualityRow("q:generated", "generated_loop_count", 0, "count"),
-            TINQualityRow("q:skinny", "rejected_skinny_loop_count", 1, "count"),
-        ],
-    )
-
-    suppressed = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
-        daylight,
-        rejected_reference,
-    )
-
-    assert [triangle.triangle_id for triangle in suppressed.triangle_rows] == ["daylight:tri:1"]
-    assert build_corridor_command._tin_quality_text(suppressed, "intersection_slope_loop_suppress_status") == "skipped"
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_suppressed_triangle_count") == 0
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_reference_triangle_count") == 0
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_kept_triangle_count") == 1
-    assert list(getattr(suppressed, "void_refs", []) or []) == []
-
-
-def test_intersection_slope_loop_suppression_uses_generated_ready_loop_footprint_only() -> None:
-    daylight = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="slope_face_surface",
-        vertex_rows=[
-            TINVertex("inside-a", 1.0, 1.0, 10.0),
-            TINVertex("inside-b", 2.0, 1.0, 10.0),
-            TINVertex("inside-c", 1.0, 2.0, 10.0),
-            TINVertex("outside-a", 20.0, 20.0, 10.0),
-            TINVertex("outside-b", 21.0, 20.0, 10.0),
-            TINVertex("outside-c", 20.0, 21.0, 10.0),
-        ],
-        triangle_rows=[
-            TINTriangle("daylight:inside", "inside-a", "inside-b", "inside-c", quality_ref="side_slope_surface"),
-            TINTriangle("daylight:outside", "outside-a", "outside-b", "outside-c", quality_ref="side_slope_surface"),
-        ],
-    )
-    reference = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection-slope-face",
-        surface_kind="intersection_slope_face_surface",
-        boundary_refs=["loop:test:generated"],
-        vertex_rows=[
-            TINVertex("r0", 0.0, 0.0, 10.0),
-            TINVertex("r1", 5.0, 0.0, 10.0),
-            TINVertex("r2", 0.0, 5.0, 10.0),
-        ],
-        triangle_rows=[
-            TINTriangle("ref:tri:1", "r0", "r1", "r2", quality_ref="intersection_slope_face_loop"),
-        ],
-    )
-
-    suppressed = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
-        daylight,
-        reference,
-    )
-
-    assert [triangle.triangle_id for triangle in suppressed.triangle_rows] == ["daylight:outside"]
-    assert build_corridor_command._tin_quality_text(suppressed, "intersection_slope_loop_suppress_status") == "ready"
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_ready_loop_count") == 1
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_suppressed_triangle_count") == 1
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_kept_triangle_count") == 1
-    assert list(getattr(suppressed, "void_refs", []) or []) == ["surface:intersection-slope-face"]
-
-
-def test_intersection_slope_loop_suppression_uses_intersection_slope_face_footprint() -> None:
-    daylight = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="slope_face_surface",
-        vertex_rows=[
-            TINVertex("inside-a", 1.0, 1.0, 10.0),
-            TINVertex("inside-b", 2.0, 1.0, 10.0),
-            TINVertex("inside-c", 1.0, 2.0, 10.0),
-            TINVertex("outside-a", 10.0, 10.0, 10.0),
-            TINVertex("outside-b", 11.0, 10.0, 10.0),
-            TINVertex("outside-c", 10.0, 11.0, 10.0),
-        ],
-        triangle_rows=[
-            TINTriangle("daylight:inside-transition-cell", "inside-a", "inside-b", "inside-c", quality_ref="side_slope_surface"),
-            TINTriangle("daylight:outside", "outside-a", "outside-b", "outside-c", quality_ref="side_slope_surface"),
-        ],
-    )
-    reference = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection-slope-face",
-        surface_kind="intersection_slope_face_surface",
-        boundary_refs=["intersection-slope-face-cell:test:curb-return"],
-        vertex_rows=[
-            TINVertex("r0", 0.0, 0.0, 10.0),
-            TINVertex("r1", 5.0, 0.0, 10.0),
-            TINVertex("r2", 0.0, 5.0, 10.0),
-        ],
-        triangle_rows=[
-            TINTriangle(
-                "ref:curb-return-cell:1",
-                "r0",
-                "r1",
-                "r2",
-                triangle_kind="intersection_slope_face_curb_return_cell",
-                quality_ref="intersection_slope_face_cell",
-            ),
-        ],
-    )
-
-    suppressed = suppress_daylight_triangles_inside_intersection_slope_face_loop_footprint(
-        daylight,
-        reference,
-    )
-
-    assert [triangle.triangle_id for triangle in suppressed.triangle_rows] == ["daylight:outside"]
-    assert build_corridor_command._tin_quality_text(suppressed, "intersection_slope_loop_suppress_status") == "ready"
-    assert build_corridor_command._tin_quality_float(suppressed, "intersection_slope_loop_suppress_suppressed_triangle_count") == 1
-    assert list(getattr(suppressed, "void_refs", []) or []) == ["surface:intersection-slope-face"]
-
-
 def _curb_return_variant_model(*, radius: float = 12.0) -> IntersectionModel:
     return IntersectionModel(
         schema_version=1,
@@ -1336,200 +1188,6 @@ def _curb_return_variant_model(*, radius: float = 12.0) -> IntersectionModel:
             )
         ],
     )
-
-
-def test_intersection_height_clip_suppresses_only_daylight_triangles_above_intersection_surface() -> None:
-    intersection_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection",
-        surface_kind="intersection_surface",
-        vertex_rows=[
-            TINVertex("i1", 0.0, 0.0, 10.0),
-            TINVertex("i2", 10.0, 0.0, 10.0),
-            TINVertex("i3", 0.0, 10.0, 10.0),
-        ],
-        triangle_rows=[
-            TINTriangle("it1", "i1", "i2", "i3"),
-        ],
-    )
-    daylight_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="daylight_surface",
-        vertex_rows=[
-            TINVertex("a1", 1.0, 1.0, 10.2),
-            TINVertex("a2", 2.0, 1.0, 10.2),
-            TINVertex("a3", 1.0, 2.0, 10.2),
-            TINVertex("b1", 3.0, 1.0, 9.8),
-            TINVertex("b2", 4.0, 1.0, 9.8),
-            TINVertex("b3", 3.0, 2.0, 9.8),
-            TINVertex("c1", 20.0, 20.0, 20.0),
-            TINVertex("c2", 21.0, 20.0, 20.0),
-            TINVertex("c3", 20.0, 21.0, 20.0),
-        ],
-        triangle_rows=[
-            TINTriangle("above", "a1", "a2", "a3"),
-            TINTriangle("below", "b1", "b2", "b3"),
-            TINTriangle("outside", "c1", "c2", "c3"),
-        ],
-    )
-
-    clipped = suppress_daylight_triangles_above_intersection_surface(
-        daylight_surface,
-        intersection_surface,
-        tolerance=0.05,
-    )
-
-    assert [row.triangle_id for row in clipped.triangle_rows] == ["below", "outside"]
-    assert "surface:intersection" in clipped.void_refs
-    assert build_corridor_command._tin_quality_text(clipped, "intersection_height_clip_status") == "ready"
-    assert build_corridor_command._tin_quality_float(clipped, "intersection_height_clip_tested_triangle_count") == 2
-    assert build_corridor_command._tin_quality_float(clipped, "intersection_height_clip_suppressed_triangle_count") == 1
-    assert build_corridor_command._tin_quality_float(clipped, "intersection_height_clip_kept_triangle_count") == 2
-
-
-def test_intersection_footprint_suppresses_daylight_triangles_inside_intersection_surface_even_when_lower() -> None:
-    intersection_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection",
-        surface_kind="intersection_surface",
-        vertex_rows=[
-            TINVertex("i1", 0.0, 0.0, 10.0),
-            TINVertex("i2", 10.0, 0.0, 10.0),
-            TINVertex("i3", 0.0, 10.0, 10.0),
-        ],
-        triangle_rows=[
-            TINTriangle("it1", "i1", "i2", "i3"),
-        ],
-    )
-    daylight_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="daylight_surface",
-        vertex_rows=[
-            TINVertex("inside1", 1.0, 1.0, 8.0),
-            TINVertex("inside2", 2.0, 1.0, 8.0),
-            TINVertex("inside3", 1.0, 2.0, 8.0),
-            TINVertex("outside1", 20.0, 20.0, 8.0),
-            TINVertex("outside2", 21.0, 20.0, 8.0),
-            TINVertex("outside3", 20.0, 21.0, 8.0),
-        ],
-        triangle_rows=[
-            TINTriangle("inside-footprint", "inside1", "inside2", "inside3"),
-            TINTriangle("outside-footprint", "outside1", "outside2", "outside3"),
-        ],
-    )
-
-    clipped = suppress_daylight_triangles_inside_intersection_surface_footprint(
-        daylight_surface,
-        intersection_surface,
-    )
-
-    assert [row.triangle_id for row in clipped.triangle_rows] == ["outside-footprint"]
-    assert "surface:intersection" in clipped.void_refs
-    assert build_corridor_command._tin_quality_text(clipped, "intersection_footprint_suppress_status") == "ready"
-    assert build_corridor_command._tin_quality_text(clipped, "intersection_footprint_suppress_method") == "sample_xy_footprint"
-    assert build_corridor_command._tin_quality_float(clipped, "intersection_footprint_suppress_tested_triangle_count") == 2
-    assert build_corridor_command._tin_quality_float(clipped, "intersection_footprint_suppress_suppressed_triangle_count") == 1
-    assert build_corridor_command._tin_quality_float(clipped, "intersection_footprint_suppress_kept_triangle_count") == 1
-
-
-def test_intersection_slope_face_overlap_edges_mark_only_xy_overlap_triangles() -> None:
-    intersection_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection",
-        surface_kind="intersection_surface",
-        vertex_rows=[
-            TINVertex("i1", 0.0, 0.0, 10.0),
-            TINVertex("i2", 10.0, 0.0, 10.0),
-            TINVertex("i3", 0.0, 10.0, 10.0),
-        ],
-        triangle_rows=[TINTriangle("it1", "i1", "i2", "i3")],
-    )
-    daylight_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="daylight_surface",
-        vertex_rows=[
-            TINVertex("a1", 1.0, 1.0, 9.0),
-            TINVertex("a2", 3.0, 1.0, 11.0),
-            TINVertex("a3", 1.0, 3.0, 11.0),
-            TINVertex("b1", 20.0, 20.0, 9.5),
-            TINVertex("b2", 21.0, 20.0, 9.5),
-            TINVertex("b3", 20.0, 21.0, 9.5),
-        ],
-        triangle_rows=[
-            TINTriangle("overlap", "a1", "a2", "a3"),
-            TINTriangle("outside", "b1", "b2", "b3"),
-        ],
-    )
-
-    segments, triangle_count = build_corridor_command._intersection_slope_face_overlap_edge_segments(
-        daylight_surface,
-        intersection_surface,
-        z_offset=0.08,
-    )
-
-    assert triangle_count == 1
-    assert len(segments) == 1
-    start, end = segments[0]
-    assert {round(start[2], 3), round(end[2], 3)} == {10.08}
-    assert {
-        (round(start[0], 3), round(start[1], 3)),
-        (round(end[0], 3), round(end[1], 3)),
-    } == {(2.0, 1.0), (1.0, 2.0)}
-
-
-def test_intersection_slope_trim_removes_intersecting_daylight_triangle_above_intersection_surface() -> None:
-    intersection_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:intersection",
-        surface_kind="intersection_surface",
-        vertex_rows=[
-            TINVertex("i1", 0.0, 0.0, 10.0),
-            TINVertex("i2", 10.0, 0.0, 10.0),
-            TINVertex("i3", 0.0, 10.0, 10.0),
-        ],
-        triangle_rows=[TINTriangle("it1", "i1", "i2", "i3")],
-    )
-    daylight_surface = TINSurface(
-        schema_version=1,
-        project_id="proj-1",
-        surface_id="surface:daylight",
-        surface_kind="daylight_surface",
-        vertex_rows=[
-            TINVertex("a1", 1.0, 1.0, 9.0),
-            TINVertex("a2", 3.0, 1.0, 11.0),
-            TINVertex("a3", 1.0, 3.0, 11.0),
-            TINVertex("b1", 20.0, 20.0, 9.5),
-            TINVertex("b2", 21.0, 20.0, 9.5),
-            TINVertex("b3", 20.0, 21.0, 9.5),
-        ],
-        triangle_rows=[
-            TINTriangle("intersecting-above", "a1", "a2", "a3"),
-            TINTriangle("outside", "b1", "b2", "b3"),
-        ],
-    )
-
-    trimmed = trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
-        daylight_surface,
-        intersection_surface,
-        tolerance=0.05,
-    )
-
-    assert [row.triangle_id for row in trimmed.triangle_rows] == ["outside"]
-    assert build_corridor_command._tin_quality_text(trimmed, "intersection_slope_trim_status") == "ready"
-    assert build_corridor_command._tin_quality_text(trimmed, "intersection_slope_trim_method") == "coarse_remove_intersecting_above_triangles"
-    assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_intersecting_triangle_count") == 1
-    assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_removed_triangle_count") == 1
-    assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_kept_triangle_count") == 1
 
 
 def test_intersection_surface_tin_inserts_missing_shared_breakline_endpoint_vertices_with_source_refs() -> None:
@@ -2539,19 +2197,6 @@ def test_shared_breakline_audit_panel_rows_and_summary_are_user_readable() -> No
         build_corridor_command._set_preview_integer_property(intersection_slope, "SharedBreaklineGeometryMatchCount", 3)
         build_corridor_command._set_preview_integer_property(intersection_slope, "SharedBreaklineMeshMatchCount", 3)
         build_corridor_command._set_preview_property(intersection_slope, "SharedBreaklineRoleSummary", "patch_to_intersection_slope_face=1, main_side_slope_face_tie=2")
-        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellCount", 3)
-        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellReadyCount", 2)
-        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellOpenCount", 1)
-        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellMissingEdgeCount", 1)
-        build_corridor_command._set_preview_integer_property(intersection_slope, "IntersectionSlopeFaceCellTriangleCount", 8)
-        build_corridor_command._set_preview_string_list_property(
-            intersection_slope,
-            "IntersectionSlopeFaceCellAuditRows",
-            [
-                "cell:upper|upper_left_transition_cell|ready|0|0|5|patch-to-intersection-slope-face:1,intersection-slope-face-to-design-surface:1|",
-                "cell:tie|main_to_side_left_tie_cell|warning|1|1|3|main-side-slope-face-tie:1|intersection_slope_face_cell_edge_missing:curb_return",
-            ],
-        )
 
         rows = build_corridor_command.corridor_shared_breakline_audit_rows(doc)
         display_rows = build_corridor_command.shared_breakline_audit_display_rows(rows)
@@ -2582,27 +2227,14 @@ def test_shared_breakline_audit_panel_rows_and_summary_are_user_readable() -> No
         assert rows[1]["solid_non_manifold_node_count"] == 1
         assert rows[1]["recommended_action"] == "Rebuild constrained surface mesh"
         assert "geometry_mismatch:slope_face_surface" in rows[1]["notes"]
-        assert rows[2]["status"] == "warning"
-        assert rows[2]["cell_count"] == 3
-        assert rows[2]["cell_open_count"] == 1
-        assert rows[2]["cell_missing_edge_count"] == 1
-        assert rows[2]["recommended_action"] == "Review Intersection Slope Face cells, then rebuild"
-        assert "cell_audit=count=3" in rows[2]["notes"]
-        assert any(row.get("row_kind") == "cell" and row.get("surface") == "  Cell Audit: Intersection Slope Face" for row in internal_display_rows)
-        cell_detail_rows = [row for row in internal_display_rows if row.get("row_kind") == "cell_detail"]
-        assert len(cell_detail_rows) == 2
-        assert cell_detail_rows[1]["status"] == "warning"
-        assert cell_detail_rows[1]["surface"] == "    Cell: main_to_side_left_tie_cell"
-        assert "main-side-slope-face-tie:1" in cell_detail_rows[1]["role_summary"]
-        assert "intersection_slope_face_cell_edge_missing:curb_return" in cell_detail_rows[1]["notes"]
+        assert rows[2]["status"] == "ready"
+        assert rows[2]["recommended_action"] == "No action needed"
         assert summary["status"] == "warning"
-        assert summary["title"] == "Shared breakline issues found: 2 surface(s)"
+        assert summary["title"] == "Shared breakline issues found: 1 surface(s)"
         assert "geometry_mismatch=1" in summary["notes"]
         assert "mesh_mismatch=1" in summary["notes"]
         assert "reversed=0" in summary["notes"]
-        assert "cell_open=1" in summary["notes"]
-        assert "cell_missing_edge=1" in summary["notes"]
-        assert "status_warning=2" in summary["notes"]
+        assert "status_warning=1" in summary["notes"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -2726,13 +2358,6 @@ def test_shared_breakline_recommended_action_uses_breakline_role_notes() -> None
         reversed_edge_count=0,
         notes="mesh_drift:design_surface:shared-breakline:corridor:corridor:main:lane_to_shoulder:6",
     ) == "Rebuild Applied Sections, then constrained surfaces"
-
-
-def test_region_design_and_subgrade_surfaces_use_intersection_exclusion() -> None:
-    assert build_corridor_command._region_surface_role_uses_intersection_exclusion("design") is True
-    assert build_corridor_command._region_surface_role_uses_intersection_exclusion("subgrade") is True
-    assert build_corridor_command._region_surface_role_uses_intersection_exclusion("daylight") is True
-    assert build_corridor_command._region_surface_role_uses_intersection_exclusion("drainage") is False
 
 
 def test_slope_face_issue_rows_ignore_vertices_removed_from_clipped_triangles() -> None:
