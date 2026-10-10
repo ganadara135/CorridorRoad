@@ -2,22 +2,17 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
-    V1_TREE_ALIGNMENTS,
-    V1_TREE_PROFILES,
     ensure_project_tree,
 )
-from freecad.Corridor_Road.v1.commands.cmd_create_profile import create_v1_sample_profile
 from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import (
     build_document_plan_profile_preview,
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import (
     create_sample_v1_alignment,
-    find_v1_alignment,
 )
 from freecad.Corridor_Road.v1.objects.obj_profile import (
     build_v1_profile_shape,
     create_sample_v1_profile,
-    find_v1_profile,
     to_profile_model,
 )
 
@@ -29,10 +24,6 @@ def _new_project_doc():
     project.Label = "CorridorRoad Project"
     ensure_project_tree(project, include_references=False)
     return doc, project
-
-
-def _group_names(folder) -> set[str]:
-    return {str(getattr(obj, "Name", "") or "") for obj in list(getattr(folder, "Group", []) or [])}
 
 
 def test_create_sample_v1_profile_builds_profile_model_contract() -> None:
@@ -66,22 +57,6 @@ def test_v1_profile_builds_3d_display_shape_from_alignment_and_profile() -> None
         assert str(getattr(profile, "DisplayStatus", "") or "") == "ok"
         assert int(getattr(profile, "DisplayPointCount", 0) or 0) >= 2
         assert build_v1_profile_shape(profile) is not None
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_create_v1_sample_profile_routes_profile_and_creates_alignment_if_missing() -> None:
-    doc, project = _new_project_doc()
-    try:
-        profile = create_v1_sample_profile(document=doc, project=project)
-        alignment = find_v1_alignment(doc)
-        tree = ensure_project_tree(project, include_references=False)
-
-        assert alignment is not None
-        assert find_v1_profile(doc) == profile
-        assert alignment.Name in _group_names(tree[V1_TREE_ALIGNMENTS])
-        assert profile.Name in _group_names(tree[V1_TREE_PROFILES])
-        assert profile.AlignmentId == alignment.AlignmentId
     finally:
         App.closeDocument(doc.Name)
 

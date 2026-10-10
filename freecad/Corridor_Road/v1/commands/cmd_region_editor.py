@@ -169,12 +169,6 @@ def region_preset_names() -> list[str]:
     return list(REGION_PRESETS.keys())
 
 
-def starter_region_model_from_document(document=None, *, project=None, alignment=None) -> RegionModel:
-    """Build one non-destructive starter RegionModel from station/alignment extent."""
-
-    return region_preset_model_from_document("Basic Road", document=document, project=project, alignment=alignment)
-
-
 def region_preset_model_from_document(
     preset_name: str,
     document=None,
@@ -697,18 +691,6 @@ def _region_station_membership_errors(region_model: RegionModel, station_values:
             errors.append(f"{region_id} Start STA must be greater than the previous Region Start STA.")
         previous_start = current_start
     return errors
-
-
-def region_assembly_reference_warnings(region_model: RegionModel, assembly_refs: list[str]) -> list[str]:
-    """Return Region editor warnings for Assembly/Subassembly source refs that do not exist yet."""
-
-    known = {str(value).strip() for value in list(assembly_refs or []) if str(value).strip()}
-    warnings: list[str] = []
-    for row in list(getattr(region_model, "region_rows", []) or []):
-        assembly_ref = str(getattr(row, "assembly_ref", "") or "").strip()
-        if assembly_ref and assembly_ref not in known:
-            warnings.append(f"WARNING: {row.region_id} references missing Assembly / Subassembly source {assembly_ref}.")
-    return warnings
 
 
 def _preset_region_rows(

@@ -663,10 +663,6 @@ def _filter_flow_route_rows_with_indices(
     return output, indices
 
 
-def _filter_flow_route_rows(rows, pipeline_candidate_rows, *, mode: str = "All") -> list[object]:
-    return _filter_flow_route_rows_with_indices(rows, pipeline_candidate_rows, mode=mode)[0]
-
-
 def _pipeline_candidate_status_by_flow_route(rows) -> dict[str, str]:
     status_by_route: dict[str, str] = {}
     for row in list(rows or []):
@@ -734,10 +730,6 @@ def _filter_pipeline_candidate_rows_with_indices(rows, *, mode: str = "All") -> 
             output.append(row)
             indices.append(index)
     return output, indices
-
-
-def _filter_pipeline_candidate_rows(rows, *, mode: str = "All") -> list[object]:
-    return _filter_pipeline_candidate_rows_with_indices(rows, mode=mode)[0]
 
 
 def _populate_pipeline_segment_table(table, rows) -> None:

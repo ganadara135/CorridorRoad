@@ -19,7 +19,6 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     apply_v1_structure_model,
     show_v1_structure_connection_points_preview_object,
     show_v1_structure_preview_object,
-    starter_structure_model_from_document,
     structure_preset_model_from_document,
     structure_preset_names,
 )
@@ -59,13 +58,13 @@ def _new_project_doc():
     return doc, project, tree
 
 
-def test_starter_structure_model_uses_generated_station_range() -> None:
+def test_bridge_segment_structure_preset_uses_generated_station_range() -> None:
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
         stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
 
-        model = starter_structure_model_from_document(doc, project=project, alignment=alignment)
+        model = structure_preset_model_from_document("Bridge Segment", doc, project=project, alignment=alignment)
 
         stations = list(stationing.StationValues)
         assert len(model.structure_rows) == 1

@@ -10,10 +10,8 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     CmdV1RegionEditor,
     V1RegionEditorTaskPanel,
     apply_v1_region_model,
-    region_assembly_reference_warnings,
     region_preset_model_from_document,
     region_preset_names,
-    starter_region_model_from_document,
 )
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import assembly_subassembly_preset_model_from_document
@@ -40,13 +38,13 @@ def _ensure_qapp():
     return _QAPP
 
 
-def test_starter_region_model_uses_generated_station_range() -> None:
+def test_basic_road_region_preset_uses_generated_station_range() -> None:
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
         stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
 
-        model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
 
         stations = list(stationing.StationValues)
         assert len(model.region_rows) == 1
@@ -94,7 +92,7 @@ def test_drainage_control_preset_uses_fixed_100m_control_station() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_starter_region_model_uses_existing_v1_assembly_ref() -> None:
+def test_basic_road_region_preset_uses_existing_v1_assembly_ref() -> None:
     doc, project, _tree = _new_project_doc()
     try:
         assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project)
@@ -104,40 +102,12 @@ def test_starter_region_model_uses_existing_v1_assembly_ref() -> None:
             assembly_model=assembly_model,
         )
 
-        model = starter_region_model_from_document(doc, project=project)
+        model = region_preset_model_from_document("Basic Road", doc, project=project)
 
         assert model.region_rows[0].assembly_ref == "assembly:basic-road"
         assert model.region_rows[0].template_ref == "template:basic-road"
     finally:
         App.closeDocument(doc.Name)
-
-
-def test_region_assembly_reference_warnings_report_missing_refs() -> None:
-    model = RegionModel(
-        schema_version=1,
-        project_id="proj-region-editor",
-        region_model_id="regions:main",
-        region_rows=[
-            RegionRow(
-                region_id="region:known",
-                station_start=0.0,
-                station_end=50.0,
-                assembly_ref="assembly:basic-road",
-            ),
-            RegionRow(
-                region_id="region:missing",
-                station_start=50.0,
-                station_end=100.0,
-                assembly_ref="assembly:missing",
-            ),
-        ],
-    )
-
-    warnings = region_assembly_reference_warnings(model, ["assembly:basic-road"])
-
-    assert warnings == [
-        "WARNING: region:missing references missing Assembly / Subassembly source assembly:missing."
-    ]
 
 
 def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() -> None:

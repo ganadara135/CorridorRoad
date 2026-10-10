@@ -10,10 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Generic, Iterable, TypeVar
 
-from ...models.source.alignment_model import AlignmentModel
 from ...models.source.assembly_model import AssemblySubassemblyModel
 from ...models.source.drainage_model import DrainageModel
-from ...models.source.profile_model import ProfileModel
 from ...models.source.structure_model import StructureModel
 from ...models.source.subassembly_definition_model import SubassemblyLibrary
 
@@ -35,16 +33,6 @@ class PreparedSourceEdit(Generic[SourceT]):
         return not any(row.startswith("error|") for row in self.diagnostics)
 
 
-@dataclass(frozen=True)
-class SourceEditorViewModel(Generic[SourceT]):
-    """Qt-independent editor summary for complex table state."""
-
-    source: SourceT
-    source_id: str
-    row_count: int
-    diagnostics: tuple[str, ...] = ()
-
-
 def prepare_structure_edit(model: StructureModel) -> PreparedSourceEdit[StructureModel]:
     return _prepare_model(
         model,
@@ -52,26 +40,6 @@ def prepare_structure_edit(model: StructureModel) -> PreparedSourceEdit[Structur
         source_id=getattr(model, "structure_model_id", ""),
         rows=getattr(model, "structure_rows", ()),
         row_id="structure_id",
-    )
-
-
-def prepare_profile_edit(model: ProfileModel) -> PreparedSourceEdit[ProfileModel]:
-    return _prepare_model(
-        model,
-        ProfileModel,
-        source_id=getattr(model, "profile_id", ""),
-        rows=getattr(model, "control_rows", ()),
-        row_id="control_point_id",
-    )
-
-
-def prepare_alignment_edit(model: AlignmentModel) -> PreparedSourceEdit[AlignmentModel]:
-    return _prepare_model(
-        model,
-        AlignmentModel,
-        source_id=getattr(model, "alignment_id", ""),
-        rows=getattr(model, "geometry_sequence", ()),
-        row_id="element_id",
     )
 
 
@@ -108,15 +76,6 @@ def prepare_subassembly_library_edit(
         source_id=getattr(model, "library_id", ""),
         rows=getattr(model, "definition_rows", ()),
         row_id="definition_id",
-    )
-
-
-def editor_view_model(prepared: PreparedSourceEdit[SourceT]) -> SourceEditorViewModel[SourceT]:
-    return SourceEditorViewModel(
-        source=prepared.model,
-        source_id=prepared.source_id,
-        row_count=prepared.row_count,
-        diagnostics=prepared.diagnostics,
     )
 
 
@@ -174,14 +133,10 @@ def _identity_diagnostics(rows, *, row_id: str) -> list[str]:
 
 __all__ = [
     "PreparedSourceEdit",
-    "SourceEditorViewModel",
-    "editor_view_model",
-    "prepare_alignment_edit",
     "prepare_alignment_element_rows",
     "prepare_assembly_edit",
     "prepare_drainage_edit",
     "prepare_profile_control_rows",
-    "prepare_profile_edit",
     "prepare_profile_vertical_curve_rows",
     "prepare_structure_edit",
     "prepare_subassembly_library_edit",

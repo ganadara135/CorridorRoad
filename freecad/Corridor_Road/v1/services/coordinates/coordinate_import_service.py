@@ -143,15 +143,6 @@ def resolve_coordinate_export_policy(doc_or_project=None, output_coords: str = "
     )
 
 
-def import_point_to_local(doc_or_project, x: float, y: float, z: float = 0.0, *, input_coords: str = "auto"):
-    """Return one incoming CSV point in v1 internal Local X/Y/Z coordinates."""
-
-    policy = resolve_coordinate_import_policy(doc_or_project, input_coords=input_coords)
-    if policy.transforms_to_local:
-        return world_to_local(doc_or_project, float(x), float(y), float(z))
-    return float(x), float(y), float(z)
-
-
 def point_rows_to_local(doc_or_project, rows, *, input_coords: str = "auto"):
     """Convert point-like rows with x/y/z attributes into local coordinate triples."""
 

@@ -105,12 +105,6 @@ class StationHighlightPresentationService:
             pass
 
 
-def station_highlight_shape(row: dict[str, object], *, radius: float = 5.0):
-    """Compatibility function for building one station marker shape."""
-
-    return StationHighlightPresentationService().build_shape(row, radius=radius)
-
-
 def show_station_highlight(document, row: dict[str, object], *, radius: float = 5.0):
     """Compatibility function for showing one station marker."""
 

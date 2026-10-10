@@ -12,8 +12,6 @@ from freecad.Corridor_Road.v1.commands.cmd_superelevation_editor import (
     apply_v1_superelevation_model,
     show_v1_superelevation_review_object,
     starter_superelevation_model_from_document,
-    superelevation_preset_model_from_document,
-    superelevation_preset_names,
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
@@ -55,23 +53,6 @@ def test_starter_superelevation_model_is_empty_source_intent() -> None:
     assert model.superelevation_kind == "roadway_superelevation"
     assert model.control_rows == []
     assert model.transition_rows == []
-
-
-def test_superelevation_presets_are_removed_in_favor_of_auto_calculate() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
-
-        assert superelevation_preset_names() == []
-        try:
-            superelevation_preset_model_from_document("Simple Right Curve", doc, project=project, alignment=alignment)
-        except ValueError as exc:
-            assert "removed" in str(exc)
-        else:
-            raise AssertionError("Superelevation preset loading should be removed.")
-    finally:
-        App.closeDocument(doc.Name)
 
 
 def test_superelevation_editor_auto_calculate_fills_rows_without_applying() -> None:

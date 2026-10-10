@@ -331,20 +331,6 @@ def list_v1_assembly_subassembly_models(document) -> list:
     return output
 
 
-def assembly_subassembly_model_ids(document) -> list[str]:
-    """Return stable AssemblySubassemblyModel ids available for references."""
-
-    ids: list[str] = []
-    seen = set()
-    for obj in list_v1_assembly_subassembly_models(document):
-        assembly_id = str(getattr(obj, "AssemblyId", "") or "").strip()
-        if not assembly_id or assembly_id in seen:
-            continue
-        seen.add(assembly_id)
-        ids.append(assembly_id)
-    return ids
-
-
 def _is_v1_assembly_subassembly_model(obj) -> bool:
     if obj is None:
         return False

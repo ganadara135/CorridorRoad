@@ -6,7 +6,7 @@ from .landxml_alignment_mapper import (
     alignment_model_from_landxml_candidate,
     create_or_update_alignment_from_landxml_candidate,
 )
-from .landxml_import import scan_landxml_file, scan_landxml_text
+from .landxml_import import scan_landxml_file
 from .landxml_profile_mapper import (
     create_or_update_profile_from_landxml_candidate,
     profile_model_from_landxml_candidate,
@@ -29,7 +29,6 @@ __all__ = [
     "export_exchange_package_to_json",
     "export_simulation_package_to_json",
     "scan_landxml_file",
-    "scan_landxml_text",
     "surface_model_from_landxml_tin",
     "tin_surface_from_landxml_candidate",
     "profile_model_from_landxml_candidate",

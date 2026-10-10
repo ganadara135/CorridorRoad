@@ -1,6 +1,7 @@
+import tempfile
 from pathlib import Path
 
-from freecad.Corridor_Road.v1.exchange.landxml_import import scan_landxml_file, scan_landxml_text
+from freecad.Corridor_Road.v1.exchange.landxml_import import scan_landxml_file
 
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
@@ -35,8 +36,11 @@ def test_scan_unknown_producer_marks_import_as_unsupported() -> None:
     assert any(row.code == "landxml_unsupported_producer" for row in result.diagnostics)
 
 
-def test_scan_invalid_landxml_text_returns_parse_diagnostic() -> None:
-    result = scan_landxml_text("<LandXML>")
+def test_scan_invalid_landxml_file_returns_parse_diagnostic() -> None:
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "invalid.xml"
+        path.write_text("<LandXML>", encoding="utf-8")
+        result = scan_landxml_file(path)
 
     assert result.summary.supported_producer is False
     assert result.alignments == ()

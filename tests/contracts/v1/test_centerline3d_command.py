@@ -8,7 +8,6 @@ from freecad.Corridor_Road.v1.commands.cmd_centerline3d import (
     CmdV1Centerline3D,
     V1Centerline3DTaskPanel,
     build_document_centerline3d_result,
-    _centerline3d_horizontal_source_point,
     _centerline3d_horizontal_interval_mode,
     _centerline3d_source_interval_stations,
     _centerline3d_source_shape_kind,
@@ -26,7 +25,12 @@ from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlP
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
-from freecad.Corridor_Road.v1.services.evaluation import Centerline3DEvaluationRequest, Centerline3DEvaluationService, Centerline3DFrameService
+from freecad.Corridor_Road.v1.services.evaluation import (
+    Centerline3DEvaluationRequest,
+    Centerline3DEvaluationService,
+    Centerline3DFrameService,
+    Centerline3DSourceGeometryService,
+)
 
 
 def _new_project_doc():
@@ -162,7 +166,7 @@ def test_centerline3d_source_geometry_uses_arc_fit_for_curve_elements() -> None:
         ],
     )
 
-    x, y = _centerline3d_horizontal_source_point(alignment, Centerline3DEvaluationService()._alignment_service, 25.0)
+    x, y = Centerline3DSourceGeometryService().evaluate_horizontal_point(alignment, 25.0)
 
     assert abs(x - radius * 0.9238795325) <= 1.0e-6
     assert abs(y - radius * 0.3826834324) <= 1.0e-6
@@ -189,7 +193,7 @@ def test_centerline3d_source_geometry_rejects_poor_arc_fit() -> None:
         ],
     )
 
-    x, y = _centerline3d_horizontal_source_point(alignment, Centerline3DEvaluationService()._alignment_service, 50.0)
+    x, y = Centerline3DSourceGeometryService().evaluate_horizontal_point(alignment, 50.0)
 
     assert abs(x - radius / (2.0**0.5)) > 1.0
     assert abs(y - radius / (2.0**0.5)) > 1.0

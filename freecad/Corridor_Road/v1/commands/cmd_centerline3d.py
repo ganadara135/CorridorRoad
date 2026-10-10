@@ -923,24 +923,6 @@ def _centerline3d_source_geometry_points(
     return _clean_centerline_points(points)
 
 
-def _centerline3d_horizontal_source_point(
-    alignment,
-    alignment_service: AlignmentEvaluationService,
-    station: float,
-    *,
-    arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
-    arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
-) -> tuple[float, float] | None:
-    return Centerline3DSourceGeometryService(
-        alignment_service=alignment_service,
-    ).evaluate_horizontal_point(
-        alignment,
-        station,
-        arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
-        arc_fit_relative_tolerance=arc_fit_relative_tolerance,
-    )
-
-
 def _centerline3d_active_alignment_element(alignment, station: float):
     for element in list(getattr(alignment, "geometry_sequence", []) or []):
         station_start = float(getattr(element, "station_start", 0.0) or 0.0)

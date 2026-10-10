@@ -190,29 +190,6 @@ def profile_model_from_editor_rows(
     )
 
 
-def build_profile_preview_shape(
-    profile_model: ProfileModel,
-    alignment,
-    *,
-    sample_interval: float = 10.0,
-) -> tuple[object, int]:
-    """Build a framed X-Z profile preview shape for a transient profile model."""
-
-    preview = build_profile_sheet_preview(
-        profile_model,
-        alignment,
-        sample_interval=sample_interval,
-    )
-    shapes = [
-        preview.get("frame_shape"),
-        preview.get("grid_shape"),
-        preview.get("fg_shape"),
-        preview.get("eg_shape"),
-    ]
-    valid_shapes = [shape for shape in shapes if shape is not None and not shape.isNull()]
-    return Part.Compound(valid_shapes) if valid_shapes else Part.Shape(), int(preview.get("fg_point_count", 0) or 0)
-
-
 def build_profile_sheet_preview(
     profile_model: ProfileModel,
     alignment,
@@ -960,49 +937,6 @@ def profile_vertical_curve_rows(profile) -> list[dict[str, object]]:
     return rows
 
 
-def profile_station_check_lines(profile, alignment) -> list[str]:
-    """Return compact station-link diagnostics for the profile editor."""
-
-    lines = []
-    if profile is None:
-        lines.append("Profile: not created yet. Apply will create the V1Profile source object.")
-    else:
-        ensure_v1_profile_properties(profile)
-        lines.append(f"Profile: {str(getattr(profile, 'Label', '') or getattr(profile, 'Name', '') or '')}")
-        lines.append(f"ProfileId: {str(getattr(profile, 'ProfileId', '') or '')}")
-        lines.append(f"Profile alignment id: {str(getattr(profile, 'AlignmentId', '') or '')}")
-
-    alignment_model = to_alignment_model(alignment) if alignment is not None else None
-    if alignment_model is None:
-        lines.append("Alignment: not available.")
-    else:
-        lines.append(f"Alignment: {alignment_model.label}")
-        lines.append(f"AlignmentId: {alignment_model.alignment_id}")
-
-    rows = profile_control_rows(profile) if profile is not None else []
-    stations = [float(row.get("station", 0.0) or 0.0) for row in rows]
-    if stations:
-        lines.append(f"Profile station range: {_format_float(min(stations))} - {_format_float(max(stations))} m")
-        lines.append(f"PVI/control count: {len(stations)}")
-    else:
-        lines.append("Profile station range: no PVI/control rows.")
-
-    if alignment_model is not None and stations:
-        elements = list(getattr(alignment_model, "geometry_sequence", []) or [])
-        if elements:
-            start = min(float(getattr(row, "station_start", 0.0) or 0.0) for row in elements)
-            end = max(float(getattr(row, "station_end", 0.0) or 0.0) for row in elements)
-            outside = [station for station in stations if station < start - 1.0e-9 or station > end + 1.0e-9]
-            lines.append(f"Alignment station range: {_format_float(start)} - {_format_float(end)} m")
-            if outside:
-                lines.append(f"Station check: warning - {len(outside)} profile station(s) outside alignment range.")
-            else:
-                lines.append("Station check: ok - profile stations fit alignment range.")
-        else:
-            lines.append("Station check: alignment has no geometry rows.")
-    return lines
-
-
 def profile_station_check_rows(
     rows: list[dict[str, object]],
     alignment,
@@ -1070,32 +1004,6 @@ def profile_station_check_rows(
             }
         )
     return output
-
-
-def profile_eg_reference_lines(document, profile, alignment) -> list[str]:
-    """Return EG reference status lines for the profile editor."""
-
-    lines = ["EG reference source: TIN-first existing ground profile."]
-    if document is None:
-        return lines + ["Status: no active document."]
-    try:
-        from .cmd_review_plan_profile import build_document_plan_profile_preview
-
-        preview = build_document_plan_profile_preview(document)
-        profile_output = preview.get("profile_output") if isinstance(preview, dict) else None
-        line_rows = list(getattr(profile_output, "line_rows", []) or [])
-        eg_rows = [row for row in line_rows if str(getattr(row, "kind", "") or "") == "existing_ground_line"]
-        if not eg_rows:
-            return lines + ["Status: no EG line is currently attached. Build or select an Existing Ground TIN first."]
-        sample_count = sum(len(list(getattr(row, "station_values", []) or [])) for row in eg_rows)
-        elevation_count = sum(len(list(getattr(row, "elevation_values", []) or [])) for row in eg_rows)
-        lines.append("Status: EG line available from Plan/Profile Review context.")
-        lines.append(f"EG line rows: {len(eg_rows)}")
-        lines.append(f"EG station samples: {sample_count}")
-        lines.append(f"EG elevation samples: {elevation_count}")
-        return lines
-    except Exception as exc:
-        return lines + [f"Status: EG reference check unavailable - {exc}"]
 
 
 def profile_eg_sample_rows(

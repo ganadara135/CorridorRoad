@@ -1,5 +1,6 @@
 import csv
 from pathlib import Path
+from types import SimpleNamespace
 
 import FreeCAD as App
 
@@ -9,7 +10,7 @@ from freecad.Corridor_Road.v1.services.builders import TINBuildService
 from freecad.Corridor_Road.v1.services.coordinates import (
     alignment_rows_from_local,
     alignment_rows_to_local,
-    import_point_to_local,
+    point_rows_to_local,
     resolve_coordinate_export_policy,
     resolve_coordinate_import_policy,
 )
@@ -36,7 +37,7 @@ def test_world_first_policy_converts_external_csv_points_to_local_model_coordina
     doc, project = _world_first_project_doc()
     try:
         policy = resolve_coordinate_import_policy(project)
-        x, y, z = import_point_to_local(project, 1015.0, 2025.0, 13.0)
+        [(_row, x, y, z)], _policy = point_rows_to_local(project, [SimpleNamespace(x=1015.0, y=2025.0, z=13.0)])
 
         assert policy.input_coords == "World"
         assert policy.model_coords == "Local"

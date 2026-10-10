@@ -168,7 +168,6 @@ def test_presentation_mapper_accepts_typed_and_legacy_results_equally() -> None:
         "audit=warning geometry=3/7 mesh=5/11 missing=1 mismatch=2 reversed=7"
     )
     assert typed.note_rows == ("first", "second")
-    assert cmd_build_corridor._shared_breakline_audit_summary(result) == typed.summary
 
 
 def test_command_no_longer_contains_inactive_legacy_audit_implementations() -> None:

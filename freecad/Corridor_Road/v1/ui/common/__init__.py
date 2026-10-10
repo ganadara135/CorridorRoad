@@ -8,7 +8,7 @@ from .station_context import (
     nearest_span_index,
     nearest_value_index,
 )
-from .ui_state import clear_ui_context, get_ui_context, set_ui_context, update_ui_context
+from .ui_state import clear_ui_context, get_ui_context, set_ui_context
 
 __all__ = [
     "clear_ui_context",
@@ -20,5 +20,4 @@ __all__ = [
     "nearest_value_index",
     "run_legacy_command",
     "set_ui_context",
-    "update_ui_context",
 ]

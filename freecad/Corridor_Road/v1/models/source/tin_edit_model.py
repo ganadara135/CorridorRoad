@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ...common.diagnostics import DiagnosticMessage
-from .base import SourceModelBase
 
 
 @dataclass(frozen=True)
@@ -22,12 +21,3 @@ class TINEditOperation:
     created_at: str = ""
     notes: str = ""
     diagnostic_rows: list[DiagnosticMessage] = field(default_factory=list)
-
-
-@dataclass
-class TINEditSet(SourceModelBase):
-    """Durable ordered collection of TIN edit operations."""
-
-    edit_set_id: str = ""
-    target_surface_id: str = ""
-    operation_rows: list[TINEditOperation] = field(default_factory=list)

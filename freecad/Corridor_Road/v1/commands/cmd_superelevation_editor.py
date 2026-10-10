@@ -53,16 +53,6 @@ from ..ui.common.styles import apply_clickable_tab_style
 SUPERELEVATION_COMMAND_ID = "CorridorRoad_V1EditSuperelevation"
 
 
-def superelevation_preset_names() -> list[str]:
-    """Return available v1 Superelevation preset names.
-
-    Preset data is intentionally removed from Superelevation authoring. Use
-    Auto Calculate so Crossfall rows stay traceable to Alignment criteria.
-    """
-
-    return []
-
-
 def starter_superelevation_model_from_document(document=None, *, project=None, alignment=None, profile=None) -> SuperelevationModel:
     """Build an empty starter SuperelevationModel without authoring rows."""
 
@@ -79,26 +69,6 @@ def starter_superelevation_model_from_document(document=None, *, project=None, a
         profile_id=str(getattr(profile_obj, "ProfileId", "") or ""),
         superelevation_kind="roadway_superelevation",
     )
-
-
-def superelevation_preset_model_from_document(
-    preset_name: str,
-    document=None,
-    *,
-    project=None,
-    alignment=None,
-    profile=None,
-) -> SuperelevationModel:
-    """Reject legacy Superelevation preset loading.
-
-    Superelevation no longer owns starter preset data. The editor should use
-    Auto Calculate from Alignment/Profile context or manual control rows.
-    """
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    if doc is None:
-        raise RuntimeError("No active document.")
-    raise ValueError("Superelevation preset data has been removed. Use Auto Calculate.")
 
 
 def apply_v1_superelevation_model(*, document=None, project=None, superelevation_model: SuperelevationModel):

@@ -16,7 +16,6 @@ from .obj_applied_section import (
 )
 from .obj_subassembly_assembly import (
     V1AssemblySubassemblyModelObject,
-    assembly_subassembly_model_ids,
     create_or_update_v1_assembly_subassembly_model_object,
     find_v1_assembly_subassembly_model,
     list_v1_assembly_subassembly_models,
@@ -154,7 +153,6 @@ __all__ = [
     "V1SimulationPackageOutputObject",
     "V1SimulationQaOutputObject",
     "V1WatertightSolidOutputObject",
-    "assembly_subassembly_model_ids",
     "create_or_update_v1_assembly_subassembly_model_object",
     "create_or_update_v1_applied_section_set_object",
     "create_or_update_v1_region_model_object",

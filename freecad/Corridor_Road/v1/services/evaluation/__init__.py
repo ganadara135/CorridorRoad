@@ -4,11 +4,6 @@ from .alignment_evaluation_service import AlignmentEvaluationService
 from .alignment_curve_preview_service import AlignmentCurvePreviewRequest, AlignmentCurvePreviewService
 from .alignment_station_sampling_service import AlignmentStationSamplingService
 from .centerline3d_evaluation_service import Centerline3DEvaluationRequest, Centerline3DEvaluationService
-from .centerline3d_consistency_service import (
-    Centerline3DConsistencyRequest,
-    Centerline3DConsistencyResult,
-    Centerline3DConsistencyService,
-)
 from .centerline3d_frame_service import Centerline3DFrame, Centerline3DFrameService
 from .centerline3d_source_geometry_service import Centerline3DSourceGeometryService, Centerline3DSourceStationResult
 from .drainage_resolution_service import DrainageResolutionService, DrainageValidationService
@@ -70,9 +65,6 @@ __all__ = [
     "AlignmentStationSamplingService",
     "Centerline3DEvaluationRequest",
     "Centerline3DEvaluationService",
-    "Centerline3DConsistencyRequest",
-    "Centerline3DConsistencyResult",
-    "Centerline3DConsistencyService",
     "Centerline3DFrame",
     "Centerline3DFrameService",
     "Centerline3DSourceGeometryService",

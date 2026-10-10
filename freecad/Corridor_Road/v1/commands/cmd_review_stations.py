@@ -18,9 +18,9 @@ from ..objects.obj_stationing import (
 )
 from .cmd_generate_stations import generate_v1_stations
 from .selection_context import selected_alignment_profile_target
-from ..ui.presentation.station_highlight_service import show_station_highlight, station_highlight_shape
+from ..ui.presentation.station_highlight_service import show_station_highlight
 
-__all__ = ["show_station_highlight", "station_highlight_shape"]
+__all__ = ["show_station_highlight"]
 
 
 def stationing_review_summary_lines(stationing) -> list[str]:

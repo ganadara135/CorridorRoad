@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .assembly_model import (
-    TemplateSubassembly,
     normalize_parameter_overrides,
     normalize_subassembly_kind,
     normalize_subassembly_parameters,
@@ -242,69 +241,6 @@ def normalize_subassembly_preset_status(value: object, *, has_preset: bool = Tru
     return "linked" if has_preset else "snapshot"
 
 
-def resolved_template_subassembly_from_instance(
-    instance: AssemblySubassemblyInstance,
-    preset: SubassemblyPreset | None = None,
-    *,
-    subassembly_id: str = "",
-) -> TemplateSubassembly:
-    """Resolve an Assembly instance into the existing TemplateSubassembly contract."""
-
-    preset_parameters = dict(getattr(preset, "parameter_defaults", {}) or {}) if preset is not None else {}
-    parameters = dict(preset_parameters)
-    parameters.update(dict(getattr(instance, "parameters", {}) or {}))
-    overrides = dict(getattr(instance, "overrides", {}) or {})
-    parameters.update(overrides)
-    preset_ref = _text(getattr(instance, "preset_ref", ""))
-    preset_version = _text(getattr(instance, "preset_version", ""))
-    preset_status = normalize_subassembly_preset_status(getattr(instance, "status", ""), has_preset=bool(preset_ref))
-    if preset_ref and preset is None:
-        preset_status = "missing_preset"
-    elif preset is not None and preset_version and preset.version != preset_version:
-        preset_status = "preset_outdated"
-    elif preset_ref and overrides and preset_status == "linked":
-        preset_status = "modified"
-    return TemplateSubassembly(
-        subassembly_id=_text(subassembly_id or instance.instance_id),
-        kind=instance.kind,
-        subassembly_index=instance.placement_order,
-        side=instance.side,
-        width=_value_from_override(instance, parameters, "width"),
-        slope=_value_from_override(instance, parameters, "slope"),
-        thickness=_value_from_override(instance, parameters, "thickness"),
-        material=_text(parameters.get("material", instance.material or "")),
-        target_ref=instance.target_ref,
-        definition_ref=_text(instance.definition_ref or getattr(preset, "definition_ref", "")),
-        preset_ref=preset_ref,
-        preset_version=preset_version or _text(getattr(preset, "version", "")),
-        preset_status=preset_status,
-        source_instance_ref=instance.instance_id,
-        parameter_overrides=overrides,
-        parameters=parameters,
-        notes=instance.notes,
-        enabled=True,
-    )
-
-
-def subassembly_preset_library_from_definition_library(
-    definition_library,
-    *,
-    library_id: str = "",
-) -> SubassemblyPresetLibrary:
-    """Create preset integration contracts from an existing Designer definition library."""
-
-    return SubassemblyPresetLibrary(
-        schema_version=getattr(definition_library, "schema_version", 1),
-        project_id=getattr(definition_library, "project_id", "corridorroad-v1"),
-        label=getattr(definition_library, "label", ""),
-        library_id=library_id or "subassembly-preset-library:from-definitions",
-        subassembly_preset_rows=[
-            SubassemblyPreset.from_definition(definition)
-            for definition in list(getattr(definition_library, "definition_rows", []) or [])
-        ],
-    )
-
-
 def _surface_roles_from_definition(definition: SubassemblyDefinition, *, kind: str) -> dict[str, str]:
     roles = dict(SUBASSEMBLY_SURFACE_ROLE_CONTRACT.get(normalize_subassembly_kind(kind), {}))
     for link in tuple(getattr(definition, "link_rows", ()) or ()):
@@ -326,11 +262,6 @@ def _surface_role_dict(kind: str, values: object) -> dict[str, str]:
     roles = dict(SUBASSEMBLY_SURFACE_ROLE_CONTRACT.get(normalize_subassembly_kind(kind), {}))
     roles.update(_text_dict(values))
     return roles
-
-
-def _value_from_override(instance: AssemblySubassemblyInstance, parameters: dict[str, object], key: str) -> float:
-    value = parameters.get(key, getattr(instance, key, 0.0))
-    return _float(value)
 
 
 def _text(value: object) -> str:

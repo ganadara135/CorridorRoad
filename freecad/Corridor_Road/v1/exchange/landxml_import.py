@@ -54,26 +54,6 @@ def scan_landxml_file(path: str | Path) -> LandXMLImportResult:
     )
 
 
-def scan_landxml_text(text: str, *, source_path: str = "") -> LandXMLImportResult:
-    """Parse LandXML text and return discovered Civil 3D import candidates."""
-
-    try:
-        root = ET.fromstring(text)
-    except Exception as exc:
-        return LandXMLImportResult(
-            summary=LandXMLImportSummary(source_path=source_path),
-            diagnostics=(
-                LandXMLImportDiagnostic(
-                    severity="error",
-                    code="landxml_parse_failed",
-                    message="LandXML text could not be parsed.",
-                    context=str(exc),
-                ),
-            ),
-        )
-    return scan_landxml_root(root, source_path=source_path)
-
-
 def scan_landxml_root(root: ET.Element, *, source_path: str = "") -> LandXMLImportResult:
     """Scan an ElementTree root and return import candidates."""
 

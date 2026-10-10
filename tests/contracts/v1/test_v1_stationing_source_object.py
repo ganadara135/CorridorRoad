@@ -16,7 +16,6 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_stations import (
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import apply_alignment_ip_rows
 from freecad.Corridor_Road.v1.commands.cmd_review_stations import (
     show_station_highlight,
-    station_highlight_shape,
     stationing_review_summary_lines,
     stationing_table_rows,
 )
@@ -28,6 +27,7 @@ from freecad.Corridor_Road.v1.objects.obj_stationing import (
     find_v1_stationing,
     station_value_rows,
 )
+from freecad.Corridor_Road.v1.ui.presentation import StationHighlightPresentationService
 
 
 def _new_project_doc():
@@ -117,7 +117,7 @@ def test_v1_stationing_location_highlight_updates_single_marker() -> None:
         stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=20.0)
         rows = stationing_table_rows(stationing)
 
-        shape = station_highlight_shape(rows[0], radius=4.0)
+        shape = StationHighlightPresentationService().build_shape(rows[0], radius=4.0)
         first = show_station_highlight(doc, rows[0], radius=4.0)
         second = show_station_highlight(doc, rows[1], radius=4.0)
         markers = [

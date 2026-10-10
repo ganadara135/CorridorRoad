@@ -12,14 +12,12 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     apply_profile_vertical_curve_rows,
     auto_interpolate_profile_elevation_rows,
     build_profile_sheet_preview,
-    build_profile_preview_shape,
     build_profile_editor_handoff_context,
     create_blank_v1_profile,
     export_profile_control_rows_to_csv,
     generate_profile_vertical_curve_rows_from_controls,
     import_profile_control_rows_from_csv,
     profile_model_from_editor_rows,
-    profile_eg_reference_lines,
     profile_eg_sample_rows,
     profile_control_rows,
     profile_preset_names,
@@ -27,7 +25,6 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     profile_preset_rows_for_station_rows,
     profile_rows_from_stationing,
     profile_station_check_rows,
-    profile_station_check_lines,
     profile_vertical_curve_rows,
     run_v1_profile_editor_command,
     show_profile_preview_object,
@@ -373,20 +370,16 @@ def test_profile_editor_handoff_context_targets_selected_station() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_profile_editor_tab_helpers_report_curves_eg_and_station_check() -> None:
+def test_profile_editor_vertical_curve_rows_report_parabolic_curves() -> None:
     doc, project = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
         profile = create_sample_v1_profile(doc, project=project, alignment=alignment)
 
         curve_rows = profile_vertical_curve_rows(profile)
-        check_lines = profile_station_check_lines(profile, alignment)
-        eg_lines = profile_eg_reference_lines(doc, profile, alignment)
 
         assert curve_rows
         assert curve_rows[0]["kind"] == "parabolic_vertical_curve"
-        assert any("Station check: ok" in line for line in check_lines)
-        assert any("EG reference source" in line for line in eg_lines)
     finally:
         App.closeDocument(doc.Name)
 
@@ -525,10 +518,10 @@ def test_profile_preview_shape_uses_current_rows_and_alignment() -> None:
             ],
         )
 
-        shape, point_count = build_profile_preview_shape(model, alignment, sample_interval=30.0)
+        preview = build_profile_sheet_preview(model, alignment, sample_interval=30.0)
 
-        assert point_count >= 2
-        assert not shape.isNull()
+        assert int(preview["fg_point_count"]) >= 2
+        assert not preview["fg_shape"].isNull()
     finally:
         App.closeDocument(doc.Name)
 

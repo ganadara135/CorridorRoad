@@ -55,8 +55,6 @@ from .subassembly_preset_model import (
     SubassemblyPreset,
     SubassemblyPresetLibrary,
     normalize_subassembly_preset_status,
-    resolved_template_subassembly_from_instance,
-    subassembly_preset_library_from_definition_library,
 )
 from .surface_transition_model import (
     SurfaceTransitionDiagnosticRow,
@@ -64,7 +62,7 @@ from .surface_transition_model import (
     SurfaceTransitionRange,
 )
 from .solid_target_model import SolidTargetDiagnosticRow, SolidTargetModel, SolidTargetRow
-from .tin_edit_model import TINEditOperation, TINEditSet
+from .tin_edit_model import TINEditOperation
 
 __all__ = [
     "AlignmentModel",
@@ -117,11 +115,8 @@ __all__ = [
     "SubassemblyPreset",
     "SubassemblyPresetLibrary",
     "normalize_subassembly_preset_status",
-    "resolved_template_subassembly_from_instance",
-    "subassembly_preset_library_from_definition_library",
     "SurfaceTransitionDiagnosticRow",
     "SurfaceTransitionModel",
     "SurfaceTransitionRange",
     "TINEditOperation",
-    "TINEditSet",
 ]

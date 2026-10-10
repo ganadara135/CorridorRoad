@@ -15,16 +15,6 @@ def set_ui_context(**payload) -> dict[str, object]:
     return get_ui_context()
 
 
-def update_ui_context(**payload) -> dict[str, object]:
-    """Merge values into the shared v1 UI context."""
-
-    global _STATE
-    next_state = dict(_STATE)
-    next_state.update(payload or {})
-    _STATE = next_state
-    return get_ui_context()
-
-
 def get_ui_context() -> dict[str, object]:
     """Return a defensive copy of the shared v1 UI context."""
 

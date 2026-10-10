@@ -389,12 +389,6 @@ def structure_preset_names() -> list[str]:
     return list(STRUCTURE_PRESETS.keys())
 
 
-def starter_structure_model_from_document(document=None, *, project=None, alignment=None) -> StructureModel:
-    """Build one non-destructive starter StructureModel."""
-
-    return structure_preset_model_from_document("Bridge Segment", document=document, project=project, alignment=alignment)
-
-
 def structure_preset_model_from_document(
     preset_name: str,
     document=None,

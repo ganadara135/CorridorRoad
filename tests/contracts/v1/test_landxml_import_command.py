@@ -8,7 +8,7 @@ from freecad.Corridor_Road.v1.commands.cmd_landxml_import import (
     CmdV1ImportLandXML,
     LANDXML_IMPORT_COMMAND_ID,
     NEXT_WORKFLOW_TEXT,
-    import_landxml_file_into_document,
+    import_landxml_result_into_document,
     landxml_preset_names,
     landxml_preset_path,
 )
@@ -61,8 +61,8 @@ def test_landxml_import_function_imports_sample_file() -> None:
         project = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(project)
         tree = ensure_project_tree(project, include_references=False)
-        created = import_landxml_file_into_document(
-            "tests/samples/landxml_civil3d_alignment_profile_surface.xml",
+        created = import_landxml_result_into_document(
+            scan_landxml_file("tests/samples/landxml_civil3d_alignment_profile_surface.xml"),
             doc,
             project=project,
         )
@@ -93,7 +93,7 @@ def test_landxml_import_function_blocks_unsupported_producer() -> None:
         assert result is not None
         assert result.summary.supported_producer is False
         try:
-            import_landxml_file_into_document("tests/samples/landxml_unknown_producer.xml", doc, project=project)
+            import_landxml_result_into_document(result, doc, project=project)
         except ValueError as exc:
             assert "Only Autodesk Civil 3D LandXML" in str(exc)
         else:

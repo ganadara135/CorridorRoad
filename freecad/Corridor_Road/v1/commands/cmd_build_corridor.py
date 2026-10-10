@@ -238,13 +238,6 @@ CORRIDOR_CENTERLINE_PREVIEW_STYLE = {
 }
 
 
-def document_has_v1_applied_sections(document=None) -> bool:
-    """Return True when a document has a v1 AppliedSectionSet result."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    return find_v1_applied_section_set(doc) is not None
-
-
 def build_document_corridor_model(document=None, *, project=None, corridor_id: str = "corridor:main"):
     """Build a CorridorModel result from the document's v1 AppliedSectionSet."""
 
@@ -1849,59 +1842,6 @@ def toggle_corridor_surface_transition_enabled(document=None, row_index: int = 0
                 enabled=(not bool(row.enabled)) if index == row_index else bool(row.enabled),
                 approval_status=row.approval_status,
                 source_ref=row.source_ref,
-                notes=row.notes,
-            )
-        )
-    updated = SurfaceTransitionModel(
-        schema_version=int(getattr(transition_model, "schema_version", 1) or 1),
-        project_id=str(getattr(transition_model, "project_id", "") or _project_id(find_project(doc))),
-        transition_model_id=str(getattr(transition_model, "transition_model_id", "") or "surface-transitions:main"),
-        corridor_ref=str(getattr(transition_model, "corridor_ref", "") or "corridor:main"),
-        label=str(getattr(transition_model, "label", "") or "Surface Transitions"),
-        transition_ranges=updated_rows,
-    )
-    return create_or_update_v1_surface_transition_model_object(
-        document=doc,
-        project=find_project(doc),
-        transition_model=updated,
-    )
-
-
-def update_corridor_surface_transition_station_range(
-    document=None,
-    row_index: int = 0,
-    *,
-    station_start: float,
-    station_end: float,
-):
-    """Update one Surface Transition station range by transition-table row index."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    if doc is None:
-        raise RuntimeError("No active document.")
-    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
-    if transition_model is None:
-        raise RuntimeError("No Surface Transition ranges are available.")
-    rows = list(getattr(transition_model, "transition_ranges", []) or [])
-    if row_index < 0 or row_index >= len(rows):
-        raise IndexError("Surface Transition row index is out of range.")
-    start = float(station_start)
-    end = float(station_end)
-    updated_rows: list[SurfaceTransitionRange] = []
-    for index, row in enumerate(rows):
-        updated_rows.append(
-            SurfaceTransitionRange(
-                transition_id=row.transition_id,
-                station_start=start if index == row_index else row.station_start,
-                station_end=end if index == row_index else row.station_end,
-                from_region_ref=row.from_region_ref,
-                to_region_ref=row.to_region_ref,
-                target_surface_kinds=list(row.target_surface_kinds or []),
-                transition_mode=row.transition_mode,
-                sample_interval=row.sample_interval,
-                enabled=bool(row.enabled),
-                approval_status=row.approval_status,
-                source_ref=row.source_ref or "build-corridor:station-range",
                 notes=row.notes,
             )
         )
@@ -8119,12 +8059,6 @@ def _attach_shared_breakline_audit_preview_metadata(obj, audit) -> None:
     _set_preview_property(obj, "SharedBreaklineSolidReadinessNotes", presentation.solid_readiness_notes)
     _set_preview_property(obj, "SharedBreaklineAuditSummary", presentation.summary)
     _set_preview_string_list_property(obj, "SharedBreaklineAuditNotes", list(presentation.note_rows))
-
-
-def _shared_breakline_audit_summary(audit) -> str:
-    if audit is None:
-        return ""
-    return SharedBreaklineAuditPresentationMapper().map(audit).summary
 
 
 def shared_breakline_adjacency_graph(

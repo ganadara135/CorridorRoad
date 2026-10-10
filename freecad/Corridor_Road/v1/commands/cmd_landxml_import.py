@@ -219,12 +219,6 @@ class V1LandXMLImportTaskPanel:
         self.txt_diagnostics.setPlainText(str(text or ""))
 
 
-def import_landxml_file_into_document(path: str, document=None, *, project=None) -> list[str]:
-    """Scan and import one supported Civil 3D LandXML file into a FreeCAD document."""
-
-    return import_landxml_result_into_document(scan_landxml_file(path), document, project=project)
-
-
 def import_landxml_result_into_document(
     result: LandXMLImportResult,
     document=None,

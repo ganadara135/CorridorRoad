@@ -20,8 +20,6 @@ from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.project_document_adapter import ProjectDocumentAdapter
 from ..objects.obj_stationing import create_v1_stationing, find_v1_stationing
 from .cmd_create_alignment import create_v1_sample_alignment
-from .cmd_review_plan_profile import resolve_station_interval
-from .selection_context import selected_alignment_profile_target
 
 
 def generate_v1_stations(
@@ -74,35 +72,6 @@ def generate_v1_stations(
             links_if_empty={"Alignment": alignment_obj},
             adopt_extra=[alignment_obj, stationing],
         )
-    return stationing
-
-
-def run_v1_generate_stations_command():
-    """Generate v1 stations from current GUI context."""
-
-    if App is None or getattr(App, "ActiveDocument", None) is None:
-        raise RuntimeError("No active document.")
-    document = App.ActiveDocument
-    preferred_alignment, _preferred_profile = selected_alignment_profile_target(Gui, document)
-    interval = 20.0
-    existing = find_v1_stationing(document)
-    if existing is not None:
-        try:
-            interval = float(getattr(existing, "Interval", 20.0) or 20.0)
-        except Exception:
-            interval = 20.0
-    interval = resolve_station_interval({"station_interval": interval})
-    stationing = generate_v1_stations(
-        document=document,
-        alignment=preferred_alignment,
-        interval=interval,
-    )
-    if Gui is not None:
-        try:
-            Gui.Selection.clearSelection()
-            Gui.Selection.addSelection(stationing)
-        except Exception:
-            pass
     return stationing
 
 

@@ -9,8 +9,8 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_review import (
     CmdV1DrainageReview,
     V1DrainageReviewTaskPanel,
     _drainage_review_navigation_targets,
-    _filter_flow_route_rows,
-    _filter_pipeline_candidate_rows,
+    _filter_flow_route_rows_with_indices,
+    _filter_pipeline_candidate_rows_with_indices,
     _filter_report_rows,
     _filter_region_assignment_rows,
     _geometry_rows_snapped_to_structure_previews,
@@ -1235,9 +1235,9 @@ def test_drainage_review_filters_pipeline_candidate_route_statuses() -> None:
         ),
     ]
 
-    assert [row.label for row in _filter_pipeline_candidate_rows(rows, mode="Pipe-producing")] == ["flow-route:ready"]
-    assert [row.label for row in _filter_pipeline_candidate_rows(rows, mode="Capture-only")] == ["flow-route:capture"]
-    assert [row.label for row in _filter_pipeline_candidate_rows(rows, mode="Unresolved")] == ["flow-route:unresolved"]
+    assert [row.label for row in _filter_pipeline_candidate_rows_with_indices(rows, mode="Pipe-producing")[0]] == ["flow-route:ready"]
+    assert [row.label for row in _filter_pipeline_candidate_rows_with_indices(rows, mode="Capture-only")[0]] == ["flow-route:capture"]
+    assert [row.label for row in _filter_pipeline_candidate_rows_with_indices(rows, mode="Unresolved")[0]] == ["flow-route:unresolved"]
 
 
 def test_drainage_review_filters_flow_route_source_rows_by_candidate_status() -> None:
@@ -1259,9 +1259,9 @@ def test_drainage_review_filters_flow_route_source_rows_by_candidate_status() ->
         ),
     ]
 
-    assert [row.label for row in _filter_flow_route_rows(flow_rows, candidate_rows, mode="Pipe-producing")] == ["flow-route:ready"]
-    assert [row.label for row in _filter_flow_route_rows(flow_rows, candidate_rows, mode="Capture-only")] == ["flow-route:capture"]
-    assert [row.label for row in _filter_flow_route_rows(flow_rows, candidate_rows, mode="Unresolved")] == ["flow-route:unresolved"]
+    assert [row.label for row in _filter_flow_route_rows_with_indices(flow_rows, candidate_rows, mode="Pipe-producing")[0]] == ["flow-route:ready"]
+    assert [row.label for row in _filter_flow_route_rows_with_indices(flow_rows, candidate_rows, mode="Capture-only")[0]] == ["flow-route:capture"]
+    assert [row.label for row in _filter_flow_route_rows_with_indices(flow_rows, candidate_rows, mode="Unresolved")[0]] == ["flow-route:unresolved"]
 
 
 def test_drainage_review_filters_region_assignment_issues() -> None:

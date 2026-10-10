@@ -34,7 +34,6 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_drainage_review_rows,
     corridor_drainage_review_summary,
     corridor_slope_face_issue_rows,
-    document_has_v1_applied_sections,
     focus_adjacent_corridor_slope_face_issue,
     focus_corridor_build_guided_review_step,
     focus_corridor_drainage_flow_review,
@@ -51,7 +50,6 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     create_or_update_corridor_surface_transition_for_boundary,
     create_corridor_surface_transition_from_region_boundary,
     toggle_corridor_surface_transition_enabled,
-    update_corridor_surface_transition_station_range,
 )
 from freecad.Corridor_Road.v1.models.result.tin_surface import TINSurface, TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import tin_mesh_preview_style
@@ -812,7 +810,6 @@ def test_build_document_corridor_model_uses_applied_sections() -> None:
 
         result = build_document_corridor_model(doc, project=project)
 
-        assert document_has_v1_applied_sections(doc) is True
         assert result.corridor_id == "corridor:main"
         assert result.applied_section_set_ref == "sections:main"
         assert [row.station for row in result.station_rows] == [0.0, 20.0]
@@ -2559,25 +2556,6 @@ def test_create_or_update_corridor_surface_transition_for_boundary_updates_only_
         rows = {row["transition_id"]: row for row in corridor_surface_transition_rows(doc)}
         assert rows["surface-transition:region:rural->region:urban@20.000"]["sample_count"] == 5
         assert rows["surface-transition:region:urban->region:suburban@40.000"]["sample_count"] == 3
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_update_corridor_surface_transition_station_range_persists_source_intent() -> None:
-    doc, project = _new_project_doc()
-    try:
-        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
-        create_corridor_surface_transition_from_region_boundary(doc, 0)
-
-        update_corridor_surface_transition_station_range(doc, 0, station_start=18.0, station_end=32.0)
-        rows = corridor_surface_transition_rows(doc)
-        model = to_surface_transition_model(find_v1_surface_transition_model(doc))
-
-        assert rows[0]["station_start"] == 18.0
-        assert rows[0]["station_end"] == 32.0
-        assert model is not None
-        assert model.transition_ranges[0].station_start == 18.0
-        assert model.transition_ranges[0].station_end == 32.0
     finally:
         App.closeDocument(doc.Name)
 
