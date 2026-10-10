@@ -152,6 +152,7 @@ def test_the_full_build_reports_the_kernel_surfaces_and_no_warning(label) -> Non
         for role in ("intersection", "intersection_slope"):
             assert rows[role]["status"] == "ready" and rows[role]["notes"].startswith("Built by the intersection kernel"), rows[role]
             assert "skinny=0" in rows[role]["notes"]
+            assert rows[role]["output_path"] == "contract_consumed", rows[role]
         for role in ("design", "subgrade", "daylight"):
             assert rows[role]["status"] == "ready", (role, rows[role]["notes"][-400:])
     finally:

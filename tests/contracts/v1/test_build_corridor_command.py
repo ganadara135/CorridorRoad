@@ -127,6 +127,25 @@ def test_intersection_surface_replacement_blocker_kind_contract() -> None:
     )
 
 
+def test_intersection_kernel_surfaces_report_a_consumed_contract_output_path() -> None:
+    class _Surface:
+        Name = "V1CorridorIntersectionSurfacePreview"
+        Label = "Intersection Surface"
+        VertexCount = 12
+        TriangleCount = 10
+
+    kernel_surface = _Surface()
+    kernel_surface.IntersectionKernelStatus = "ready"
+
+    for role in ("intersection", "intersection_slope"):
+        kernel_row = build_review_presentation._corridor_build_review_row(role, "Intersection", _Surface.Name, kernel_surface)
+        older_row = build_review_presentation._corridor_build_review_row(role, "Intersection", _Surface.Name, _Surface())
+
+        assert kernel_row["output_path"] == "contract_consumed"
+        # a surface without the kernel status was built before plan phase R7c
+        assert older_row["output_path"] == "legacy_output"
+
+
 def _group_names(group):
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(group, "Group", []) or [])}
 

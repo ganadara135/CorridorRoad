@@ -7,7 +7,6 @@ from typing import Callable
 from .review_text import join_review_notes as _join_review_notes
 from .review_text import unique_text_values as _unique_text_values
 from .review_text import unique_refs as _unique_refs
-from .review_text import display_source_id as _display_source_id
 from .review_text import display_source_ref as _display_source_ref
 from .review_text import format_count_summary as _format_count_summary
 from .shared_breakline_audit_presentation import _normalize_corridor_build_review_status
@@ -86,14 +85,11 @@ def _roundabout_ownership_intrusion_review_note(obj) -> str:
         return ""
     count = int(getattr(obj, "RoundaboutOwnershipIntrusionTriangleCount", 0) or 0)
     tested = int(getattr(obj, "RoundaboutOwnershipTestedTriangleCount", 0) or 0)
-    clipped = int(getattr(obj, "RoundaboutOwnershipClippedTriangleCount", 0) or 0)
-    clip_tested = int(getattr(obj, "RoundaboutOwnershipClipTestedTriangleCount", 0) or 0)
     radius = float(getattr(obj, "RoundaboutOwnershipRadius", 0.0) or 0.0)
     action = str(getattr(obj, "RoundaboutOwnershipRecommendedAction", "") or "")
     return _join_review_notes(
         f"roundabout_ownership={status}",
         f"intrusion_triangles={count}/{tested}",
-        f"clipped_triangles={clipped}/{clip_tested}" if clipped or clip_tested else "",
         f"clip_boundary={str(getattr(obj, 'RoundaboutClipBoundaryRole', '') or '')}:{str(getattr(obj, 'RoundaboutClipBoundaryStatus', '') or '')}"
         if str(getattr(obj, "RoundaboutClipBoundaryRole", "") or "")
         else "",
@@ -172,74 +168,6 @@ def _corridor_build_review_row(
     watertight_note = _corridor_watertight_solid_review_note(obj)
     if watertight_note:
         notes = f"{notes} | {watertight_note}" if notes else watertight_note
-    slope_boundary_note = _intersection_slope_face_boundary_review_note(obj)
-    if slope_boundary_note:
-        notes = f"{notes} | {slope_boundary_note}" if notes else slope_boundary_note
-    if role == "intersection":
-        notes = _intersection_surface_review_notes(obj)
-    elif role == "intersection_slope":
-        ready_loops = int(getattr(obj, "ReadyLoopCount", 0) or 0)
-        skipped_loops = int(getattr(obj, "SkippedLoopCount", 0) or 0)
-        source_refs = list(getattr(obj, "SourceLoopRefs", []) or [])
-        perimeter_count = int(getattr(obj, "CurbReturnSlopeFacePerimeterCount", 0) or 0)
-        perimeter_triangles = int(getattr(obj, "CurbReturnSlopeFacePerimeterTriangleCount", 0) or 0)
-        perimeter_mode = str(getattr(obj, "CurbReturnSlopeFacePerimeterGenerationMode", "") or "")
-        consumed_contract_summary = str(getattr(obj, "ConsumedIntersectionContractSummary", "") or "")
-        consumed_diagnostics = int(getattr(obj, "ConsumedIntersectionContractDiagnosticCount", 0) or 0)
-        notes = "Intersection-owned Slope Face output"
-        if perimeter_count or perimeter_triangles:
-            notes = (
-                f"{notes}; curb_return_perimeters={perimeter_count}; "
-                f"perimeter_triangles={perimeter_triangles}; mode={perimeter_mode or 'unknown'}"
-            )
-        notes = f"{notes}; ready_loops={ready_loops}; skipped_loops={skipped_loops}; source_loops={len(source_refs)}"
-        if consumed_contract_summary and not perimeter_count:
-            notes = f"{notes}; consumed_contracts={consumed_contract_summary}"
-        if consumed_diagnostics:
-            notes = f"{notes}; consumed_contract_diagnostics={consumed_diagnostics}"
-        cell_note = _intersection_slope_face_cell_review_note(obj)
-        if cell_note:
-            notes = f"{notes}; {cell_note}"
-        upper_panel_note = _intersection_slope_face_upper_panel_review_note(obj)
-        if upper_panel_note:
-            notes = f"{notes}; {upper_panel_note}"
-        owner_fill_readiness = str(getattr(obj, "IntersectionSlopeFaceOwnerFillReadinessStatus", "") or "")
-        owner_fill_summary = str(getattr(obj, "IntersectionSlopeFaceOwnerFillReadinessSummary", "") or "")
-        if owner_fill_readiness:
-            notes = f"{notes}; owner_fill={owner_fill_readiness}"
-            if owner_fill_summary:
-                notes = f"{notes}; {owner_fill_summary}"
-    elif role == "intersection_tie_slope":
-        notes = _intersection_tie_slope_surface_review_note(obj)
-    elif role in {"design", "daylight"}:
-        clipped = int(getattr(obj, "IntersectionExclusionClippedTriangleCount", 0) or 0)
-        kept = int(getattr(obj, "IntersectionExclusionKeptTriangleCount", 0) or 0)
-        exclusion_status = str(getattr(obj, "IntersectionExclusionClipStatus", "") or "")
-        if exclusion_status:
-            boundary_strategy = str(getattr(obj, "IntersectionExclusionBoundaryStrategy", "") or "")
-            aligned = int(getattr(obj, "IntersectionExclusionPracticalBoundaryAligned", 0) or 0)
-            suffix_parts = [
-                f"intersection exclusion={exclusion_status}",
-                f"clipped={clipped}",
-                f"kept={kept}",
-            ]
-            if boundary_strategy:
-                suffix_parts.append(f"boundary={boundary_strategy}")
-            if aligned:
-                suffix_parts.append("aligned=practical")
-            height_status = str(getattr(obj, "IntersectionHeightClipStatus", "") or "")
-            if height_status:
-                height_suppressed = int(getattr(obj, "IntersectionHeightClipSuppressedTriangleCount", 0) or 0)
-                height_tested = int(getattr(obj, "IntersectionHeightClipTestedTriangleCount", 0) or 0)
-                suffix_parts.append(f"height_clip={height_status} suppressed={height_suppressed}/{height_tested}")
-            loop_status = str(getattr(obj, "IntersectionSlopeLoopSuppressStatus", "") or "")
-            if loop_status:
-                loop_suppressed = int(getattr(obj, "IntersectionSlopeLoopSuppressSuppressedTriangleCount", 0) or 0)
-                loop_tested = int(getattr(obj, "IntersectionSlopeLoopSuppressTestedTriangleCount", 0) or 0)
-                loop_ready = int(getattr(obj, "IntersectionSlopeLoopSuppressReadyLoopCount", 0) or 0)
-                suffix_parts.append(f"loop_suppress={loop_status} suppressed={loop_suppressed}/{loop_tested} ready_loops={loop_ready}")
-            suffix = "; ".join(suffix_parts)
-            notes = f"{notes} | {suffix}" if notes else suffix
     shared_breakline_note = _shared_breakline_review_note(obj)
     if shared_breakline_note:
         notes = f"{notes} | {shared_breakline_note}" if notes else shared_breakline_note
@@ -263,121 +191,6 @@ def _corridor_build_review_row(
         "output_path": _corridor_build_review_output_path(role, obj),
         "notes": notes,
     }, obj)
-
-
-def _intersection_slope_face_cell_review_note(obj) -> str:
-    cell_count = int(getattr(obj, "IntersectionSlopeFaceCellCount", 0) or 0)
-    cell_ready = int(getattr(obj, "IntersectionSlopeFaceCellReadyCount", 0) or 0)
-    cell_open = int(getattr(obj, "IntersectionSlopeFaceCellOpenCount", 0) or 0)
-    cell_missing_edge = int(getattr(obj, "IntersectionSlopeFaceCellMissingEdgeCount", 0) or 0)
-    cell_triangles = int(getattr(obj, "IntersectionSlopeFaceCellTriangleCount", 0) or 0)
-    if not any((cell_count, cell_ready, cell_open, cell_missing_edge, cell_triangles)):
-        return ""
-    status = str(getattr(obj, "IntersectionSlopeFaceCellStatus", "") or "").strip()
-    parts = [
-        f"cells={cell_count}",
-        f"ready={cell_ready}",
-        f"open={cell_open}",
-        f"missing_edges={cell_missing_edge}",
-        f"cell_triangles={cell_triangles}",
-    ]
-    if status:
-        parts.insert(0, f"cell_status={status}")
-    return "intersection_slope_face_cell " + " ".join(parts)
-
-
-def _intersection_slope_face_upper_panel_review_note(obj) -> str:
-    candidate_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelCandidateCount", 0) or 0)
-    accepted_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelAcceptedCount", 0) or 0)
-    generated_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelGeneratedCount", 0) or 0)
-    triangle_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelTriangleCount", 0) or 0)
-    suppressed_count = int(getattr(obj, "IntersectionSlopeFaceSuppressedUpperCellCount", 0) or 0)
-    if not any((candidate_count, accepted_count, generated_count, triangle_count, suppressed_count)):
-        return ""
-    mode = str(getattr(obj, "IntersectionUpperSlopeFacePanelGenerationMode", "") or "")
-    source_mode = str(getattr(obj, "IntersectionUpperSlopeFacePanelSourceMode", "") or "")
-    coverage_status = str(getattr(obj, "IntersectionUpperSlopeFacePanelCoverageStatus", "") or "")
-    coverage_summary = str(getattr(obj, "IntersectionUpperSlopeFacePanelCoverageSummary", "") or "")
-    expected_group_count = int(getattr(obj, "IntersectionUpperSlopeFacePanelExpectedGroupCount", 0) or 0)
-    missing_groups = [
-        str(value or "")
-        for value in list(getattr(obj, "IntersectionUpperSlopeFacePanelMissingGroups", []) or [])
-        if str(value or "")
-    ]
-    parts = [
-        f"upper_panels={generated_count}/{accepted_count}",
-        f"candidates={candidate_count}",
-        f"triangles={triangle_count}",
-        f"suppressed_legacy_upper_cells={suppressed_count}",
-    ]
-    if mode:
-        parts.append(f"mode={mode}")
-    if source_mode:
-        parts.append(f"source={source_mode}")
-    if coverage_status:
-        parts.append(f"coverage={coverage_status}")
-    if expected_group_count:
-        parts.append(f"expected_groups={expected_group_count}")
-    if coverage_summary:
-        parts.append(coverage_summary)
-    if missing_groups:
-        parts.append(f"missing_groups={','.join(missing_groups[:8])}")
-    return "intersection_upper_slope_face_panel " + " ".join(parts)
-
-
-def _intersection_tie_slope_surface_review_note(obj) -> str:
-    status = str(getattr(obj, "IntersectionTieSlopeStatus", "") or "").strip()
-    coverage_status = str(getattr(obj, "IntersectionTieSlopeCoverageStatus", "") or "").strip()
-    coverage_summary = str(getattr(obj, "IntersectionTieSlopeCoverageSummary", "") or "").strip()
-    count = int(getattr(obj, "IntersectionTieSlopeCount", 0) or 0)
-    ready = int(getattr(obj, "IntersectionTieSlopeReadyCount", 0) or 0)
-    warning = int(getattr(obj, "IntersectionTieSlopeWarningCount", 0) or 0)
-    error = int(getattr(obj, "IntersectionTieSlopeErrorCount", 0) or 0)
-    triangles = int(getattr(obj, "IntersectionTieSlopeTriangleCount", 0) or getattr(obj, "TriangleCount", 0) or 0)
-    consumed = int(getattr(obj, "IntersectionTieSlopeConsumedRowCount", 0) or 0)
-    rejected = int(getattr(obj, "IntersectionTieSlopeRejectedRowCount", 0) or 0)
-    shared = int(getattr(obj, "IntersectionTieSlopeSharedBreaklineCount", 0) or 0)
-    window_rows = int(getattr(obj, "IntersectionTieSlopeAppliedSectionWindowRowCount", 0) or 0)
-    window_accepted = int(getattr(obj, "IntersectionTieSlopeAppliedSectionWindowAcceptedCount", 0) or 0)
-    window_suppressed = int(getattr(obj, "IntersectionTieSlopeAppliedSectionWindowSuppressedCount", 0) or 0)
-    geometry_source = str(getattr(obj, "IntersectionTieSlopeGeometrySource", "") or "").strip()
-    summary = str(getattr(obj, "IntersectionTieSlopeReadinessSummary", "") or "").strip()
-    action = str(getattr(obj, "IntersectionTieSlopeRecommendedAction", "") or "").strip()
-    diagnostics = [
-        str(value or "")
-        for value in list(getattr(obj, "IntersectionTieSlopeDiagnostics", []) or [])
-        if str(value or "")
-    ]
-    parts = [
-        "Intersection Tie Slope output",
-        f"status={status or 'unknown'}",
-        f"ready={ready}/{count}",
-        f"triangles={triangles}",
-        f"consumed={consumed}",
-        f"rejected={rejected}",
-        f"shared_breaklines={shared}",
-    ]
-    if warning or error:
-        parts.append(f"warnings={warning}")
-        parts.append(f"errors={error}")
-    if coverage_status:
-        parts.append(f"coverage={coverage_status}")
-    if coverage_summary:
-        parts.append(coverage_summary)
-    if window_rows:
-        parts.append(
-            "Applied Section window candidates: "
-            f"rows={window_rows}; accepted={window_accepted}; suppressed={window_suppressed}; "
-            "source=applied_section_context_transition_window"
-            + (f"; geometry_source={geometry_source}" if geometry_source else "")
-        )
-    if summary:
-        parts.append(summary)
-    if diagnostics:
-        parts.append("diagnostics=" + "; ".join(_unique_text_values(diagnostics)[:3]))
-    if action:
-        parts.append("Recommended Action: " + action)
-    return "; ".join(part for part in parts if str(part or "").strip())
 
 
 def _shared_breakline_review_note(obj) -> str:
@@ -425,22 +238,11 @@ def _corridor_build_review_output_path(role: str, obj) -> str:
 
     if obj is None:
         return ""
-    explicit = str(getattr(obj, "IntersectionOutputPath", "") or "").strip()
-    if explicit:
-        return explicit
     role_text = str(role or "")
-    implementation_mode = str(getattr(obj, "IntersectionImplementationMode", "") or "")
-    if role_text == "intersection":
-        if not implementation_mode or implementation_mode == "legacy_patch_frozen":
-            return "legacy_output"
-        return "contract_consumed"
-    if role_text == "intersection_slope":
-        contract_refs = [str(value or "") for value in list(getattr(obj, "ConsumedIntersectionContractRefs", []) or []) if str(value or "")]
-        if contract_refs:
-            return "contract_consumed"
-        ready_loops = int(getattr(obj, "ReadyLoopCount", 0) or 0)
-        source_refs = [str(value or "") for value in list(getattr(obj, "SourceLoopRefs", []) or []) if str(value or "")]
-        return "contract_consumed" if ready_loops and source_refs else "inferred_fallback"
+    if role_text in {"intersection", "intersection_slope"}:
+        # the intersection kernel builds both surfaces from the stored spec and the Applied
+        # Sections; a surface without its status was built before the kernel (plan phase R7c)
+        return "contract_consumed" if str(getattr(obj, "IntersectionKernelStatus", "") or "") else "legacy_output"
     source_mode = str(getattr(obj, "ConsumedCenterlineSourceMode", "") or getattr(obj, "PreviewSource", "") or "")
     centerline_fallback = bool(int(getattr(obj, "CenterlineConsumerFallbackActive", 0) or 0))
     supplemental_fallback = bool(int(getattr(obj, "SupplementalCompatibilityFallbackActive", 0) or 0))
@@ -450,35 +252,6 @@ def _corridor_build_review_output_path(role: str, obj) -> str:
     if source_mode and source_mode != "centerline3d_source_geometry":
         return "inferred_fallback"
     return "contract_consumed"
-
-
-def _intersection_slope_face_boundary_review_note(obj) -> str:
-    result_id = str(getattr(obj, "IntersectionSlopeFaceBoundaryResultId", "") or "")
-    summary = str(getattr(obj, "IntersectionSlopeFaceBoundarySummary", "") or "")
-    strip_generation_mode = str(getattr(obj, "IntersectionSlopeFaceBoundaryStripGenerationMode", "") or "")
-    strip_output_path = str(getattr(obj, "IntersectionSlopeFaceBoundaryStripOutputPath", "") or "")
-    strip_diagnostic = str(getattr(obj, "IntersectionSlopeFaceBoundaryStripDiagnostic", "") or "")
-    strip_count = int(getattr(obj, "IntersectionSlopeFaceBoundaryStripCount", 0) or 0)
-    strip_triangles = int(getattr(obj, "IntersectionSlopeFaceBoundaryStripTriangleCount", 0) or 0)
-    strip_note_parts: list[str] = []
-    if strip_generation_mode:
-        strip_note_parts.append(f"strip_generation={strip_generation_mode}")
-    if strip_output_path:
-        strip_note_parts.append(f"strip_output={strip_output_path}")
-    if strip_count or strip_triangles:
-        strip_note_parts.append(f"strips={strip_count}, triangles={strip_triangles}")
-    if strip_diagnostic:
-        strip_note_parts.append(f"strip_diagnostic={strip_diagnostic}")
-    strip_note = f"; {'; '.join(strip_note_parts)}" if strip_note_parts else ""
-    if not result_id and not summary:
-        return strip_note.lstrip("; ")
-    if summary:
-        return f"slope_face_boundary={summary}{strip_note}"
-    status = str(getattr(obj, "IntersectionSlopeFaceBoundaryStatus", "") or "")
-    ready = int(getattr(obj, "IntersectionSlopeFaceBoundaryReadyCount", 0) or 0)
-    count = int(getattr(obj, "IntersectionSlopeFaceBoundaryCount", 0) or 0)
-    warnings = int(getattr(obj, "IntersectionSlopeFaceBoundaryWarningCount", 0) or 0)
-    return f"slope_face_boundary=boundary_result={result_id}; status={status}; ready={ready}/{count}; warnings={warnings}{strip_note}"
 
 
 def _with_corridor_consumer_hardening_warning(row: dict[str, object], obj) -> dict[str, object]:
@@ -531,201 +304,6 @@ def _with_corridor_consumer_hardening_warning(row: dict[str, object], obj) -> di
     if str(output.get("status", "") or "") == "ready":
         output["status"] = "warning"
     return output
-
-
-def _intersection_surface_review_notes(obj) -> str:
-    parts: list[str] = []
-    tie_in_count = int(getattr(obj, "TieInEdgeCount", 0) or 0)
-    boundary_count = int(getattr(obj, "PatchBoundaryPointCount", 0) or 0)
-    grading_policy_ref = str(getattr(obj, "IntersectionGradingPolicyRef", "") or "")
-    grading_mode = str(getattr(obj, "IntersectionGradingMode", "") or "")
-    target_crossfall = str(getattr(obj, "IntersectionTargetCrossfallPercent", "") or "")
-    grading_z_delta = float(getattr(obj, "IntersectionGradingZDeltaMax", 0.0) or 0.0)
-    drainage_status = str(getattr(obj, "IntersectionDrainageCoverageStatus", "") or "")
-    tie_in_preview_ref = str(getattr(obj, "TieInEdgePreviewRef", "") or "")
-    tie_in_preview_status = str(getattr(obj, "TieInEdgePreviewStatus", "") or "")
-    tie_in_diagnostic_count = int(getattr(obj, "TieInEdgeDiagnosticCount", 0) or 0)
-    intersection_diagnostic_count = int(getattr(obj, "IntersectionDiagnosticCount", 0) or 0)
-    boundary_status = str(getattr(obj, "IntersectionBoundaryStatus", "") or "")
-    boundary_segment_count = int(getattr(obj, "IntersectionBoundarySegmentCount", 0) or 0)
-    boundary_arc_count = int(getattr(obj, "IntersectionBoundaryArcSegmentCount", 0) or 0)
-    boundary_preview_ref = str(getattr(obj, "IntersectionBoundaryPreviewRef", "") or "")
-    boundary_diagnostic_count = int(getattr(obj, "IntersectionBoundaryDiagnosticCount", 0) or 0)
-    patch_boundary_status = str(getattr(obj, "IntersectionPatchBoundaryStatus", "") or "")
-    patch_boundary_point_count = int(getattr(obj, "IntersectionPatchBoundaryOrderedPointCount", 0) or 0)
-    patch_boundary_closed = str(getattr(obj, "IntersectionPatchBoundaryClosed", "") or "")
-    patch_boundary_self_crossing = str(getattr(obj, "IntersectionPatchBoundarySelfCrossing", "") or "")
-    patch_boundary_diagnostic_count = int(getattr(obj, "IntersectionPatchBoundaryDiagnosticCount", 0) or 0)
-    patch_boundary_diagnostics = [str(value or "") for value in list(getattr(obj, "IntersectionPatchBoundaryDiagnostics", []) or []) if str(value or "")]
-    patch_boundary_hole_count = int(getattr(obj, "IntersectionPatchBoundaryHoleRingCount", 0) or 0)
-    patch_boundary_island_count = int(getattr(obj, "IntersectionPatchBoundaryIslandRingCount", 0) or 0)
-    superelevation_context = str(getattr(obj, "IntersectionSuperelevationContext", "") or "")
-    low_point_count = int(getattr(obj, "IntersectionTINLowPointCandidateCount", 0) or 0)
-    low_point_z = float(getattr(obj, "IntersectionTINLowPointZ", 0.0) or 0.0)
-    flow_hint_summary = str(getattr(obj, "IntersectionBoundaryToLowFlowHintSummary", "") or "")
-    patch_degenerate_count = int(getattr(obj, "PatchDegenerateTriangleCount", 0) or 0)
-    patch_long_edge_count = int(getattr(obj, "PatchBoundaryLongEdgeCount", 0) or 0)
-    patch_triangulation_mode = str(getattr(obj, "PatchTriangulationMode", "") or "")
-    patch_boundary_strategy = str(getattr(obj, "PatchSurfaceBoundaryStrategy", "") or "")
-    patch_boundary_role_summary = str(getattr(obj, "PatchBoundaryRoleSummary", "") or "")
-    patch_skinny_triangle_count = int(getattr(obj, "PatchTriangleSkinnyCount", 0) or 0)
-    implementation_mode = str(getattr(obj, "IntersectionImplementationMode", "") or "")
-    redesign_path = str(getattr(obj, "IntersectionRedesignPath", "") or "")
-    output_path = str(getattr(obj, "IntersectionOutputPath", "") or "")
-    contract_summary = str(getattr(obj, "ConsumedIntersectionContractSummary", "") or "")
-    surface_patch_summary = str(getattr(obj, "IntersectionSurfacePatchSummary", "") or "")
-    surface_patch_footprint_summary = str(getattr(obj, "IntersectionSurfacePatchFootprintSummary", "") or "")
-    surface_patch_result_id = str(getattr(obj, "IntersectionSurfacePatchResultId", "") or "")
-    surface_boundary_mode = str(getattr(obj, "IntersectionSurfaceBoundaryMode", "") or "")
-    surface_boundary_loop = str(getattr(obj, "IntersectionSurfaceBoundaryLoopKind", "") or "")
-    surface_boundary_fallback = str(getattr(obj, "IntersectionSurfaceBoundaryFallbackReason", "") or "")
-    surface_boundary_summary = str(getattr(obj, "IntersectionSurfaceBoundaryDiagnosticSummary", "") or "")
-    surface_zone_output_summary = str(getattr(obj, "IntersectionSurfaceZoneOutputSummary", "") or "")
-    surface_zone_output_contract_status = str(getattr(obj, "IntersectionSurfaceZoneOutputContractStatus", "") or "")
-    surface_zone_output_handoff = str(getattr(obj, "IntersectionSurfaceZoneOutputDigitalTwinHandoff", "") or "")
-    surface_replacement_summary = str(getattr(obj, "IntersectionSurfaceReplacementSummary", "") or "")
-    surface_replacement_gate = str(getattr(obj, "IntersectionSurfaceReplacementGateStatus", "") or "")
-    surface_patch_contract_status = str(getattr(obj, "IntersectionSurfacePatchOutputContractStatus", "") or "")
-    surface_patch_handoff = str(getattr(obj, "IntersectionSurfacePatchDigitalTwinHandoff", "") or "")
-    surface_patch_transitional_reason = str(getattr(obj, "IntersectionSurfacePatchTransitionalReason", "") or "")
-    surface_patch_replacement_path = str(getattr(obj, "IntersectionSurfacePatchReplacementPath", "") or "")
-    legacy_patch_audit_summary = str(getattr(obj, "IntersectionLegacyPatchCompatibilityAuditSummary", "") or "")
-    surface_patch_row_statuses = _surface_patch_review_status_note(obj)
-    surface_patch_row_diagnostics = [
-        str(value or "")
-        for value in list(getattr(obj, "IntersectionSurfacePatchRowDiagnostics", []) or [])
-        if str(value or "")
-    ]
-    normalized_surface_patch_available = bool(surface_patch_result_id or surface_patch_summary or surface_patch_row_statuses)
-    if tie_in_count:
-        parts.append(f"tie-in edges={tie_in_count}")
-    if boundary_count and not normalized_surface_patch_available:
-        parts.append(f"boundary points={boundary_count}")
-    if grading_policy_ref:
-        parts.append(f"grading policy={_display_source_id(grading_policy_ref, 'grading:')}")
-    if grading_mode:
-        parts.append(f"grading={grading_mode}")
-    if target_crossfall:
-        parts.append(f"target crossfall={target_crossfall}%")
-    if grading_z_delta:
-        parts.append(f"max z adjustment={grading_z_delta:.3f}m")
-    if drainage_status:
-        parts.append(f"drainage={drainage_status}")
-    if superelevation_context:
-        parts.append(f"superelevation={superelevation_context}")
-    if low_point_count:
-        parts.append(f"low-point candidates={low_point_count}, z={low_point_z:.3f}")
-    if flow_hint_summary:
-        parts.append(f"flow hint={flow_hint_summary}")
-    if tie_in_preview_ref:
-        parts.append(f"tie-in preview={tie_in_preview_ref}")
-    if tie_in_preview_status:
-        parts.append(f"tie-in status={tie_in_preview_status}")
-    if tie_in_diagnostic_count:
-        parts.append(f"tie-in diagnostics={tie_in_diagnostic_count}")
-    if intersection_diagnostic_count:
-        parts.append(f"intersection diagnostics={intersection_diagnostic_count}")
-    if boundary_status:
-        parts.append(f"boundary={boundary_status}")
-    if boundary_segment_count:
-        parts.append(f"boundary segments={boundary_segment_count}")
-    if boundary_arc_count:
-        parts.append(f"boundary arcs={boundary_arc_count}")
-    if boundary_preview_ref:
-        parts.append(f"boundary preview={boundary_preview_ref}")
-    if boundary_diagnostic_count:
-        parts.append(f"boundary diagnostics={boundary_diagnostic_count}")
-    if normalized_surface_patch_available:
-        parts.append("legacy_patch_review=metadata_only")
-    if legacy_patch_audit_summary:
-        parts.append(f"legacy_patch_audit={legacy_patch_audit_summary}")
-    if patch_boundary_status and not normalized_surface_patch_available:
-        parts.append(f"patch boundary={patch_boundary_status}")
-    if patch_boundary_point_count and not normalized_surface_patch_available:
-        parts.append(f"patch boundary points={patch_boundary_point_count}")
-    if patch_boundary_closed and not normalized_surface_patch_available:
-        parts.append(f"patch boundary closed={patch_boundary_closed}")
-    if patch_boundary_self_crossing == "Yes" and not normalized_surface_patch_available:
-        parts.append("patch boundary self-crossing=Yes")
-    if patch_boundary_hole_count and not normalized_surface_patch_available:
-        parts.append(f"patch boundary holes={patch_boundary_hole_count}")
-    if patch_boundary_island_count and not normalized_surface_patch_available:
-        parts.append(f"patch boundary islands={patch_boundary_island_count}")
-    if patch_boundary_diagnostic_count and not normalized_surface_patch_available:
-        parts.append(f"patch boundary diagnostics={patch_boundary_diagnostic_count}")
-        if patch_boundary_diagnostics:
-            parts.append(f"patch boundary first diagnostic={patch_boundary_diagnostics[0]}")
-    if patch_degenerate_count and not normalized_surface_patch_available:
-        parts.append(f"degenerate triangles={patch_degenerate_count}")
-    if patch_long_edge_count and not normalized_surface_patch_available:
-        parts.append(f"long boundary edges={patch_long_edge_count}")
-    if patch_triangulation_mode and not normalized_surface_patch_available:
-        parts.append(f"triangulation={patch_triangulation_mode}")
-    if patch_boundary_strategy and not normalized_surface_patch_available:
-        parts.append(f"surface boundary={patch_boundary_strategy}")
-    if patch_boundary_role_summary and not normalized_surface_patch_available:
-        parts.append(f"boundary roles={patch_boundary_role_summary}")
-    if patch_skinny_triangle_count and not normalized_surface_patch_available:
-        parts.append(f"skinny triangles={patch_skinny_triangle_count}")
-    if implementation_mode:
-        parts.append(f"implementation={implementation_mode}")
-    if redesign_path:
-        parts.append(f"next={redesign_path}")
-    if output_path:
-        parts.append(f"output_path={output_path}")
-    if contract_summary:
-        parts.append(f"consumed_contracts={contract_summary}")
-    if surface_patch_result_id:
-        parts.append(f"surface_patch_result={surface_patch_result_id}")
-    if surface_patch_summary:
-        parts.append(f"surface_patch={surface_patch_summary}")
-    if surface_patch_footprint_summary:
-        parts.append(f"surface_patch_footprint={surface_patch_footprint_summary}")
-    if surface_boundary_mode:
-        parts.append(f"surface_boundary_mode={surface_boundary_mode}")
-    if surface_boundary_loop:
-        parts.append(f"surface_boundary_loop={surface_boundary_loop}")
-    if surface_boundary_fallback:
-        parts.append(f"surface_boundary_fallback={surface_boundary_fallback}")
-    if surface_boundary_summary:
-        parts.append(f"surface_boundary_review={surface_boundary_summary}")
-    if surface_zone_output_summary:
-        parts.append(f"surface_zone_output={surface_zone_output_summary}")
-    if surface_zone_output_contract_status:
-        parts.append(f"surface_zone_output_contract={surface_zone_output_contract_status}")
-    if surface_zone_output_handoff:
-        parts.append(f"surface_zone_output_handoff={surface_zone_output_handoff}")
-    if surface_replacement_summary:
-        parts.append(f"surface_replacement={surface_replacement_summary}")
-    if surface_replacement_gate:
-        parts.append(f"surface_replacement_gate={surface_replacement_gate}")
-    if surface_patch_contract_status:
-        parts.append(f"surface_patch_contract={surface_patch_contract_status}")
-    if surface_patch_handoff:
-        parts.append(f"surface_patch_handoff={surface_patch_handoff}")
-    if surface_patch_transitional_reason:
-        parts.append(f"surface_patch_transitional_reason={surface_patch_transitional_reason}")
-    if surface_patch_replacement_path:
-        parts.append(f"surface_patch_replacement={surface_patch_replacement_path}")
-    if surface_patch_row_statuses:
-        parts.append(f"surface_patch_rows={surface_patch_row_statuses}")
-    if surface_patch_row_diagnostics:
-        parts.append(f"surface_patch_row_diagnostics={len(surface_patch_row_diagnostics)}")
-    return "; ".join(parts)
-
-
-def _surface_patch_review_status_note(obj) -> str:
-    statuses: list[str] = []
-    for label, attr in (
-        ("boundary", "IntersectionSurfacePatchBoundaryRowStatuses"),
-        ("triangulation", "IntersectionSurfacePatchTriangulationRowStatuses"),
-        ("quality", "IntersectionSurfacePatchQualityRowStatuses"),
-    ):
-        values = [str(value or "") for value in list(getattr(obj, attr, []) or []) if str(value or "")]
-        if values:
-            row_status = values[0].rsplit(":", 1)[-1]
-            statuses.append(f"{label}={row_status}")
-    return ", ".join(statuses)
 
 
 def applied_sections_review_summary(applied) -> dict[str, object]:
