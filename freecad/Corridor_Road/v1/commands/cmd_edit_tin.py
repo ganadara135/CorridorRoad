@@ -31,6 +31,7 @@ from .cmd_review_tin import (
     _selected_surface_object,
     _tin_surface_from_object,
     resolve_document_tin_max_triangles,
+    show_v1_tin_review,
 )
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
@@ -112,8 +113,6 @@ def build_tin_source_from_csv(
     csv_path = str(csv_path or "").strip()
     if not csv_path:
         raise ValueError("CSV path is required.")
-    from .cmd_review_tin import show_v1_tin_review
-
     preview = show_v1_tin_review(
         document=document,
         extra_context={

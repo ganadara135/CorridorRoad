@@ -9429,5 +9429,14 @@ def _confirm_message(parent, title: str, message: str) -> bool:
         return True
 
 
+def open_structure_output_panel(*, document=None):
+    """Open the Structure Output panel for the Build Parametric task panel."""
+
+    # imported here: cmd_structure_output imports this module
+    from .cmd_structure_output import run_v1_structure_output_command
+
+    return run_v1_structure_output_command(document=document)
+
+
 # Explicit command/controller callback boundary for the UI-owned task panel.
 configure_build_corridor_task_panel_runtime(globals())

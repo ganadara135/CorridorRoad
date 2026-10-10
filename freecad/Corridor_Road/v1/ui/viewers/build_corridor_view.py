@@ -184,6 +184,7 @@ focus_corridor_drainage_review_row = None
 focus_corridor_intersection_contract_review_row = None
 focus_corridor_region_boundary_row = None
 focus_corridor_slope_face_issue = None
+open_structure_output_panel = None
 preferred_corridor_build_review_row_index = None
 set_all_corridor_build_preview_visibility = None
 set_corridor_build_daylight_contact_marker_visibility = None
@@ -966,9 +967,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
 
     def _open_structure_output_panel(self) -> bool:
         try:
-            from .cmd_structure_output import run_v1_structure_output_command
-
-            run_v1_structure_output_command(document=self.document)
+            open_structure_output_panel(document=self.document)
             self._summary.setPlainText("Structure Output panel opened.")
             return True
         except Exception as exc:

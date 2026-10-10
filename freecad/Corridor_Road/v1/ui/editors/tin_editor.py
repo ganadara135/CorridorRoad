@@ -57,6 +57,7 @@ apply_clickable_tab_style = None
 apply_tin_editor_operations = None
 build_tin_source_from_csv = None
 nearest_tin_vertex = None
+show_v1_tin_review = None
 triangle_ids_from_selected_faces = None
 triangle_ids_from_view_event = None
 
@@ -417,8 +418,6 @@ class V1TINEditorTaskPanel:
 
     def _review_tin(self) -> None:
         try:
-            from .cmd_review_tin import show_v1_tin_review
-
             result = self._apply_current_editor_state(focus_preview=False)
             _remove_rect_previews(self.document)
             show_v1_tin_review(
