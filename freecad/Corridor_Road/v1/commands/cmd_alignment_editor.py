@@ -935,13 +935,6 @@ def _normalized_element_rows(
     return normalized
 
 
-def _existing_element_id(alignment, row_index: int) -> str:
-    ids = list(getattr(alignment, "ElementIds", []) or []) if alignment is not None else []
-    if row_index < len(ids):
-        return str(ids[row_index] or "")
-    return ""
-
-
 def _float_list(values) -> list[float]:
     result = []
     for value in list(values or []):
@@ -1052,14 +1045,6 @@ def _vector(x: float, y: float):
     if App is not None and hasattr(App, "Vector"):
         return App.Vector(float(x), float(y), 0.0)
     return type("_Vector", (), {"x": float(x), "y": float(y), "z": 0.0})()
-
-
-def _shift_last_coordinate_row(text: str, delta: float) -> str:
-    values = _csv_float_row(text)
-    if not values:
-        return "0.0,20.0"
-    last = values[-1]
-    return _format_csv_float_row([last, last + float(delta)])
 
 
 configure_alignment_editor_task_panel_runtime(globals())

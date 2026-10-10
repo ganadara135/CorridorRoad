@@ -649,11 +649,6 @@ def _point_to_segment_distance(point, start, end):
     return _segment_distance_ratio(point, start, end)[0]
 
 
-def _project_to_segment(point, start, end):
-    distance, ratio = _segment_distance_ratio(point, start, end)
-    return {"distance": distance, "ratio": ratio}
-
-
 def _segment_distance_ratio(point, start, end):
     """Return (distance, clamped ratio) of `point` against the segment.
 

@@ -1094,37 +1094,6 @@ def _build_parametric_compatibility_supplemental_sampling_enabled(
     return False
 
 
-def _build_corridor_potential_supplemental_sampling_summary(
-    document=None,
-    *,
-    applied_section_set=None,
-    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
-    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
-    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
-) -> dict[str, object]:
-    """Return diagnostic-only potential supplemental frame counts for stale AppliedSectionSet data."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    applied = applied_section_set or (to_applied_section_set(find_v1_applied_section_set(doc)) if doc is not None else None)
-    if applied is None:
-        return {}
-    if int(_applied_section_supplemental_consumption_summary(applied).get("supplemental_section_count", 0) or 0) > 0:
-        return {}
-    sections = list(getattr(applied, "sections", []) or [])
-    if len(sections) < 2:
-        return {}
-    try:
-        return supplemental_sampling_summary(
-            sections,
-            max_spacing=float(supplemental_sampling_max_spacing or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
-            tangent_delta_threshold_deg=float(supplemental_sampling_tangent_delta_deg or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG),
-            chord_deviation_threshold=float(supplemental_sampling_chord_deviation or SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD),
-            frame_resolver=_corridor_supplemental_frame_resolver(doc),
-        )
-    except Exception:
-        return {}
-
-
 def _build_corridor_effective_hidden_supplemental_sampling_enabled(
     document=None,
     *,
@@ -6211,15 +6180,6 @@ def _safe_output_object_suffix(value: object) -> str:
     return "".join(output).strip("_") or "unknown"
 
 
-def _corridor_region_surface_preview_object(document, region_id: str):
-    if document is None:
-        return None
-    try:
-        return document.getObject(_region_surface_preview_object_name(region_id))
-    except Exception:
-        return None
-
-
 def _region_surface_role_specs(region_id: str) -> list[dict[str, object]]:
     return [
         {
@@ -8328,14 +8288,6 @@ def _remove_corridor_build_preview_diagnostic(document, role: str) -> None:
         _remove_preview_object(document, object_name)
 
 
-def _corridor_centerline_preview_points(document, app_module):
-    centerline_result = _build_corridor_centerline3d_result(document)
-    points, stations, result_id = _centerline_points_from_centerline3d_result(centerline_result, app_module)
-    if len(points) >= 2:
-        return points, stations, "centerline3d_result", result_id
-    return [], [], "", ""
-
-
 def _corridor_centerline_preview_shape(document, app_module, part_module):
     centerline_result = _build_corridor_centerline3d_result(document)
     points, stations, result_id = _centerline_points_from_centerline3d_result(centerline_result, app_module)
@@ -8506,15 +8458,6 @@ def _select_and_fit_object(obj) -> None:
                 Gui.SendMsgToActiveView("ViewFit")
             except Exception:
                 pass
-
-
-def _clear_gui_selection() -> None:
-    if Gui is None:
-        return
-    try:
-        Gui.Selection.clearSelection()
-    except Exception:
-        pass
 
 
 def _select_and_fit_objects(objects: list[object]) -> None:

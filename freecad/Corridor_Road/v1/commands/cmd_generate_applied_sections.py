@@ -2162,16 +2162,6 @@ def _same_preview_point(left, right, tolerance: float = 1.0e-7) -> bool:
         return False
 
 
-def _applied_section_stroke_width(points) -> float:
-    if not points:
-        return 0.1
-    xs = [float(point.x) for point in points]
-    ys = [float(point.y) for point in points]
-    zs = [float(point.z) for point in points]
-    span = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs), 1.0)
-    return max(0.08, min(0.35, span * 0.015))
-
-
 def _make_applied_section_wire(points):
     clean_points = _unique_preview_points(list(points or []))
     if len(clean_points) < 2 or Part is None:
@@ -2188,35 +2178,6 @@ def _make_applied_section_wire(points):
             except Exception:
                 pass
         return Part.Compound(edges) if edges else None
-
-
-def _make_applied_section_segment_stroke(start, end, stroke_width: float):
-    width = float(stroke_width or 0.0)
-    if width <= 0.0 or Part is None:
-        return None
-    try:
-        direction = end - start
-        if direction.Length <= 1.0e-9:
-            return None
-        tangent = App.Vector(direction)
-        tangent.normalize()
-        up = App.Vector(0.0, 0.0, 1.0)
-        normal = tangent.cross(up)
-        if normal.Length <= 1.0e-9:
-            normal = App.Vector(1.0, 0.0, 0.0)
-        normal.normalize()
-        normal = normal * (width * 0.5)
-        points = [
-            start + normal,
-            end + normal,
-            end - normal,
-            start - normal,
-            start + normal,
-        ]
-        face = Part.Face(Part.makePolygon(points))
-        return face.extrude(App.Vector(0.0, 0.0, max(0.04, width * 0.2)))
-    except Exception:
-        return None
 
 
 def _style_applied_section_preview_object(obj) -> None:
@@ -2243,69 +2204,6 @@ def _style_applied_section_preview_object(obj) -> None:
             vobj.Transparency = 0
     except Exception:
         pass
-
-
-def _style_applied_section_station_marker(obj) -> None:
-    vobj = getattr(obj, "ViewObject", None)
-    if vobj is None:
-        return
-    try:
-        vobj.Visibility = True
-        vobj.DisplayMode = "Wireframe"
-        vobj.DrawStyle = "Solid"
-        vobj.ShapeColor = (1.0, 0.86, 0.05)
-        vobj.LineColor = (0.02, 0.02, 0.02)
-        vobj.PointColor = (1.0, 0.95, 0.1)
-        vobj.LineWidth = 4.0
-        vobj.PointSize = 1.0
-        if hasattr(vobj, "Transparency"):
-            vobj.Transparency = 0
-    except Exception:
-        pass
-
-
-def _applied_section_station_marker_shape(center, radius: float, frame):
-    """Build a wire target marker that stays legible without shaded sphere artifacts."""
-
-    radius = max(float(radius or 0.0), 0.25)
-    tangent_deg = float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0)
-    try:
-        import math
-
-        angle = math.radians(tangent_deg)
-        tangent = App.Vector(math.cos(angle), math.sin(angle), 0.0)
-        normal = App.Vector(-math.sin(angle), math.cos(angle), 0.0)
-    except Exception:
-        tangent = App.Vector(1.0, 0.0, 0.0)
-        normal = App.Vector(0.0, 1.0, 0.0)
-    vertical = App.Vector(0.0, 0.0, 1.0)
-    shapes = []
-    try:
-        shapes.append(Part.makeCircle(radius, center, vertical))
-    except Exception:
-        pass
-    for axis, scale in ((tangent, 1.35), (normal, 1.35), (vertical, 0.9)):
-        try:
-            factor = radius * scale
-            delta = App.Vector(float(axis.x) * factor, float(axis.y) * factor, float(axis.z) * factor)
-            shapes.append(Part.makeLine(center - delta, center + delta))
-        except Exception:
-            pass
-    return Part.Compound(shapes) if shapes else Part.makeSphere(radius, center)
-
-
-def _applied_section_station_marker_radius(section) -> float:
-    frame = getattr(section, "frame", None)
-    points = []
-    if frame is not None:
-        points = [point for _role, row_points in _applied_section_preview_polylines(section, frame) for point in list(row_points or [])]
-    if len(points) >= 2:
-        xs = [float(point.x) for point in points]
-        ys = [float(point.y) for point in points]
-        zs = [float(point.z) for point in points]
-        span = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs), 1.0)
-        return max(0.25, min(span * 0.06, 2.5))
-    return 0.6
 
 
 def _set_preview_string_property(obj, name: str, value: str) -> None:

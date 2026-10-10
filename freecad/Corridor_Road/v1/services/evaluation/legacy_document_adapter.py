@@ -40,21 +40,6 @@ class LegacyPreviewBundle:
     earthwork_model: EarthworkBalanceModel | None = None
 
 
-def _row_get(row: dict[str, object], *keys: str, default=None):
-    """Return a case-tolerant value from a legacy row dictionary."""
-
-    data = dict(row or {})
-    for key in keys:
-        if key in data:
-            return data.get(key)
-    lower_map = {str(key).strip().lower(): value for key, value in data.items()}
-    for key in keys:
-        normalized = str(key).strip().lower()
-        if normalized in lower_map:
-            return lower_map[normalized]
-    return default
-
-
 class LegacyDocumentAdapter:
     """Adapt a legacy FreeCAD document into minimal v1 preview models."""
 

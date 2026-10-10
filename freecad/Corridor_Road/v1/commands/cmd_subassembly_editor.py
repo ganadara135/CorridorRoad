@@ -360,22 +360,6 @@ def _active_template(model: AssemblySubassemblyModel) -> SubassemblySectionTempl
     return rows[0]
 
 
-def _assembly_section_preview_wires(rows: list[TemplateSubassembly], *, definition_library=None, part_module=None) -> list[object]:
-    if App is None or part_module is None:
-        return []
-    wires = []
-    for segment in _assembly_section_preview_segments(rows, definition_library=definition_library):
-        topline = list(segment.get("topline", []) or [])
-        if len(topline) >= 2:
-            for start, end in zip(topline, topline[1:]):
-                if start != end:
-                    wires.extend(_assembly_section_preview_segment_wires(part_module, start, end, end, start))
-            continue
-        top_start, top_end, bottom_end, bottom_start = segment["points"]
-        wires.extend(_assembly_section_preview_segment_wires(part_module, top_start, top_end, bottom_end, bottom_start))
-    return wires
-
-
 def _assembly_section_preview_segments(rows: list[TemplateSubassembly], *, definition_library=None) -> list[dict[str, object]]:
     segments: list[dict[str, object]] = []
     edge_by_side = {"left": (0.0, 0.0), "right": (0.0, 0.0)}
@@ -625,45 +609,6 @@ def _definition_by_ref_in_library(library, definition_ref: str):
         if str(getattr(row, "definition_id", "") or "").strip() == ref:
             return row
     return None
-
-
-def _assembly_section_preview_segment_wires(part_module, top_start, top_end, bottom_end, bottom_start) -> list[object]:
-    vectors = [_preview_vector(top_start), _preview_vector(top_end), _preview_vector(bottom_end), _preview_vector(bottom_start), _preview_vector(top_start)]
-    wires = []
-    for start, end in ((vectors[0], vectors[1]), (vectors[1], vectors[2]), (vectors[2], vectors[3]), (vectors[3], vectors[0])):
-        if _same_preview_vector(start, end):
-            continue
-        wires.append(part_module.makeLine(start, end))
-    return wires
-
-
-def _preview_vector(point: tuple[float, float]):
-    return App.Vector(float(point[0]), 0.0, float(point[1]))
-
-
-def _same_preview_vector(first, second, tolerance: float = 1.0e-9) -> bool:
-    try:
-        return (
-            abs(float(first.x) - float(second.x)) <= tolerance
-            and abs(float(first.y) - float(second.y)) <= tolerance
-            and abs(float(first.z) - float(second.z)) <= tolerance
-        )
-    except Exception:
-        return False
-
-
-def _style_assembly_section_preview_object(obj) -> None:
-    view = getattr(obj, "ViewObject", None)
-    if view is None:
-        return
-    try:
-        view.LineColor = (0.05, 0.85, 1.0)
-        view.PointColor = (1.0, 0.8, 0.1)
-        view.LineWidth = 3.0
-        view.PointSize = 5.0
-        view.Visibility = True
-    except Exception:
-        pass
 
 
 def _set_preview_property(obj, name: str, value: object) -> None:

@@ -1774,10 +1774,6 @@ def _xy_at_offset(frame, offset: float, z: float) -> tuple[float, float, float]:
     return base_x + normal_x * float(offset), base_y + normal_y * float(offset), float(z)
 
 
-def _frame_rows(applied_section_set: AppliedSectionSet) -> list[object]:
-    return [getattr(section, "frame", None) for section in _section_rows(applied_section_set) if getattr(section, "frame", None) is not None]
-
-
 def _section_rows_for_request(request: CorridorDesignSurfaceGeometryRequest, *, surface_kind: str = "") -> list[object]:
     sections = _section_rows(request.applied_section_set)
     sections = _transition_augmented_sections(
@@ -2345,41 +2341,6 @@ def _span_interval_needs_supplemental_sampling(
     )
     if (
         abs(end_station - start_station) > float(max_spacing) + 1.0e-6
-        and _supplemental_interval_exceeds_curve_threshold(
-            tangent_delta,
-            chord_deviation,
-            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
-            chord_deviation_threshold=chord_deviation_threshold,
-        )
-    ):
-        return True
-    if tangent_delta > max(float(tangent_delta_threshold_deg or 0.0), 0.01):
-        return True
-    if chord_deviation > max(float(chord_deviation_threshold or 0.0), 0.001):
-        return True
-    return False
-
-
-def _span_needs_supplemental_sampling(
-    first,
-    second,
-    *,
-    max_spacing: float,
-    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
-    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
-    frame_resolver: SupplementalFrameResolver | None = None,
-) -> bool:
-    first_frame = getattr(first, "frame", None)
-    second_frame = getattr(second, "frame", None)
-    tangent_delta = abs(
-        _angle_delta_degrees(
-            float(getattr(first_frame, "tangent_direction_deg", 0.0) or 0.0),
-            float(getattr(second_frame, "tangent_direction_deg", 0.0) or 0.0),
-        )
-    )
-    chord_deviation = _source_frame_chord_deviation(first, second, frame_resolver=frame_resolver)
-    if (
-        _section_station_delta(first, second) > float(max_spacing) + 1.0e-6
         and _supplemental_interval_exceeds_curve_threshold(
             tangent_delta,
             chord_deviation,
@@ -3233,10 +3194,6 @@ def _surface_role_for_point_role(point_role: str) -> str:
     return ""
 
 
-def _surface_width_rows(applied_section_set: AppliedSectionSet, *, fallback_half_width: float) -> list[tuple[float, float]]:
-    return _surface_width_rows_for_sections(_section_rows(applied_section_set), fallback_half_width=fallback_half_width)
-
-
 def _surface_width_rows_for_sections(sections: list[object], *, fallback_half_width: float) -> list[tuple[float, float]]:
     widths: list[tuple[float, float]] = []
     for section in list(sections or []):
@@ -3252,14 +3209,6 @@ def _surface_width_rows_for_sections(sections: list[object], *, fallback_half_wi
                 right_width = left_width
         widths.append((max(left_width, 0.1), max(right_width, 0.1)))
     return widths
-
-
-def _daylight_inner_edge_rows(
-    applied_section_set: AppliedSectionSet,
-    *,
-    fallback_half_width: float,
-) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    return _daylight_inner_edge_rows_for_sections(_section_rows(applied_section_set), fallback_half_width=fallback_half_width)
 
 
 def _daylight_inner_edge_rows_for_sections(
@@ -3310,10 +3259,6 @@ def _surface_width_rows_for_section(section, *, fallback_half_width: float) -> t
         if right_width <= 0.0:
             right_width = left_width
     return max(left_width, 0.1), max(right_width, 0.1)
-
-
-def _daylight_rows(applied_section_set: AppliedSectionSet) -> list[tuple[float, float, float, float]]:
-    return _daylight_rows_for_sections(_section_rows(applied_section_set))
 
 
 def _daylight_rows_for_sections(sections: list[object]) -> list[tuple[float, float, float, float]]:

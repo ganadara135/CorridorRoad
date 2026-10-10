@@ -710,13 +710,6 @@ def _normalized_intersection_review_status(status: str) -> str:
     return value or "unknown"
 
 
-def _station_range_note(ranges: tuple[tuple[float, float], ...] | list[tuple[float, float]]) -> str:
-    pieces = []
-    for start, end in list(ranges or []):
-        pieces.append(f"STA {float(start or 0.0):.3f}-{float(end or 0.0):.3f}")
-    return ", ".join(pieces)
-
-
 def _intersection_context_summary(rows: list[dict[str, object]]) -> str:
     if not rows:
         return ""

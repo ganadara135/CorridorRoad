@@ -1406,12 +1406,6 @@ def _truthy(value: object, *, default: bool = False) -> bool:
     return text in {"1", "true", "yes", "y", "on"}
 
 
-def _parameter_value(parameter) -> str:
-    value = str(getattr(parameter, "value", "") or "")
-    unit = str(getattr(parameter, "unit", "") or "")
-    return f"{value} {unit}".strip()
-
-
 def _preview_pen_for_link(link, default_pen, slope_pen, bench_pen):
     code = str(getattr(link, "code", "") or "").lower()
     link_id = str(getattr(link, "link_id", "") or "").lower()

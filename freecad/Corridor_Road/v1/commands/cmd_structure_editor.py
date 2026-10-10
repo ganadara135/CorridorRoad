@@ -1758,11 +1758,6 @@ def _structure_preview_review_notes(structure_model: StructureModel, context: di
     return notes
 
 
-def _structure_preview_size(row: StructureRow, context: dict[str, object] | None = None) -> tuple[float, float]:
-    profile = _structure_preview_profile(row, context)
-    return float(profile.get("half_width", 0.0) or 0.0), float(profile.get("height", 0.0) or 0.0)
-
-
 def _structure_preview_profile(row: StructureRow, context: dict[str, object] | None = None) -> dict[str, object]:
     context = context or {}
     spec = _structure_geometry_spec_for_row(row, context)

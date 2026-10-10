@@ -273,21 +273,6 @@ def _update_rect_preview(
         return None
 
 
-def _remove_rect_preview(document, name: str) -> None:
-    if document is None:
-        return
-    try:
-        obj = document.getObject(name)
-        if obj is not None:
-            document.removeObject(str(getattr(obj, "Name", "") or name))
-            try:
-                document.recompute()
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-
 def _remove_rect_previews(document, *, role: str = "") -> None:
     if document is None:
         return

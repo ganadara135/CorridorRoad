@@ -360,13 +360,6 @@ def _control_at_or_before(controls: list[CrossfallControlRow], station: float, *
     return _active_control(controls, station, side=side)
 
 
-def _control_at_or_after(controls: list[CrossfallControlRow], station: float, *, side: str) -> CrossfallControlRow | None:
-    candidates = [row for row in controls if _control_applies_to_side(row, side) and float(getattr(row, "station", 0.0) or 0.0) >= float(station)]
-    if not candidates:
-        return None
-    return sorted(candidates, key=lambda row: (float(getattr(row, "station", 0.0) or 0.0), -_side_priority(row, side)))[0]
-
-
 def _control_between(controls: list[CrossfallControlRow], start: float, end: float, *, side: str) -> CrossfallControlRow | None:
     candidates = [
         row

@@ -26,13 +26,6 @@ def display_source_ref(value: object) -> str:
     return text.split(":", 1)[1]
 
 
-def display_source_id(value: object, prefix: str) -> str:
-    text = str(value or "")
-    if prefix and text.startswith(prefix):
-        return text[len(prefix) :]
-    return text
-
-
 def format_count_summary(counts: dict[str, int], *, limit: int = 5) -> str:
     if not counts:
         return "none"

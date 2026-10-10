@@ -1149,14 +1149,6 @@ def _clip_overlapping_applied_sections(
     return clipped_sections, station_rows
 
 
-def _applied_section_plan_lines_overlap(first: AppliedSection, second: AppliedSection) -> bool:
-    first_line = _applied_section_plan_line(first)
-    second_line = _applied_section_plan_line(second)
-    if first_line is None or second_line is None:
-        return False
-    return _plan_segments_intersect(first_line[0], first_line[1], second_line[0], second_line[1])
-
-
 def _clip_applied_section_against_previous(previous: AppliedSection, section: AppliedSection) -> AppliedSection:
     previous_line = _applied_section_plan_line(previous)
     current_line = _applied_section_plan_line(section)
@@ -3332,10 +3324,6 @@ def _orient_bench_segments_to_terrain(
     if slope_direction == 0:
         return segments
     return _bench_segments_with_context_slope(segments, subassembly=subassembly, sign=slope_direction)
-
-
-def _bench_segments_with_slope_sign(segments: list[dict[str, object]], sign: int) -> list[dict[str, object]]:
-    return _bench_segments_with_context_slope(segments, subassembly=None, sign=sign)
 
 
 def _bench_segments_with_context_slope(segments: list[dict[str, object]], *, subassembly, sign: int) -> list[dict[str, object]]:
