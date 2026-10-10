@@ -82,28 +82,38 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 ## 4. What is left
 
+### Done on 2026-10-10 (head `7997082`, gate 1,169 passed / 18 skipped, runners PASS)
+
+- `5f33cb2`: the cross section viewer lists intersection rows for every section inside the kernel
+  clip span, not only inside the source control area (with the panel's roundabout defaults the clip
+  span was STA 74.5-185.5 and the control area STA 111.25-148.75). Checked in FreeCAD.
+- `e4db4f5`: Next/Previous find the current row by its Applied Section, so they stay on the current
+  road. Checked in FreeCAD.
+- `cf80c0d`: Station Navigation lists the primary road's stations first, then the other roads.
+- `fbb8ed8`: the Structure Output and Review TIN buttons call runtime-bound commands; their lazy
+  imports pointed at modules that do not exist. A contract test now resolves every relative import
+  in `ui`.
+- `5699e31`: the dead intersection code this handoff listed, found by a reachability pass (section 5).
+  `_intersection_trim_pair_rows_from_object` (Watertight, paused) was left in place.
+- `7997082`: the Results tab no longer reads the 106 legacy preview properties nothing writes, and
+  the kernel surfaces' Output Path reads `contract_consumed` instead of `legacy_output` /
+  `inferred_fallback`.
+
 ### Next steps, in order
 
 1. **GUI checks (user, in FreeCAD).** Procedure in
    [V1_INTERSECTION_MANUAL_QA.md](./V1_INTERSECTION_MANUAL_QA.md); record results in its table.
-   - after Create Sources from a preset, the `Intersections` folder holds `Intersection Source`;
-   - a roundabout document created before R7c-3 rebuilds the same ring (it now comes from the
-     curb return radius when no spec is stored), section 7 step 4;
+   Done: `Intersection Source` label, cross section viewer rows (section 6), Next.
+   - Station Navigation order (`cf80c0d`);
+   - the Structure Output button (Build Parametric) and Review TIN button (TIN editor), `fbb8ed8`;
+   - Results tab: `intersection` and `intersection_slope` Output Path `contract_consumed`, `7997082`;
+   - a roundabout document created before R7c-3 rebuilds the same ring, section 7 step 4;
    - the Drainage tab's low point and `Suggested Inlet` marker, section 5;
-   - the cross section viewer's intersection rows, section 6;
    - the Breakline Audit tab shows one row per surface and no errors after a rebuild.
-2. **Remaining dead intersection code** (same method as `275ca65`, section 5 "Finding dead
-   code"): the intersection and roundabout rows of `ui/presentation/build_review_presentation.py`;
-   `intersection_surface_tin_with_shared_breakline_constraint_edges` and its private helper in
-   `services/builders/shared_breakline_tin_builder_service.py`; `_project_to_segment` in
-   `intersection_patch_constraint_build_service`; the `IntersectionSurfaceZone*` classes of the
-   surface output model; dead helpers in `cmd_intersection_editor` and
-   `cmd_intersection_presets`; `intersection_kind_from_label` and `intersection_preset_labels` in
-   `models/source/intersection_model.py`. Confirm each is unreachable before deleting.
-3. **Broken lazy imports**, being fixed in a separate session when this was written:
-   `ui/viewers/build_corridor_view.py` imports `.cmd_structure_output` (Structure Output button)
-   and `ui/editors/tin_editor.py` imports `.cmd_review_tin`, both relative to the `ui` package where
-   those modules do not exist. Check `git log` for the fix before starting on it.
+2. **Remaining dead code** outside the intersection work: the reachability pass still lists 220
+   module-level definitions, 142 in v1 (71 services, 41 commands, 15 objects) and 78 in v0, where
+   the stored-`Proxy` constraint applies (section 5). Review the v1 ones domain by domain and skip
+   paused domains; the pass is name-based, so confirm each one before deleting.
 
 ### Open questions for the user
 
