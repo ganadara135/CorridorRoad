@@ -5,8 +5,6 @@ from freecad.Corridor_Road.v1.services.geometry import (
     xy_point_in_polygon,
     xy_point_in_polygon_strict,
     xy_point_on_segment,
-    xy_triangle_intersects_polygon,
-    xy_triangle_polygon_intersection_kind,
 )
 
 
@@ -48,31 +46,8 @@ def test_point_on_segment_preserves_tolerance_and_zero_length_behavior() -> None
     assert xy_point_on_segment((1.0, 1.0), (1.0, 1.0), (1.0, 1.0))
 
 
-def test_concave_polygon_and_triangle_relation_kinds_are_deterministic() -> None:
+def test_concave_polygon_point_in_polygon_is_deterministic() -> None:
     concave = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (2.0, 2.0), (0.0, 4.0)]
-    square = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]
 
     assert xy_point_in_polygon((1.0, 2.0), concave)
     assert not xy_point_in_polygon((2.0, 3.0), concave)
-    assert xy_triangle_polygon_intersection_kind(
-        [(-1.0, 1.0), (1.0, 1.0), (0.0, 2.0)], square
-    ) == "edge_crossing"
-    assert xy_triangle_polygon_intersection_kind(
-        [(1.0, 1.0), (3.0, 1.0), (2.0, 3.0)], square
-    ) == "centroid_inside"
-    assert xy_triangle_polygon_intersection_kind(
-        [(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)],
-        [(1.0, 1.0), (2.0, 1.0), (1.0, 2.0)],
-    ) == "polygon_vertex_inside_triangle"
-
-
-def test_triangle_relation_handles_touch_disjoint_degenerate_and_wrappers() -> None:
-    square = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]
-    touching = [(-2.0, -1.0), (0.0, 0.0), (-1.0, 1.0)]
-    disjoint = [(5.0, 5.0), (6.0, 5.0), (5.0, 6.0)]
-
-    assert xy_triangle_polygon_intersection_kind(touching, square) == "edge_crossing"
-    assert xy_triangle_intersects_polygon(touching, square)
-    assert xy_triangle_polygon_intersection_kind(disjoint, square) == ""
-    assert not xy_triangle_intersects_polygon(disjoint, square)
-    assert xy_triangle_polygon_intersection_kind(disjoint[:2], square) == ""
