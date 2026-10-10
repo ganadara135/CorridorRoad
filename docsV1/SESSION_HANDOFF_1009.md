@@ -103,13 +103,11 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 1. **GUI checks (user, in FreeCAD).** Procedure in
    [V1_INTERSECTION_MANUAL_QA.md](./V1_INTERSECTION_MANUAL_QA.md); record results in its table.
-   Done: `Intersection Source` label, cross section viewer rows (section 6), Next.
-   - Station Navigation order (`cf80c0d`);
+   Done: `Intersection Source` label, cross section viewer rows (section 6), Next, Station
+   Navigation order, Results tab Output Path, Breakline Audit rows.
    - the Structure Output button (Build Parametric) and Review TIN button (TIN editor), `fbb8ed8`;
-   - Results tab: `intersection` and `intersection_slope` Output Path `contract_consumed`, `7997082`;
    - a roundabout document created before R7c-3 rebuilds the same ring, section 7 step 4;
-   - the Drainage tab's low point and `Suggested Inlet` marker, section 5;
-   - the Breakline Audit tab shows one row per surface and no errors after a rebuild.
+   - the Drainage tab's low point and `Suggested Inlet` marker, section 5.
 2. **Remaining dead code** outside the intersection work: the reachability pass still lists 220
    module-level definitions, 142 in v1 (71 services, 41 commands, 15 objects) and 78 in v0, where
    the stored-`Proxy` constraint applies (section 5). Review the v1 ones domain by domain and skip
