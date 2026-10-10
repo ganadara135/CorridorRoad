@@ -36,24 +36,6 @@ def _alignment_edge_boundaries(aln):
     return vals
 
 
-def _vertical_key_stations(va):
-    if va is None:
-        return []
-
-    vals = []
-    try:
-        pvis, _grades, curves = VerticalAlignment._solve_curves(va)
-        if pvis:
-            vals.append(float(pvis[0][0]))
-            vals.append(float(pvis[-1][0]))
-        for c in curves:
-            vals.append(float(c["bvc"]))
-            vals.append(float(c["evc"]))
-    except Exception:
-        return []
-    return vals
-
-
 def _horizontal_key_rows(aln):
     if aln is None:
         return []

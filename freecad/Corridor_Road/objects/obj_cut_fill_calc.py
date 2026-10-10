@@ -37,10 +37,6 @@ def _lerp_rgb(c0, c1, t: float):
     )
 
 
-def _vec(x, y, z):
-    return App.Vector(float(x), float(y), float(z))
-
-
 def _to_vec(p):
     return _ssc.to_vec(p)
 

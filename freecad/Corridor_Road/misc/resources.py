@@ -10,17 +10,9 @@ _ICONS_DIR = os.path.join(_RESOURCES_DIR, "icons")
 _UI_DIR = os.path.join(_RESOURCES_DIR, "ui")
 
 
-def package_path(*parts):
-    return os.path.join(_PKG_DIR, *parts)
-
-
 def resource_path(*parts):
     return os.path.join(_RESOURCES_DIR, *parts)
 
 
 def icon_path(filename):
     return os.path.join(_ICONS_DIR, filename)
-
-
-def ui_path(filename):
-    return os.path.join(_UI_DIR, filename)

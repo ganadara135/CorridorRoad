@@ -77,10 +77,6 @@ def _convert_bench_rows(doc_or_obj, bench_rows, converter):
     return out
 
 
-def _bench_rows_meters_from_internal(doc_or_obj, bench_rows):
-    return _convert_bench_rows(doc_or_obj, bench_rows, _units.meters_from_internal_length)
-
-
 def _bench_rows_model_from_meters(doc_or_obj, bench_rows):
     return _convert_bench_rows(doc_or_obj, bench_rows, _units.model_length_from_meters)
 

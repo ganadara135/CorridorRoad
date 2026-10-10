@@ -135,10 +135,6 @@ def get_linear_export_unit(doc_or_project) -> str:
     return str(resolve_project_unit_settings(doc_or_project).get("export", DEFAULT_LINEAR_UNIT))
 
 
-def get_custom_linear_scale(doc_or_project) -> float:
-    return float(resolve_project_unit_settings(doc_or_project).get("custom_scale", DEFAULT_CUSTOM_LINEAR_SCALE))
-
-
 def meters_per_user_unit(doc_or_project, unit: str = "", *, use_default: str = "import") -> float:
     settings = resolve_project_unit_settings(doc_or_project)
     default_unit = settings.get("import", DEFAULT_LINEAR_UNIT)

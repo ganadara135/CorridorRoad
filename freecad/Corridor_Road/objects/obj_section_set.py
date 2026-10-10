@@ -32,10 +32,6 @@ def _is_mesh_object(obj) -> bool:
     return _ssc.is_mesh_object(obj)
 
 
-def _is_shape_object(obj) -> bool:
-    return _ssc.is_shape_object(obj)
-
-
 def _find_project(doc):
     if doc is None:
         return None
@@ -470,30 +466,6 @@ def _parse_station_text(text: str):
         except Exception:
             continue
     return out
-
-
-def _format_station_text_values(values):
-    cleaned = []
-    for value in list(values or []):
-        try:
-            cleaned.append(f"{float(value):.6f}")
-        except Exception:
-            continue
-    return ", ".join(cleaned)
-
-
-def _station_text_internal_from_meters(doc, text: str) -> str:
-    values = []
-    for value in _parse_station_text(text):
-        values.append(_units.internal_length_from_meters(doc, float(value)))
-    return _format_station_text_values(values)
-
-
-def _station_text_meters_from_internal(doc, text: str) -> str:
-    values = []
-    for value in _parse_station_text(text):
-        values.append(_units.meters_from_internal_length(doc, float(value)))
-    return _format_station_text_values(values)
 
 
 def _resolve_structure_source(obj):

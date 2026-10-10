@@ -217,13 +217,3 @@ def sketch_to_alignment_rows(sketch_obj, tol: float = 1e-6, z_tol: float = 1e-4)
         dedup_rows[i][3] = 0.0
 
     return [(float(x), float(y), float(rr), float(ls)) for (x, y, rr, ls) in dedup_rows]
-
-
-def sketch_to_ip_points(sketch_obj, tol: float = 1e-6, z_tol: float = 1e-4):
-    rows = sketch_to_alignment_rows(sketch_obj, tol=tol, z_tol=z_tol)
-    out = []
-    for x, y, _r, _ls in rows:
-        out.append(App.Vector(float(x), float(y), 0.0))
-    if len(out) < 2:
-        raise ValueError("Sketch path has fewer than 2 valid points.")
-    return out

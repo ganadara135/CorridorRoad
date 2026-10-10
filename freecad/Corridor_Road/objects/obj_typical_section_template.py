@@ -404,15 +404,6 @@ def validate_pavement_layers(obj):
     return issues
 
 
-def _component_effective_width(row) -> float:
-    typ = str(row.get("Type", "") or "").strip().lower()
-    width = max(0.0, _safe_float(row.get("Width", 0.0), default=0.0))
-    extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
-    if typ in ("curb", "berm"):
-        return float(width + extra_width)
-    return float(width)
-
-
 def _uses_advanced_component_geometry(row) -> bool:
     if not bool(row.get("Enabled", True)):
         return False
