@@ -852,10 +852,37 @@ def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[d
     return rows
 
 
-def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> list[dict[str, object]]:
-    """Merge station navigation rows without dropping v1 result stations."""
+def _primary_alignment_refs(intersection_model_obj) -> list[str]:
+    """Return the primary roads of the document's intersections, in source order."""
+
+    if intersection_model_obj is None:
+        return []
+    from ..objects.obj_intersection import to_intersection_model
+
+    model = to_intersection_model(intersection_model_obj)
+    if model is None and hasattr(intersection_model_obj, "intersection_rows"):
+        model = intersection_model_obj
+    refs: list[str] = []
+    for row in list(getattr(model, "intersection_rows", []) or []):
+        ref = str(getattr(row, "primary_alignment_ref", "") or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def _merge_viewer_station_rows(
+    *row_groups: list[dict[str, object]] | None,
+    alignment_order: list[str] | None = None,
+) -> list[dict[str, object]]:
+    """Merge station navigation rows without dropping v1 result stations.
+
+    Rows are grouped by road and sorted by station within each road: the roads named in
+    alignment_order (the intersections' primary roads) come first, then the others in the order
+    the rows first name them.
+    """
 
     by_key: dict[tuple[str, float], dict[str, object]] = {}
+    first_seen: dict[str, int] = {}
     for rows in row_groups:
         for row in list(rows or []):
             item = dict(row or {})
@@ -865,6 +892,7 @@ def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> l
                 continue
             section_id = str(item.get("applied_section_id", "") or "").strip()
             alignment_id = str(item.get("alignment_id", "") or "").strip()
+            first_seen.setdefault(alignment_id, len(first_seen))
             base_key = (f"station:{station}", station)
             key = (section_id or alignment_id or f"station:{station}", station)
             if (section_id or alignment_id) and base_key in by_key:
@@ -873,11 +901,19 @@ def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> l
             merged = dict(existing)
             merged.update({key: value for key, value in item.items() if value not in (None, "")})
             by_key[key] = merged
+    preferred = [str(ref or "").strip() for ref in list(alignment_order or []) if str(ref or "").strip()]
+
+    def road_rank(row: dict[str, object]) -> tuple[int, int]:
+        alignment_id = str(row.get("alignment_id", "") or "").strip()
+        if alignment_id in preferred:
+            return 0, preferred.index(alignment_id)
+        return 1, first_seen.get(alignment_id, len(first_seen))
+
     merged_rows = [
         by_key[key]
         for key in sorted(
             by_key,
-            key=lambda value: (value[1], str(by_key[value].get("alignment_id", "") or ""), str(value[0])),
+            key=lambda value: (road_rank(by_key[value]), value[1], str(value[0])),
         )
     ]
     for index, row in enumerate(merged_rows):
@@ -2149,6 +2185,7 @@ def show_v1_section_preview(
     preview["station_rows"] = _merge_viewer_station_rows(
         list(preview.get("station_rows", []) or []),
         _viewer_station_rows_from_applied_section_set(preview.get("applied_section_set", None)),
+        alignment_order=_primary_alignment_refs(source_objects.get("intersection_model")),
     )
     preview["result_state"] = _resolve_result_state(
         explicit_result_state=dict(preview.get("result_state", {}) or {}),

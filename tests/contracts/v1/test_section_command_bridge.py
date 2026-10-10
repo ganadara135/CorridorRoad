@@ -359,6 +359,26 @@ def test_cross_section_viewer_next_stays_on_the_current_road_when_roads_share_st
     assert [row["applied_section_id"] for row in opened] == ["alignment:secondary:40", "alignment:secondary:0"]
 
 
+def test_station_navigation_rows_list_the_primary_road_first_then_the_others() -> None:
+    from freecad.Corridor_Road.v1.commands.cmd_view_sections import _merge_viewer_station_rows
+
+    # applied-set order names road:a first, but the intersection's primary road is road:b
+    rows = [
+        {"station": station, "applied_section_id": f"{road}:{station:.0f}", "alignment_id": road}
+        for road in ("road:a", "road:b", "road:c")
+        for station in (40.0, 0.0, 20.0)
+    ]
+
+    merged = _merge_viewer_station_rows(rows, alignment_order=["road:b"])
+
+    assert [row["applied_section_id"] for row in merged] == [
+        "road:b:0", "road:b:20", "road:b:40",
+        "road:a:0", "road:a:20", "road:a:40",
+        "road:c:0", "road:c:20", "road:c:40",
+    ]
+    assert [row["index"] for row in merged] == list(range(9))
+
+
 def test_station_focus_uses_selected_applied_section_frame() -> None:
     preview = {
         "station_row": {"station": 20.0, "label": "STA 20.000"},
