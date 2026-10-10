@@ -30,11 +30,10 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
     INTERSECTION_PRESETS_COMMAND_ID,
     PRESET_SOURCE_MODES,
     build_existing_alignment_intersection_model,
-    build_preset_source_intersection_model,
     create_intersection_from_existing_alignments,
     create_intersection_preset_sources,
+    INTERSECTION_PRESET_ROWS,
     intersection_preset_kind_from_label,
-    intersection_preset_labels,
     _route_intersection_preset_objects,
 )
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
@@ -111,7 +110,7 @@ def test_intersection_starter_source_specs_cover_first_slice_types() -> None:
 
 
 def test_intersection_preset_panel_labels_map_to_source_kinds() -> None:
-    labels = intersection_preset_labels()
+    labels = [str(row["label"]) for row in INTERSECTION_PRESET_ROWS]
 
     assert PRESET_SOURCE_MODES == ("Create From Preset", "Use Existing Alignments")
     assert labels == [
@@ -236,12 +235,10 @@ def _corner_source_validation_model(curb_return_policy_ref: str) -> Intersection
     )
 
 
-def test_intersection_preset_options_are_reflected_in_edge_network_preview() -> None:
-    doc = App.newDocument("CRV1IntersectionPresetPreviewOptions")
+def test_intersection_preset_options_are_stored_in_the_intersection_source() -> None:
+    doc = App.newDocument("CRV1IntersectionPresetOptions")
     try:
-        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
-
-        model, _control_region_count, detection = build_preset_source_intersection_model(
+        create_intersection_preset_sources(
             doc,
             preset_label="T Intersection - Basic",
             design_vehicle="bus_or_small_truck",
@@ -250,6 +247,8 @@ def test_intersection_preset_options_are_reflected_in_edge_network_preview() -> 
             grading_policy="keep_primary_crown",
             drainage_mode="outside_gutter",
         )
+        model = to_intersection_model(find_v1_intersection_model(doc))
+
         assert {row.design_vehicle_ref for row in model.arm_policy_rows} == {"bus_or_small_truck"}
         assert {round(float(row.radius), 3) for row in model.curb_return_policy_rows} == {18.0}
         assert model.curb_return_policy_rows[0].corner_refs == [row.corner_id for row in model.corner_rows]

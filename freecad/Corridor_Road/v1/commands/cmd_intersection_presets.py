@@ -103,12 +103,6 @@ DRAINAGE_MODES = ("review_low_points", "outside_gutter", "central_island", "curb
 PRESET_SOURCE_MODES = ("Create From Preset", "Use Existing Alignments")
 
 
-def intersection_preset_labels() -> list[str]:
-    """Return user-facing labels for the preset source panel."""
-
-    return [str(row["label"]) for row in INTERSECTION_PRESET_ROWS]
-
-
 def intersection_preset_kind_from_label(label: str) -> str:
     """Resolve one preset panel label to an internal intersection kind."""
 
@@ -893,57 +887,6 @@ def build_existing_alignment_intersection_model(
         drainage_mode=drainage_mode or str(row.get("drainage", "") or ""),
     )
     return model, len(control_regions)
-
-
-def build_preset_source_intersection_model(
-    document,
-    *,
-    preset_label: str,
-    design_vehicle: str = "",
-    radius: float | None = None,
-    control_length: float | None = None,
-    grading_policy: str = "",
-    drainage_mode: str = "",
-):
-    """Build a preview-only IntersectionModel from previously created preset sources."""
-
-    kind = intersection_preset_kind_from_label(preset_label)
-    if not kind:
-        raise ValueError(f"Unsupported Intersection Preset: {preset_label}")
-    control_regions = list_intersection_control_region_choices(document, intersection_ref_for_kind(kind))
-    if not control_regions:
-        raise ValueError("Create Sources first; no intersection-tagged control Regions were found.")
-    primary_ref, secondary_ref = _primary_secondary_refs_from_control_regions(control_regions)
-    if not primary_ref or not secondary_ref:
-        raise ValueError("Primary/Secondary Alignment refs could not be resolved from preset control Regions.")
-    if alignment_model_by_ref(document, primary_ref) is None:
-        raise ValueError(f"Primary Alignment source was not found: {primary_ref}")
-    if alignment_model_by_ref(document, secondary_ref) is None:
-        raise ValueError(f"Secondary Alignment source was not found: {secondary_ref}")
-    detection_result = _detect_preset_alignment_intersection(
-        document,
-        primary_alignment_ref=primary_ref,
-        secondary_alignment_ref=secondary_ref,
-    )
-    model = build_intersection_model_from_sources(
-        intersection_kind=kind,
-        source_mode="Create Starter Sources",
-        primary_alignment_ref=primary_ref,
-        secondary_alignment_ref=secondary_ref,
-        control_region_choices=control_regions,
-        detection_result=detection_result,
-        project_id=_project_id(find_project(document)),
-    )
-    row = intersection_preset_row_from_label(preset_label)
-    _apply_preset_policy_options(
-        model,
-        design_vehicle=design_vehicle,
-        radius=radius,
-        control_length=control_length,
-        grading_policy=grading_policy or str(row.get("grading", "") or ""),
-        drainage_mode=drainage_mode or str(row.get("drainage", "") or ""),
-    )
-    return model, len(control_regions), detection_result
 
 
 def create_intersection_from_existing_alignments(

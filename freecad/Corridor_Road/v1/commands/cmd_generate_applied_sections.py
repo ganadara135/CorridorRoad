@@ -1488,13 +1488,6 @@ def _station_values(stationing_obj) -> list[float]:
     return values
 
 
-def _active_intersection_model_for_document(document):
-    try:
-        return to_intersection_model(find_v1_intersection_model(document))
-    except Exception:
-        return None
-
-
 def _with_intersection_supplemental_stations(
     stations: list[float],
     intersection_model,

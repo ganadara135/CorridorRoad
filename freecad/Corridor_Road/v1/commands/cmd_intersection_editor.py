@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import ceil, hypot, pi
+from math import hypot
 
 try:
     import FreeCAD as App
@@ -773,13 +773,6 @@ def _default_slope_face_policy(*, intersection_id: str) -> IntersectionSlopeFace
         diagnostic_rows=["slope_face_policy_source_defaulted", "slope_face_policy_approval_pending"],
         notes="Default source policy for dedicated Intersection Slope Face panel reach.",
     )
-
-
-def _curb_return_arc_sample_count(radius: float) -> int:
-    arc_length = max(float(radius), 0.0) * (pi / 2.0)
-    segment_count = int(ceil(arc_length / 2.0)) if arc_length > 0.0 else 4
-    segment_count = max(4, min(segment_count, 48))
-    return segment_count + 1
 
 
 def _set_preview_property(obj, name: str, value: str) -> None:

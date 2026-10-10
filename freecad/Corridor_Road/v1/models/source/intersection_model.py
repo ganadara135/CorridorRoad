@@ -263,19 +263,3 @@ class IntersectionModel(SourceModelBase):
     grading_policy_rows: list[IntersectionGradingPolicyRow] = field(default_factory=list)
     slope_face_policy_rows: list[IntersectionSlopeFacePolicyRow] = field(default_factory=list)
     drainage_policy_rows: list[IntersectionDrainagePolicyRow] = field(default_factory=list)
-
-
-def intersection_preset_labels() -> list[str]:
-    """Return user-facing labels for the first intersection type presets."""
-
-    return [str(row["label"]) for row in INTERSECTION_KIND_PRESETS.values()]
-
-
-def intersection_kind_from_label(label: str) -> str:
-    """Resolve a user-facing preset label to an internal intersection kind."""
-
-    normalized = str(label or "").strip().lower()
-    for kind, preset in INTERSECTION_KIND_PRESETS.items():
-        if normalized == str(preset.get("label", "") or "").strip().lower():
-            return kind
-    return ""

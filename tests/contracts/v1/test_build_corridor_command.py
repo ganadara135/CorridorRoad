@@ -12,10 +12,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_tree,
 )
 import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
-from freecad.Corridor_Road.v1.models.output.surface_output import (
-    decide_intersection_surface_downstream_handoff,
-    intersection_surface_replacement_blocker_kind,
-)
+from freecad.Corridor_Road.v1.models.output.surface_output import intersection_surface_replacement_blocker_kind
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
     _hide_applied_section_set_review_shape,
@@ -107,8 +104,8 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 )
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 from dataclasses import replace
+from freecad.Corridor_Road.v1.services.builders import IntersectionPatchConstraintBuildService
 from freecad.Corridor_Road.v1.services.builders.shared_breakline_tin_builder_service import (
-    intersection_surface_tin_with_shared_breakline_constraint_edges,
     tin_surface_with_shared_breakline_constraint_edges,
     tin_surface_with_shared_breakline_metadata,
 )
@@ -120,52 +117,10 @@ from freecad.Corridor_Road.v1.ui.presentation import (
 _QAPP = None
 
 
-def test_intersection_surface_downstream_handoff_decision_contract() -> None:
-    review_only = decide_intersection_surface_downstream_handoff(
-        gate_status="review_required",
-        patch_ref="V1CorridorIntersectionSurfacePreview",
-        zone_surface_ref="V1CorridorIntersectionSurfaceZoneSurfacePreview",
-    )
-
-    assert review_only.readiness == "review_only"
-    assert review_only.selected_ref == "V1CorridorIntersectionSurfacePreview"
-    assert review_only.selected_role == "transitional_patch_fallback"
-    assert review_only.selection_reason == "replacement_gate_review_only"
-    assert review_only.patch_selected is True
-    assert review_only.zone_selected is False
-    assert review_only.patch_handoff_preference == "fallback_review_required"
-    assert review_only.zone_handoff_preference == "preferred_candidate_review_only"
-
-    ready = decide_intersection_surface_downstream_handoff(
-        gate_status="ready_to_replace",
-        patch_ref="V1CorridorIntersectionSurfacePreview",
-        zone_surface_ref="V1CorridorIntersectionSurfaceZoneSurfacePreview",
-    )
-
-    assert ready.readiness == "ready_to_replace"
-    assert ready.selected_ref == "V1CorridorIntersectionSurfaceZoneSurfacePreview"
-    assert ready.selected_role == "accepted_zone_surface"
-    assert ready.selection_reason == "replacement_gate_ready_to_replace"
-    assert ready.patch_selected is False
-    assert ready.zone_selected is True
-    assert ready.patch_handoff_preference == "fallback_until_replaced"
-    assert ready.zone_handoff_preference == "preferred_ready_to_replace"
-
-    blocked = decide_intersection_surface_downstream_handoff(
-        gate_status="blocked",
-        patch_ref="V1CorridorIntersectionSurfacePreview",
-        zone_surface_ref="V1CorridorIntersectionSurfaceZoneSurfacePreview",
-    )
-
-    assert blocked.readiness == "blocked"
-    assert blocked.selected_ref == "V1CorridorIntersectionSurfacePreview"
-    assert blocked.selected_role == "transitional_patch_fallback"
-    assert blocked.selection_reason == "replacement_gate_blocked"
-    assert blocked.patch_selected is True
-    assert blocked.zone_selected is False
-    assert intersection_surface_replacement_blocker_kind(review_only.readiness, review_only.selected_role) == "intersection_replacement_gate_review_required"
-    assert intersection_surface_replacement_blocker_kind(blocked.readiness, blocked.selected_role) == "intersection_replacement_gate_blocked"
-    assert intersection_surface_replacement_blocker_kind(ready.readiness, ready.selected_role) == ""
+def test_intersection_surface_replacement_blocker_kind_contract() -> None:
+    assert intersection_surface_replacement_blocker_kind("review_only", "transitional_patch_fallback") == "intersection_replacement_gate_review_required"
+    assert intersection_surface_replacement_blocker_kind("blocked", "transitional_patch_fallback") == "intersection_replacement_gate_blocked"
+    assert intersection_surface_replacement_blocker_kind("ready_to_replace", "accepted_zone_surface") == ""
     assert (
         intersection_surface_replacement_blocker_kind("ready_to_replace", "transitional_patch_fallback")
         == "intersection_replacement_ready_patch_fallback"
@@ -1190,7 +1145,7 @@ def _curb_return_variant_model(*, radius: float = 12.0) -> IntersectionModel:
     )
 
 
-def test_intersection_surface_tin_inserts_missing_shared_breakline_endpoint_vertices_with_source_refs() -> None:
+def test_shared_breakline_constraint_rows_insert_missing_endpoint_vertices_with_source_refs() -> None:
     breakline_id = "shared-breakline:intersection:intersection:t-01:patch-to-slope-face"
     shared = build_corridor_command.SharedBreaklineResult(
         schema_version=1,
@@ -1234,7 +1189,7 @@ def test_intersection_surface_tin_inserts_missing_shared_breakline_endpoint_vert
         ],
     )
 
-    updated_vertices, updated_triangles, stats = intersection_surface_tin_with_shared_breakline_constraint_edges(
+    updated_vertices, updated_triangles, stats = IntersectionPatchConstraintBuildService().constraint_rows(
         vertices=[
             TINVertex("near-a", 0.0, 2.0, 10.0),
             TINVertex("near-b", 10.0, 2.0, 10.0),
@@ -1243,6 +1198,7 @@ def test_intersection_surface_tin_inserts_missing_shared_breakline_endpoint_vert
         triangles=[TINTriangle("base", "near-a", "near-b", "near-c")],
         shared_result=shared,
         surface_id="surface:intersection",
+        consumer_ref="intersection_surface",
     )
     inserted = [
         vertex

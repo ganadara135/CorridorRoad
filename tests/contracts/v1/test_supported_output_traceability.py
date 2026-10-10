@@ -9,7 +9,7 @@ from freecad.Corridor_Road.v1.models.output.profile_output import ProfileOutput
 from freecad.Corridor_Road.v1.models.output.quantity_output import QuantityOutput
 from freecad.Corridor_Road.v1.models.output.section_output import SectionOutput
 from freecad.Corridor_Road.v1.models.output.structure_solid_output import StructureSolidOutput
-from freecad.Corridor_Road.v1.models.output.surface_output import IntersectionSurfaceZoneOutput, SurfaceOutput
+from freecad.Corridor_Road.v1.models.output.surface_output import SurfaceOutput
 from freecad.Corridor_Road.v1.services.evaluation.output_traceability_service import OutputTraceabilityService
 
 
@@ -44,12 +44,6 @@ from freecad.Corridor_Road.v1.services.evaluation.output_traceability_service im
             structure_solid_output_id="structure-output:1",
             source_refs=["structures:1"],
             result_refs=["applied-sections:1"],
-        ),
-        IntersectionSurfaceZoneOutput(
-            schema_version=1,
-            project_id="project:1",
-            surface_zone_output_id="intersection-zone-output:1",
-            result_refs=["intersection-zone-result:1"],
         ),
     ],
 )

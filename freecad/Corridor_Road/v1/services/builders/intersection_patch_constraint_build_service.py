@@ -760,11 +760,6 @@ def _project_to_polyline(point, points, stations):
     }
 
 
-def _project_to_segment(point, start, end):
-    distance, ratio = _segment_distance_ratio(point, start, end)
-    return {"distance": distance, "ratio": ratio}
-
-
 def _segment_distance_ratio(point, start, end):
     """Return (distance, clamped ratio) of `point` against the segment.
 

@@ -18,7 +18,6 @@ SUPPORTED_OUTPUT_OWNER_REQUIREMENTS = {
     "DrainageOutput": "source_and_result",
     "ExchangeOutput": "source_and_result",
     "StructureSolidOutput": "source_and_result",
-    "IntersectionSurfaceZoneOutput": "result",
 }
 
 
@@ -102,7 +101,6 @@ def _output_ref(output_model) -> str:
         "earthwork_balance_output_id",
         "mass_haul_output_id",
         "drainage_output_id",
-        "intersection_surface_zone_output_id",
     )
     for name in preferred_names:
         value = str(getattr(output_model, name, "") or "").strip()

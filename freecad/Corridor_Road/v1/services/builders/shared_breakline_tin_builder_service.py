@@ -149,24 +149,6 @@ def _tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, 
     return replace(surface, vertex_rows=vertices, triangle_rows=triangles, quality_rows=filtered_quality)
 
 
-def _intersection_surface_tin_with_shared_breakline_constraint_edges(
-    *,
-    vertices: list[object],
-    triangles: list[object],
-    shared_result,
-    surface_id: str,
-) -> tuple[list[object], list[object], dict[str, object]]:
-    """Return intersection TIN rows with shared breakline segments preserved as TIN edges."""
-
-    return _tin_rows_with_shared_breakline_constraint_edges(
-        vertices=vertices,
-        triangles=triangles,
-        shared_result=shared_result,
-        surface_id=surface_id,
-        consumer_ref="intersection_surface",
-    )
-
-
 def _tin_rows_with_shared_breakline_constraint_edges(
     *,
     vertices: list[object],
@@ -201,7 +183,3 @@ def tin_surface_with_shared_breakline_metadata(surface, shared_result, *, consum
 
 def tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, *, consumer_ref: str):
     return _tin_surface_with_shared_breakline_constraint_edges(surface, shared_result, consumer_ref=consumer_ref)
-
-
-def intersection_surface_tin_with_shared_breakline_constraint_edges(*args, **kwargs):
-    return _intersection_surface_tin_with_shared_breakline_constraint_edges(*args, **kwargs)

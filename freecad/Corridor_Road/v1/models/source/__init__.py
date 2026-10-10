@@ -19,8 +19,6 @@ from .intersection_model import (
     IntersectionCurbReturnPolicyRow,
     IntersectionModel,
     IntersectionRow,
-    intersection_kind_from_label,
-    intersection_preset_labels,
 )
 from .override_model import OverrideModel
 from .profile_model import ProfileModel
@@ -85,8 +83,6 @@ __all__ = [
     "IntersectionSlopeFacePolicyRow",
     "IntersectionDrainagePolicyRow",
     "INTERSECTION_KIND_PRESETS",
-    "intersection_preset_labels",
-    "intersection_kind_from_label",
     "OverrideModel",
     "ProfileModel",
     "ProjectModel",
