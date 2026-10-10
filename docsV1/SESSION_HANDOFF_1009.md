@@ -82,7 +82,7 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 ## 4. What is left
 
-### Done on 2026-10-10 (head `8e52a20`, gate 1,123 passed / 18 skipped, runners PASS)
+### Done on 2026-10-10 (head `8836924`, gate 1,146 passed / 18 skipped, runners PASS)
 
 - `5f33cb2`: the cross section viewer lists intersection rows for every section inside the kernel
   clip span, not only inside the source control area (with the panel's roundabout defaults the clip
@@ -105,6 +105,11 @@ must not absorb Structure, Drainage or Intersection semantics.
   they wrapped. Kept because docsV1 names them as contracts: `ProjectModel`, `ContextReviewOutput`,
   `DrainageResolutionService`, `shared_breakline_adjacency_graph`,
   `corridor_build_review_outcome_matrix`, `SurfaceOutputMapper`.
+- `8836924`: Project Setup is a v1 panel (service, objects adapter, command, `ui/editors`); the
+  command id stays as a bridge and the v0 panel is gone. Apply no longer recomputes the document,
+  and the panel keeps the stored Coordinate Workflow (the v0 panel replaced it with the CRS
+  recommendation, which blocked every Apply on a locked setup). Record:
+  [V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md](./V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md) section 10.
 
 ### Next steps, in order
 
@@ -115,6 +120,14 @@ must not absorb Structure, Drainage or Intersection semantics.
    - the Structure Output button (Build Parametric) and Review TIN button (TIN editor), `fbb8ed8`;
    - a roundabout document created before R7c-3 rebuilds the same ring, section 7 step 4;
    - the Drainage tab's low point and `Suggested Inlet` marker, section 5.
+   - Project Setup (`8836924`), not in the QA document:
+     1. New document, toolbar `New/Project Setup`: a project is created and the panel opens.
+     2. Change units, CRS and origin, `Apply Setup`: no recompute wait; close, reopen the panel,
+        then save and reopen the file: the values are kept.
+     3. CRS `EPSG:5186`, workflow `Local-first`, lock on, Apply. Reopen: still `Local-first`;
+        changing only Display Unit applies.
+     4. With the lock on, change Project Origin E: Apply is refused and names the field.
+     5. Right-click the project, `Project Setup`: the same panel; `Close` writes nothing.
 2. **Remaining dead code.** The reachability pass lists 29 v1 definitions, all kept on purpose:
    the six documented contracts above, Watertight and simulation code (paused), Ramp (out of
    scope), and `objects/` persistence adapters. The 46 v0 ones wait for the stored-`Proxy` migration (section 5).
@@ -128,8 +141,8 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 - **Legacy retirement is blocked.** Unreachable v0 modules cannot go until a stored-`Proxy`
   migration exists. See section 5.
-- `cmd_project_setup` has no v1 successor. It is the one surfaced workflow stage still driven by
-  a v0 task panel.
+- No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
+  and `cmd_ai_assist` are still self-contained legacy entry points.
 - `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's
   call.
 
