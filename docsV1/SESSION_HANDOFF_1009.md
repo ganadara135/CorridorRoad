@@ -82,7 +82,7 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 ## 4. What is left
 
-### Done on 2026-10-10 (head `7997082`, gate 1,169 passed / 18 skipped, runners PASS)
+### Done on 2026-10-10 (head `8e52a20`, gate 1,123 passed / 18 skipped, runners PASS)
 
 - `5f33cb2`: the cross section viewer lists intersection rows for every section inside the kernel
   clip span, not only inside the source control area (with the panel's roundabout defaults the clip
@@ -98,6 +98,13 @@ must not absorb Structure, Drainage or Intersection semantics.
 - `7997082`: the Results tab no longer reads the 106 legacy preview properties nothing writes, and
   the kernel surfaces' Output Path reads `contract_consumed` instead of `legacy_output` /
   `inferred_fallback`.
+- `4f50ae2`: the geometry modules only the legacy intersection chain used (convex polygon
+  clipping, polygon boundary, polygon triangulation) and their tests.
+- `aa4c6c9`: 30 private helpers nothing called.
+- `8e52a20`: public functions only tests reached. Tests of thin wrappers now call the live function
+  they wrapped. Kept because docsV1 names them as contracts: `ProjectModel`, `ContextReviewOutput`,
+  `DrainageResolutionService`, `shared_breakline_adjacency_graph`,
+  `corridor_build_review_outcome_matrix`, `SurfaceOutputMapper`.
 
 ### Next steps, in order
 
@@ -108,10 +115,9 @@ must not absorb Structure, Drainage or Intersection semantics.
    - the Structure Output button (Build Parametric) and Review TIN button (TIN editor), `fbb8ed8`;
    - a roundabout document created before R7c-3 rebuilds the same ring, section 7 step 4;
    - the Drainage tab's low point and `Suggested Inlet` marker, section 5.
-2. **Remaining dead code** outside the intersection work: the reachability pass still lists 220
-   module-level definitions, 142 in v1 (71 services, 41 commands, 15 objects) and 78 in v0, where
-   the stored-`Proxy` constraint applies (section 5). Review the v1 ones domain by domain and skip
-   paused domains; the pass is name-based, so confirm each one before deleting.
+2. **Remaining dead code.** The reachability pass lists 29 v1 definitions, all kept on purpose:
+   the six documented contracts above, Watertight and simulation code (paused), Ramp (out of
+   scope), and `objects/` persistence adapters. The 46 v0 ones wait for the stored-`Proxy` migration (section 5).
 
 ### Open questions for the user
 
