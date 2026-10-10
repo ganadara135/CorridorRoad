@@ -41,6 +41,7 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
 )
+from freecad.Corridor_Road.v1.commands.cmd_view_sections import build_document_section_preview
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_subassembly_kind_guided_review_rows,
     focus_corridor_build_guided_review_step,
@@ -467,6 +468,41 @@ def test_roundabout_side_slope_is_not_an_applied_section_guided_review_row() -> 
 
         assert all(str(row.get("step_id", "")) != "subassembly_kind:side_slope" for row in rows)
         assert doc.getObject("ReviewIssueSubassemblyKind_side_slope") is None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_cross_section_viewer_shows_roundabout_rows_inside_the_kernel_clip_span() -> None:
+    # The panel's roundabout defaults (36 m, 30 m control length) give a kernel clip span far longer
+    # than the source control area, so most sections in the span carry no active_intersection_id.
+    doc = App.newDocument("CRV1RoundaboutViewerKernelClipSpan")
+    try:
+        create_intersection_preset_sources(doc, preset_label="Roundabout - Single Lane", radius=36.0, control_length=30.0)
+        project = find_project(doc)
+        applied = build_document_applied_section_set(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+        primary = "alignment:intersection-primary"
+        control_area = next(
+            row for row in to_intersection_model(find_v1_intersection_model(doc)).control_area_rows if row.alignment_ref == primary
+        )
+        control_end = max(end for _start, end in list(control_area.station_ranges) + list(control_area.influence_ranges))
+        sections = [section for section in applied.sections if section.alignment_id == primary]
+        outside_control = [section for section in sections if not section.active_intersection_id and section.station > control_end]
+
+        rows_by_section = {}
+        for section in outside_control:
+            preview = build_document_section_preview(doc, preferred_applied_section_id=section.applied_section_id)
+            rows_by_section[section.station] = list(preview.get("intersection_context_rows", []) or [])
+        in_span = {station: rows for station, rows in rows_by_section.items() if rows}
+        assert in_span, "no section in the kernel clip span outside the control area"
+        assert any(not rows for rows in rows_by_section.values()), "no section beyond the kernel clip span"
+
+        rows = next(iter(in_span.values()))
+        by_family = {row["family"]: row for row in rows}
+        assert by_family["source_status"]["role"] == "kernel_clip_span"
+        assert by_family["source_status"]["row_id"] == "intersection:starter-roundabout"
+        assert by_family["kernel"]["status"] == "ready"
+        assert by_family["corridor_clip"]["role"] == "inside"
     finally:
         App.closeDocument(doc.Name)
 

@@ -329,8 +329,6 @@ def _build_intersection_context_rows(
     """Build intersection contract rows for the focused cross-section station."""
 
     active_intersection = str(getattr(applied_section, "active_intersection_id", "") or "").strip()
-    if not active_intersection:
-        return []
 
     try:
         from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
@@ -346,6 +344,8 @@ def _build_intersection_context_rows(
     if model_obj is None and document is not None and find_v1_intersection_model is not None:
         model_obj = find_v1_intersection_model(document)
     if model_obj is None:
+        if not active_intersection:
+            return []
         return [
             _intersection_context_row(
                 "source",
@@ -360,6 +360,8 @@ def _build_intersection_context_rows(
     if model is None and hasattr(model_obj, "intersection_rows"):
         model = model_obj
     if model is None:
+        if not active_intersection:
+            return []
         return [
             _intersection_context_row(
                 "source",
@@ -388,16 +390,37 @@ def _build_intersection_context_rows(
     )
     station = float(getattr(applied_section, "station", 0.0) or 0.0)
 
+    # The source control area marks only the stations near the crossing; the kernel's clip span is
+    # where the intersection surface replaces the corridor, and for a large roundabout it is much
+    # longer. A section inside the clip span belongs to the intersection even without a control area.
+    kernel_clip_span = _kernel_clip_span_at_station(result, active_alignment, station)
+    if active_intersection:
+        source_status_row = (
+            active_source_status or "accepted",
+            "station_source_context",
+            "; ".join(active_source_diagnostics) if active_source_diagnostics else "Intersection source context accepted.",
+        )
+    elif kernel_clip_span is not None:
+        active_intersection = str(getattr(result, "intersection_id", "") or "").strip()
+        source_status_row = (
+            "ready",
+            "kernel_clip_span",
+            f"STA {station:.3f} is outside the Intersection source control area but inside the kernel clip span "
+            f"STA {kernel_clip_span[0]:.3f}-{kernel_clip_span[1]:.3f}; the rows below come from the kernel result.",
+        )
+    else:
+        return []
+
     rows: list[dict[str, object]] = [
         _frame_source_context_row(applied_section),
         _intersection_context_row(
             "source_status",
-            active_source_status or "accepted",
+            source_status_row[0],
             active_intersection,
-            "station_source_context",
+            source_status_row[1],
             source_refs=[active_intersection, active_leg, active_control_area, active_grading_policy],
             boundary_refs=list(getattr(applied_section, "active_intersection_control_region_refs", []) or []),
-            notes="; ".join(active_source_diagnostics) if active_source_diagnostics else "Intersection source context accepted.",
+            notes=source_status_row[2],
         ),
         _intersection_context_row(
             "kernel",
@@ -519,6 +542,16 @@ def _build_intersection_context_rows(
         )
 
     return rows
+
+
+def _kernel_clip_span_at_station(result, alignment_ref: str, station: float) -> tuple[float, float] | None:
+    """Return the kernel clip span of this road that contains the station, if any."""
+
+    for road_ref, start, end in list(getattr(result, "clip_spans", ()) or ()):
+        # same 1e-6 m station tolerance as the corridor_clip row: a mouth section sits on the span end
+        if road_ref == alignment_ref and start - 1.0e-6 <= station <= end + 1.0e-6:
+            return float(start), float(end)
+    return None
 
 
 def _intersection_context_row(

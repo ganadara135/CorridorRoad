@@ -132,3 +132,6 @@ Parametric: the mouth sections must exist before the corridor is clipped.
 | 2026-10-08 | 2 | T, Cross, Roundabout | pass | user, after R7c-1 |
 | 2026-10-09 | 2 (steps 6, 7) | presets | pass | user, after R7c-2 |
 | 2026-10-09 | 2 (step 6) | presets | pass | user, after R7c-3: Intersections tab `ready` |
+| 2026-10-10 | Common rules | preset (Create Sources) | pass | user, at `567bad1`: the `Intersections` folder holds `Intersection Source` |
+| 2026-10-10 | 6 | Roundabout | **fail** | user, at `567bad1`, a station inside the clip span: no intersection rows in the cross section viewer; Intersection Context reads `No active intersection context rows`. Cause: the viewer listed rows only for sections with a source control area (`active_intersection_id`); with the panel's roundabout defaults (36 m, control length 30 m) the kernel clip span (STA 74.5-185.5) is far longer than the control area (STA 111.25-148.75). Fixed: a section inside the kernel clip span gets the kernel rows, with `source_status` role `kernel_clip_span` |
+| 2026-10-10 | 6 | Roundabout | pass | user, after the kernel clip span fix: intersection rows shown inside the clip span |
