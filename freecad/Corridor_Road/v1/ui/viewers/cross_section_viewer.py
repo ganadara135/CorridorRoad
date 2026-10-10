@@ -2214,10 +2214,26 @@ class CrossSectionViewerTaskPanel:
             if station_row:
                 rows = [station_row]
         current_station = self._current_station_value()
+        # Two roads share station values, so the current row is found by its Applied Section first;
+        # a station match alone picks the first road's row and Next/Previous leave the second road.
+        current_section_id = self._current_applied_section_id()
+        match_section = bool(current_section_id) and any(
+            str(row.get("applied_section_id", "") or "").strip() == current_section_id for row in rows
+        )
         for index, row in enumerate(rows):
             row["index"] = int(row.get("index", index) or index)
-            row["is_current"] = abs(float(row.get("station", 0.0) or 0.0) - current_station) <= 1.0e-6
+            if match_section:
+                row["is_current"] = str(row.get("applied_section_id", "") or "").strip() == current_section_id
+            else:
+                row["is_current"] = abs(float(row.get("station", 0.0) or 0.0) - current_station) <= 1.0e-6
         return rows
+
+    def _current_applied_section_id(self) -> str:
+        station_row = dict(self.preview.get("station_row", {}) or {})
+        section_id = str(station_row.get("applied_section_id", "") or "").strip()
+        if section_id:
+            return section_id
+        return str(getattr(self.preview.get("applied_section"), "applied_section_id", "") or "").strip()
 
     def _current_station_value(self) -> float:
         station_row = dict(self.preview.get("station_row", {}) or {})

@@ -341,6 +341,24 @@ def test_cross_section_viewer_navigation_uses_station_rows_only() -> None:
     assert rows[1]["is_current"] is True
 
 
+def test_cross_section_viewer_next_stays_on_the_current_road_when_roads_share_stations() -> None:
+    panel = CrossSectionViewerTaskPanel.__new__(CrossSectionViewerTaskPanel)
+    rows = [
+        {"station": station, "applied_section_id": f"{road}:{station:.0f}", "alignment_id": road}
+        for road in ("alignment:primary", "alignment:secondary")
+        for station in (0.0, 20.0, 40.0)
+    ]
+    panel.preview = {"station_row": dict(rows[4]), "station_rows": rows}
+    opened = []
+    panel._open_station_row = lambda row: opened.append(row)
+
+    assert panel._current_station_index() == 4
+    panel._open_adjacent_station(1)
+    panel._open_adjacent_station(-1)
+
+    assert [row["applied_section_id"] for row in opened] == ["alignment:secondary:40", "alignment:secondary:0"]
+
+
 def test_station_focus_uses_selected_applied_section_frame() -> None:
     preview = {
         "station_row": {"station": 20.0, "label": "STA 20.000"},
