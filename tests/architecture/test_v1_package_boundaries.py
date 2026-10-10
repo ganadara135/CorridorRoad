@@ -397,6 +397,7 @@ def test_phase3_task_panel_owners_are_outside_command_modules() -> None:
             "ui/editors/tin_editor.py",
             {"V1TINEditorTaskPanel", "_TINFacePickObserver"},
         ),
+        "cmd_project_setup.py": ("ui/editors/project_setup_editor.py", {"V1ProjectSetupTaskPanel"}),
     }
 
     for command_name, (owner_path, expected_classes) in owners.items():

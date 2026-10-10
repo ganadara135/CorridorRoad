@@ -2,6 +2,15 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.commands import cmd_new_project
 from freecad.Corridor_Road.commands import cmd_project_setup
+from freecad.Corridor_Road.qt_compat import QtWidgets
+
+_QAPP = None
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def _project_roots(doc):
@@ -21,6 +30,7 @@ class _CapturedControl:
 
 
 def _install_control():
+    _ensure_qapp()
     original_control = getattr(cmd_project_setup.Gui, "Control", None)
     original_had_control = hasattr(cmd_project_setup.Gui, "Control")
     control = _CapturedControl()
@@ -54,7 +64,7 @@ def test_project_setup_command_creates_project_when_document_has_none() -> None:
         projects = _project_roots(doc)
         assert len(projects) == 1
         assert control.panels
-        assert control.panels[0]._preferred is projects[0]
+        assert control.panels[0].preferred_project is projects[0]
     finally:
         _restore_control(original_had_control, original_control)
         App.closeDocument(doc.Name)
@@ -71,7 +81,7 @@ def test_project_setup_command_reuses_existing_project() -> None:
 
         projects = _project_roots(doc)
         assert projects == [first_project]
-        assert control.panels[-1]._preferred is first_project
+        assert control.panels[-1].preferred_project is first_project
     finally:
         _restore_control(original_had_control, original_control)
         App.closeDocument(doc.Name)

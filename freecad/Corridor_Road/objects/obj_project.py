@@ -1936,14 +1936,13 @@ def show_project_setup_dialog(preferred_project=None) -> bool:
     if not _gui_up():
         return False
     try:
-        import FreeCADGui as Gui
-        from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
-    except Exception:
-        return False
-    try:
-        Gui.Control.showDialog(ProjectSetupTaskPanel(preferred_project=preferred_project))
+        from freecad.Corridor_Road.v1.commands.cmd_project_setup import run_v1_project_setup_command
+
+        document = getattr(preferred_project, "Document", None) or getattr(App, "ActiveDocument", None)
+        run_v1_project_setup_command(document, preferred_project=preferred_project, prepare_project=False)
         return True
-    except Exception:
+    except Exception as exc:
+        App.Console.PrintError(f"Project Setup panel was not opened: {exc}\n")
         return False
 
 

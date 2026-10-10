@@ -12,7 +12,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_tree,
     resolve_project_corridor,
 )
-from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
 
 
 def create_corridorroad_project(doc):
@@ -89,9 +88,13 @@ class CmdNewProject:
         doc.recompute()
 
         try:
-            Gui.Control.showDialog(ProjectSetupTaskPanel(preferred_project=obj))
-        except Exception:
-            pass
+            # imported here: the v1 command imports create_corridorroad_project from this module
+            from freecad.Corridor_Road.v1.commands.cmd_project_setup import run_v1_project_setup_command
+
+            # this command has already prepared and recomputed the project
+            run_v1_project_setup_command(doc, preferred_project=obj, prepare_project=False)
+        except Exception as exc:
+            App.Console.PrintError(f"Project Setup panel was not opened: {exc}\n")
 
 
 if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.

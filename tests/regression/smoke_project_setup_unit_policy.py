@@ -12,7 +12,7 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
+from freecad.Corridor_Road.v1.commands.cmd_project_setup import V1ProjectSetupTaskPanel
 
 
 def _assert(cond, msg):
@@ -33,7 +33,7 @@ def run():
         prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         ensure_project_properties(prj)
         _assert(not hasattr(prj, "LengthScale"), "New project should no longer auto-create LengthScale")
-        panel = ProjectSetupTaskPanel(preferred_project=prj)
+        panel = V1ProjectSetupTaskPanel(document=doc, preferred_project=prj)
 
         _assert(panel.cmb_linear_display.currentText() == "m", "New project should load meter display unit")
         _assert(panel.cmb_linear_import.currentText() == "m", "New project should load meter import unit")

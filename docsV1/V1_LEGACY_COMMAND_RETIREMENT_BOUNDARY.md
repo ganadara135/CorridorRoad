@@ -34,10 +34,10 @@ Measured on 2026-09-05 from `init_gui.py` and the command modules themselves.
 | `cmd_view_cross_section` | `CorridorRoad_ViewCrossSection` | yes | 63 | v1 `cmd_view_sections` |
 | `cmd_review_plan_profile` | `CorridorRoad_ReviewPlanProfile` | yes | 93 | v1 `cmd_review_plan_profile` |
 | `cmd_generate_cut_fill_calc` | `CorridorRoad_GenerateCutFillCalc` | yes | 64 | v1 `cmd_earthwork_balance` |
-| `cmd_project_setup` | `CorridorRoad_ProjectSetup` | yes | 62 | v0 `ui/task_project_setup` |
+| `cmd_project_setup` | `CorridorRoad_ProjectSetup` | yes | 62 | v0 `ui/task_project_setup` (v1 `cmd_project_setup` since 2026-10-10, section 10) |
 | `cmd_outputs_exchange` | `CorridorRoad_OutputsExchange` | yes | 45 | self-contained |
 | `cmd_ai_assist` | `CorridorRoad_AIAssist` | yes | 43 | self-contained |
-| `cmd_new_project` | `CorridorRoad_NewProject` | no | 98 | v0 `ui/task_project_setup` |
+| `cmd_new_project` | `CorridorRoad_NewProject` | no | 98 | v0 `ui/task_project_setup` (v1 panel since 2026-10-10) |
 | `cmd_create_alignment` | `CorridorRoad_CreateAlignment` | no | 59 | self-contained |
 | `cmd_edit_alignment` | `CorridorRoad_EditAlignment` | no | 27 | v0 `ui/task_alignment_editor` |
 | `cmd_review_alignment` | `CorridorRoad_ReviewAlignment` | no | 80 | v0 `ui/task_alignment_editor` |
@@ -121,8 +121,8 @@ The whole legacy `objects` package is 31 files and 25,956 lines and stays: every
 
 | Status | Count | Modules |
 | --- | --- | --- |
-| Keep, stable-id bridge to v1 | 4 | `cmd_generate_corridor`, `cmd_view_cross_section`, `cmd_review_plan_profile`, `cmd_generate_cut_fill_calc` |
-| Keep, no v1 successor exists | 3 | `cmd_project_setup`, `cmd_outputs_exchange`, `cmd_ai_assist` |
+| Keep, stable-id bridge to v1 | 5 | `cmd_generate_corridor`, `cmd_view_cross_section`, `cmd_review_plan_profile`, `cmd_generate_cut_fill_calc`, `cmd_project_setup` (since 2026-10-10) |
+| Keep, no v1 successor exists | 2 | `cmd_outputs_exchange`, `cmd_ai_assist` |
 | Retirement candidate, v1 successor surfaced, currently hidden | 6 | `cmd_new_project`, `cmd_create_alignment`, `cmd_edit_alignment`, `cmd_review_alignment`, `cmd_edit_typical_section`, `cmd_edit_regions` |
 
 No module is removed by this record.
@@ -135,7 +135,8 @@ Execution plan open decision 4 remains open and is the maintainer's call:
 
 The measurement above narrows it. The decision applies to the 6 modules in section 4.3 only, it carries no document-restoration risk, and the cost is limited to macros, custom toolbars, and familiarity. The other 7 modules are not part of the question.
 
-A separate and larger question, out of scope here, is whether `cmd_project_setup` should gain a v1 successor so that no surfaced workflow stage is driven by a v0 task panel.
+A separate and larger question, out of scope here, is whether `cmd_project_setup` should gain a v1 successor so that no surfaced workflow stage is driven by a v0 task panel. It did on 2026-10-10; see section 10.
+
 ## 9. Legacy UI Panels Removed, on 2026-09-25
 
 Section 6 said neither legacy package was a candidate for removal while `_PROXY_OBJECT_MODULES` and the surfaced v0 panels depended on them. That held for `objects` and it still does. It did not hold for all of `ui`, because it treated the package as one thing.
@@ -188,3 +189,23 @@ A FreeCAD object stores its `Proxy` by module path. `virtual_paths` exists so th
 
 The regression gate reason still holds on top of that: 26 of the 36 maintained smoke scripts load these objects. But the restore contract is the binding one. Retiring them needs a migration that rewrites or retires the stored proxies first, not a deletion.
 
+
+## 10. Project Setup Moved to v1, on 2026-10-10
+
+`cmd_project_setup` was the one surfaced workflow stage still driven by a v0 task panel. It is now a stable-id bridge like the four in section 4.1: `CorridorRoad_ProjectSetup` stays in the legacy module, and its `Activated` calls `run_v1_project_setup_command`.
+
+| Layer | Module | Owns |
+| --- | --- | --- |
+| service | `v1/services/editing/project_setup_service.py` | `ProjectSetupDraft`, workflow recommendation, lock rule, help text |
+| objects | `v1/objects/project_setup_adapter.py` | reading and writing the Project properties |
+| command | `v1/commands/cmd_project_setup.py` | opening the panel, creating a missing project root, Apply |
+| ui | `v1/ui/editors/project_setup_editor.py` | `V1ProjectSetupTaskPanel` |
+
+`cmd_new_project` and the Project's tree context menu open the same panel. `ui/task_project_setup.py` had no other user and was removed; it is not a proxy module. The Project property names, the command id, the toolbar and menu position and the fields of the panel are unchanged.
+
+Two behaviors changed:
+
+- Apply no longer recomputes the whole document. It touches the Project. Nothing computes geometry from these properties; their readers (import/export unit and coordinate policy, TIN preview limits, Alignment criteria) read them when they run.
+- The panel shows the stored Coordinate Workflow. The v0 panel replaced it on load with the CRS recommendation, so a project with a CRS stored as `Local-first` was shown as `World-first`, and Apply silently rewrote it; with the setup locked, every Apply was refused, even a unit change. A CRS edit still selects the recommended workflow unless `Custom` is chosen.
+
+Remaining legacy `ui` after the removal: 9 files.
