@@ -111,6 +111,7 @@ must not absorb Structure, Drainage or Intersection semantics.
   recommendation, which blocked every Apply on a locked setup). Record:
   [V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md](./V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md) section 10.
   Checked in FreeCAD on 2026-10-11.
+- `071aa5c`: unused helpers in the legacy `objects` package and `misc/resources`.
 
 ### Next steps, in order
 
@@ -125,7 +126,10 @@ must not absorb Structure, Drainage or Intersection semantics.
    - the Drainage tab's low point and `Suggested Inlet` marker, section 5.
 2. **Remaining dead code.** The reachability pass lists 29 v1 definitions, all kept on purpose:
    the six documented contracts above, Watertight and simulation code (paused), Ramp (out of
-   scope), and `objects/` persistence adapters. The 46 v0 ones wait for the stored-`Proxy` migration (section 5).
+   scope), and `objects/` persistence adapters. `071aa5c` removed the unused v0 helpers; the 34 v0
+   definitions left are ViewProvider classes (restored by name from saved documents), the dead
+   alignment-tree chain in the frozen `obj_project` (the loft retirement gate checks its source
+   text), and four helpers the smoke runners call.
 
 ### Open questions for the user
 
