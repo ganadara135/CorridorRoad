@@ -110,24 +110,19 @@ must not absorb Structure, Drainage or Intersection semantics.
   and the panel keeps the stored Coordinate Workflow (the v0 panel replaced it with the CRS
   recommendation, which blocked every Apply on a locked setup). Record:
   [V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md](./V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md) section 10.
+  Checked in FreeCAD on 2026-10-11.
 
 ### Next steps, in order
 
 1. **GUI checks (user, in FreeCAD).** Procedure in
    [V1_INTERSECTION_MANUAL_QA.md](./V1_INTERSECTION_MANUAL_QA.md); record results in its table.
    Done: `Intersection Source` label, cross section viewer rows (section 6), Next, Station
-   Navigation order, Results tab Output Path, Breakline Audit rows.
+   Navigation order, Results tab Output Path, Breakline Audit rows, and Project Setup (`8836924`:
+   create, apply and reopen, stored workflow kept under the lock, locked field refused, context
+   menu, Close writes nothing; checked by the user on 2026-10-11).
    - the Structure Output button (Build Parametric) and Review TIN button (TIN editor), `fbb8ed8`;
    - a roundabout document created before R7c-3 rebuilds the same ring, section 7 step 4;
    - the Drainage tab's low point and `Suggested Inlet` marker, section 5.
-   - Project Setup (`8836924`), not in the QA document:
-     1. New document, toolbar `New/Project Setup`: a project is created and the panel opens.
-     2. Change units, CRS and origin, `Apply Setup`: no recompute wait; close, reopen the panel,
-        then save and reopen the file: the values are kept.
-     3. CRS `EPSG:5186`, workflow `Local-first`, lock on, Apply. Reopen: still `Local-first`;
-        changing only Display Unit applies.
-     4. With the lock on, change Project Origin E: Apply is refused and names the field.
-     5. Right-click the project, `Project Setup`: the same panel; `Close` writes nothing.
 2. **Remaining dead code.** The reachability pass lists 29 v1 definitions, all kept on purpose:
    the six documented contracts above, Watertight and simulation code (paused), Ramp (out of
    scope), and `objects/` persistence adapters. The 46 v0 ones wait for the stored-`Proxy` migration (section 5).
