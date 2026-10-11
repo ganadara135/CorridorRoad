@@ -152,7 +152,8 @@ must not absorb Structure, Drainage or Intersection semantics.
   (design section 18). The stubs, their base class and the corpus were then removed as well
   (design section 19): a document holding a legacy object opens without that object's proxy.
   `obj_project` lost its legacy-object handling too (design section 20; 2,734 to 1,821 lines,
-  routing proven unchanged for v1 objects over the whole contract suite).
+  routing proven unchanged for v1 objects over the whole contract suite; the user confirmed in
+  FreeCAD on 2026-10-11 that every object lands in its tree folder).
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
 - `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's

@@ -462,3 +462,7 @@ differences are the legacy names two tests created on purpose; those cases moved
 asserting that legacy names route nowhere. The loft retirement gate's
 `smoke_corridor_project_link_boundary`, which read this module's legacy corridor-link code, was
 retired by the maintainer; the gate keeps `command_alias` and `tree_schema`.
+
+Checked in FreeCAD by the user on 2026-10-11: from a new project through Alignment, Stations,
+Profile (with its preview), Applied Sections and Build Parametric, every object lands in its
+tree folder.
