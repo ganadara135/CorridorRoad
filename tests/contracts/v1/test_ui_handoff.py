@@ -48,16 +48,16 @@ def test_run_legacy_command_closes_dialog_and_runs_command() -> None:
     obj = _FakeObject("DemoDoc", "HorizontalAlignment001")
 
     success, message = run_legacy_command(
-        "CorridorRoad_EditAlignment",
+        "CorridorRoad_V1EditAlignment",
         gui_module=gui,
         objects_to_select=[obj],
         context_payload={"source": "test", "station": 10.0},
     )
 
     assert success is True
-    assert "CorridorRoad_EditAlignment" in message
+    assert "CorridorRoad_V1EditAlignment" in message
     assert gui.Control.closed is True
-    assert gui.ran == [("CorridorRoad_EditAlignment", 0)]
+    assert gui.ran == [("CorridorRoad_V1EditAlignment", 0)]
     assert gui.Selection.cleared is True
     assert gui.Selection.added == [(obj,)]
     assert get_ui_context()["source"] == "test"
@@ -68,7 +68,7 @@ def test_run_legacy_command_reports_missing_gui() -> None:
     class _MissingGui:
         pass
 
-    success, message = run_legacy_command("CorridorRoad_EditAlignment", gui_module=_MissingGui())
+    success, message = run_legacy_command("CorridorRoad_V1EditAlignment", gui_module=_MissingGui())
 
     assert success is False
     assert "Could not open" in message

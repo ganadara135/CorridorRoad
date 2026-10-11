@@ -123,7 +123,8 @@ The whole legacy `objects` package is 31 files and 25,956 lines and stays: every
 | --- | --- | --- |
 | Keep, stable-id bridge to v1 | 5 | `cmd_generate_corridor`, `cmd_view_cross_section`, `cmd_review_plan_profile`, `cmd_generate_cut_fill_calc`, `cmd_project_setup` (since 2026-10-10) |
 | Keep, no v1 successor exists | 2 | `cmd_outputs_exchange`, `cmd_ai_assist` |
-| Retirement candidate, v1 successor surfaced, currently hidden | 6 | `cmd_new_project`, `cmd_create_alignment`, `cmd_edit_alignment`, `cmd_review_alignment`, `cmd_edit_typical_section`, `cmd_edit_regions` |
+| Retirement candidate, v1 successor surfaced, currently hidden | 3 | `cmd_new_project`, `cmd_create_alignment`, `cmd_review_alignment` |
+| Retired on 2026-10-11 (section 11) | 3 | `cmd_edit_alignment`, `cmd_edit_typical_section`, `cmd_edit_regions` |
 
 No module is removed by this record.
 
@@ -209,3 +210,17 @@ Two behaviors changed:
 - The panel shows the stored Coordinate Workflow. The v0 panel replaced it on load with the CRS recommendation, so a project with a CRS stored as `Local-first` was shown as `World-first`, and Apply silently rewrote it; with the setup locked, every Apply was refused, even a unit change. A CRS edit still selects the recommended workflow unless `Custom` is chosen.
 
 Remaining legacy `ui` after the removal: 9 files.
+
+## 11. Three Hidden Legacy Editors Retired, on 2026-10-11
+
+Open decision 4 was taken for the three hidden commands that open v0 editors creating legacy proxy objects, as phase P2 of `V1_LEGACY_PROXY_MIGRATION_DESIGN.md`:
+
+| Command id | Module removed | Created | v1 successor |
+| --- | --- | --- | --- |
+| `CorridorRoad_EditAlignment` | `cmd_edit_alignment` | `HorizontalAlignment` | `CorridorRoad_V1EditAlignment` |
+| `CorridorRoad_EditRegions` | `cmd_edit_regions` | `RegionPlan` | `CorridorRoad_V1EditRegions` |
+| `CorridorRoad_EditTypicalSection` | `cmd_edit_typical_section` | `TypicalSectionTemplate` | `CorridorRoad_V1EditAssemblySubassembly` |
+
+`init_gui` no longer imports them, so the ids are no longer registered; a macro or custom toolbar that invoked one gets FreeCAD's unknown-command message. The two v1 viewers that also accepted `CorridorRoad_EditAlignment` as an alias of the v1 alignment editor now accept only the v1 id. `tests/contracts/v1/test_legacy_command_retirement.py` fails if any module registers one of the three ids again.
+
+The v0 panels they opened (`ui/task_alignment_editor`, `ui/task_region_editor`, `ui/task_typical_section_editor`) stay until phase P4: runner smoke scripts still import them, and `task_alignment_editor` is also the Review Plan/Profile bridge's fallback, which phase P3 removes. No document restore depends on a command module (section 5).

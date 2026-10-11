@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 done (section 13).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -274,3 +274,15 @@ Two findings, neither introduced here:
 **Rebuilding the corpus.** Only while the legacy classes still have their behavior: after phase P5
 the builder would record the stubs. It refuses to overwrite an existing manifest without
 `--force`.
+
+## 13. P2 Result, on 2026-10-11
+
+`CorridorRoad_EditAlignment`, `CorridorRoad_EditRegions` and `CorridorRoad_EditTypicalSection` are
+unregistered and their command modules removed; `V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md`
+section 11 records it, and `test_legacy_command_retirement.py` keeps them unregistered.
+
+One path that creates legacy objects remains, found while doing P2: the surfaced Review
+Plan/Profile command (`commands/cmd_review_plan_profile.py`) opens the v0 alignment or profile
+editor when the v1 viewer raises, and those editors create `HorizontalAlignment`,
+`VerticalAlignment`, `ProfileBundle` and `FGDisplay` objects. It is the Plan/Profile legacy
+fallback of decision 4, so phase P3 removes it together with the adapter's legacy reads.

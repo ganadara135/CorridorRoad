@@ -770,7 +770,7 @@ class EarthworkViewerTaskPanel:
     def _open_legacy_command(self, command_name: str) -> None:
         legacy_objects = dict(self.report.get("legacy_objects", {}) or {})
         objects_to_select = []
-        if command_name in ("CorridorRoad_V1EditAlignment", "CorridorRoad_EditAlignment"):
+        if command_name == "CorridorRoad_V1EditAlignment":
             objects_to_select = [legacy_objects.get("alignment")]
         elif command_name in ("CorridorRoad_V1EditProfile", "CorridorRoad_EditProfiles", "CorridorRoad_EditPVI"):
             objects_to_select = [legacy_objects.get("profile"), legacy_objects.get("alignment")]

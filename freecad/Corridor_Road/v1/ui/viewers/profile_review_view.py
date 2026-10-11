@@ -1490,7 +1490,7 @@ class PlanProfileViewerTaskPanel:
     def _open_legacy_command(self, command_name: str) -> None:
         legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
         objects_to_select = []
-        if command_name in ("CorridorRoad_V1EditAlignment", "CorridorRoad_EditAlignment"):
+        if command_name == "CorridorRoad_V1EditAlignment":
             objects_to_select = [legacy_objects.get("alignment")]
         elif command_name == "CorridorRoad_V1GenerateStations":
             objects_to_select = [legacy_objects.get("stationing"), legacy_objects.get("alignment")]
