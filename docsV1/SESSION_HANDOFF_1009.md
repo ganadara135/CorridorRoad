@@ -4,6 +4,7 @@ Date: 2026-10-09
 Branch: `ganada_0902`, 53 commits ahead of `main` (`1abad47`, the 1.1.0 release)
 Head: `6200cea` Label the Intersection source object "Intersection Source"
 Work covered: 2026-09-24 to 2026-10-09
+Superseded by: [SESSION_HANDOFF_1011.md](./SESSION_HANDOFF_1011.md) for the current state and next steps
 
 ## 1. What this document is
 
