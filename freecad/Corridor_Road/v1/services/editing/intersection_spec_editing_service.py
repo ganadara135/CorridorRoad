@@ -17,11 +17,11 @@ from ...models.source.intersection_spec import (
     LegOverride,
     RoundaboutSpec,
 )
+from ..evaluation.intersection_kernel.constants import ROUNDABOUT_CIRCULATION
 
 
 SPEC_GRADING_MODES = ("", "blend_primary_side", "keep_primary_crown", "use_normal_superelevation", "flatten_intersection")
 SPEC_ANCHOR_METHODS = ("detected", "manual")
-SPEC_CIRCULATIONS = ("ccw", "cw")
 
 
 @dataclass
@@ -49,7 +49,6 @@ class IntersectionSpecForm:
     apron_width_m: float = 0.0
     entry_radius_m: float = 0.0
     exit_radius_m: float = 0.0
-    circulation: str = "ccw"
     leg_rows: list[LegFormRow] = field(default_factory=list)
 
 
@@ -72,7 +71,6 @@ def form_from_spec(spec: IntersectionSpec) -> IntersectionSpecForm:
         apron_width_m=float(ring.apron_width_m) if ring else 0.0,
         entry_radius_m=float(ring.entry_radius_m or 0.0) if ring else 0.0,
         exit_radius_m=float(ring.exit_radius_m or 0.0) if ring else 0.0,
-        circulation=ring.circulation if ring else "ccw",
         leg_rows=[
             LegFormRow(row.road_ref, row.side, bool(row.enabled), float(row.entry_radius_m or 0.0), float(row.exit_radius_m or 0.0))
             for row in spec.leg_overrides
@@ -109,15 +107,13 @@ def spec_from_form(form: IntersectionSpecForm, *, base: IntersectionSpec | None 
             errors.append("A roundabout needs a positive inscribed radius and circulatory width.")
         elif form.circulatory_width_m >= form.inscribed_radius_m:
             errors.append("The circulatory width must be less than the inscribed radius, or there is no central island.")
-        if form.circulation not in SPEC_CIRCULATIONS:
-            errors.append("Circulation must be ccw or cw.")
         ring = RoundaboutSpec(
             float(form.inscribed_radius_m),
             float(form.circulatory_width_m),
             float(form.apron_width_m),
             float(form.entry_radius_m) or None,
             float(form.exit_radius_m) or None,
-            form.circulation,
+            ROUNDABOUT_CIRCULATION,
         )
     for row in form.leg_rows:
         if row.side not in ("ahead", "back"):

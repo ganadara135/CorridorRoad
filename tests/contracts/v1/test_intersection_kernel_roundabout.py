@@ -100,14 +100,13 @@ def test_the_side_slope_runs_round_the_flares_and_out_from_the_ring() -> None:
     assert ring_toe and all(p[2] == pytest.approx(10.0 - 0.02 * (OUTER - ISLAND) - 2.0) for p in ring_toe)
 
 
-def test_clockwise_circulation_swaps_the_entry_and_exit_flares() -> None:
-    ccw = _values(_roundabout(), "flare_radius_m")
-    cw = _values(_roundabout(ring=RoundaboutSpec(12.0, 6.6, 0.99, circulation="cw")), "flare_radius_m")
-    for key, (value, _origin) in ccw.items():
-        other = key.replace(":from", ":tmp").replace(":to", ":from").replace(":tmp", ":to")
-        assert cw[key][0] == pytest.approx(ccw[other][0]) or value == pytest.approx(cw[key][0])
-    assert {round(v[0], 6) for v in cw.values()} == {round(v[0], 6) for v in ccw.values()}
-    assert any(cw[k][0] != pytest.approx(ccw[k][0]) for k in ccw)
+def test_traffic_circulates_counter_clockwise_whatever_a_spec_stored() -> None:
+    # both supported standards are right-hand traffic; a stored "cw" from an older spec is ignored
+    ring = RoundaboutSpec(12.0, 6.6, 0.99)
+    ccw = _roundabout(ring=ring)
+    cw = _roundabout(ring=RoundaboutSpec(12.0, 6.6, 0.99, circulation="cw"))
+    assert _values(cw, "flare_radius_m") == _values(ccw, "flare_radius_m")
+    assert set(_values(cw, "roundabout_circulation").values()) == {("ccw", "constant")}
 
 
 def test_one_approach_can_carry_its_own_entry_radius() -> None:

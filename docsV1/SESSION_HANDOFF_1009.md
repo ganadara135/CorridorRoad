@@ -132,8 +132,9 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 ### Open questions for the user
 
-- **Circulation direction** of a roundabout is in the spec (`ccw`/`cw`); there is no project
-  setting for it. Whether to add one is undecided.
+- None. Roundabout circulation was decided on 2026-10-11: always counter-clockwise (both
+  supported standards are right-hand traffic); the panel no longer offers a choice and the kernel
+  ignores a stored `cw`.
 
 ### Repository-wide
 

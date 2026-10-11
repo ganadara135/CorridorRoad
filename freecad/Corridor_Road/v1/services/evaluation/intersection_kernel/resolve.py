@@ -19,6 +19,7 @@ from .constants import (
     DEFAULT_GRADING_MODE,
     LEG_MIN_LENGTH_M,
     ROUNDABOUT_APRON_WIDTH_RATIO,
+    ROUNDABOUT_CIRCULATION,
     ROUNDABOUT_CIRCULATORY_WIDTH_RATIO,
     ROUNDABOUT_ENTRY_RADIUS_RATIO,
     ROUNDABOUT_EXIT_RADIUS_RATIO,
@@ -282,7 +283,8 @@ def _resolve_ring(resolved: ResolvedIntersection, context: RoadContext) -> None:
         apron, apron_origin = max(float(ring_spec.apron_width_m), 0.0), "spec"
     else:
         apron, apron_origin = width * ROUNDABOUT_APRON_WIDTH_RATIO, "constant"
-    circulation = (ring_spec.circulation if ring_spec is not None else "ccw") or "ccw"
+    # fixed, whatever an older spec stored (constants.ROUNDABOUT_CIRCULATION)
+    circulation = ROUNDABOUT_CIRCULATION
     island = inscribed - width
     if island <= 0.0:
         resolved.diagnostics.append(_blocked("roundabout_island_not_positive", subject, f"circulatory width {width:.3f} m fills the {inscribed:.3f} m ring"))
@@ -296,7 +298,7 @@ def _resolve_ring(resolved: ResolvedIntersection, context: RoadContext) -> None:
         ResolvedValue("roundabout_inscribed_radius_m", subject, inscribed, inscribed_origin),
         ResolvedValue("roundabout_circulatory_width_m", subject, width, width_origin),
         ResolvedValue("roundabout_apron_width_m", subject, apron, apron_origin),
-        ResolvedValue("roundabout_circulation", subject, circulation, "spec" if ring_spec is not None else "constant"),
+        ResolvedValue("roundabout_circulation", subject, circulation, "constant"),
     ]
 
     overrides = {(row.road_ref, row.side): row for row in spec.leg_overrides}

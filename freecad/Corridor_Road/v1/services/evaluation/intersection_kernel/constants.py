@@ -23,6 +23,9 @@ ROUNDABOUT_ENTRY_RADIUS_RATIO = 0.5
 ROUNDABOUT_EXIT_RADIUS_RATIO = 0.6
 # the circulatory roadway falls outward from the central island at this crossfall (2 %)
 ROUNDABOUT_RING_CROSSFALL = 0.02
+# traffic circulates counter-clockwise: both supported standards (KDS, AASHTO) are right-hand
+# traffic. It decides which side of each approach takes the entry flare and which the exit flare
+ROUNDABOUT_CIRCULATION = "ccw"
 
 DEFAULT_GRADING_MODE = "flatten_intersection"
 

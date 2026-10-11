@@ -286,8 +286,11 @@ inscribed radius less the circulatory width. Between two neighbouring approaches
 edge, and off it by the second approach's flare. Each flare is the circle tangent to the approach's
 real pavement edge and outside tangent to the ring (found on the edge offset by R, at r + R from the
 centre); radius 0 is a square corner. Circulating counter-clockwise a driver enters on the approach's
-left side looking outward, so that side takes the entry radius and the right side the exit radius;
-`circulation = "cw"` swaps them. The central island is a hole in the boundary.
+left side looking outward, so that side takes the entry radius and the right side the exit radius.
+Circulation is fixed counter-clockwise (`constants.ROUNDABOUT_CIRCULATION`, decided 2026-10-11):
+both supported standards, KDS and AASHTO, are right-hand traffic. The spec keeps its
+`circulation` field for saved documents, but the kernel ignores it and the panel no longer offers
+it. The central island is a hole in the boundary.
 
 - K2: the mouth is the outer of the approach's two flare tangent points.
 - K4: whatever the grading mode, the circulatory roadway falls outward from the island's edge (the
@@ -578,7 +581,7 @@ rows until R7c.
 | Anchor (detected / manual), Primary / Secondary Station | `anchor` |
 | Corner Radius (0 = default) | `corner_radius_m` |
 | Grading Mode ((default) = constant) | `grading_mode` |
-| Roundabout Ring: inscribed radius, circulatory width, outer apron, entry / exit radius (0 = default), circulation | `roundabout` |
+| Roundabout Ring: inscribed radius, circulatory width, outer apron, entry / exit radius (0 = default); circulation is always `ccw` | `roundabout` |
 | Legs table: open, entry R, exit R | `leg_overrides`; a row that changes nothing is not stored |
 
 `Load Spec` reads the stored spec, or the rows' one; `Check Spec` runs the kernel on the form with

@@ -66,7 +66,7 @@ FULL = IntersectionSpec(
     grading_mode="flatten_intersection",
     leg_overrides=(LegOverride("a", "ahead", False), LegOverride("b", "back", True, 6.0, 7.0)),
     corner_overrides=(CornerOverride("a:ahead|b:back", 9.0, "fillet"),),
-    roundabout=RoundaboutSpec(12.0, 6.6, 0.99, 5.0, None, "cw"),
+    roundabout=RoundaboutSpec(12.0, 6.6, 0.99, 5.0, None, "ccw"),
 )
 
 
@@ -81,6 +81,13 @@ def test_the_form_gives_back_the_spec_it_was_loaded_from() -> None:
     assert not errors
     # the form stores only legs that change something; both of FULL's do
     assert spec == FULL
+
+
+def test_the_form_writes_counter_clockwise_circulation_whatever_the_spec_stored() -> None:
+    clockwise = replace(FULL, roundabout=replace(FULL.roundabout, circulation="cw"))
+    spec, errors = spec_from_form(form_from_spec(clockwise), base=clockwise)
+    assert not errors
+    assert spec.roundabout.circulation == "ccw"
 
 
 def test_the_form_says_what_is_wrong() -> None:

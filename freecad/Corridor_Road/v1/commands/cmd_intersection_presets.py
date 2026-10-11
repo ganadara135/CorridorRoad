@@ -45,7 +45,6 @@ from ..services.builders.intersection_kernel_context_service import spec_from_in
 from ..services.builders.intersection_kernel_surface_service import intersection_geometry_from_models
 from ..services.editing.intersection_spec_editing_service import (
     SPEC_ANCHOR_METHODS,
-    SPEC_CIRCULATIONS,
     SPEC_GRADING_MODES,
     IntersectionSpecForm,
     LegFormRow,
@@ -517,15 +516,11 @@ class V1IntersectionPresetsTaskPanel:
         self._spec_apron = _spec_spin(0.0, 100.0, " m")
         self._spec_entry = _spec_spin(0.0, 500.0, " m")
         self._spec_exit = _spec_spin(0.0, 500.0, " m")
-        self._spec_circulation_combo = QtWidgets.QComboBox()
-        for value in SPEC_CIRCULATIONS:
-            self._spec_circulation_combo.addItem(value, value)
         ring.addRow("Inscribed Radius:", self._spec_inscribed)
         ring.addRow("Circulatory Width:", self._spec_circulatory)
         ring.addRow("Outer Apron Width:", self._spec_apron)
         ring.addRow("Entry Radius (0 = default):", self._spec_entry)
         ring.addRow("Exit Radius (0 = default):", self._spec_exit)
-        ring.addRow("Circulation:", self._spec_circulation_combo)
         outer.addWidget(self._spec_ring_group)
 
         outer.addWidget(QtWidgets.QLabel("Legs (Check Spec lists them; untick to close one, radii for a roundabout approach):"))
@@ -587,7 +582,6 @@ class V1IntersectionPresetsTaskPanel:
             apron_width_m=float(self._spec_apron.value()),
             entry_radius_m=float(self._spec_entry.value()),
             exit_radius_m=float(self._spec_exit.value()),
-            circulation=_combo_data_or_text(self._spec_circulation_combo),
             leg_rows=legs,
         )
 
@@ -605,7 +599,6 @@ class V1IntersectionPresetsTaskPanel:
         self._spec_apron.setValue(form.apron_width_m)
         self._spec_entry.setValue(form.entry_radius_m)
         self._spec_exit.setValue(form.exit_radius_m)
-        _select_combo_data(self._spec_circulation_combo, form.circulation)
         self._fill_spec_leg_table(form.leg_rows)
         self._update_spec_kind_controls()
 
