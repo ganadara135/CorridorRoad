@@ -34,13 +34,16 @@ _INSTALL_LEVEL = 0
 _INSTALL_BASIC = 1
 _INSTALL_EAGER = 2
 
-# Explicit proxy module list to avoid package-wide scans on startup.
+# Explicit proxy module list to avoid package-wide scans on startup. It must name every module of
+# the objects package that defines a Proxy class: legacy-prefixed documents restore only through
+# the aliases of preloaded modules (tests/contracts/v1/test_legacy_proxy_corpus.py checks it).
 _PROXY_OBJECT_MODULES = (
     "obj_alignment",
     "obj_assembly_template",
     "obj_centerline3d",
     "obj_centerline3d_display",
     "obj_corridor",
+    "obj_cross_section_edit_plan",
     "obj_cut_fill_calc",
     "obj_design_grading_surface",
     "obj_design_terrain",
@@ -48,8 +51,11 @@ _PROXY_OBJECT_MODULES = (
     "obj_pointcloud_dem",
     "obj_profile_bundle",
     "obj_project",
+    "obj_region_plan",
     "obj_section_set",
     "obj_stationing",
+    "obj_structure_set",
+    "obj_typical_section_template",
     "obj_vertical_alignment",
 )
 

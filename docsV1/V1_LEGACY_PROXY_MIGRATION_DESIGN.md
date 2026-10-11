@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Design for decision. No code is changed by this document.
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -220,3 +220,57 @@ P0 and P1 are useful under every option and change no behavior.
 - a GUI session for view providers, which a headless run cannot check
 - the full gate: contract and architecture tests and the three smoke runners
 - `AGENTS.md` persistence rules: stable ids, link targets and unknown legacy data preserved
+
+## 11. Decisions Taken, on 2026-10-11
+
+The maintainer decided the four questions of section 9:
+
+1. **Option C.** An older document must open, keep its last saved results, and its source-role
+   legacy objects must be convertible into v1 sources through an explicit command. Phases P2 to P5
+   apply as written; a converter phase follows them.
+2. **Unregister** `CorridorRoad_EditAlignment`, `CorridorRoad_EditRegions` and
+   `CorridorRoad_EditTypicalSection`, the hidden commands that create legacy objects.
+3. **Retire** the runner smoke scripts that import legacy proxy modules (27 of 36) rather than
+   rewrite them.
+4. **Drop** the Plan/Profile legacy fallback: a document without a v1 Alignment or Profile shows
+   nothing there, and `LegacyDocumentAdapter` no longer calls legacy class helpers.
+
+## 12. P0 and P1 Results, on 2026-10-11
+
+**P0.** `virtual_paths._PROXY_OBJECT_MODULES` names all 19 modules that define a proxy class.
+`tests/contracts/v1/test_legacy_proxy_corpus.py` checks the list against a scan of the `objects`
+package, so a module added or emptied later cannot drift from it.
+
+**P1.** The corpus is in `tests/samples/legacy_proxy_corpus/`, written by the legacy classes on
+2026-10-11 by `tests/legacy_proxy_corpus.py`:
+
+| Document | Written by | Holds |
+| --- | --- | --- |
+| `legacy_chain.FCStd` | headless | one object of each of the 20 legacy proxy classes, linked as the legacy workflow linked them: alignment, profile, typical section, structure set, section set, corridor (with real geometry), surfaces, displays |
+| `legacy_chain_prefixed.FCStd` | headless | the same, saved under the legacy module prefix `objects.` |
+| `legacy_chain_gui.FCStd` | FreeCAD GUI | the same, with each class's stored view provider |
+
+`manifest.json` and `manifest_gui.json` record each object's properties, live proxy class and
+stored proxy entry. The contract test opens each document, compares it with the manifest, saves
+it, reopens the copy, and repeats; every stored proxy must come back with the same class and
+state. The GUI document's view providers were checked the same way inside the GUI by
+`build_gui`, which recorded the result in its manifest.
+
+Two findings, neither introduced here:
+
+- **Headless restore of legacy-prefixed documents.** The GUI installs the eager path mappings at
+  startup (`init_gui.py`). Headless FreeCADCmd stops at the basic level (`init.py`), and there a
+  proxy saved as `objects.obj_section_set` restores from a second copy of the module rather than
+  the canonical one. The object works, but class identity differs from the canonical class. The
+  contract test runs with the eager mappings, as the GUI does.
+- **Four legacy view providers cannot save their state.** `ViewProviderHorizontalAlignment`,
+  `ViewProviderCenterline3D`, `ViewProviderCenterline3DDisplay` and `ViewProviderStationing` keep
+  the FreeCAD object in their state and define no `__getstate__` or `dumps`, so FreeCAD's JSON
+  save of that state fails. Their module and class are stored, so they restore; what is written
+  as state (`""` or `{"Object": null}`) depends on whether the provider was attached. `attach()`
+  rebuilds the back-reference, so nothing is lost. The round trip compares only module and class
+  for these four. Their stubs in phase P5 should define `dumps` returning `None`.
+
+**Rebuilding the corpus.** Only while the legacy classes still have their behavior: after phase P5
+the builder would record the stubs. It refuses to overwrite an existing manifest without
+`--force`.
