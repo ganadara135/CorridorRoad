@@ -1,15 +1,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
-"""Central compatibility names for remaining corridor migration boundaries."""
+"""Central compatibility names for the corridor command id and the project corridor link."""
 
 PREFERRED_COMMAND_ID = "CorridorRoad_GenerateCorridor"
 
-PREFERRED_COMMAND_MODULE = "freecad.Corridor_Road.commands.cmd_generate_corridor"
-
-CORRIDOR_PROXY_TYPE = "Corridor"
-CORRIDOR_NAME_PREFIX = "Corridor"
 CORRIDOR_PROJECT_PROPERTY = "Corridor"
-CORRIDOR_CHILD_LINK_PROPERTY = "ParentCorridor"
-CORRIDOR_SKIP_MARKER_NAME = "CorridorSkipMarker"
-CORRIDOR_SEGMENT_NAME = "CorridorSegment"

@@ -276,12 +276,9 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
             ("RampModel", V1_TREE_RAMPS),
             ("IntersectionModel", V1_TREE_INTERSECTIONS),
             ("V1AssemblySubassemblyModel", V1_TREE_ASSEMBLIES),
-            ("AssemblyTemplate", V1_TREE_ASSEMBLIES),
             ("V1RegionModel", V1_TREE_REGIONS),
-            ("RegionPlan", V1_TREE_REGIONS),
             ("V1SurfaceTransitionModel", V1_TREE_REGIONS),
             ("V1AppliedSectionSet", V1_TREE_APPLIED_SECTIONS),
-            ("SectionSet", V1_TREE_APPLIED_SECTIONS),
             ("V1CorridorModel", V1_TREE_CORRIDOR_MODEL),
             ("V1CorridorCenterlinePreview", V1_TREE_BUILD_PARAMETRIC_OUTPUTS),
             ("V1SurfaceModel", V1_TREE_DESIGN_TIN),
@@ -293,18 +290,37 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_resolve_v1_target_container_no_longer_routes_legacy_object_names() -> None:
+    # The legacy proxy classes are gone (V1_LEGACY_PROXY_MIGRATION_DESIGN.md, section 19), so
+    # their names no longer have a place in the v1 tree.
+    doc, project = _new_project_doc()
+    try:
+        for object_name in (
+            "HorizontalAlignment",
+            "VerticalAlignment",
+            "ProfileBundle",
+            "Stationing",
+            "AssemblyTemplate",
+            "TypicalSectionTemplate",
+            "RegionPlan",
+            "SectionSet",
+            "StructureSet",
+            "Corridor",
+        ):
+            obj = doc.addObject("App::FeaturePython", object_name)
+            assert resolve_v1_target_container(project, obj) is None, object_name
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_resolve_v1_target_container_routes_alignment_profile_objects() -> None:
     doc, project = _new_project_doc()
     try:
         tree = ensure_project_tree(project, include_references=False)
         cases = [
             ("V1Alignment", V1_TREE_ALIGNMENTS),
-            ("HorizontalAlignment", V1_TREE_ALIGNMENTS),
             ("V1Profile", V1_TREE_PROFILES),
-            ("VerticalAlignment", V1_TREE_PROFILES),
-            ("ProfileBundle", V1_TREE_PROFILES),
             ("V1Stationing", V1_TREE_STATIONS),
-            ("Stationing", V1_TREE_STATIONS),
             ("V1SuperelevationSource", V1_TREE_SUPERELEVATION),
             ("SuperelevationModel", V1_TREE_SUPERELEVATION),
         ]

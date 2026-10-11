@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Converters dropped (section 18). Stubs removed (section 19).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Converters dropped (section 18). Stubs removed (section 19). obj_project cleaned (section 20).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -430,5 +430,35 @@ proxy reference on its next save (section 3).
 
 What stays of the legacy `objects` package is `obj_project` and the helpers v1 imports
 (`csv_alignment_import`, `sketch_alignment_import`, `surface_sampling_core`, `project_links`,
-`design_standards`, `unit_policy`). `obj_project` still routes legacy object types into the tree
-by name; it is frozen and was outside this work.
+`design_standards`, `unit_policy`). `obj_project` still routed legacy object types into the tree
+by name; section 20 removed that.
+
+## 20. Legacy Handling Removed From obj_project, on 2026-10-11
+
+`objects/obj_project.py` (the live project root) went from 2,734 to 1,368 lines:
+
+- the dead alignment-tree chain (20 functions nothing called);
+- the legacy type names in tree routing (`HorizontalAlignment`, `VerticalAlignment`,
+  `ProfileBundle`, `Stationing`, `AssemblyTemplate`, `TypicalSectionTemplate`, `RegionPlan`,
+  `SectionSet`, `StructureSet`, `Corridor`, the legacy surfaces, cut/fill and displays), with the
+  classifiers only they used;
+- the region-plan and corridor link helpers and `_migrate_region_plan_links`, which every project
+  recompute ran over the whole document;
+- `CorridorRoadProject.auto_link`'s search for legacy objects by name, and the legacy links among
+  the adopted project links (`Terrain`, `Alignment` and `Stationing` stay; v1 sets `Alignment`,
+  `Profile` and `Stationing` through `project_links.link_project`);
+- `create_corridorroad_project`'s adoption of legacy links, and the `corridor_compat` names nothing
+  uses any more (`PREFERRED_COMMAND_ID` and `CORRIDOR_PROJECT_PROPERTY` stay).
+
+Kept on purpose: the project's properties, including the legacy hidden links, so saved documents
+keep their schema; the alignment heuristic (v1 alignments carry IP rows); the `FinishedGradeFG`
+name prefix, which the v1 profile editor's preview objects use; the terrain-mesh keyword
+heuristic for imported meshes; the tree-folder migrations.
+
+**How behaviour was held.** A pytest plugin recorded every routing (`resolve_v1_target_container`,
+`_resolve_target_container`) and adoption decision across the whole contract suite before and
+after the change: 456 distinct decisions, identical for every v1 and other object. The only
+differences are the legacy names two tests created on purpose; those cases moved to a new test
+asserting that legacy names route nowhere. The loft retirement gate's
+`smoke_corridor_project_link_boundary`, which read this module's legacy corridor-link code, was
+retired by the maintainer; the gate keeps `command_alias` and `tree_schema`.
