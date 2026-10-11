@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Converters dropped (section 18).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Converters dropped (section 18). Stubs removed (section 19).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -413,3 +413,22 @@ of option C (section 11, decision 1) is therefore dropped: no command converts l
 objects into v1 sources. What phases P0 to P5 built stays as it is: the restore-only stubs keep
 any document that still holds a legacy object openable without losing data, and the corpus test
 keeps that true.
+
+## 19. Stubs Removed, on 2026-10-11
+
+The maintainer then chose to remove the remaining legacy traces as well, accepting that a
+document still holding a legacy object (from v0, or from a v1 session before the legacy paths
+were closed) opens with that object's properties and shape but without its proxy, and loses the
+proxy reference on its next save (section 3).
+
+- The 18 stub modules and `objects/legacy_proxy_stub.py` are removed.
+- `virtual_paths._PROXY_OBJECT_MODULES` lists only `obj_project`, the live project root; the
+  `obj_corridor_loft` alias went with `obj_corridor`.
+- The corpus (`tests/legacy_proxy_corpus.py`, `tests/samples/legacy_proxy_corpus/`) and its
+  contract test are removed. `tests/contracts/v1/test_proxy_module_preload.py` keeps the one
+  check that still applies: every proxy module of the `objects` package is preloaded.
+
+What stays of the legacy `objects` package is `obj_project` and the helpers v1 imports
+(`csv_alignment_import`, `sketch_alignment_import`, `surface_sampling_core`, `project_links`,
+`design_standards`, `unit_policy`). `obj_project` still routes legacy object types into the tree
+by name; it is frozen and was outside this work.

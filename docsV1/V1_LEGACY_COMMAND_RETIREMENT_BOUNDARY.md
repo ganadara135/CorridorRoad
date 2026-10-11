@@ -229,3 +229,5 @@ Open decision 4 was taken for the three hidden commands that open v0 editors cre
 ## 12. Legacy Panels and Proxy Implementations Gone, on 2026-10-11
 
 Phases P4 and P5 of `V1_LEGACY_PROXY_MIGRATION_DESIGN.md` removed every legacy task panel (`ui` now holds only package files) and replaced the implementation of every legacy proxy module with a restore-only stub. Sections 6 and 9 above describe the earlier state. `obj_project.py` stays live and frozen as before.
+
+The restore-only stubs were removed as well on the same day (`V1_LEGACY_PROXY_MIGRATION_DESIGN.md` section 19); `_PROXY_OBJECT_MODULES` now lists only `obj_project`.

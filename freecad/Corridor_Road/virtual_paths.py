@@ -35,29 +35,9 @@ _INSTALL_BASIC = 1
 _INSTALL_EAGER = 2
 
 # Explicit proxy module list to avoid package-wide scans on startup. It must name every module of
-# the objects package that defines a Proxy class: legacy-prefixed documents restore only through
-# the aliases of preloaded modules (tests/contracts/v1/test_legacy_proxy_corpus.py checks it).
-_PROXY_OBJECT_MODULES = (
-    "obj_alignment",
-    "obj_assembly_template",
-    "obj_centerline3d",
-    "obj_centerline3d_display",
-    "obj_corridor",
-    "obj_cross_section_edit_plan",
-    "obj_cut_fill_calc",
-    "obj_design_grading_surface",
-    "obj_design_terrain",
-    "obj_fg_display",
-    "obj_pointcloud_dem",
-    "obj_profile_bundle",
-    "obj_project",
-    "obj_region_plan",
-    "obj_section_set",
-    "obj_stationing",
-    "obj_structure_set",
-    "obj_typical_section_template",
-    "obj_vertical_alignment",
-)
+# the objects package that defines a Proxy class: documents saved under a legacy module prefix
+# restore only through the aliases of preloaded modules (test_proxy_module_preload.py checks it).
+_PROXY_OBJECT_MODULES = ("obj_project",)
 
 
 def _import_module(name: str) -> ModuleType | None:
@@ -157,12 +137,6 @@ def install_virtual_path_mappings(*, eager: bool = False) -> None:
     if eager:
         # Preload proxy-bearing object modules in canonical namespace.
         _preload_proxy_modules()
-        
-        # Explicitly alias retired modules
-        corridor_mod = sys.modules.get(f"{CANONICAL_OBJECTS}.obj_corridor")
-        if corridor_mod:
-            _set_alias(f"{CANONICAL_OBJECTS}.obj_corridor_loft", corridor_mod)
-            _set_alias("obj_corridor_loft", corridor_mod)
 
 
     # Map legacy package roots to canonical package roots.

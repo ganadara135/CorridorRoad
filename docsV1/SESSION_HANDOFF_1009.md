@@ -126,10 +126,9 @@ must not absorb Structure, Drainage or Intersection semantics.
    - the Drainage tab's low point and `Suggested Inlet` marker, section 5.
 2. **Remaining dead code.** The reachability pass lists 29 v1 definitions, all kept on purpose:
    the six documented contracts above, Watertight and simulation code (paused), Ramp (out of
-   scope), and `objects/` persistence adapters. `071aa5c` removed the unused v0 helpers; the 34 v0
-   definitions left are ViewProvider classes (restored by name from saved documents), the dead
-   alignment-tree chain in the frozen `obj_project` (the loft retirement gate checks its source
-   text), and four helpers the smoke runners call.
+   scope), and `objects/` persistence adapters. The legacy proxy modules are gone (see
+   Repository-wide); what is left of the legacy `objects` package is `obj_project` and the
+   helpers v1 imports.
 
 ### Open questions for the user
 
@@ -138,8 +137,7 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 ### Repository-wide
 
-- **Legacy retirement is blocked.** Unreachable v0 modules cannot go until a stored-`Proxy`
-  migration exists. See section 5. The options, measurements and the decisions it needs are in
+- **Legacy proxy modules are gone.** The measurements, decisions and phases are recorded in
   [V1_LEGACY_PROXY_MIGRATION_DESIGN.md](./V1_LEGACY_PROXY_MIGRATION_DESIGN.md) (`c2377ab`). Decided
   on 2026-10-11: option C (stubs plus an explicit convert-to-v1 command), unregister the three
   hidden legacy editors, retire the legacy smoke scripts, drop the Plan/Profile legacy fallback.
@@ -151,7 +149,8 @@ must not absorb Structure, Drainage or Intersection semantics.
   The Cross Section and Earthwork v0 fallbacks are gone too (`9052825`). P5 is done: all 18
   legacy proxy modules are restore-only stubs (design section 17); legacy `objects` went from
   25,878 to 4,531 lines. Converters are dropped: documents made with v0 need no further support
-  (design section 18).
+  (design section 18). The stubs, their base class and the corpus were then removed as well
+  (design section 19): a document holding a legacy object opens without that object's proxy.
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
 - `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's
@@ -201,12 +200,12 @@ unused-import trim can remove a name another module imports from that module: it
 `AlignmentIntersectionDetectionService`, which the Presets panel imports through
 `cmd_intersection_editor`, and the analysis then reported a live service as dead.
 
-### Two hard constraints on deleting code
+### A hard constraint on deleting code
 
-- `virtual_paths._PROXY_OBJECT_MODULES` lists the modules that keep saved documents
-  restorable, because a FreeCAD object's `Proxy` is stored by module path. Deleting one is
-  data loss, not cleanup.
-- The maintained smoke runners would lose most of their scripts if the legacy surface went.
+`virtual_paths._PROXY_OBJECT_MODULES` lists the modules that keep saved documents restorable,
+because a FreeCAD object's `Proxy` is stored by module path. It now holds only `obj_project`,
+the live project root; deleting or renaming a proxy module of a live object type is data loss,
+not cleanup. `test_proxy_module_preload.py` checks the list against the `objects` package.
 
 ### Deleting a condition is not deleting a branch
 
