@@ -6,17 +6,14 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.ui.task_cut_fill_calc import CutFillCalcTaskPanel
 
 
-def run_earthwork_review_command(
-    *,
-    app_module=App,
-    gui_module=Gui,
-    run_v1_viewer=None,
-    open_existing_v0_panel=None,
-):
-    """Run the preferred earthwork review path with a safe v0 fallback."""
+def run_earthwork_review_command(*, app_module=App, run_v1_viewer=None):
+    """Open the v1 Earthwork review, reporting a failure instead of opening a v0 panel.
+
+    The v0 panel this used to fall back to belongs to the retiring legacy objects
+    (docsV1/V1_LEGACY_PROXY_MIGRATION_DESIGN.md, section 16).
+    """
 
     if run_v1_viewer is None:
         from freecad.Corridor_Road.v1.commands.cmd_earthwork_balance import (
@@ -25,24 +22,12 @@ def run_earthwork_review_command(
 
         run_v1_viewer = run_v1_earthwork_balance_command
 
-    if open_existing_v0_panel is None:
-        def _open_existing_v0_panel():
-            panel = CutFillCalcTaskPanel()
-            gui_module.Control.showDialog(panel)
-            return panel
-
-        open_existing_v0_panel = _open_existing_v0_panel
-
     try:
         run_v1_viewer()
         return "v1"
     except Exception as exc:
-        app_module.Console.PrintWarning(
-            "ParametricRoad v1 earthwork viewer unavailable, "
-            f"falling back to the existing v0 panel: {exc}\n"
-        )
-        open_existing_v0_panel()
-        return "v0"
+        app_module.Console.PrintError(f"Earthwork review was not opened: {exc}" + "\n")
+        return "error"
 
 
 class CmdGenerateCutFillCalc:

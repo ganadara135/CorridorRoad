@@ -5,17 +5,14 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.ui.task_cross_section_viewer import CrossSectionViewerTaskPanel
 
 
-def run_cross_section_review_command(
-    *,
-    app_module=App,
-    gui_module=Gui,
-    run_v1_viewer=None,
-    open_existing_v0_viewer=None,
-):
-    """Run the preferred cross-section review path with a safe v0 fallback."""
+def run_cross_section_review_command(*, app_module=App, run_v1_viewer=None):
+    """Open the v1 Cross Section review, reporting a failure instead of opening a v0 panel.
+
+    The v0 panel this used to fall back to belongs to the retiring legacy objects
+    (docsV1/V1_LEGACY_PROXY_MIGRATION_DESIGN.md, section 16).
+    """
 
     if run_v1_viewer is None:
         from freecad.Corridor_Road.v1.commands.cmd_view_sections import (
@@ -24,24 +21,12 @@ def run_cross_section_review_command(
 
         run_v1_viewer = run_v1_section_view_command
 
-    if open_existing_v0_viewer is None:
-        def _open_existing_v0_viewer():
-            panel = CrossSectionViewerTaskPanel()
-            gui_module.Control.showDialog(panel)
-            return panel
-
-        open_existing_v0_viewer = _open_existing_v0_viewer
-
     try:
         run_v1_viewer()
         return "v1"
     except Exception as exc:
-        app_module.Console.PrintWarning(
-            "ParametricRoad v1 cross-section viewer unavailable, "
-            f"falling back to the existing v0 viewer: {exc}\n"
-        )
-        open_existing_v0_viewer()
-        return "v0"
+        app_module.Console.PrintError(f"Cross Section review was not opened: {exc}" + "\n")
+        return "error"
 
 
 class CmdViewCrossSection:

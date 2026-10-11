@@ -5,10 +5,10 @@ from freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc import (
 
 class _Console:
     def __init__(self) -> None:
-        self.messages: list[str] = []
+        self.errors: list[str] = []
 
-    def PrintWarning(self, text: str) -> None:
-        self.messages.append(str(text))
+    def PrintError(self, text: str) -> None:
+        self.errors.append(str(text))
 
 
 class _App:
@@ -16,47 +16,24 @@ class _App:
         self.Console = _Console()
 
 
-def test_run_earthwork_review_command_prefers_v1() -> None:
+def test_run_earthwork_review_command_opens_the_v1_viewer() -> None:
     app = _App()
     calls: list[str] = []
 
-    def _run_v1() -> None:
-        calls.append("v1")
-
-    def _open_v0() -> None:
-        calls.append("v0")
-
-    path = run_earthwork_review_command(
-        app_module=app,
-        gui_module=None,
-        run_v1_viewer=_run_v1,
-        open_existing_v0_panel=_open_v0,
-    )
+    path = run_earthwork_review_command(app_module=app, run_v1_viewer=lambda: calls.append("v1"))
 
     assert path == "v1"
     assert calls == ["v1"]
-    assert app.Console.messages == []
+    assert app.Console.errors == []
 
 
-def test_run_earthwork_review_command_falls_back_to_existing_v0() -> None:
+def test_a_v1_viewer_failure_is_reported_and_opens_no_v0_panel() -> None:
     app = _App()
-    calls: list[str] = []
 
     def _run_v1() -> None:
-        calls.append("v1")
         raise RuntimeError("simulated v1 failure")
 
-    def _open_v0() -> None:
-        calls.append("v0")
+    path = run_earthwork_review_command(app_module=app, run_v1_viewer=_run_v1)
 
-    path = run_earthwork_review_command(
-        app_module=app,
-        gui_module=None,
-        run_v1_viewer=_run_v1,
-        open_existing_v0_panel=_open_v0,
-    )
-
-    assert path == "v0"
-    assert calls == ["v1", "v0"]
-    assert app.Console.messages
-    assert "existing v0 panel" in app.Console.messages[0]
+    assert path == "error"
+    assert app.Console.errors == ["Earthwork review was not opened: simulated v1 failure" + "\n"]

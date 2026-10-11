@@ -207,35 +207,3 @@ def model_length_from_meters(doc_or_project, meters: float) -> float:
 def format_internal_length(doc_or_project, internal_value: float, digits: int = 3, unit: str = "", *, use_default: str = "display") -> str:
     meters = meters_from_internal_length(doc_or_project, internal_value)
     return format_length(doc_or_project, meters, digits=digits, unit=unit, use_default=use_default)
-
-
-def display_area_from_internal(doc_or_project, internal_area: float, unit: str = "", *, use_default: str = "display") -> float:
-    meters_sq = _safe_float(internal_area, default=0.0)
-    meters_per_unit = meters_per_user_unit(doc_or_project, unit=unit, use_default=use_default)
-    return meters_sq / (meters_per_unit * meters_per_unit)
-
-
-def display_volume_from_internal(doc_or_project, internal_volume: float, unit: str = "", *, use_default: str = "display") -> float:
-    meters_cu = _safe_float(internal_volume, default=0.0)
-    meters_per_unit = meters_per_user_unit(doc_or_project, unit=unit, use_default=use_default)
-    return meters_cu / (meters_per_unit * meters_per_unit * meters_per_unit)
-
-
-def format_internal_area(doc_or_project, internal_area: float, digits: int = 3, unit: str = "", *, use_default: str = "display") -> str:
-    token = _normalize_linear_unit(
-        unit or get_linear_display_unit(doc_or_project),
-        allow_custom=True,
-        default=DEFAULT_LINEAR_UNIT,
-    )
-    value = display_area_from_internal(doc_or_project, internal_area, unit=token, use_default=use_default)
-    return f"{value:.{max(0, int(digits))}f} {token}^2"
-
-
-def format_internal_volume(doc_or_project, internal_volume: float, digits: int = 3, unit: str = "", *, use_default: str = "display") -> str:
-    token = _normalize_linear_unit(
-        unit or get_linear_display_unit(doc_or_project),
-        allow_custom=True,
-        default=DEFAULT_LINEAR_UNIT,
-    )
-    value = display_volume_from_internal(doc_or_project, internal_volume, unit=token, use_default=use_default)
-    return f"{value:.{max(0, int(digits))}f} {token}^3"
