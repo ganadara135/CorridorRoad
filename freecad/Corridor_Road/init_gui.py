@@ -95,10 +95,8 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
     Icon = _WB_ICON_PATH if os.path.isfile(_WB_ICON_PATH) else ""
 
     def Initialize(self):
-        import freecad.Corridor_Road.commands.cmd_new_project  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_project_setup  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_edit_tin  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_create_alignment  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_alignment_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_profile_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401

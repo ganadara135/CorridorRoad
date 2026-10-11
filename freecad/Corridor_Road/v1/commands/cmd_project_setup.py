@@ -38,6 +38,24 @@ class ProjectSetupApplyResult:
     summary: str = ""
 
 
+def create_corridorroad_project(document):
+    """Create the v1 project root and place the existing v1 design objects in its tree."""
+
+    if document is None:
+        raise RuntimeError("No active document.")
+    try:
+        project = document.addObject("App::DocumentObjectGroupPython", "CorridorRoadProject")
+    except Exception:
+        project = document.addObject("App::FeaturePython", "CorridorRoadProject")
+    CorridorRoadProject(project)
+    ensure_project_properties(project)
+    ensure_project_tree(project, include_references=False)
+    project.Label = "Parametric Road Project"
+    CorridorRoadProject.auto_link(document, project)
+    document.recompute()
+    return project
+
+
 def list_corridorroad_projects(document) -> list[object]:
     """Return the CorridorRoadProject objects of a document, in document order."""
 
@@ -75,7 +93,7 @@ def run_v1_project_setup_command(document=None, *, preferred_project=None, prepa
     """Open Project Setup, creating the project root first when the document has none.
 
     `prepare_project` brings an existing root up to date first, as the Project Setup command
-    always has; New Project has just done that, and the tree context menu never did.
+    always has; the tree context menu never did.
     """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -83,9 +101,6 @@ def run_v1_project_setup_command(document=None, *, preferred_project=None, prepa
         raise RuntimeError("No active document.")
     project = preferred_project or preferred_corridorroad_project(doc, _selection())
     if project is None:
-        # imported here: cmd_new_project opens this panel, so it imports this module
-        from ...commands.cmd_new_project import create_corridorroad_project
-
         project = create_corridorroad_project(doc)
         prepare_project = True
     if prepare_project:

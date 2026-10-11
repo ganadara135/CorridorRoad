@@ -17,6 +17,9 @@ RETIRED_COMMAND_IDS = {
     "CorridorRoad_EditTypicalSection",
     # read-only, but kept the v0 alignment panel alive; its v1 successor is CorridorRoad_V1ReviewPlanProfile
     "CorridorRoad_ReviewAlignment",
+    # hidden duplicates of New/Project Setup and of the v1 sample alignment
+    "CorridorRoad_NewProject",
+    "CorridorRoad_CreateAlignment",
 }
 
 

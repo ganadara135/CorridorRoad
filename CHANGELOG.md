@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Removed
+- Unregistered the hidden legacy commands `CorridorRoad_NewProject` and `CorridorRoad_CreateAlignment`. `New/Project Setup` (`CorridorRoad_ProjectSetup`) creates the project root when a document has none, and the v1 Alignment editor creates alignments.
+
 ## [1.1.1] - 2026-10-11
 
 Documents made with v0 (Corridor Road before the v1 workflow) are no longer supported: the legacy object types are gone, and a document that still holds one opens with its properties and shapes but without the object's behavior. Documents made with the v1 workflow are unaffected.

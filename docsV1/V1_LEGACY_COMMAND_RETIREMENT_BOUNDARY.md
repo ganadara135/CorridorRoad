@@ -123,8 +123,7 @@ The whole legacy `objects` package is 31 files and 25,956 lines and stays: every
 | --- | --- | --- |
 | Keep, stable-id bridge to v1 | 5 | `cmd_generate_corridor`, `cmd_view_cross_section`, `cmd_review_plan_profile`, `cmd_generate_cut_fill_calc`, `cmd_project_setup` (since 2026-10-10) |
 | Keep, no v1 successor exists | 2 | `cmd_outputs_exchange`, `cmd_ai_assist` |
-| Retirement candidate, v1 successor surfaced, currently hidden | 2 | `cmd_new_project`, `cmd_create_alignment` |
-| Retired on 2026-10-11 (section 11) | 4 | `cmd_edit_alignment`, `cmd_edit_typical_section`, `cmd_edit_regions`, `cmd_review_alignment` |
+| Retired on 2026-10-11 (sections 11 and 13) | 6 | `cmd_edit_alignment`, `cmd_edit_typical_section`, `cmd_edit_regions`, `cmd_review_alignment`, `cmd_new_project`, `cmd_create_alignment` |
 
 No module is removed by this record.
 
@@ -231,3 +230,14 @@ Open decision 4 was taken for the three hidden commands that open v0 editors cre
 Phases P4 and P5 of `V1_LEGACY_PROXY_MIGRATION_DESIGN.md` removed every legacy task panel (`ui` now holds only package files) and replaced the implementation of every legacy proxy module with a restore-only stub. Sections 6 and 9 above describe the earlier state. `obj_project.py` stays live and frozen as before.
 
 The restore-only stubs were removed as well on the same day (`V1_LEGACY_PROXY_MIGRATION_DESIGN.md` section 19); `_PROXY_OBJECT_MODULES` now lists only `obj_project`.
+
+## 13. The Last Two Hidden Legacy Commands Retired, on 2026-10-11
+
+After the 1.1.1 release the maintainer retired the two hidden commands left from section 4.3:
+
+| Command id | Module removed | v1 successor |
+| --- | --- | --- |
+| `CorridorRoad_NewProject` | `cmd_new_project` | `CorridorRoad_ProjectSetup` (`New/Project Setup`), which creates the project root when the document has none |
+| `CorridorRoad_CreateAlignment` | `cmd_create_alignment` | `CorridorRoad_V1EditAlignment`; the sample alignment is `v1/commands/cmd_create_alignment.create_v1_sample_alignment` |
+
+`create_corridorroad_project` moved from `cmd_new_project` into `v1/commands/cmd_project_setup.py`, its only user, which removes the lazy import between them. The non-runner smoke `smoke_sample_alignment_command_unit_policy.py`, which drove the legacy command, is retired; `test_v1_alignment_source_object.py` covers the v1 sample alignment. `test_legacy_command_retirement.py` lists both ids. No legacy command module is left unregistered-but-present: the legacy `commands` package holds only the stable-id bridges (section 4.1, plus `cmd_project_setup`) and `cmd_outputs_exchange` and `cmd_ai_assist`.

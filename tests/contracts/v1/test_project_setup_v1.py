@@ -4,11 +4,11 @@ from pathlib import Path
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.commands.cmd_new_project import create_corridorroad_project
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_project_setup import (
     V1ProjectSetupTaskPanel,
     apply_v1_project_setup,
+    create_corridorroad_project,
     run_v1_project_setup_command,
 )
 from freecad.Corridor_Road.v1.objects.project_setup_adapter import (

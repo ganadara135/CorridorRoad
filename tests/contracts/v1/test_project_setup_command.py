@@ -1,6 +1,5 @@
 import FreeCAD as App
 
-from freecad.Corridor_Road.commands import cmd_new_project
 from freecad.Corridor_Road.commands import cmd_project_setup
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
@@ -47,12 +46,9 @@ def _restore_control(original_had_control, original_control) -> None:
 
 def test_project_setup_command_uses_combined_label_and_project_setup_icon() -> None:
     resources = cmd_project_setup.CmdProjectSetup().GetResources()
-    legacy_resources = cmd_new_project.CmdNewProject().GetResources()
 
     assert resources["MenuText"] == "New/Project Setup"
     assert str(resources["Pixmap"]).replace("\\", "/").endswith("project_setup.svg")
-    assert legacy_resources["MenuText"] == "New/Project Setup"
-    assert str(legacy_resources["Pixmap"]).replace("\\", "/").endswith("project_setup.svg")
 
 
 def test_project_setup_command_creates_project_when_document_has_none() -> None:
