@@ -120,3 +120,16 @@ def test_a_corpus_document_survives_two_open_and_save_cycles(file_name) -> None:
                     "class": entry["class"],
                     "value": entry["value"],
                 }, f"cycle {cycle}: {name}"
+
+
+def test_plan_profile_review_reads_no_legacy_alignment_or_profile() -> None:
+    # Decision 4: the viewer reads v1 sources only, so a document holding only legacy objects
+    # builds no document preview (the command then shows the demo preview, as for an empty one).
+    from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import build_document_plan_profile_preview
+
+    doc = App.openDocument(str(CORPUS_DIR / "legacy_chain.FCStd"))
+    try:
+        assert doc.getObject("HorizontalAlignment") is not None
+        assert build_document_plan_profile_preview(doc) is None
+    finally:
+        App.closeDocument(doc.Name)

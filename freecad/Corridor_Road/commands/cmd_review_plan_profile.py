@@ -5,23 +5,14 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.ui.task_alignment_editor import AlignmentEditorTaskPanel
-from freecad.Corridor_Road.ui.task_profile_editor import ProfileEditorTaskPanel
-from freecad.Corridor_Road.v1.commands.selection_context import (
-    selected_alignment_profile_target,
-)
 
 
-def run_plan_profile_review_command(
-    *,
-    app_module=App,
-    gui_module=Gui,
-    run_v1_viewer=None,
-    resolve_targets=None,
-    open_existing_v0_alignment_editor=None,
-    open_existing_v0_profile_editor=None,
-):
-    """Run the preferred plan/profile review path with a safe v0 fallback."""
+def run_plan_profile_review_command(*, app_module=App, run_v1_viewer=None):
+    """Open the v1 Plan/Profile review, reporting a failure instead of opening a v0 editor.
+
+    The v0 alignment and profile editors this used to fall back to create legacy proxy objects,
+    which are retiring (docsV1/V1_LEGACY_PROXY_MIGRATION_DESIGN.md, decision 4).
+    """
 
     if run_v1_viewer is None:
         from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import (
@@ -30,48 +21,12 @@ def run_plan_profile_review_command(
 
         run_v1_viewer = run_v1_plan_profile_preview_command
 
-    if resolve_targets is None:
-        def _resolve_targets():
-            document = getattr(app_module, "ActiveDocument", None)
-            return selected_alignment_profile_target(gui_module, document)
-
-        resolve_targets = _resolve_targets
-
-    if open_existing_v0_alignment_editor is None:
-        def _open_existing_v0_alignment_editor():
-            panel = AlignmentEditorTaskPanel()
-            gui_module.Control.showDialog(panel)
-            return panel
-
-        open_existing_v0_alignment_editor = _open_existing_v0_alignment_editor
-
-    if open_existing_v0_profile_editor is None:
-        def _open_existing_v0_profile_editor():
-            panel = ProfileEditorTaskPanel()
-            gui_module.Control.showDialog(panel)
-            return panel
-
-        open_existing_v0_profile_editor = _open_existing_v0_profile_editor
-
     try:
         run_v1_viewer()
         return "v1"
     except Exception as exc:
-        preferred_alignment, preferred_profile = resolve_targets()
-        if preferred_profile is not None:
-            app_module.Console.PrintWarning(
-                "ParametricRoad v1 plan/profile viewer unavailable, "
-                f"falling back to the existing v0 profile editor: {exc}\n"
-            )
-            open_existing_v0_profile_editor()
-            return "v0_profile"
-
-        app_module.Console.PrintWarning(
-            "ParametricRoad v1 plan/profile viewer unavailable, "
-            f"falling back to the existing v0 alignment editor: {exc}\n"
-        )
-        open_existing_v0_alignment_editor()
-        return "v0_alignment"
+        app_module.Console.PrintError(f"Plan/Profile review was not opened: {exc}\n")
+        return "error"
 
 
 class CmdReviewPlanProfile:

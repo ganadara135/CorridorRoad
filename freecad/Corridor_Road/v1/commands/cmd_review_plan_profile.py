@@ -14,13 +14,13 @@ from ..models.output.plan_output import PlanStationRow
 from ..models.output.profile_output import ProfileLineRow
 from ..models.result.tin_surface import TINSurface
 from ..models.source.profile_model import ProfileControlPoint, ProfileModel
+from ...objects.obj_project import find_project
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_stationing import find_v1_stationing, station_value_rows
 from ..services.evaluation import (
     AlignmentEvaluationService,
     AlignmentStationSamplingService,
-    LegacyDocumentAdapter,
     ProfileEarthworkAreaHintService,
     ProfileEarthworkHintService,
     ProfileEvaluationService,
@@ -399,7 +399,7 @@ def _existing_ground_profile_line_rows(result) -> list[ProfileLineRow]:
 
 
 def build_alignment_profile_bridge_diagnostics(preview: dict[str, object]) -> list[dict[str, str]]:
-    """Build visible diagnostics for the v0 document to v1 alignment/profile bridge."""
+    """Build visible diagnostics for the alignment/profile sources the viewer reads."""
 
     source_kind = str(preview.get("preview_source_kind", "") or "").strip() or "unknown"
     alignment_model = preview.get("alignment_model", None)
@@ -439,7 +439,7 @@ def _alignment_model_diagnostic_row(alignment_model) -> dict[str, str]:
             "alignment_model",
             "error",
             "No v1 AlignmentModel was built.",
-            "The document needs a HorizontalAlignment object or an explicit preferred alignment.",
+            "The document needs a v1 Alignment (Alignment editor) or an explicit preferred alignment.",
         )
     element_count = len(list(getattr(alignment_model, "geometry_sequence", []) or []))
     if element_count <= 0:
@@ -463,7 +463,7 @@ def _profile_model_diagnostic_row(profile_model) -> dict[str, str]:
             "profile_model",
             "error",
             "No v1 ProfileModel was built.",
-            "The document needs a VerticalAlignment object or an explicit preferred profile.",
+            "The document needs a v1 Profile (Profile editor) or an explicit preferred profile.",
         )
     control_count = len(list(getattr(profile_model, "control_rows", []) or []))
     if control_count < 2:
@@ -486,21 +486,21 @@ def _legacy_object_diagnostic_row(kind: str, obj, source_kind: str) -> dict[str,
         return _bridge_diagnostic_row(
             kind,
             "not_applicable",
-            "Legacy object check skipped for demo preview.",
+            "Source object check skipped for demo preview.",
             "",
         )
     if obj is None:
         return _bridge_diagnostic_row(
             kind,
             "error",
-            "Legacy source object was not resolved.",
-            "The bridge could not find the expected v0 object in the active document.",
+            "Source object was not resolved.",
+            "The active document has no v1 source object of this kind.",
         )
     name = str(getattr(obj, "Name", "") or getattr(obj, "Label", "") or "").strip()
     return _bridge_diagnostic_row(
         kind,
         "ok",
-        "Legacy source object resolved.",
+        "Source object resolved.",
         name,
     )
 
@@ -650,33 +650,13 @@ def build_document_plan_profile_preview(
 ) -> dict[str, object] | None:
     """Build a v1 plan/profile viewer payload from a FreeCAD document."""
 
-    adapter = LegacyDocumentAdapter()
-    project = adapter._find_project(document)
-    v1_alignment_object = find_v1_alignment(document, preferred_alignment=preferred_alignment)
-    alignment_model = to_alignment_model(v1_alignment_object) if v1_alignment_object is not None else None
-    if alignment_model is None:
-        alignment_model = adapter.build_alignment_model(
-            document,
-            preferred_alignment=preferred_alignment,
-        )
-    v1_profile_object = find_v1_profile(document, preferred_profile=preferred_profile)
-    profile_model = to_profile_model(v1_profile_object) if v1_profile_object is not None else None
-    if profile_model is None:
-        profile_model = adapter.build_profile_model(
-            document,
-            preferred_profile=preferred_profile,
-            preferred_alignment=preferred_alignment,
-        )
-    alignment_object = v1_alignment_object or adapter._resolve_alignment_object(
-        project,
-        document,
-        preferred_alignment=preferred_alignment,
-    )
-    profile_object = v1_profile_object or adapter._resolve_vertical_alignment_object(
-        project,
-        document,
-        preferred_profile=preferred_profile,
-    )
+    # v1 sources only: a document that holds only legacy alignment/profile objects shows the demo
+    # preview, as an empty document does (legacy proxy migration design, decision 4).
+    project = find_project(document)
+    alignment_object = find_v1_alignment(document, preferred_alignment=preferred_alignment)
+    alignment_model = to_alignment_model(alignment_object) if alignment_object is not None else None
+    profile_object = find_v1_profile(document, preferred_profile=preferred_profile)
+    profile_model = to_profile_model(profile_object) if profile_object is not None else None
     v1_stationing_object = find_v1_stationing(document)
     if alignment_model is None and profile_model is None:
         return None

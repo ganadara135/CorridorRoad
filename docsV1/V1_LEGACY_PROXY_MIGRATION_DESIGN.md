@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 done (section 13).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -286,3 +286,22 @@ Plan/Profile command (`commands/cmd_review_plan_profile.py`) opens the v0 alignm
 editor when the v1 viewer raises, and those editors create `HorizontalAlignment`,
 `VerticalAlignment`, `ProfileBundle` and `FGDisplay` objects. It is the Plan/Profile legacy
 fallback of decision 4, so phase P3 removes it together with the adapter's legacy reads.
+
+## 14. P3 Result, on 2026-10-11
+
+The Plan/Profile legacy fallback is gone, in both of its forms:
+
+- **Data.** `build_document_plan_profile_preview` reads the v1 Alignment and Profile only. A
+  document that holds only legacy alignment and profile objects builds no document preview, and
+  the command shows the demo preview, as it does for an empty document; its diagnostics say the
+  document needs a v1 Alignment and Profile. `v1/services/evaluation/legacy_document_adapter.py`
+  had no other production user (the Cross Section viewer called only its `_find_project`, now
+  `objects.obj_project.find_project`) and is removed with its test, so nothing in v1 calls a
+  legacy class helper any more.
+- **Editors.** The Review Plan/Profile bridge (`commands/cmd_review_plan_profile.py`) reports a
+  v1 viewer failure on the console instead of opening the v0 alignment or profile editor, the last
+  surfaced path that created legacy objects.
+
+`test_legacy_proxy_corpus.py` opens the corpus document and checks that it builds no Plan/Profile
+preview; against the code before P3 that check fails. The v0 alignment and profile panels are now
+reached only by runner smoke scripts and `cmd_review_alignment`; P4 retires them with the scripts.

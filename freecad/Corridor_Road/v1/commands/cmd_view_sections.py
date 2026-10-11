@@ -9,13 +9,13 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
     Gui = None
 
+from ...objects.obj_project import find_project
 from ..models.output.section_output import SectionGeometryRow
 from ..models.result.applied_section import AppliedSection
 from ..models.result.applied_section_set import AppliedSectionSet
 from ..models.result.tin_surface import TINSurface
 from ..services.evaluation import (
     AlignmentEvaluationService,
-    LegacyDocumentAdapter,
     SectionEarthworkAreaService,
     StationContextResolver,
     TinSamplingService,
@@ -1568,8 +1568,7 @@ def build_document_section_preview(
 ) -> dict[str, object] | None:
     """Build a v1 section viewer payload from a FreeCAD document when possible."""
 
-    adapter = LegacyDocumentAdapter()
-    project = adapter._find_project(document)
+    project = find_project(document)
     return _build_v1_applied_section_set_preview(
         document,
         project=project,

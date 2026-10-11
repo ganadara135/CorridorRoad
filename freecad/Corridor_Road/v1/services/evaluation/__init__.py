@@ -12,7 +12,6 @@ from .intersection_alignment_detection_service import (
     AlignmentIntersectionDetectionResult,
     AlignmentIntersectionDetectionService,
 )
-from .legacy_document_adapter import LegacyDocumentAdapter, LegacyPreviewBundle
 from .override_resolution_service import OverrideResolutionService
 from .profile_earthwork_area_hint_service import ProfileEarthworkAreaHintService
 from .profile_earthwork_hint_service import ProfileEarthworkHintService
@@ -74,8 +73,6 @@ __all__ = [
     "IntersectionEvaluationService",
     "AlignmentIntersectionDetectionResult",
     "AlignmentIntersectionDetectionService",
-    "LegacyDocumentAdapter",
-    "LegacyPreviewBundle",
     "OverrideResolutionService",
     "ProfileEarthworkAreaHintService",
     "ProfileEarthworkHintService",

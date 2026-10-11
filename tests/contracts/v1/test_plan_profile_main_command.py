@@ -6,10 +6,14 @@ from freecad.Corridor_Road.commands.cmd_review_plan_profile import (
 
 class _Console:
     def __init__(self) -> None:
-        self.messages: list[str] = []
+        self.warnings: list[str] = []
+        self.errors: list[str] = []
 
     def PrintWarning(self, text: str) -> None:
-        self.messages.append(str(text))
+        self.warnings.append(str(text))
+
+    def PrintError(self, text: str) -> None:
+        self.errors.append(str(text))
 
 
 class _App:
@@ -17,25 +21,15 @@ class _App:
         self.Console = _Console()
 
 
-def test_run_plan_profile_review_command_prefers_v1() -> None:
+def test_run_plan_profile_review_command_opens_the_v1_viewer() -> None:
     app = _App()
     calls: list[str] = []
 
-    def _run_v1() -> None:
-        calls.append("v1")
-
-    path = run_plan_profile_review_command(
-        app_module=app,
-        gui_module=None,
-        run_v1_viewer=_run_v1,
-        resolve_targets=lambda: (None, None),
-        open_existing_v0_alignment_editor=lambda: calls.append("v0_alignment"),
-        open_existing_v0_profile_editor=lambda: calls.append("v0_profile"),
-    )
+    path = run_plan_profile_review_command(app_module=app, run_v1_viewer=lambda: calls.append("v1"))
 
     assert path == "v1"
     assert calls == ["v1"]
-    assert app.Console.messages == []
+    assert app.Console.errors == []
 
 
 def test_review_plan_profile_command_uses_plan_profile_review_icon() -> None:
@@ -44,48 +38,14 @@ def test_review_plan_profile_command_uses_plan_profile_review_icon() -> None:
     assert str(resources["Pixmap"]).replace("\\", "/").endswith("plan_profile_review.svg")
 
 
-def test_run_plan_profile_review_command_falls_back_to_profile_editor() -> None:
+def test_a_v1_viewer_failure_is_reported_and_opens_no_v0_editor() -> None:
+    # The v0 alignment/profile editors this used to open create legacy proxy objects.
     app = _App()
-    calls: list[str] = []
-    profile_object = object()
 
     def _run_v1() -> None:
-        calls.append("v1")
         raise RuntimeError("simulated v1 failure")
 
-    path = run_plan_profile_review_command(
-        app_module=app,
-        gui_module=None,
-        run_v1_viewer=_run_v1,
-        resolve_targets=lambda: (None, profile_object),
-        open_existing_v0_alignment_editor=lambda: calls.append("v0_alignment"),
-        open_existing_v0_profile_editor=lambda: calls.append("v0_profile"),
-    )
+    path = run_plan_profile_review_command(app_module=app, run_v1_viewer=_run_v1)
 
-    assert path == "v0_profile"
-    assert calls == ["v1", "v0_profile"]
-    assert app.Console.messages
-    assert "existing v0 profile editor" in app.Console.messages[0]
-
-
-def test_run_plan_profile_review_command_falls_back_to_alignment_editor() -> None:
-    app = _App()
-    calls: list[str] = []
-
-    def _run_v1() -> None:
-        calls.append("v1")
-        raise RuntimeError("simulated v1 failure")
-
-    path = run_plan_profile_review_command(
-        app_module=app,
-        gui_module=None,
-        run_v1_viewer=_run_v1,
-        resolve_targets=lambda: (None, None),
-        open_existing_v0_alignment_editor=lambda: calls.append("v0_alignment"),
-        open_existing_v0_profile_editor=lambda: calls.append("v0_profile"),
-    )
-
-    assert path == "v0_alignment"
-    assert calls == ["v1", "v0_alignment"]
-    assert app.Console.messages
-    assert "existing v0 alignment editor" in app.Console.messages[0]
+    assert path == "error"
+    assert app.Console.errors == ["Plan/Profile review was not opened: simulated v1 failure\n"]
