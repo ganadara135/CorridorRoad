@@ -154,7 +154,8 @@ must not absorb Structure, Drainage or Intersection semantics.
   (design section 19): a document holding a legacy object opens without that object's proxy.
   `obj_project` lost its legacy-object handling too (design section 20; 2,734 to 1,821 lines,
   routing proven unchanged for v1 objects over the whole contract suite; the user confirmed in
-  FreeCAD on 2026-10-11 that every object lands in its tree folder).
+  FreeCAD on 2026-10-11 that every object lands in its tree folder). After 1.1.1 the v0 tree
+  schema, the legacy link properties and the v0 property migration went too (design section 21).
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. After 1.1.1 the hidden
   `CorridorRoad_NewProject` and `CorridorRoad_CreateAlignment` were unregistered as well. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.

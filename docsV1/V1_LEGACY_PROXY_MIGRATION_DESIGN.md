@@ -466,3 +466,23 @@ retired by the maintainer; the gate keeps `command_alias` and `tree_schema`.
 Checked in FreeCAD by the user on 2026-10-11: from a new project through Alignment, Stations,
 Profile (with its preview), Applied Sections and Build Parametric, every object lands in its
 tree folder.
+
+## 21. The Rest of the v0 Project Schema Removed, After 1.1.1
+
+The maintainer had the remaining legacy traces in `obj_project` removed as well. `obj_project.py`
+went from 1,821 to 1,620 lines:
+
+- the v0 tree schema: its folder keys (`root_inputs`, `root_alignments`, the per-alignment folders
+  and so on), their definitions, the alignment-folder metadata property names, and the clean-up
+  that removed empty v0 folders and unassigned alignment roots from a project tree;
+- the creation and hiding of the legacy link properties on a new Project (`Centerline3D`,
+  `Centerline3DDisplay`, `AssemblyTemplate`, `TypicalSectionTemplate`, `StructureSet`,
+  `RegionPlan`, `SectionSet`, `Corridor`, `DesignGradingSurface`, `DesignTerrain`, `CutFillCalc`).
+  `Terrain`, `Alignment` and `Stationing` stay; a document that already holds the others keeps them
+  as saved, and every reader uses `getattr(project, name, None)`;
+- the migration of the v0 `DesignCriteria` property into `DesignStandard`;
+- `corridor_compat.CORRIDOR_PROJECT_PROPERTY`, now unused; the module keeps `PREFERRED_COMMAND_ID`.
+
+Kept: the v1-era tree migrations (the `04_Corridor Model` relabel and the duplicate-folder merge)
+and the `Version` property. The routing recorder over the whole contract suite gave 459 identical
+decisions before and after; the gate passed, with `smoke_v1_workflow.py` in the short-term runner.

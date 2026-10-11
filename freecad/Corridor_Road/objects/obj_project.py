@@ -7,23 +7,9 @@ import math
 import re
 from freecad.Corridor_Road.objects import design_standards as _ds
 from freecad.Corridor_Road.objects import unit_policy as _units
-from freecad.Corridor_Road.corridor_compat import CORRIDOR_PROJECT_PROPERTY
 
 
 TREE_KEY_PROP = "CRTreeKey"
-ALN_REF_PROP = "CRAlignmentRef"
-ALN_REF_NAME_PROP = "CRAlignmentRefName"
-ALN_NAME_PROP = "CRAlignmentName"
-
-TREE_INPUTS = "root_inputs"
-TREE_INPUTS_TERRAINS = "inputs_terrains"
-TREE_INPUTS_SURVEY = "inputs_survey"
-TREE_INPUTS_STRUCTURES = "inputs_structures"
-TREE_INPUTS_REGIONS = "inputs_regions"
-TREE_ALIGNMENTS = "root_alignments"
-TREE_SURFACES = "root_surfaces"
-TREE_ANALYSIS = "root_analysis"
-TREE_REFERENCES = "root_references"
 
 V1_TREE_PROJECT_SETUP = "v1_project_setup"
 V1_TREE_SOURCE_DATA = "v1_source_data"
@@ -89,23 +75,6 @@ V1_TREE_AI_CHECKS = "v1_ai_checks"
 V1_TREE_AI_GENERATED_ALTERNATIVES = "v1_ai_generated_alternatives"
 V1_TREE_AI_USER_DECISIONS = "v1_ai_user_decisions"
 
-ALIGNMENT_ROOT = "alignment_root"
-ALIGNMENT_HORIZONTAL = "alignment_horizontal"
-ALIGNMENT_STATIONING = "alignment_stationing"
-ALIGNMENT_VERTICAL = "alignment_vertical_profiles"
-ALIGNMENT_CENTERLINE = "alignment_centerline"
-ALIGNMENT_ASSEMBLY = "alignment_assembly"
-ALIGNMENT_REGIONS = "alignment_regions"
-ALIGNMENT_SECTIONS = "alignment_sections"
-ALIGNMENT_STRUCTURE_SECTIONS = "alignment_structure_sections"
-ALIGNMENT_CORRIDOR = "alignment_corridor"
-
-BASE_TREE_DEFS = (
-    (TREE_INPUTS, "01_Inputs", "CR_01_Inputs"),
-    (TREE_ALIGNMENTS, "02_Alignments", "CR_02_Alignments"),
-    (TREE_SURFACES, "03_Surfaces", "CR_03_Surfaces"),
-    (TREE_ANALYSIS, "04_Analysis", "CR_04_Analysis"),
-)
 V1_ROOT_TREE_DEFS = (
     (V1_TREE_PROJECT_SETUP, "00_Project Setup", "CRV1_00_Project_Setup"),
     (V1_TREE_SOURCE_DATA, "01_Source Data", "CRV1_01_Source_Data"),
@@ -175,22 +144,6 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_AI_ASSIST, V1_TREE_AI_CHECKS, "Checks", "CRV1_AI_Checks"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_GENERATED_ALTERNATIVES, "Generated Alternatives", "CRV1_AI_Generated_Alternatives"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_USER_DECISIONS, "User Decisions", "CRV1_AI_User_Decisions"),
-)
-INPUT_SUBTREE_DEFS = (
-    (TREE_INPUTS_TERRAINS, "Terrains", "CR_01_Inputs_Terrains"),
-    (TREE_INPUTS_SURVEY, "Survey", "CR_01_Inputs_Survey"),
-    (TREE_INPUTS_STRUCTURES, "Structures", "CR_01_Inputs_Structures"),
-)
-ALIGNMENT_SUBTREE_DEFS = (
-    (ALIGNMENT_HORIZONTAL, "Horizontal", "CR_ALN_Horizontal"),
-    (ALIGNMENT_STATIONING, "Stationing", "CR_ALN_Stationing"),
-    (ALIGNMENT_VERTICAL, "VerticalProfiles", "CR_ALN_VerticalProfiles"),
-    (ALIGNMENT_CENTERLINE, "3D Centerline", "CR_ALN_Centerline3D"),
-    (ALIGNMENT_ASSEMBLY, "Assembly", "CR_ALN_Assembly"),
-    (ALIGNMENT_REGIONS, "Regions", "CR_ALN_Regions"),
-    (ALIGNMENT_SECTIONS, "Sections", "CR_ALN_Sections"),
-    (ALIGNMENT_STRUCTURE_SECTIONS, "Structure Sections", "CR_ALN_StructureSections"),
-    (ALIGNMENT_CORRIDOR, "Corridor", "CR_ALN_Corridor"),
 )
 
 
@@ -462,7 +415,6 @@ def _prune_root_nonfolders(prj):
     keep = [ch for ch in cur if _is_tree_folder(ch)]
     if len(keep) != len(cur):
         _group_set(prj, keep)
-    _prune_empty_unassigned_alignment_roots(prj)
 
 
 def _proxy_type(obj) -> str:
@@ -718,57 +670,6 @@ def _iter_tree_folders(root):
     return out
 
 
-def _legacy_tree_keys() -> set[str]:
-    return {
-        TREE_INPUTS,
-        TREE_INPUTS_TERRAINS,
-        TREE_INPUTS_SURVEY,
-        TREE_INPUTS_STRUCTURES,
-        TREE_INPUTS_REGIONS,
-        TREE_ALIGNMENTS,
-        TREE_SURFACES,
-        TREE_ANALYSIS,
-        TREE_REFERENCES,
-        ALIGNMENT_ROOT,
-        ALIGNMENT_HORIZONTAL,
-        ALIGNMENT_STATIONING,
-        ALIGNMENT_VERTICAL,
-        ALIGNMENT_CENTERLINE,
-        ALIGNMENT_ASSEMBLY,
-        ALIGNMENT_REGIONS,
-        ALIGNMENT_SECTIONS,
-        ALIGNMENT_STRUCTURE_SECTIONS,
-        ALIGNMENT_CORRIDOR,
-    }
-
-
-def _remove_empty_legacy_tree_folders(obj_project) -> None:
-    """Remove empty transition-era v0 tree folders from a v1 project tree."""
-
-    if obj_project is None:
-        return
-    doc = getattr(obj_project, "Document", None)
-    if doc is None:
-        return
-    legacy_keys = _legacy_tree_keys()
-    for folder in reversed(_iter_tree_folders(obj_project)):
-        if folder is None:
-            continue
-        if _tree_key(folder) not in legacy_keys:
-            continue
-        if _group_get(folder):
-            continue
-        owners = [obj_project] + _iter_tree_folders(obj_project)
-        for owner in owners:
-            if owner is None or owner == folder:
-                continue
-            _group_remove(owner, folder)
-        try:
-            doc.removeObject(_name(folder))
-        except Exception:
-            pass
-
-
 def ensure_project_tree(obj_project, include_references: bool = False):
     if obj_project is None:
         return {}
@@ -796,18 +697,6 @@ def ensure_project_tree(obj_project, include_references: bool = False):
 
     if include_references:
         out[V1_TREE_EXISTING_REFERENCES] = out.get(V1_TREE_EXISTING_REFERENCES, None)
-    _remove_empty_legacy_tree_folders(obj_project)
-    return out
-
-
-def _iter_alignment_roots(root_alignments):
-    out = []
-    for ch in _group_get(root_alignments):
-        if not _is_group_obj(ch):
-            continue
-        if _tree_key(ch) != ALIGNMENT_ROOT:
-            continue
-        out.append(ch)
     return out
 
 
@@ -1484,20 +1373,7 @@ def _has_custom_python_object_state(proxy) -> bool:
 def _hide_project_link_properties(obj):
     if obj is None:
         return
-    link_props = (
-        "Terrain",
-        "Alignment",
-        "Stationing",
-        "Centerline3D",
-        "Centerline3DDisplay",
-        "AssemblyTemplate",
-        "TypicalSectionTemplate",
-        "SectionSet",
-        CORRIDOR_PROJECT_PROPERTY,
-        "DesignGradingSurface",
-        "DesignTerrain",
-        "CutFillCalc",
-    )
+    link_props = ("Terrain", "Alignment", "Stationing")
     for pn in link_props:
         try:
             obj.setEditorMode(pn, 2)  # hidden in property editor
@@ -1601,13 +1477,8 @@ def ensure_project_properties(obj):
     except Exception:
         pass
     if not hasattr(obj, "DesignStandard"):
-        legacy = ""
-        try:
-            legacy = str(getattr(obj, "DesignCriteria", "") or "")
-        except Exception:
-            legacy = ""
         obj.addProperty("App::PropertyString", "DesignStandard", "DesignCriteria", "Design standard (KDS/AASHTO)")
-        obj.DesignStandard = _ds.normalize_standard(legacy or _ds.DEFAULT_STANDARD)
+        obj.DesignStandard = _ds.DEFAULT_STANDARD
     try:
         obj.DesignStandard = _ds.normalize_standard(getattr(obj, "DesignStandard", _ds.DEFAULT_STANDARD))
     except Exception:
@@ -1678,78 +1549,7 @@ def ensure_project_properties(obj):
     _ensure_hidden_link_property(obj, "Terrain", "CorridorRoad", "Link to EG terrain object")
     _ensure_hidden_link_property(obj, "Alignment", "CorridorRoad", "Link to horizontal alignment object")
     _ensure_hidden_link_property(obj, "Stationing", "CorridorRoad", "Link to stationing object")
-    _ensure_hidden_link_property(obj, "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
-    _ensure_hidden_link_property(obj, "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
-    _ensure_hidden_link_property(obj, "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
-    _ensure_hidden_link_property(obj, "TypicalSectionTemplate", "CorridorRoad", "Link to typical section template object")
-    _ensure_hidden_link_property(obj, "StructureSet", "CorridorRoad", "Link to structure set object")
-    _ensure_hidden_link_property(obj, "RegionPlan", "CorridorRoad", "Link to region plan object")
-    _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
-    _ensure_hidden_link_property(obj, CORRIDOR_PROJECT_PROPERTY, "CorridorRoad", "Link to corridor object")
-    _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
-    _ensure_hidden_link_property(obj, "DesignTerrain", "CorridorRoad", "Link to design terrain object")
-    _ensure_hidden_link_property(obj, "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
     _hide_project_link_properties(obj)
-
-
-def _is_unassigned_alignment_root(aln_root) -> bool:
-    if aln_root is None:
-        return False
-    try:
-        if str(getattr(aln_root, ALN_NAME_PROP, "") or "").strip() == "Unassigned":
-            return True
-    except Exception:
-        pass
-    try:
-        if str(getattr(aln_root, "Label", "") or "").strip().startswith("ALN_Unassigned"):
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _folder_tree_has_payload(folder) -> bool:
-    if folder is None:
-        return False
-    for ch in _group_get(folder):
-        if _is_tree_folder(ch):
-            if _folder_tree_has_payload(ch):
-                return True
-            continue
-        return True
-    return False
-
-
-def _delete_folder_tree(doc, folder):
-    if doc is None or folder is None:
-        return
-    children = [ch for ch in _group_get(folder) if _is_tree_folder(ch)]
-    for ch in children:
-        _delete_folder_tree(doc, ch)
-    try:
-        doc.removeObject(_name(folder))
-    except Exception:
-        pass
-
-
-def _prune_empty_unassigned_alignment_roots(prj):
-    if prj is None:
-        return
-    tree = ensure_project_tree(prj, include_references=False)
-    root_alignments = tree.get(TREE_ALIGNMENTS, None)
-    doc = getattr(prj, "Document", None)
-    if root_alignments is None or doc is None:
-        return
-    for aln_root in list(_iter_alignment_roots(root_alignments)):
-        if not _is_unassigned_alignment_root(aln_root):
-            continue
-        if _folder_tree_has_payload(aln_root):
-            continue
-        try:
-            _group_remove(root_alignments, aln_root)
-        except Exception:
-            pass
-        _delete_folder_tree(doc, aln_root)
 
 
 class CorridorRoadProject:
@@ -1787,7 +1587,6 @@ class CorridorRoadProject:
             return
         _detach_from_other_tree_folders(obj_project, child, keep_owner=target)
         _group_add(target, child)
-        _remove_empty_legacy_tree_folders(obj_project)
         # Ensure non-folder objects do not remain directly under project root.
         if target != obj_project and (not _is_tree_folder(child)):
             _group_remove(obj_project, child)
