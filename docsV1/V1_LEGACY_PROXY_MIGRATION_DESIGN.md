@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 in progress (section 17).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -329,3 +329,51 @@ panels when their v1 viewer raises, as Plan/Profile did. The cut/fill panel crea
 objects, which phase P5 turns into inert stubs, so that fallback needs a decision before P5. The
 v0 corridor panel (`ui/task_corridor`) is still named by `corridor_compat` and checked by the loft
 retirement gate.
+
+## 16. Cross Section and Earthwork Fallbacks Removed, on 2026-10-11
+
+The maintainer took the recommendation of section 15: the Cross Section and Earthwork bridges
+(`commands/cmd_view_cross_section.py`, `commands/cmd_generate_cut_fill_calc.py`) now report a v1
+viewer failure on the console, as Plan/Profile does, instead of opening a v0 panel. The v0 panels
+`ui/task_cross_section_viewer` and `ui/task_cut_fill_calc` (which created `CutFillCalc` objects)
+are removed, with the contract test of the v0 cross-section panel's preview launch order, the
+non-runner smoke of its display units, and the helpers only those panels used
+(`ui/common/coord_ui`, `ui/common/perf_quality`, four `unit_policy` area and volume formatters).
+No surfaced command creates a legacy proxy object any more. The only v0 panel left is
+`ui/task_corridor`.
+
+## 17. P5 Progress
+
+**The stub.** `objects/legacy_proxy_stub.py` holds `RestoreOnlyProxy` and
+`RestoreOnlyViewProvider`. A stub keeps the state FreeCAD restores it with (every legacy proxy
+stored its `__dict__`, such as `{"Type": "Stationing"}`; view providers `{}` or
+`{"Object": null}`), exposes its keys as attributes as the legacy class did, and returns it
+unchanged on save. It defines no `execute`, so a legacy object keeps its saved properties and
+geometry. Its `__init__` raises: nothing may create a new legacy object.
+
+**Checks for every stubbed module.** The contract test round-trips the three corpus documents
+(and now counts stub subclasses in its preload and coverage scans). `check_gui()` in
+`tests/legacy_proxy_corpus.py`, run inside the FreeCAD GUI, round-trips the GUI corpus document,
+view providers included, against the committed manifest. A stub whose `dumps` lost the state
+failed all three document round trips.
+
+**Batch 1, 2026-10-11: the eight modules nothing else imports.**
+
+| Module | Lines before | Stubbed classes |
+| --- | ---: | --- |
+| `obj_profile_bundle` | 109 | `ProfileBundle` |
+| `obj_stationing` | 135 | `Stationing` |
+| `obj_fg_display` | 170 | `FGDisplay` |
+| `obj_design_grading_surface` | 483 | `DesignGradingSurface` |
+| `obj_pointcloud_dem` | 546 | `PointCloudDEM` |
+| `obj_design_terrain` | 617 | `DesignTerrain` |
+| `obj_centerline3d_display` | 1,198 | `Centerline3DDisplay` |
+| `obj_cut_fill_calc` | 1,425 | `CutFillCalc` |
+
+with a view provider each. Headless and GUI round trips pass.
+
+**Remaining order.** The other ten modules import each other, so their order follows the import
+graph: `obj_section_set` exports helpers used by `obj_corridor`, `obj_region_plan`,
+`obj_structure_set` and `obj_project` (`region_plan_usage_enabled`, `resolve_region_plan_source`,
+`synchronize_region_plan_state`); `obj_corridor` is still opened by the v0 panel `ui/task_corridor`,
+which the loft retirement gate's corridor boundary smokes inspect.

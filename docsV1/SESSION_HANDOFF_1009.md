@@ -148,8 +148,10 @@ must not absorb Structure, Drainage or Intersection semantics.
   reads v1 sources only, `LegacyDocumentAdapter` is removed, and the Review Plan/Profile bridge no
   longer falls back to v0 editors. P4 is done: `CorridorRoad_ReviewAlignment` is unregistered too,
   65 legacy smoke scripts and five v0 panels are gone, and the runners hold 1, 2 and 6 scripts.
-  Before P5, decide the Cross Section and Earthwork bridges' v0 fallbacks (the cut/fill panel
-  creates `CutFillCalc` objects). Next: P5 (stubs, smallest module first), then the converters.
+  The Cross Section and Earthwork v0 fallbacks are gone too (`9052825`). P5 batch 1 stubbed the
+  eight legacy modules nothing else imports (design section 17). Next: remove `ui/task_corridor`,
+  then stub `obj_corridor`, `obj_section_set`/`obj_structure_set` and the rest in import order;
+  then the converters.
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
 - `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's

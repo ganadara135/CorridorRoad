@@ -339,43 +339,10 @@ def build(force: bool = False) -> None:
     print(f"wrote {len(CORPUS_DOCUMENTS)} documents and {MANIFEST_PATH.relative_to(REPO_ROOT)}")
 
 
-def build_gui(force: bool = False) -> None:
-    """Write the GUI corpus document: the chain with every class's stored view provider.
+def gui_round_trip_failures(App, path, recorded) -> list[str]:
+    """Open, save and reopen a GUI corpus document twice, comparing it with what was recorded."""
 
-    View providers are saved in GuiDocument.xml, which only a GUI session writes. Run from the
-    FreeCAD GUI (for example `freecad.exe` with a launcher that calls this). It also proves the
-    GUI round trip: reopen and save twice, keeping every stored view-provider and object proxy.
-    """
-
-    import FreeCAD as App
-
-    if not getattr(App, "GuiUp", False):
-        raise SystemExit("build_gui needs the FreeCAD GUI.")
-    if GUI_MANIFEST_PATH.exists() and not force:
-        raise SystemExit(f"{GUI_MANIFEST_PATH} exists; use force to rebuild.")
-    import importlib
     import tempfile
-
-    classes = _load_classes()
-    doc = _build_chain(App, classes, Path(GUI_DOCUMENT).stem)
-    for module, name, _base in LEGACY_PROXY_CLASSES:
-        view_provider = importlib.import_module(f"{CANONICAL_OBJECTS}.{module}").__dict__[f"ViewProvider{name}"]
-        view_provider(doc.getObject(name).ViewObject)
-    doc.recompute()
-    path = CORPUS_DIR / GUI_DOCUMENT
-    path.unlink(missing_ok=True)  # saveAs over a file leaves an .FCBak copy
-    doc.saveAs(str(path))
-    App.closeDocument(doc.Name)
-
-    reopened = App.openDocument(str(path))
-    try:
-        recorded = {
-            "stored_proxies": stored_proxies(path),
-            "stored_view_providers": stored_view_providers(path),
-            "objects": document_snapshot(reopened),
-        }
-    finally:
-        App.closeDocument(reopened.Name)
 
     failures = []
     with tempfile.TemporaryDirectory() as folder:
@@ -402,6 +369,65 @@ def build_gui(force: bool = False) -> None:
                         changed = [key for key in changed if key != "value"]
                     if changed:
                         failures.append(f"cycle {cycle}: {label} {name}: " + ", ".join(changed))
+    return failures
+
+
+def check_gui() -> list[str]:
+    """Re-run the GUI round trip on the committed GUI corpus document with the current classes.
+
+    Run from the FreeCAD GUI after replacing legacy classes with stubs (phase P5): it proves the
+    stored view providers survive as the legacy classes did, without rebuilding the corpus.
+    """
+
+    import FreeCAD as App
+
+    if not getattr(App, "GuiUp", False):
+        raise SystemExit("check_gui needs the FreeCAD GUI.")
+    _load_classes()  # install the eager path mappings, as the GUI does at startup
+    recorded = json.loads(GUI_MANIFEST_PATH.read_text(encoding="utf-8"))
+    failures = gui_round_trip_failures(App, CORPUS_DIR / GUI_DOCUMENT, recorded)
+    print(f"GUI round trip of {GUI_DOCUMENT} with the current classes: {failures or 'pass'}")
+    return failures
+
+
+def build_gui(force: bool = False) -> None:
+    """Write the GUI corpus document: the chain with every class's stored view provider.
+
+    View providers are saved in GuiDocument.xml, which only a GUI session writes. Run from the
+    FreeCAD GUI (for example `freecad.exe` with a launcher that calls this). It also proves the
+    GUI round trip: reopen and save twice, keeping every stored view-provider and object proxy.
+    """
+
+    import FreeCAD as App
+
+    if not getattr(App, "GuiUp", False):
+        raise SystemExit("build_gui needs the FreeCAD GUI.")
+    if GUI_MANIFEST_PATH.exists() and not force:
+        raise SystemExit(f"{GUI_MANIFEST_PATH} exists; use force to rebuild.")
+    import importlib
+
+    classes = _load_classes()
+    doc = _build_chain(App, classes, Path(GUI_DOCUMENT).stem)
+    for module, name, _base in LEGACY_PROXY_CLASSES:
+        view_provider = importlib.import_module(f"{CANONICAL_OBJECTS}.{module}").__dict__[f"ViewProvider{name}"]
+        view_provider(doc.getObject(name).ViewObject)
+    doc.recompute()
+    path = CORPUS_DIR / GUI_DOCUMENT
+    path.unlink(missing_ok=True)  # saveAs over a file leaves an .FCBak copy
+    doc.saveAs(str(path))
+    App.closeDocument(doc.Name)
+
+    reopened = App.openDocument(str(path))
+    try:
+        recorded = {
+            "stored_proxies": stored_proxies(path),
+            "stored_view_providers": stored_view_providers(path),
+            "objects": document_snapshot(reopened),
+        }
+    finally:
+        App.closeDocument(reopened.Name)
+
+    failures = gui_round_trip_failures(App, path, recorded)
     recorded["gui_round_trip"] = failures or "pass"
     GUI_MANIFEST_PATH.write_text(json.dumps(recorded, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {GUI_DOCUMENT}; GUI round trip: {recorded['gui_round_trip']}")

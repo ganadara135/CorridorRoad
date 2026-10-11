@@ -36,13 +36,19 @@ install_virtual_path_mappings(eager=True)
 
 
 def _proxy_classes_by_module() -> dict[str, set[str]]:
-    """Classes whose __init__ assigns `.Proxy = self`, per module of the objects package."""
+    """Proxy classes per module of the objects package: legacy implementations (their __init__
+    assigns `.Proxy = self`) and the restore-only stubs that replace them in phase P5."""
 
     found: dict[str, set[str]] = {}
     for path in sorted(OBJECTS_DIR.glob("*.py")):
+        if path.stem == "legacy_proxy_stub":  # the stub base classes, not a proxy module
+            continue
         source = path.read_text(encoding="utf-8")
         for node in ast.parse(source).body:
             if not isinstance(node, ast.ClassDef):
+                continue
+            if {getattr(base, "id", "") for base in node.bases} & {"RestoreOnlyProxy", "RestoreOnlyViewProvider"}:
+                found.setdefault(path.stem, set()).add(node.name)
                 continue
             for item in node.body:
                 if isinstance(item, ast.FunctionDef) and item.name == "__init__":
