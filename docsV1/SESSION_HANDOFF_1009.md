@@ -248,7 +248,8 @@ every Python command in this repository:
 Result after the 1.1.1 release: 9 architecture tests, **1,140 passed / 18 skipped / 0 failed**
 contract and architecture tests together, all three runners PASS. The contract suite takes
 about 6 minutes. The legacy smoke scripts are retired; the short-term runner carries
-`smoke_v1_workflow.py`, one document through the whole v1 path with a save, reopen and rebuild.
+`smoke_v1_workflow.py`, one document through the whole v1 path with a save, reopen and rebuild;
+it also requires the corridor surface meshes to be manifold with no zero-area facets (`dbd32e6`).
 
 The architecture ratchet forbids removed names reappearing and forbids a command importing an
 underscore-prefixed service symbol. A service may not import from a command.
