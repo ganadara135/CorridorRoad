@@ -6,7 +6,8 @@ v1 workflow smoke test: one document through the main v1 path.
 
 Project -> Alignment -> Stations -> Profile -> Assembly -> Region -> Applied Sections ->
 Build Parametric, then save, reopen and rebuild. It checks that every stage leaves its result
-in its project tree folder, that the corridor surfaces have geometry, that a saved document
+in its project tree folder, that the corridor surfaces have geometry and are manifold meshes
+without zero-area facets, that a saved document
 reopens with the same objects, folders and surfaces, and that rebuilding the reopened document
 reproduces the same surfaces.
 
@@ -87,6 +88,16 @@ def _facets(doc):
     return {name: int(doc.getObject(name).Mesh.CountFacets) for name in SURFACES}
 
 
+def _check_mesh_quality(doc, stage):
+    # a zero-area facet makes FreeCAD's mesh non-manifold, and it reports the document as
+    # defective when it opens again
+    for name in SURFACES:
+        mesh = doc.getObject(name).Mesh
+        _assert(not mesh.hasNonManifolds(), f"{stage}: {name} is not manifold")
+        degenerate = [facet for facet in mesh.Topology[1] if len(set(facet)) < 3]
+        _assert(not degenerate, f"{stage}: {name} has {len(degenerate)} zero-area facets")
+
+
 def _check_tree(doc, stage):
     owner = _folders(doc)
     for name, key in EXPECTED_FOLDERS.items():
@@ -128,6 +139,7 @@ def run():
         _check_tree(doc, "build")
         facets = _facets(doc)
         _assert(all(count > 0 for count in facets.values()), f"Corridor surfaces without geometry: {facets}")
+        _check_mesh_quality(doc, "build")
 
         doc.saveAs(path)
         App.closeDocument(doc.Name)
@@ -136,6 +148,7 @@ def run():
         reopened = App.openDocument(path)
         _check_tree(reopened, "reopen")
         _assert(_facets(reopened) == facets, f"Reopened surfaces differ: {_facets(reopened)} != {facets}")
+        _check_mesh_quality(reopened, "reopen")
 
         apply_v1_corridor_model(document=reopened, project=reopened.getObject("CorridorRoadProject"))
         _check_tree(reopened, "rebuild")

@@ -575,14 +575,19 @@ def _build_surface_from_point_grid(
                     notes=_point_source_notes(point),
                 )
             )
+    coordinates = {vertex.vertex_id: (vertex.x, vertex.y, vertex.z) for vertex in vertices}
     for section_index in range(len(point_grid) - 1):
         for point_index in range(len(point_grid[section_index]) - 1):
             p00 = f"v{section_index}:p{point_index}"
             p01 = f"v{section_index}:p{point_index + 1}"
             p10 = f"v{section_index + 1}:p{point_index}"
             p11 = f"v{section_index + 1}:p{point_index + 1}"
-            triangles.append(TINTriangle(f"span:{section_index}:p{point_index}:a", p00, p01, p11, triangle_kind=triangle_kind))
-            triangles.append(TINTriangle(f"span:{section_index}:p{point_index}:b", p00, p11, p10, triangle_kind=triangle_kind))
+            for triangle in (
+                TINTriangle(f"span:{section_index}:p{point_index}:a", p00, p01, p11, triangle_kind=triangle_kind),
+                TINTriangle(f"span:{section_index}:p{point_index}:b", p00, p11, p10, triangle_kind=triangle_kind),
+            ):
+                if not _triangle_has_coincident_vertices(triangle, coordinates):
+                    triangles.append(triangle)
 
     z_values = [vertex.z for vertex in vertices]
     left_values = [max(float(getattr(point, "lateral_offset", 0.0) or 0.0) for point in points) for points in point_grid]
@@ -625,6 +630,22 @@ def _build_surface_from_point_grid(
             )
         ],
     )
+
+
+def _triangle_has_coincident_vertices(triangle: TINTriangle, coordinates: dict[str, tuple[float, float, float]]) -> bool:
+    """Whether two of a strip triangle's corners are the same point.
+
+    Adjacent subassemblies each emit their shared boundary point (a lane's end and the shoulder's
+    start), so a section row holds that point twice, and the strip between the two copies has no
+    width: both of its triangles have zero area. FreeCAD merges the copies into one mesh point,
+    and the zero-area triangles then share edges with up to five others, a non-manifold mesh that
+    it reports as defective when a saved document opens. The copies are computed identically, so
+    exact equality finds them; a strip that narrows to zero at one station keeps its one real
+    triangle.
+    """
+
+    first, second, third = (coordinates[triangle.v1], coordinates[triangle.v2], coordinates[triangle.v3])
+    return first == second or second == third or first == third
 
 
 def _build_drainage_surface_from_point_groups(request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:

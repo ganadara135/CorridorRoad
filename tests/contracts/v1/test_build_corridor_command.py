@@ -2395,7 +2395,9 @@ def test_focus_corridor_region_boundary_row_selects_built_region_surface_object(
         assert second_marker.Name == "V1CorridorRegionSurface_region_urban"
         assert second_marker.RegionRef == "region:urban"
         assert int(second_marker.SectionCount) >= 2
-        assert int(second_marker.SurfaceFaceCount) >= 2
+        # the urban region holds one section (STA 40), used at both ends of its strip, so its surface
+        # has no area; the two faces it used to report were zero-area triangles on one line
+        assert int(second_marker.SurfaceFaceCount) == int(second_marker.TriangleCount) == 0
         assert doc.getObject("V1CorridorRegionSurface_region_urban_daylight") is not None
         assert doc.getObject("V1CorridorRegionStructure_region_urban") is None
     finally:

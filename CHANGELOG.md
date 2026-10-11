@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Fixed
+- FreeCAD reported "The mesh data structure has some defects" when a document with corridor surfaces opened. Adjacent subassemblies each emit their shared boundary point, and the Design, Subgrade and Region surfaces turned the zero-width strip between the two copies into zero-area triangles that made the mesh non-manifold (126 of the 294 triangles of the sample road). Those triangles are no longer built; the source points stay. A region with a single section now reports a surface without faces instead of two zero-area ones.
+
 ### Added
 - The short-term regression runner runs `smoke_v1_workflow.py`: one document through Project, Alignment, Stations, Profile, Assembly, Region, Applied Sections and Build Parametric, checking each result's project tree folder and the corridor surfaces, then a save, reopen and rebuild that must reproduce the same surfaces.
 
