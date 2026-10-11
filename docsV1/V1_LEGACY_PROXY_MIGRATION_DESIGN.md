@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Next: the converters (option C).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Converters dropped (section 18).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -405,3 +405,11 @@ pass.
 most of it the live `obj_project`; legacy `ui` holds two empty package files. Legacy documents
 open, keep every object, property, shape and proxy reference, and no longer recompute their
 legacy objects; their source objects become editable again through the converters.
+
+## 18. Converters Dropped, on 2026-10-11
+
+The maintainer decided that documents made with v0 need no further support. The converter phase
+of option C (section 11, decision 1) is therefore dropped: no command converts legacy source
+objects into v1 sources. What phases P0 to P5 built stays as it is: the restore-only stubs keep
+any document that still holds a legacy object openable without losing data, and the corpus test
+keeps that true.
