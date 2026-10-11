@@ -435,7 +435,7 @@ by name; section 20 removed that.
 
 ## 20. Legacy Handling Removed From obj_project, on 2026-10-11
 
-`objects/obj_project.py` (the live project root) went from 2,734 to 1,368 lines:
+`objects/obj_project.py` (the live project root) went from 2,734 to 1,821 lines:
 
 - the dead alignment-tree chain (20 functions nothing called);
 - the legacy type names in tree routing (`HorizontalAlignment`, `VerticalAlignment`,

@@ -151,7 +151,7 @@ must not absorb Structure, Drainage or Intersection semantics.
   25,878 to 4,531 lines. Converters are dropped: documents made with v0 need no further support
   (design section 18). The stubs, their base class and the corpus were then removed as well
   (design section 19): a document holding a legacy object opens without that object's proxy.
-  `obj_project` lost its legacy-object handling too (design section 20; 2,734 to 1,368 lines,
+  `obj_project` lost its legacy-object handling too (design section 20; 2,734 to 1,821 lines,
   routing proven unchanged for v1 objects over the whole contract suite).
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
