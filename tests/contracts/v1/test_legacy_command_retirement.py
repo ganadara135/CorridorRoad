@@ -15,6 +15,8 @@ RETIRED_COMMAND_IDS = {
     "CorridorRoad_EditAlignment",
     "CorridorRoad_EditRegions",
     "CorridorRoad_EditTypicalSection",
+    # read-only, but kept the v0 alignment panel alive; its v1 successor is CorridorRoad_V1ReviewPlanProfile
+    "CorridorRoad_ReviewAlignment",
 }
 
 

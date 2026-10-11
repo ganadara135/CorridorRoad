@@ -117,7 +117,6 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_output  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_landxml_import  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_review_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_plan_profile  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_region_editor  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_view_cross_section  # noqa: F401

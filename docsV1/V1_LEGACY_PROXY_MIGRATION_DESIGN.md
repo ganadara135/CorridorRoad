@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -111,7 +111,7 @@ for these four. **Whatever option is chosen, the list must name all 19 modules f
 | Practical-scope smoke runner | 12 of 14 scripts | importing legacy proxy modules |
 | Loft retirement gate runner | 2 of 8 scripts | importing legacy proxy modules |
 | All three runners, distinct scripts | 27 of 36 | (12 scripts run in more than one runner) |
-| Contract tests | 20 files | importing legacy proxy modules |
+| Contract tests | none | (corrected on 2026-10-11: the first count of 20 matched `v1/objects` modules with the same names, such as `v1.objects.obj_alignment`) |
 | `v1/services/evaluation/legacy_document_adapter.py` | 4 calls | `VerticalAlignment._solve_curves`, `SectionSet.resolve_station_values` / `resolve_viewer_station_rows`, `obj_typical_section_template.pavement_rows`, `RegionPlan.resolve_station_context` |
 | Plan/Profile review | fallback | reads a legacy alignment and profile through that adapter when the document has no v1 ones |
 | Hidden, still-registered commands | 3 | `CorridorRoad_EditAlignment`, `CorridorRoad_EditRegions`, `CorridorRoad_EditTypicalSection` open v0 panels that create `HorizontalAlignment`, `RegionPlan` and `TypicalSectionTemplate` objects |
@@ -305,3 +305,27 @@ The Plan/Profile legacy fallback is gone, in both of its forms:
 `test_legacy_proxy_corpus.py` opens the corpus document and checks that it builds no Plan/Profile
 preview; against the code before P3 that check fails. The v0 alignment and profile panels are now
 reached only by runner smoke scripts and `cmd_review_alignment`; P4 retires them with the scripts.
+
+## 15. P4 Result, on 2026-10-11
+
+- **`CorridorRoad_ReviewAlignment` unregistered** (the maintainer extended decision 2 to it). It
+  was read-only but kept the v0 alignment panel alive; its v1 successor is
+  `CorridorRoad_V1ReviewPlanProfile`. `test_legacy_command_retirement.py` lists it with the other
+  three.
+- **65 smoke scripts retired**, every regression script that imports a legacy proxy module or
+  one of the v0 panels removed below: 28 from the runners (27 importing legacy proxy modules,
+  plus `smoke_profile_fg_tools.py` for the v0 profile editor) and 37 that no runner ran. The runners
+  now hold 1 (short-term), 2 (practical scope) and 6 (loft retirement gate) scripts; the 14 kept
+  scripts all pass.
+- **v0 panels removed** now that nothing reaches them: `ui/task_alignment_editor`,
+  `ui/task_region_editor`, `ui/task_typical_section_editor`, `ui/task_profile_editor`,
+  `ui/task_pvi_editor`, with `ui/common/profile_fg_helpers` and the helpers only they used
+  (`TerrainSampler`, two `unit_policy` conversions). The contract test of the alignment panel's
+  preview launch order went with it.
+
+Still open, outside the decisions so far: the surfaced Cross Section and Earthwork bridges
+(`commands/cmd_view_cross_section.py`, `commands/cmd_generate_cut_fill_calc.py`) fall back to v0
+panels when their v1 viewer raises, as Plan/Profile did. The cut/fill panel creates `CutFillCalc`
+objects, which phase P5 turns into inert stubs, so that fallback needs a decision before P5. The
+v0 corridor panel (`ui/task_corridor`) is still named by `corridor_compat` and checked by the loft
+retirement gate.

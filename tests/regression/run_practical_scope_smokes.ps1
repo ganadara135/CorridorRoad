@@ -9,20 +9,8 @@ $resolvedFreeCADCmd = Resolve-FreeCADExecutable -Kind Cmd -ExplicitPath $FreeCAD
 Set-Location $repoRoot
 
 $tests = @(
-    "tests/regression/smoke_typical_section_pipeline.py",
-    "tests/regression/smoke_typical_section_pavement_report.py",
-    "tests/regression/smoke_practical_subassembly_contract.py",
-    "tests/regression/smoke_practical_roadside_library.py",
-    "tests/regression/smoke_practical_report_contract.py",
-    "tests/regression/smoke_practical_sample_driven_workflow.py",
     "tests/regression/smoke_intersection_t_slope_face_surface.py",
-    "tests/regression/smoke_intersection_non_t_slope_face_readiness.py",
-    "tests/regression/smoke_structure_station_merge.py",
-    "tests/regression/smoke_notch_profile_contract.py",
-    "tests/regression/smoke_notch_neighbor_modes.py",
-    "tests/regression/smoke_external_shape_earthwork_proxy.py",
-    "tests/regression/smoke_cutfill_source_matrix.py",
-    "tests/regression/smoke_cutfill_quality_review.py"
+    "tests/regression/smoke_intersection_non_t_slope_face_readiness.py"
 )
 
 foreach ($test in $tests) {

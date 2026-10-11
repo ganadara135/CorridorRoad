@@ -204,16 +204,6 @@ def model_length_from_meters(doc_or_project, meters: float) -> float:
     return internal_length_from_meters(doc_or_project, meters)
 
 
-def display_length_from_internal(doc_or_project, internal_value: float, unit: str = "", *, use_default: str = "display") -> float:
-    meters = meters_from_internal_length(doc_or_project, internal_value)
-    return user_length_from_meters(doc_or_project, meters, unit=unit, use_default=use_default)
-
-
-def internal_length_from_display(doc_or_project, display_value: float, unit: str = "", *, use_default: str = "display") -> float:
-    meters = meters_from_user_length(doc_or_project, display_value, unit=unit, use_default=use_default)
-    return internal_length_from_meters(doc_or_project, meters)
-
-
 def format_internal_length(doc_or_project, internal_value: float, digits: int = 3, unit: str = "", *, use_default: str = "display") -> str:
     meters = meters_from_internal_length(doc_or_project, internal_value)
     return format_length(doc_or_project, meters, digits=digits, unit=unit, use_default=use_default)

@@ -146,8 +146,10 @@ must not absorb Structure, Drainage or Intersection semantics.
   P0 and P1 are done (`04730bc`: complete preload list, legacy proxy corpus and its contract
   test). P2 is done: the three hidden legacy editors are unregistered. P3 is done: Plan/Profile
   reads v1 sources only, `LegacyDocumentAdapter` is removed, and the Review Plan/Profile bridge no
-  longer falls back to v0 editors. Next: P4 (retire smokes and the v0 panels they keep alive), P5
-  (stubs, smallest module first), then the converters.
+  longer falls back to v0 editors. P4 is done: `CorridorRoad_ReviewAlignment` is unregistered too,
+  65 legacy smoke scripts and five v0 panels are gone, and the runners hold 1, 2 and 6 scripts.
+  Before P5, decide the Cross Section and Earthwork bridges' v0 fallbacks (the cut/fill panel
+  creates `CutFillCalc` objects). Next: P5 (stubs, smallest module first), then the converters.
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
 - `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's

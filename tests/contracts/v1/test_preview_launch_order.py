@@ -1,6 +1,4 @@
-from freecad.Corridor_Road.ui import task_alignment_editor as alignment_editor_module
 from freecad.Corridor_Road.ui import task_cross_section_viewer as cross_section_viewer_module
-from freecad.Corridor_Road.v1.commands import cmd_review_plan_profile
 from freecad.Corridor_Road.v1.commands import cmd_view_sections
 
 
@@ -15,34 +13,6 @@ class _FakeControl:
 class _FakeGui:
     def __init__(self, events: list[str]) -> None:
         self.Control = _FakeControl(events)
-
-
-def test_alignment_open_v1_preview_builds_context_before_close() -> None:
-    events: list[str] = []
-    panel = alignment_editor_module.AlignmentEditorTaskPanel.__new__(
-        alignment_editor_module.AlignmentEditorTaskPanel
-    )
-    panel.doc = "DemoDoc"
-    panel.aln = "Alignment001"
-    panel._build_v1_preview_context = lambda: _record_event(events, "build", {"viewer_context": {"source_panel": "Edit Alignment"}})
-
-    original_gui = alignment_editor_module.Gui
-    original_show = cmd_review_plan_profile.show_v1_plan_profile_preview
-    alignment_editor_module.Gui = _FakeGui(events)
-    cmd_review_plan_profile.show_v1_plan_profile_preview = lambda **kwargs: _record_show(
-        events,
-        kwargs,
-        expected_document="DemoDoc",
-        expected_key="preferred_alignment",
-        expected_value="Alignment001",
-    )
-    try:
-        panel._open_v1_preview()
-    finally:
-        alignment_editor_module.Gui = original_gui
-        cmd_review_plan_profile.show_v1_plan_profile_preview = original_show
-
-    assert events == ["build", "close", "show"]
 
 
 def test_cross_section_open_v1_preview_builds_context_before_close() -> None:
