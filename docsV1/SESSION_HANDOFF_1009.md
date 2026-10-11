@@ -140,7 +140,12 @@ must not absorb Structure, Drainage or Intersection semantics.
 
 - **Legacy retirement is blocked.** Unreachable v0 modules cannot go until a stored-`Proxy`
   migration exists. See section 5. The options, measurements and the decisions it needs are in
-  [V1_LEGACY_PROXY_MIGRATION_DESIGN.md](./V1_LEGACY_PROXY_MIGRATION_DESIGN.md) (`c2377ab`).
+  [V1_LEGACY_PROXY_MIGRATION_DESIGN.md](./V1_LEGACY_PROXY_MIGRATION_DESIGN.md) (`c2377ab`). Decided
+  on 2026-10-11: option C (stubs plus an explicit convert-to-v1 command), unregister the three
+  hidden legacy editors, retire the legacy smoke scripts, drop the Plan/Profile legacy fallback.
+  P0 and P1 are done (`04730bc`: complete preload list, legacy proxy corpus and its contract
+  test). Next: P2 (unregister), P3 (drop the fallback), P4 (retire smokes), P5 (stubs, smallest
+  module first), then the converters.
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
 - `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's
