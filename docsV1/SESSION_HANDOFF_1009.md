@@ -157,8 +157,8 @@ must not absorb Structure, Drainage or Intersection semantics.
   FreeCAD on 2026-10-11 that every object lands in its tree folder).
 - No surfaced workflow stage is driven by a v0 task panel since `8836924`. `cmd_outputs_exchange`
   and `cmd_ai_assist` are still self-contained legacy entry points.
-- `main` is still at `1abad47` (1.1.0). Whether to advance it is **undecided** and is the user's
-  call.
+- `main` carries the `1.1.1` release (2026-10-11), fast-forwarded from this branch; tag `v1.1.1`
+  and its GitHub Release. Checklist: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md).
 
 ## 5. Cautions
 

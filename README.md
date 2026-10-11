@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.1.0`. This is a refactoring and defect-fix release: the v1 code was reorganized along the `Source -> Evaluation -> Result -> Output -> Presentation` boundaries, and seven product defects were fixed, including roundabout surface clipping that ran without its boundary and a Regions tab that could not create surface transitions. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.1.1`. It builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -78,13 +78,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.1.0`
+- Current release: `v1.1.1`
 - Release date: `2026-09-20`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.0
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.1.0` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
+`1.1.1` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
 
 ## Main Commands
 

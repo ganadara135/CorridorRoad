@@ -1,42 +1,40 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-09-20
-Status: `1.1.0` release prepared
+Date: 2026-10-11
+Status: `1.1.1` release prepared
 Scope: post-`1.0.0` v1 updates
 
-## Development Scope After 1.1.0
+## Development Scope After 1.1.1
 
 - Ramp is removed from the active product and development scope.
 - Watertight Solid behavior shipped in 1.0.9 remains a compatibility surface, but further development is paused.
 - Watertight work is limited to critical defect repair, data-loss prevention, compatibility maintenance, and test preservation.
 - The current development and validation runtime is FreeCAD 1.1.1; package metadata retains FreeCAD 1.0.3 as the compatibility floor.
+- Documents made with v0 are no longer supported; the legacy object types, panels and commands are gone.
 
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.1.0` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.1.1` release.
 
 ## Release Status
 
-- Release version: `1.1.0`
-- Release date: `2026-09-20`
-- Tag: `v1.1.0`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.0
+- Release version: `1.1.1`
+- Release date: `2026-10-11`
+- Tag: `v1.1.1`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.1.0` / `2026-09-20`.
-- [x] `CHANGELOG.md` carries the `1.1.0` release section.
-- [x] Git tag and GitHub Release published.
-- [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
-- [x] Forum announcement drafted and published; the posted text is the record, at https://forum.freecad.org/viewtopic.php?t=103783.
-- [x] Manual smoke QA checklist prepared in `docsV1/V1_1_0_1_MANUAL_SMOKE_QA.md`.
-- [ ] FreeCAD manual smoke QA for the published tag.
-- [x] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
-- [x] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
+- [x] `package.xml` version/date updated to `1.1.1` / `2026-10-11`.
+- [x] `CHANGELOG.md` carries the `1.1.1` release section.
+- [ ] Git tag and GitHub Release published.
+- [ ] FreeCAD manual smoke QA for the published tag. Still open from the session handoff: the Structure Output and Review TIN buttons, a roundabout document from before R7c-3 rebuilding the same ring, and the Drainage low point and `Suggested Inlet` marker.
+- [ ] Forum announcement for `1.1.1`, if wanted; the `1.1.0` thread is linked above.
+- [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
 
 ## Current User-Facing Scope
 
@@ -77,14 +75,14 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG `1.1.0` contains the v1 layering reorganization, the preview audit row mapper, and the seven product defect fixes.
-- [x] README and local Wiki drafts now point to the `1.1.0` release.
+- [x] CHANGELOG `1.1.1` contains the intersection kernel, the v1 Project Setup panel, the fixed roundabout circulation, the retired legacy objects, panels and commands, and the defect fixes.
+- [x] README and local Wiki drafts now point to the `1.1.1` release.
 
 ## Historical Document Notes
 
 The `1.0.0` release planning and validation records still mention Drainage as a placeholder or under-development stage because that was true for the `2026-05-02` release baseline.
 
-Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.9` changelog section.
+Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the latest changelog section.
 
 ## Release Validation Checklist
 
@@ -109,27 +107,16 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`Parametric Road 1.1.0 reorganizes the v1 code along the Source -> Evaluation -> Result -> Output -> Presentation boundaries, gives the preview audit row serializers one owner, and fixes seven product defects in roundabout surface clipping, the Regions tab, Intersections review, and preview object routing.`
+`Parametric Road 1.1.1 builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected.`
 
 Suggested highlights:
 
-- Subassembly is now the active v1 cross-section building block in source, result, output, and viewer handoff paths.
-- Applied Sections and Cross Section Viewer paths were stabilized after the Component-to-Subassembly transition.
-- `Intersection` creates editable source rows and generates a multi-alignment 3D Centerline preview.
-- `Intersection Tie Slope Surface` is generated from accepted Applied Section window rows instead of temporary highlight objects.
-- `Intersection Upper Slope Face` rectangular panel output is reviewed through generated surface metadata instead of a temporary panel highlight.
-- Build Parametric `Intersections` hides obsolete edge-network, surface-zone, drainage-hint, and legacy `intersection_tie_slope` rows by default.
-- Breakline Audit exposes compact handoff rows for shared boundary and Intersection Tie Slope window review.
-- Shared 3D Centerline review and downstream coordinate ownership, with Smooth Curve / Polyline display options and multi-alignment preview support.
-- Superelevation is now a dedicated source stage before Applied Sections, with Auto Calculate and Applied Sections carrying the resolved crossfall into Build Parametric.
-- Region source simplification: Regions own station spans and Assembly; Structures and Drainage own their own Region/context refs.
-- Structures now support connection-ready native drainage objects and clearer 3D review geometry.
-- Drainage now has Elements, Policies, Flow Routes, Structure refs, and Flow Network preview.
-- Drainage now opens empty when no source object exists, so users intentionally add rows or load preset data.
-- Existing Watertight Solids discovery and package handoff remain available as paused compatibility behavior.
-- Build Parametric and Watertight Solid outputs are easier to inspect from the FreeCAD tree.
-- Drainage Flow Network previews now follow shared 3D Centerline elevation context more reliably.
-- Applied Sections row review now shows the selected Assembly line without station marker clutter.
+- One parametric intersection kernel builds T, Cross and Roundabout from a stored spec and the roads' Applied Sections; the Intersection panel loads, checks and applies the spec.
+- Project Setup is a v1 panel with the same fields; Apply no longer recomputes the whole document, and a stored Coordinate Workflow is kept.
+- Roundabouts always circulate counter-clockwise (KDS and AASHTO are right-hand traffic).
+- The cross section viewer shows intersection rows across the kernel clip span, lists stations by road, and keeps Next/Previous on the current road.
+- The Structure Output and Review TIN buttons work again.
+- Legacy (v0) object types, panels and hidden commands are gone; documents made with v0 are no longer supported.
 
 ## Tag Readiness
 
@@ -143,5 +130,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.1.0` and date `2026-09-20`.
-- The intended release tag is `v1.1.0`.
+- `package.xml` declares version `1.1.1` and date `2026-10-11`.
+- The intended release tag is `v1.1.1`.

@@ -5,7 +5,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-The current public release is `1.1.0`. This release reorganizes the v1 code along the `Source -> Evaluation -> Result -> Output -> Presentation` boundaries and fixes seven product defects in roundabout surface clipping, the Regions tab, Intersections review, and preview object routing.
+The current public release is `1.1.1`. This release builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected.
 
 ## Current V1 Workflow
 
@@ -78,7 +78,7 @@ Key references:
 Online project resources:
 
 - Wiki: https://github.com/ganadara135/CorridorRoad/wiki
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.0
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
 - Issues: https://github.com/ganadara135/CorridorRoad/issues
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 

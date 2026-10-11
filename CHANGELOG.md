@@ -9,6 +9,10 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-11
+
+Documents made with v0 (Corridor Road before the v1 workflow) are no longer supported: the legacy object types are gone, and a document that still holds one opens with its properties and shapes but without the object's behavior. Documents made with the v1 workflow are unaffected.
+
 ### Changed
 - Intersections are now built by one parametric kernel from a stored spec (`SpecJson` on the Intersection object) and the roads' Applied Sections. Applied Sections add a section at every leg mouth, Build Parametric clips each road's corridor between its mouths, and the kernel's Intersection Surface and Intersection Slope Face Surface fill the junction with shared vertices at the mouths. T, Cross and Roundabout use the same kernel.
 - The Intersection panel has a Parametric Spec group: Load Spec, Check Spec (runs the kernel and lists every value with its origin and every diagnostic) and Apply Spec. The spec's kind follows the Preset and then the created Intersection source.
@@ -16,6 +20,17 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Applied Sections now names the Alignments it skips. An Alignment without a Profile, a Region model or a Stationing was dropped from the build silently; the panel lists it under `Skipped Alignments:` with what it lacks, and Build Parametric adds an intersection review row for a leg whose Alignment has no sections.
 - The Intersection source object is labelled `Intersection Source`. It was labelled `Intersections` like its project tree folder, and FreeCAD showed it as `Intersections001`; an existing document takes the new label the next time the intersection is created from a preset or from existing Alignments.
 - Swapped the first two v1 project tree roots: Surfaces is now `02_Surfaces` and alignment work is `03_Alignment & Profile`. Existing documents keep their folders and are relabeled and reordered the next time the project tree is ensured.
+- Project Setup is a v1 panel. Its rules (workflow recommendation, coordinate lock), persistence and panel are separate, the `CorridorRoad_ProjectSetup` command id and every Project property are unchanged, and New Project and the Project context menu open the same panel. Apply marks the Project changed instead of recomputing the whole document.
+- Roundabout traffic always circulates counter-clockwise: both supported standards, KDS and AASHTO, are right-hand traffic. The Intersection panel no longer offers a Circulation choice, and a `cw` stored by an earlier spec is ignored.
+- The cross section viewer lists stations by road, the primary road first, and its Next/Previous buttons stay on the current road.
+- Review Plan/Profile, Review Cross Sections and the earthwork review report a v1 viewer failure in the report view instead of opening a v0 panel. Plan/Profile review reads the v1 Alignment and Profile only.
+
+### Fixed
+- Superelevation is now paired with its own Alignment, so a side road no longer consumes the main road's crossfall at its own stations, and the Intersection preset writes one handoff source per participating road. Where two sources claim one Alignment the one carrying crossfall rows wins, so a preset placeholder can no longer shadow an authored source, and the Applied Sections panel lists any source that is not read.
+- The cross section viewer showed no intersection rows for a section inside the intersection's clip span but outside its source control area.
+- The Structure Output button in Build Parametric and the Review TIN button in the TIN editor imported modules that do not exist, so they did nothing.
+- Project Setup replaced a stored Coordinate Workflow with the one its CRS recommends as soon as it opened, so a `Local-first` project with a CRS was rewritten on Apply, and with the coordinate setup locked every Apply was refused. Opening Project Setup also marked the Project changed.
+- The 1.1.0 known issue is resolved: the red Cross curb-return envelope test did not supply its inputs, and the rule it exercised went with the earlier intersection pipeline.
 
 ### Removed
 - Removed the Intersection source row review (`Refresh Review`, `Accept Reviewed Rows`, `Adopt Edge Families From Subassembly` and the preset-default checklist): measured, it changed nothing the kernel builds. Removed the edge policy and lane connection rows from the Intersection source without migration; a document that holds them keeps the properties, and nothing reads them. A roundabout without a stored spec takes its ring from its curb return radius.
@@ -25,6 +40,11 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Removed ten legacy command modules the workbench never imported, nine placeholder modules that held only a docstring, `v1/common/schema.py`, thirteen unused module-level names in v1, and two icons no command names.
 - Removed regression scripts that no runner ran: twelve that had drifted into failing against current behavior, and fifteen that only loaded the removed v0 panels. The maintained smoke set is unchanged.
 - The v0 documents under `docsV0/` and the 1.0.1 forum announcement draft were removed; both remain in git history.
+- Removed the legacy (v0) object types: alignment, profile, stationing, typical section, assembly template, region plan, structure set, section set, corridor, surfaces, cut/fill and their displays. Their modules are gone, nothing creates them, and the project tree no longer routes them.
+- Unregistered the hidden legacy commands `CorridorRoad_EditAlignment`, `CorridorRoad_EditRegions`, `CorridorRoad_EditTypicalSection` and `CorridorRoad_ReviewAlignment`; their v1 successors are the surfaced Alignment, Regions, Assembly and Plan/Profile commands. A macro or custom toolbar that calls one gets FreeCAD's unknown-command message.
+- Removed every remaining v0 task panel (alignment, profile, PVI, region, typical section, cross section viewer, cut/fill, corridor and the old Project Setup) and the legacy document adapter.
+- Removed the regression scripts that exercised legacy objects or panels. The maintained runners keep the project tree, intersection kernel and corridor command id checks.
+- Removed code nothing reaches: unused v1 helpers and public functions only tests called, the geometry services only the earlier intersection pipeline used, and the legacy helpers they left behind.
 
 ## [1.1.0] - 2026-09-20
 
@@ -32,10 +52,6 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Reorganized the v1 code along the `Source -> Evaluation -> Result -> Output -> Presentation` boundaries. Review row builders moved to `ui/presentation`, engineering rules to `services/evaluation`, and normalized row contracts to `services/mapping`. The Build Parametric command module fell from 24,759 lines to 20,738 with no intended change to its behavior.
 - Gave the preview audit row serializers one owner in `services/mapping/preview_audit_row_mapper.py`, removing four identical copies from the command and two builder services.
 - Replaced the Build Parametric command's service delegation shims with direct service calls.
-
-### Fixed
-- Superelevation is now paired with its own Alignment, so a side road no longer consumes the main road's crossfall at its own stations, and the Intersection preset writes one handoff source per participating road. Where two sources claim one Alignment the one carrying crossfall rows wins, so a preset placeholder can no longer shadow an authored source, and the Applied Sections panel lists any source that is not read.
-- The last red contract test was a test that did not supply its inputs. The Cross curb-return envelope boundary loop test derived its edge network from a model that carries no alignment geometry, so four zero-length edges were correctly rejected as non-authoritative. It now supplies the edge network the way every other boundary loop test does, the rule is unchanged, and the contract baseline is 0.
 
 ### Fixed
 - Roundabout surface clipping ran without its boundary. The ownership clip resolved the boundary loops and then passed them where a document was expected, so every roundabout Design, Subgrade, and Slope Face surface fell back to circle clipping with no approach legs.
