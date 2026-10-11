@@ -225,3 +225,7 @@ Open decision 4 was taken for the three hidden commands that open v0 editors cre
 `init_gui` no longer imports them, so the ids are no longer registered; a macro or custom toolbar that invoked one gets FreeCAD's unknown-command message. The two v1 viewers that also accepted `CorridorRoad_EditAlignment` as an alias of the v1 alignment editor now accept only the v1 id. `tests/contracts/v1/test_legacy_command_retirement.py` fails if any module registers one of the three ids again.
 
 `CorridorRoad_ReviewAlignment` followed in phase P4, which also removed the v0 panels these commands opened (`ui/task_alignment_editor`, `ui/task_region_editor`, `ui/task_typical_section_editor`) and the v0 profile and PVI editors. No document restore depends on a command module (section 5).
+
+## 12. Legacy Panels and Proxy Implementations Gone, on 2026-10-11
+
+Phases P4 and P5 of `V1_LEGACY_PROXY_MIGRATION_DESIGN.md` removed every legacy task panel (`ui` now holds only package files) and replaced the implementation of every legacy proxy module with a restore-only stub. Sections 6 and 9 above describe the earlier state. `obj_project.py` stays live and frozen as before.

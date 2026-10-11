@@ -171,39 +171,3 @@ def format_length(doc_or_project, meters: float, digits: int = 3, unit: str = ""
     )
     value = user_length_from_meters(doc_or_project, meters, unit=token, use_default=use_default)
     return f"{value:.{max(0, int(digits))}f} {token}"
-
-
-def meters_from_internal_length(doc_or_project, internal_value: float) -> float:
-    _ = doc_or_project
-    return _safe_float(internal_value, default=0.0)
-
-
-def internal_length_from_meters(doc_or_project, meters: float) -> float:
-    _ = doc_or_project
-    return _safe_float(meters, default=0.0)
-
-
-def meters_from_model_length(doc_or_project, model_value: float) -> float:
-    """
-    Convert model/geometry-space length into canonical meters.
-
-    Geometry carriers are now treated as meter-native too. This helper remains
-    as the single boundary API so geometry code does not need to know whether
-    a future backend introduces a different model-space representation.
-    """
-    return meters_from_internal_length(doc_or_project, model_value)
-
-
-def model_length_from_meters(doc_or_project, meters: float) -> float:
-    """
-    Convert canonical meters into model/geometry-space length.
-
-    Prefer this helper over ad-hoc conversion math so any future model-space
-    bridge remains centralized in unit_policy.
-    """
-    return internal_length_from_meters(doc_or_project, meters)
-
-
-def format_internal_length(doc_or_project, internal_value: float, digits: int = 3, unit: str = "", *, use_default: str = "display") -> str:
-    meters = meters_from_internal_length(doc_or_project, internal_value)
-    return format_length(doc_or_project, meters, digits=digits, unit=unit, use_default=use_default)

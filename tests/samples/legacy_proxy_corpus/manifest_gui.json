@@ -2466,7 +2466,7 @@
     "LengthSchemaVersion": 1,
     "MinSectionSpacing": 0.5,
     "MixedSegmentCount": 5,
-    "NeedsRecompute": true,
+    "NeedsRecompute": false,
     "NotchDrivenSegmentCount": 0,
     "NotchTransitionScale": 1.0,
     "OutputType": "Surface",
@@ -2954,7 +2954,7 @@
     "ExportSummaryRows": [],
     "FallbackEventCount": 0,
     "FillVolume": 0.0,
-    "Label": "CutFillCalc [Recompute]",
+    "Label": "CutFillCalc",
     "Label2": "",
     "LengthSchemaVersion": 1,
     "MaxCandidateTriangles": 2500,
@@ -2992,7 +2992,7 @@
     "SourceCorridor": "<link Corridor>",
     "StationBinSize": 0.0,
     "StationBinnedSummaryRows": [],
-    "Status": "NEEDS_RECOMPUTE: Source corridor changed.",
+    "Status": "ERROR: ExistingSurface must be a valid Mesh object.",
     "TrustBlockerCount": 0,
     "TrustLevel": "-",
     "UseCorridorBounds": true,
@@ -3016,13 +3016,13 @@
      "export|target=design_grading_surface|reportSchema=1|sectionSchema=2|practical=simple|sections=16|faces=90|pointCount=7|benchSections=0|benchAdjusted=0|benchSkipped=0|roadside=shoulder_edge:2"
     ],
     "FaceCount": 90,
-    "Label": "DesignGradingSurface [Recompute]",
+    "Label": "DesignGradingSurface",
     "Label2": "",
     "Mesh": {
      "mesh_facets": 180,
      "mesh_points": 112
     },
-    "NeedsRecompute": true,
+    "NeedsRecompute": false,
     "PavementLayerCount": 4,
     "PavementLayerSummaryRows": [
      "SURF:surface:0.050m",
@@ -3068,7 +3068,7 @@
     ],
     "SectionCount": 16,
     "SourceSectionSet": "<link SectionSet>",
-    "Status": "NEEDS_RECOMPUTE: Source SectionSet changed.",
+    "Status": "OK (Mesh) | quads=90 | facets=180 | schema=2 | topProfile=typical_section | topEdges=shoulder/shoulder | pavement=0.570m | earthwork=simplified_type_driven | subSchema=1 | practical=simple | roadside=shoulder_edge:2 | pavLayers=4/4 | structures=5",
     "StructureInteractionSummaryRows": [
      "structure|source=structure_set|stations=5|tags=5"
     ],
@@ -3096,7 +3096,7 @@
     "DomainMargin": 0.0,
     "ExistingTerrain": null,
     "ExistingTerrainCoords": "Local",
-    "Label": "DesignTerrain [Recompute]",
+    "Label": "DesignTerrain",
     "Label2": "",
     "LengthSchemaVersion": 1,
     "MaxCandidateTriangles": 2500,
@@ -3107,7 +3107,7 @@
      "mesh_facets": 0,
      "mesh_points": 0
     },
-    "NeedsRecompute": true,
+    "NeedsRecompute": false,
     "NoDataArea": 0.0,
     "Placement": {
      "base": [
@@ -3125,7 +3125,7 @@
     "RebuildNow": false,
     "SampleCount": 0,
     "SourceDesignSurface": "<link DesignGradingSurface>",
-    "Status": "NEEDS_RECOMPUTE: Source DesignGradingSurface changed.",
+    "Status": "ERROR: Missing ExistingTerrain (Mesh).",
     "ValidCount": 0,
     "Visibility": true,
     "_ElementMapVersion": "5"
@@ -3460,7 +3460,7 @@
     "IncludeStructureStations": false,
     "IncludeStructureTransitionStations": true,
     "Interval": 80.0,
-    "Label": "SectionSet [Recompute]",
+    "Label": "SectionSet",
     "Label2": "",
     "LengthSchemaVersion": 2,
     "Mode": "Range",
@@ -3679,7 +3679,7 @@
      720.0,
      760.0
     ],
-    "Status": "NEEDS_RECOMPUTE: Source StructureSet changed.",
+    "Status": "WARN: daylight=no_terrain; fixed side widths used. Add TerrainMesh or disable DaylightAuto. | daylight=fallback:no_terrain | schema=2 | topProfile=typical_section | topEdges=shoulder/shoulder | subSchema=1 | practical=simple | roadside=shoulder_edge:2 | pavement=0.570m | pavLayers=4/4 | earthwork=simplified_type_driven | structures=5",
     "StructureBufferAfter": 0.0,
     "StructureBufferBefore": 0.0,
     "StructureInteractionSummaryRows": [

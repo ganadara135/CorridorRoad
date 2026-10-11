@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 Branch: `ganada_0902` (measured at `22df633`)
-Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 in progress (section 17).
+Status: Decided on 2026-10-11 (section 11). Phases P0 and P1 done (section 12), P2 (section 13), P3 (section 14), P4 (section 15), bridge fallbacks (section 16), P5 done (section 17). Next: the converters (option C).
 Depends on:
 
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` (sections 5 and 6, frozen legacy persistence surfaces)
@@ -372,8 +372,36 @@ failed all three document round trips.
 
 with a view provider each. Headless and GUI round trips pass.
 
-**Remaining order.** The other ten modules import each other, so their order follows the import
-graph: `obj_section_set` exports helpers used by `obj_corridor`, `obj_region_plan`,
-`obj_structure_set` and `obj_project` (`region_plan_usage_enabled`, `resolve_region_plan_source`,
-`synchronize_region_plan_state`); `obj_corridor` is still opened by the v0 panel `ui/task_corridor`,
-which the loft retirement gate's corridor boundary smokes inspect.
+**Batch 2, 2026-10-11: the remaining ten modules.** They import one another (the corridor and
+section set import the structure set, region plan, templates and centerline, which import the
+alignments), so they were stubbed together in one commit, in import order:
+
+- `ui/task_corridor`, the last v0 panel and the only importer of `obj_corridor`, is removed with
+  `corridor_compat.PREFERRED_TASK_MODULE`/`PREFERRED_TASK_PANEL_CLASS`. The maintainer retired
+  the three loft-gate smokes that read its source and `obj_corridor`'s
+  (`smoke_corridor_child_link_boundary`, `smoke_corridor_proxy_boundary`,
+  `smoke_corridor_taskpanel_alias_boundary`); the gate keeps `command_alias`, `project_link` and
+  `tree_schema`.
+- `obj_corridor`, `obj_section_set`, `obj_region_plan`, `obj_structure_set`, `obj_centerline3d`,
+  `obj_typical_section_template` (three proxies), `obj_assembly_template`,
+  `obj_cross_section_edit_plan`, `obj_vertical_alignment` and `obj_alignment` are stubs.
+- `obj_project._migrate_region_plan_links` imported three region-plan helpers from
+  `obj_section_set` and already fell back to reading and writing `RegionPlan`/`UseRegionPlan`
+  when they were missing; it now uses that path only.
+- Helpers only the legacy implementations used are removed: `corridor_segment_builder`,
+  `section_strip_builder` (with its non-runner smoke), `coord_transform`, `doc_query`,
+  `terrain_sampler`, and the dead functions of `unit_policy` and `surface_sampling_core`.
+
+**What changed in the corpus manifests.** The first property snapshots were taken by reopening
+the corpus with the legacy classes, which rewrote properties while a document loaded:
+`NeedsRecompute`, `Status` and a ` [Recompute]` label suffix on Corridor, SectionSet,
+DesignGradingSurface, DesignTerrain and CutFillCalc. The stubs run nothing on load and show the
+values the files hold (checked against `Document.xml`). `refresh_snapshots()` re-recorded the
+snapshots; exactly those 11 (object, property) pairs changed in each document, and every stored
+proxy and view-provider entry, the legacy reference, is unchanged. Headless and GUI round trips
+pass.
+
+**Result.** The legacy `objects` package went from 25,878 lines in 31 files to 4,531 in 27,
+most of it the live `obj_project`; legacy `ui` holds two empty package files. Legacy documents
+open, keep every object, property, shape and proxy reference, and no longer recompute their
+legacy objects; their source objects become editable again through the converters.

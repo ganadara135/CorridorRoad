@@ -433,10 +433,43 @@ def build_gui(force: bool = False) -> None:
     print(f"wrote {GUI_DOCUMENT}; GUI round trip: {recorded['gui_round_trip']}")
 
 
+def refresh_snapshots() -> None:
+    """Re-record the property snapshots, keeping every stored proxy entry as the legacy code wrote it.
+
+    The first snapshots were taken by reopening the corpus with the legacy classes, which rewrote
+    properties while a document loaded (NeedsRecompute, Status and a "[Recompute]" label suffix on
+    Corridor, SectionSet, DesignGradingSurface, DesignTerrain and CutFillCalc). Restore-only stubs
+    run nothing on load, so they show the values the files hold; this records those. The stored
+    proxy entries (module, class, state) stay the reference written by the legacy classes.
+    """
+
+    import FreeCAD as App
+
+    _load_classes()
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    for file_name, recorded in manifest["documents"].items():
+        doc = App.openDocument(str(CORPUS_DIR / file_name))
+        try:
+            recorded["objects"] = document_snapshot(doc)
+        finally:
+            App.closeDocument(doc.Name)
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    gui = json.loads(GUI_MANIFEST_PATH.read_text(encoding="utf-8"))
+    doc = App.openDocument(str(CORPUS_DIR / GUI_DOCUMENT))
+    try:
+        gui["objects"] = document_snapshot(doc)
+    finally:
+        App.closeDocument(doc.Name)
+    GUI_MANIFEST_PATH.write_text(json.dumps(gui, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    print("refreshed the property snapshots")
+
+
 if __name__ == "__main__":
     sys.path.insert(0, str(REPO_ROOT))
     os.chdir(REPO_ROOT)
     if "--build" in sys.argv:
         build(force="--force" in sys.argv)
+    elif "--refresh-snapshots" in sys.argv:
+        refresh_snapshots()
     else:
         print(__doc__)

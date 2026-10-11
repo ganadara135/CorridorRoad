@@ -10,10 +10,7 @@ Set-Location $repoRoot
 
 $tests = @(
     "tests/regression/smoke_corridor_command_alias_boundary.py",
-    "tests/regression/smoke_corridor_taskpanel_alias_boundary.py",
     "tests/regression/smoke_corridor_project_link_boundary.py",
-    "tests/regression/smoke_corridor_child_link_boundary.py",
-    "tests/regression/smoke_corridor_proxy_boundary.py",
     "tests/regression/smoke_tree_schema.py"
 )
 

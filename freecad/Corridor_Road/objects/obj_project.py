@@ -2475,24 +2475,9 @@ def _migrate_region_plan_links(obj_project):
     doc = getattr(obj_project, "Document", None)
     if doc is None:
         return
-    try:
-        from freecad.Corridor_Road.objects.obj_section_set import (
-            region_plan_usage_enabled as _section_region_plan_usage_enabled,
-            resolve_region_plan_source as _section_resolve_region_plan_source,
-            synchronize_region_plan_state as _section_synchronize_region_plan_state,
-        )
-    except Exception:
-        _section_region_plan_usage_enabled = None
-        _section_resolve_region_plan_source = None
-        _section_synchronize_region_plan_state = None
-
+    # Legacy SectionSet objects are restore-only stubs (legacy proxy migration, phase P5): their
+    # region-plan link is read and written as plain properties.
     def _section_candidate(section_obj):
-        try:
-            target = _section_resolve_region_plan_source(section_obj) if _section_resolve_region_plan_source is not None else None
-        except Exception:
-            target = None
-        if target is not None:
-            return ensure_region_plan_object(target)
         try:
             sec_region_plan = getattr(section_obj, "RegionPlan", None) if hasattr(section_obj, "RegionPlan") else None
         except Exception:
@@ -2503,11 +2488,6 @@ def _migrate_region_plan_links(obj_project):
         return ensure_region_plan_object(project_region_plan)
 
     def _section_enabled(section_obj):
-        try:
-            if _section_region_plan_usage_enabled is not None:
-                return bool(_section_region_plan_usage_enabled(section_obj))
-        except Exception:
-            pass
         try:
             return bool(getattr(section_obj, "UseRegionPlan", False))
         except Exception:
@@ -2541,13 +2521,10 @@ def _migrate_region_plan_links(obj_project):
         target = _section_candidate(o)
         enabled = _section_enabled(o)
         try:
-            if _section_synchronize_region_plan_state is not None:
-                _section_synchronize_region_plan_state(o, preferred_region=target, enabled=enabled)
-            else:
-                if hasattr(o, "RegionPlan") and target is not None:
-                    o.RegionPlan = target
-                if hasattr(o, "UseRegionPlan"):
-                    o.UseRegionPlan = enabled
+            if hasattr(o, "RegionPlan") and target is not None:
+                o.RegionPlan = target
+            if hasattr(o, "UseRegionPlan"):
+                o.UseRegionPlan = enabled
         except Exception:
             pass
 
