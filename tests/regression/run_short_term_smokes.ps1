@@ -9,7 +9,8 @@ $resolvedFreeCADCmd = Resolve-FreeCADExecutable -Kind Cmd -ExplicitPath $FreeCAD
 Set-Location $repoRoot
 
 $tests = @(
-    "tests/regression/smoke_tree_schema.py"
+    "tests/regression/smoke_tree_schema.py",
+    "tests/regression/smoke_v1_workflow.py"
 )
 
 foreach ($test in $tests) {

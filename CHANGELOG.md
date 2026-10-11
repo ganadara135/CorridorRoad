@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Added
+- The short-term regression runner runs `smoke_v1_workflow.py`: one document through Project, Alignment, Stations, Profile, Assembly, Region, Applied Sections and Build Parametric, checking each result's project tree folder and the corridor surfaces, then a save, reopen and rebuild that must reproduce the same surfaces.
+
 ### Removed
 - Unregistered the hidden legacy commands `CorridorRoad_NewProject` and `CorridorRoad_CreateAlignment`. `New/Project Setup` (`CorridorRoad_ProjectSetup`) creates the project root when a document has none, and the v1 Alignment editor creates alignments.
 
