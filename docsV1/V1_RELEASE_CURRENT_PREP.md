@@ -31,7 +31,7 @@ Post-release tasks:
 
 - [x] `package.xml` version/date updated to `1.1.1` / `2026-10-11`.
 - [x] `CHANGELOG.md` carries the `1.1.1` release section.
-- [ ] Git tag and GitHub Release published.
+- [x] Git tag and GitHub Release published; the release guard passed on the `main` push and the `v1.1.1` tag push.
 - [ ] FreeCAD manual smoke QA for the published tag. Still open from the session handoff: the Structure Output and Review TIN buttons, a roundabout document from before R7c-3 rebuilding the same ring, and the Drainage low point and `Suggested Inlet` marker.
 - [ ] Forum announcement for `1.1.1`, if wanted; the `1.1.0` thread is linked above.
 - [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
