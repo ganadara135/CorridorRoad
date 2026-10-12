@@ -126,10 +126,13 @@ Headless tests do not cover these. Procedures are in
 
 ### 4.3 Small follow-ups
 
-- **Surface facet orientation.** Every real corridor surface triangle faces down. It is
-  consistent, so the mesh is valid, but shading or any consumer using normals (export, slope
-  analysis) may expect up. Check consumers before flipping the winding in
-  `v1/services/builders/corridor_surface_geometry_service.py`; flipping changes exported data.
+- **Surface facet orientation**: done on 2026-10-12. Only Design, Subgrade and Drainage faced
+  down; Daylight and the intersection kernel already faced up. `_upward_triangle` in
+  `v1/services/builders/corridor_surface_geometry_service.py` winds point-grid strips
+  counterclockwise in plan. No consumer depended on the old order (sampling and audits are
+  orientation-free; no exporter writes corridor surface triangles yet). Covered by
+  `test_corridor_surface_facet_orientation.py` and the downward-facet check of
+  `smoke_v1_workflow.py`. Gate 1,146 passed / 18 skipped, runners PASS.
 - **Cross Section viewer**: done on 2026-10-12. `v1/commands/cmd_view_sections.py` no longer
   reads `project.Corridor` or `project.CutFillCalc`, and `_build_earthwork_hint_rows` lost its
   `cut_fill_calc` argument. Gate 1,142 passed / 18 skipped, runners PASS, GUI check by the user.
@@ -232,7 +235,7 @@ Run the smallest relevant test first. The gate is headless; never claim GUI vali
 1. Finish the GUI checks of section 4.1 and record the results in the manual QA documents.
 2. Decide Outputs/Exchange and AI Assist (section 4.2). If they move to v1, write a short design
    note first, as was done for the legacy proxies, then move one command per commit.
-3. Look at facet orientation (the Cross Section viewer reads are removed).
+3. Done: the Cross Section viewer reads are removed and the corridor surfaces face up.
 4. Next release (1.1.2 or 1.2.0, depending on what lands): follow
    [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md). Bump `package.xml` version and
    date, move `[Unreleased]` in CHANGELOG to the new version, update README, ADDON_OVERVIEW,

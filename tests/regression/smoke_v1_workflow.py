@@ -7,7 +7,7 @@ v1 workflow smoke test: one document through the main v1 path.
 Project -> Alignment -> Stations -> Profile -> Assembly -> Region -> Applied Sections ->
 Build Parametric, then save, reopen and rebuild. It checks that every stage leaves its result
 in its project tree folder, that the corridor surfaces have geometry and are manifold meshes
-without zero-area facets, that a saved document
+without zero-area or downward-facing facets, that a saved document
 reopens with the same objects, folders and surfaces, and that rebuilding the reopened document
 reproduces the same surfaces.
 
@@ -96,6 +96,9 @@ def _check_mesh_quality(doc, stage):
         _assert(not mesh.hasNonManifolds(), f"{stage}: {name} is not manifold")
         degenerate = [facet for facet in mesh.Topology[1] if len(set(facet)) < 3]
         _assert(not degenerate, f"{stage}: {name} has {len(degenerate)} zero-area facets")
+        # corridor surfaces wind counterclockwise in plan; a vertical face (a curb) has no up side
+        downward = [facet for facet in mesh.Facets if facet.Normal.z < -1.0e-6]
+        _assert(not downward, f"{stage}: {name} has {len(downward)} facets facing down")
 
 
 def _check_tree(doc, stage):

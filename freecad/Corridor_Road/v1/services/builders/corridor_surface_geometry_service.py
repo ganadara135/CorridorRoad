@@ -587,7 +587,7 @@ def _build_surface_from_point_grid(
                 TINTriangle(f"span:{section_index}:p{point_index}:b", p00, p11, p10, triangle_kind=triangle_kind),
             ):
                 if not _triangle_has_coincident_vertices(triangle, coordinates):
-                    triangles.append(triangle)
+                    triangles.append(_upward_triangle(triangle, coordinates))
 
     z_values = [vertex.z for vertex in vertices]
     left_values = [max(float(getattr(point, "lateral_offset", 0.0) or 0.0) for point in points) for points in point_grid]
@@ -648,6 +648,25 @@ def _triangle_has_coincident_vertices(triangle: TINTriangle, coordinates: dict[s
     return first == second or second == third or first == third
 
 
+def _upward_triangle(triangle: TINTriangle, coordinates: dict[str, tuple[float, float, float]]) -> TINTriangle:
+    """Return the strip triangle wound counterclockwise in plan, so its normal points up.
+
+    Section point rows are ordered by the subassemblies that emit them, not by side, so the fixed
+    corner order of a strip cell can face down. Daylight strips and the intersection kernel
+    already wind counterclockwise; this keeps every corridor surface on that convention, which
+    exporters and normal-based analysis expect. A triangle with no plan area (a vertical face such
+    as a curb) has no up side and keeps its order.
+    """
+
+    x1, y1 = coordinates[triangle.v1][:2]
+    x2, y2 = coordinates[triangle.v2][:2]
+    x3, y3 = coordinates[triangle.v3][:2]
+    signed_double_area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+    if signed_double_area < 0.0:
+        return replace(triangle, v2=triangle.v3, v3=triangle.v2)
+    return triangle
+
+
 def _build_drainage_surface_from_point_groups(request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
     """Build drainage strips without bridging separate left/right ditch features."""
 
@@ -687,6 +706,8 @@ def _build_drainage_surface_from_point_groups(request: CorridorDesignSurfaceGeom
                 triangles.append(TINTriangle(f"{safe_group_id}:span:{section_index}:p{point_index}:a", p00, p01, p11, triangle_kind="corridor_drainage_strip"))
                 triangles.append(TINTriangle(f"{safe_group_id}:span:{section_index}:p{point_index}:b", p00, p11, p10, triangle_kind="corridor_drainage_strip"))
 
+    coordinates = {vertex.vertex_id: (vertex.x, vertex.y, vertex.z) for vertex in vertices}
+    triangles = [_upward_triangle(triangle, coordinates) for triangle in triangles]
     if not vertices or not triangles:
         raise ValueError("No drainage strips were generated from AppliedSection ditch_surface rows.")
     z_values = [vertex.z for vertex in vertices]
