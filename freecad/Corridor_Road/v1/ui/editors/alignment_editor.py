@@ -10,6 +10,8 @@ def configure_alignment_editor_task_panel_runtime(bindings) -> None:
 
     protected = {
         "_AlignmentCurvePreviewWidget",
+        "_button_row",
+        "_narrow_combo",
         "V1AlignmentEditorTaskPanel",
         "configure_alignment_editor_task_panel_runtime",
     }
@@ -356,6 +358,30 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
         label_rects.append(chosen_rect)
 
 
+def _narrow_combo():
+    """A combo box whose width does not follow its longest item, so it fits a narrow task panel."""
+
+    combo = QtWidgets.QComboBox()
+    try:
+        combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(12)
+    except Exception:
+        pass
+    return combo
+
+
+def _button_row(*buttons):
+    """A left-aligned row of buttons, wrapped in a widget so a form layout can hold it."""
+
+    row = QtWidgets.QWidget()
+    row_layout = QtWidgets.QHBoxLayout(row)
+    row_layout.setContentsMargins(0, 0, 0, 0)
+    for button in buttons:
+        row_layout.addWidget(button)
+    row_layout.addStretch(1)
+    return row
+
+
 class V1AlignmentEditorTaskPanel:
     """v1 alignment editor with the v0 IP-based workflow as the primary UI."""
 
@@ -437,20 +463,22 @@ class V1AlignmentEditorTaskPanel:
         layout.setContentsMargins(4, 8, 4, 4)
         layout.setSpacing(8)
 
-        sketch_row = QtWidgets.QHBoxLayout()
-        self._sketch_combo = QtWidgets.QComboBox()
-        self._sketch_combo.setMaximumWidth(280)
+        # The task panel is narrow, so each input gets its own form row and its buttons go on the
+        # row below; one wide row of inputs and buttons pushed the right-hand buttons out of view.
+        source_form = QtWidgets.QFormLayout()
+        try:
+            source_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        except Exception:
+            pass
+
+        self._sketch_combo = _narrow_combo()
         refresh_sketch_button = QtWidgets.QPushButton("Refresh")
         refresh_sketch_button.clicked.connect(self._refresh_sketches)
         load_sketch_button = QtWidgets.QPushButton("Load from Sketch")
         load_sketch_button.clicked.connect(self._load_from_sketch)
-        sketch_row.addWidget(QtWidgets.QLabel("Sketch:"))
-        sketch_row.addWidget(self._sketch_combo, 1)
-        sketch_row.addWidget(refresh_sketch_button)
-        sketch_row.addWidget(load_sketch_button)
-        layout.addLayout(sketch_row)
+        source_form.addRow("Sketch:", self._sketch_combo)
+        source_form.addRow("", _button_row(refresh_sketch_button, load_sketch_button))
 
-        csv_row = QtWidgets.QHBoxLayout()
         self._csv_path = QtWidgets.QLineEdit()
         self._csv_path.setPlaceholderText("Path to alignment CSV file")
         browse_csv_button = QtWidgets.QPushButton("Browse CSV")
@@ -459,23 +487,17 @@ class V1AlignmentEditorTaskPanel:
         load_csv_button.clicked.connect(self._load_from_csv)
         save_csv_button = QtWidgets.QPushButton("Save CSV")
         save_csv_button.clicked.connect(self._save_csv)
-        self._csv_export_coords_combo = QtWidgets.QComboBox()
+        self._csv_export_coords_combo = _narrow_combo()
         self._csv_export_coords_combo.addItem("Project default", "project")
         self._csv_export_coords_combo.addItem("World E/N", "world")
         self._csv_export_coords_combo.addItem("Local X/Y", "local")
-        csv_row.addWidget(QtWidgets.QLabel("CSV:"))
-        csv_row.addWidget(self._csv_path, 1)
-        csv_row.addWidget(browse_csv_button)
-        csv_row.addWidget(load_csv_button)
-        csv_row.addWidget(save_csv_button)
-        csv_row.addWidget(QtWidgets.QLabel("Export coords:"))
-        csv_row.addWidget(self._csv_export_coords_combo)
-        layout.addLayout(csv_row)
+        source_form.addRow("CSV:", self._csv_path)
+        source_form.addRow("", _button_row(browse_csv_button, load_csv_button, save_csv_button))
+        source_form.addRow("Export coords:", self._csv_export_coords_combo)
 
-        preset_row = QtWidgets.QHBoxLayout()
-        self._preset_combo = QtWidgets.QComboBox()
+        self._preset_combo = _narrow_combo()
         self._preset_combo.addItems(list(ALIGNMENT_PRESETS.keys()))
-        self._preset_placement_combo = QtWidgets.QComboBox()
+        self._preset_placement_combo = _narrow_combo()
         self._preset_placement_combo.addItems(alignment_preset_placement_names())
         self._preset_placement_combo.setCurrentText("Center on terrain")
         self._preset_note = QtWidgets.QLabel("")
@@ -484,13 +506,10 @@ class V1AlignmentEditorTaskPanel:
         load_preset_button.clicked.connect(self._load_selected_preset)
         self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
         self._preset_placement_combo.currentIndexChanged.connect(self._update_preset_note)
-        preset_row.addWidget(QtWidgets.QLabel("Preset:"))
-        preset_row.addWidget(self._preset_combo)
-        preset_row.addWidget(QtWidgets.QLabel("Placement:"))
-        preset_row.addWidget(self._preset_placement_combo)
-        preset_row.addWidget(load_preset_button)
-        preset_row.addStretch(1)
-        layout.addLayout(preset_row)
+        source_form.addRow("Preset:", self._preset_combo)
+        source_form.addRow("Placement:", self._preset_placement_combo)
+        source_form.addRow("", _button_row(load_preset_button))
+        layout.addLayout(source_form)
         layout.addWidget(self._preset_note)
 
         self._ip_table = QtWidgets.QTableWidget(0, 4)
