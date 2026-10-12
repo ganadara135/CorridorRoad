@@ -120,8 +120,6 @@ def _resolve_result_state(
     objects = dict(source_objects or {})
     for key in (
         "applied_section_set",
-        "corridor",
-        "cut_fill_calc",
         "assembly_model",
         "region_model",
         "intersection_model",
@@ -1437,7 +1435,6 @@ def _build_earthwork_hint_rows(
     *,
     earthwork_model=None,
     station_row: dict[str, object] | None,
-    cut_fill_calc=None,
 ) -> list[dict[str, str]]:
     """Build minimal earthwork hint rows for the section viewer."""
 
@@ -1460,7 +1457,6 @@ def _build_earthwork_hint_rows(
     fill_value = float(getattr(focused_row, "fill_value", 0.0) or 0.0)
     balance_ratio = float(getattr(focused_row, "balance_ratio", 0.0) or 0.0)
     zone_kind = _earthwork_zone_kind(cut_value, fill_value)
-    calc_label = str(getattr(cut_fill_calc, "Label", "") or getattr(cut_fill_calc, "Name", "") or "").strip()
 
     return [
         {
@@ -1479,7 +1475,7 @@ def _build_earthwork_hint_rows(
             "kind": "earthwork_state",
             "label": "Earthwork State",
             "value": zone_kind,
-            "notes": f"Source={calc_label}" if calc_label else "",
+            "notes": "",
         },
     ]
 
@@ -1676,8 +1672,6 @@ def _build_v1_applied_section_set_preview(
         "alignment": None,
         "assembly_model": assembly_model,
         "region_model": region_model,
-        "corridor": getattr(project, "Corridor", None) if project is not None else None,
-        "cut_fill_calc": getattr(project, "CutFillCalc", None) if project is not None else None,
         "structure_model": structure_model,
         "drainage_model": drainage_model,
         "superelevation_model": superelevation_model,
@@ -1709,7 +1703,6 @@ def _build_v1_applied_section_set_preview(
     earthwork_hint_rows = _build_earthwork_hint_rows(
         earthwork_model=None,
         station_row=station_payload,
-        cut_fill_calc=source_objects.get("cut_fill_calc"),
     )
     review_marker_rows = _build_review_marker_rows(
         station_row=station_payload,
@@ -2159,7 +2152,6 @@ def show_v1_section_preview(
     preview["earthwork_hint_rows"] = list(preview.get("earthwork_hint_rows", []) or []) or _build_earthwork_hint_rows(
         earthwork_model=None,
         station_row=dict(preview.get("station_row", {}) or {}),
-        cut_fill_calc=source_objects.get("cut_fill_calc"),
     )
     if explicit_review_marker_rows is not None:
         preview["review_marker_rows"] = list(preview.get("review_marker_rows", []) or [])

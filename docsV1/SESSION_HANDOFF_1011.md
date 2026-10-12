@@ -130,10 +130,9 @@ Headless tests do not cover these. Procedures are in
   consistent, so the mesh is valid, but shading or any consumer using normals (export, slope
   analysis) may expect up. Check consumers before flipping the winding in
   `v1/services/builders/corridor_surface_geometry_service.py`; flipping changes exported data.
-- **Cross Section viewer** (`v1/commands/cmd_view_sections.py`, around line 1679) still reads
-  `project.Corridor` and `project.CutFillCalc` through
-  `getattr`. Those properties are no longer created, so the reads always miss. A small v1-side
-  legacy trace to remove.
+- **Cross Section viewer**: done on 2026-10-12. `v1/commands/cmd_view_sections.py` no longer
+  reads `project.Corridor` or `project.CutFillCalc`, and `_build_earthwork_hint_rows` lost its
+  `cut_fill_calc` argument. Gate 1,142 passed / 18 skipped, runners PASS, GUI check by the user.
 - **Watertight** reads `DesignTerrain`. Watertight is paused; leave it.
 
 ### 4.4 Release and communication
@@ -233,7 +232,7 @@ Run the smallest relevant test first. The gate is headless; never claim GUI vali
 1. Finish the GUI checks of section 4.1 and record the results in the manual QA documents.
 2. Decide Outputs/Exchange and AI Assist (section 4.2). If they move to v1, write a short design
    note first, as was done for the legacy proxies, then move one command per commit.
-3. Remove the Cross Section viewer's `Corridor`/`CutFillCalc` reads; look at facet orientation.
+3. Look at facet orientation (the Cross Section viewer reads are removed).
 4. Next release (1.1.2 or 1.2.0, depending on what lands): follow
    [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md). Bump `package.xml` version and
    date, move `[Unreleased]` in CHANGELOG to the new version, update README, ADDON_OVERVIEW,
