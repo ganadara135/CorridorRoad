@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 # Explicit runtime collaborators are replaced by the command callback map.
@@ -103,7 +104,7 @@ class StructureEditorTaskPanelPresentation:
         self._active_detail_structure_id = ""
         self._active_detail_spec_ref = ""
         self._loading_selected_detail = False
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._load_existing_rows()
 
     def getStandardButtons(self):

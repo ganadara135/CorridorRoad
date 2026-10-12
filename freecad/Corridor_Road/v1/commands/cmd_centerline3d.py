@@ -17,6 +17,7 @@ from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.objects.obj_project import ensure_project_tree, find_project
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ..models.result.centerline3d import Centerline3DResult
 from ..models.result.centerline3d_arc_fit import Centerline3DArcFitResult
@@ -294,7 +295,7 @@ class V1Centerline3DTaskPanel:
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self._result = build_document_centerline3d_result(self.document) if self.document is not None else Centerline3DResult(status="blocked")
         self._preview_object = None
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._refresh_ui()
 
     def getStandardButtons(self):

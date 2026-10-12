@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -187,7 +188,7 @@ class V1SuperelevationEditorTaskPanel:
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.superelevation_obj = find_v1_superelevation_source(self.document)
         self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._load_existing_rows()
 
     def getStandardButtons(self):

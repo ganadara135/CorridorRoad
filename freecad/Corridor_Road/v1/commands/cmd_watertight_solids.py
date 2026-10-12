@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.objects.obj_project import find_project
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ..objects.obj_applied_section import find_v1_applied_section_set
 from ..objects.obj_applied_section import to_applied_section_set
@@ -394,7 +395,7 @@ class V1WatertightSolidsTaskPanel:
         self._target_state_by_id: dict[str, WatertightSolidTargetPanelState] = {}
         self._selected_target_id = ""
         self._updating_target_table = False
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()

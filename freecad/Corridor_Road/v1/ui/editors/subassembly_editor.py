@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 def configure_assembly_subassembly_editor_task_panel_runtime(bindings) -> None:
@@ -233,7 +234,7 @@ class V1AssemblySubassemblyEditorTaskPanel:
         self.model = to_assembly_subassembly_model(self.assembly_obj) if self.assembly_obj is not None else None
         if self.model is None:
             self.model = assembly_subassembly_preset_model_from_document("Full Set Road", document=self.document)
-        self.form = self._build_form()
+        self.form = fit_task_panel_width(self._build_form())
         self._load_model(self.model)
 
     def getStandardButtons(self):  # noqa: N802 - Qt API name

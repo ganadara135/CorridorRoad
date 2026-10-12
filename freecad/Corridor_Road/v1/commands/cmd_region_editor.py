@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -260,7 +261,7 @@ class V1RegionEditorTaskPanel:
         self._assembly_refs = _assembly_source_ids(self.document)
         self._station_values = _document_station_values(self.document)
         self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._load_existing_rows()
 
     def getStandardButtons(self):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ...services.editing.project_setup_service import (
     COORDINATE_WORKFLOWS,
@@ -49,7 +50,7 @@ class V1ProjectSetupTaskPanel:
         self.preferred_project = preferred_project
         self._projects = []
         self._loading = False
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._refresh_context(preferred=preferred_project)
 
     def getStandardButtons(self):
@@ -127,7 +128,8 @@ class V1ProjectSetupTaskPanel:
         self.lbl_epsg_info.setWordWrap(True)
         self.cmb_coord_workflow = QtWidgets.QComboBox()
         self.cmb_coord_workflow.addItems(list(COORDINATE_WORKFLOWS))
-        self.chk_auto_coord_reco = QtWidgets.QCheckBox("Auto-apply recommended modes in task panels")
+        self.chk_auto_coord_reco = QtWidgets.QCheckBox("Auto-apply recommended modes")
+        self.chk_auto_coord_reco.setToolTip("Auto-apply recommended coordinate modes in task panels.")
         self.chk_auto_coord_reco.setChecked(True)
         self.lbl_coord_workflow_info = QtWidgets.QLabel("")
         self.lbl_coord_workflow_info.setWordWrap(True)

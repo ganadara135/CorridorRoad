@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
     Gui = None
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_stationing import (
@@ -88,7 +89,7 @@ class V1StationingReviewTaskPanel:
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.stationing = stationing or find_v1_stationing(self.document)
         self.preferred_alignment = preferred_alignment
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
 
     def getStandardButtons(self):
         return 0

@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from .cmd_build_corridor import (
     apply_v1_structure_output_package,
@@ -40,7 +41,7 @@ class V1StructureOutputTaskPanel:
 
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._last_structure_output_package = None
         self._refresh_summary()
 

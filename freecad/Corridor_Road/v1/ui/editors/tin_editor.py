@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 try:
     import FreeCADGui as Gui
@@ -91,7 +92,7 @@ class V1TINEditorTaskPanel:
         self._void_pick_view = None
         self._void_pick_event_callback_id = None
         self._void_pick_location_callback_id = None
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
 
     def getStandardButtons(self):
         return 0

@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - FreeCADGui is unavailable in plain Pytho
 
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_tree, ensure_project_viewprovider, find_project
 from ..models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel, DrainagePolicySet
@@ -143,7 +144,7 @@ class V1IntersectionPresetsTaskPanel:
         self._last_detection = None
         self._last_applied_intersection = ""
         self._alignment_choices = list_v1_alignment_choices(self.document) if self.document is not None else []
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         _route_intersection_preset_objects(self.document, project=self.project)
         self._select_preset_of_existing_intersection()
         self._update_capability_note()

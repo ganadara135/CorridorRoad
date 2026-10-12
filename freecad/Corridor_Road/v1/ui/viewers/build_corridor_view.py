@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ..common.styles import apply_clickable_tab_style
 
@@ -84,7 +85,7 @@ class BuildCorridorTaskPanelPresentation:
         )
         self._loaded_review_tabs: set[str] = set()
         self._review_tab_ids: dict[int, str] = {}
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._refresh_summary()
 
     def getStandardButtons(self):
@@ -624,7 +625,8 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             check.setChecked(True)
             check.toggled.connect(lambda checked, role=role: self._set_preview_visibility(role, checked))
             self._visibility_checks[role] = check
-            visibility_grid.addWidget(check, index // 2, index % 2)
+            # one column: two long surface names side by side are wider than the task panel
+            visibility_grid.addWidget(check, index, 0)
         visibility_layout.addLayout(visibility_grid)
         guided_visibility_label = QtWidgets.QLabel("Guided Review Visibility")
         guided_visibility_label.setToolTip("Show or hide objects represented by Guided Review rows.")
@@ -1905,7 +1907,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             check.setToolTip(str(row.get("notes", "") or ""))
             check.toggled.connect(lambda checked, step_id=step_id: self._set_guided_review_visibility(step_id, checked))
             self._guided_visibility_checks[step_id] = check
-            grid.addWidget(check, index // 2, index % 2)
+            grid.addWidget(check, index, 0)
         self._sync_guided_visibility_checks()
 
     def _set_guided_review_visibility(self, step_id: str, visible: bool) -> None:

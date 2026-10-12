@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -965,7 +966,7 @@ class V1AppliedSectionsTaskPanel:
 
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._refresh_summary()
 
     def getStandardButtons(self):
@@ -1002,8 +1003,9 @@ class V1AppliedSectionsTaskPanel:
 
         options_box = QtWidgets.QGroupBox("Supplemental Sections")
         options_layout = QtWidgets.QVBoxLayout(options_box)
-        self._supplemental_sections_check = QtWidgets.QCheckBox("Create supplemental Applied Sections on curved 3D Centerline spans")
+        self._supplemental_sections_check = QtWidgets.QCheckBox("Add sections on curved spans")
         self._supplemental_sections_check.setToolTip(
+            "Create supplemental Applied Sections on curved 3D Centerline spans. "
             "Applied Sections creates result-only supplemental sections for horizontal and vertical curves before Build Parametric runs."
         )
         self._supplemental_sections_check.setChecked(True)

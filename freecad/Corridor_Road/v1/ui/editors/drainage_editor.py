@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 def configure_drainage_editor_task_panel_runtime(bindings) -> None:
@@ -90,7 +91,7 @@ class V1DrainageEditorTaskPanel:
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.drainage_obj = find_v1_drainage_model(self.document)
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._load_existing_or_starter()
 
     def getStandardButtons(self):

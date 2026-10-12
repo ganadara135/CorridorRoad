@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 def configure_profile_editor_task_panel_runtime(bindings) -> None:
@@ -419,7 +420,7 @@ class V1ProfileEditorTaskPanel:
         self.preferred_alignment = preferred_alignment
         self._needs_stationing_notice = False
         self._stationing_loaded_rows = 0
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self._refresh_curve_preview()
         if self._needs_stationing_notice:
             self._show_message(
@@ -472,23 +473,23 @@ class V1ProfileEditorTaskPanel:
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
-        data_row = QtWidgets.QGridLayout()
-        data_row.setHorizontalSpacing(8)
-        data_row.setVerticalSpacing(6)
-        data_row.addWidget(QtWidgets.QLabel("Profile data:"), 0, 0)
+        # a box row, so fit_task_panel_width can wrap it when the task panel is narrow
+        data_row = QtWidgets.QHBoxLayout()
+        data_row.setSpacing(8)
+        data_row.addWidget(QtWidgets.QLabel("Profile data:"))
         preset_button = QtWidgets.QPushButton("Preset Data")
         preset_button.clicked.connect(self._apply_preset_data)
-        data_row.addWidget(preset_button, 0, 1)
+        data_row.addWidget(preset_button)
         import_button = QtWidgets.QPushButton("Import CSV")
         import_button.clicked.connect(self._import_profile_csv)
-        data_row.addWidget(import_button, 0, 2)
+        data_row.addWidget(import_button)
         export_button = QtWidgets.QPushButton("Export CSV")
         export_button.clicked.connect(self._export_profile_csv)
-        data_row.addWidget(export_button, 0, 3)
+        data_row.addWidget(export_button)
         interpolate_button = QtWidgets.QPushButton("Auto Interpolate Elevations")
         interpolate_button.clicked.connect(self._auto_interpolate_elevations)
-        data_row.addWidget(interpolate_button, 1, 1, 1, 3)
-        data_row.setColumnStretch(4, 1)
+        data_row.addWidget(interpolate_button)
+        data_row.addStretch(1)
         layout.addLayout(data_row)
 
         self._tabs = QtWidgets.QTabWidget()
@@ -506,23 +507,23 @@ class V1ProfileEditorTaskPanel:
         self._refresh_reference_tabs()
         layout.addWidget(self._build_curve_preview_group())
 
-        button_grid = QtWidgets.QGridLayout()
-        button_grid.setHorizontalSpacing(8)
-        button_grid.setVerticalSpacing(6)
+        # a box row, so fit_task_panel_width can wrap it when the task panel is narrow
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.setSpacing(8)
         show_button = QtWidgets.QPushButton("Show Profile Preview")
         show_button.clicked.connect(self._show_current_profile)
-        button_grid.addWidget(show_button, 0, 0)
+        button_row.addWidget(show_button)
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
-        button_grid.addWidget(apply_button, 0, 1)
+        button_row.addWidget(apply_button)
         open_review_button = QtWidgets.QPushButton("Review Plan/Profile")
         open_review_button.clicked.connect(self._open_review)
-        button_grid.addWidget(open_review_button, 0, 2)
+        button_row.addWidget(open_review_button)
+        button_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
-        button_grid.addWidget(close_button, 0, 4)
-        button_grid.setColumnStretch(3, 1)
-        layout.addLayout(button_grid)
+        button_row.addWidget(close_button)
+        layout.addLayout(button_row)
 
         return widget
 

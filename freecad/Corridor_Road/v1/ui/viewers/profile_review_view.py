@@ -10,6 +10,7 @@ except Exception:  # pragma: no cover - FreeCAD GUI is not available in tests.
     Gui = None
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from ..common import run_legacy_command, set_ui_context
 
 
@@ -18,7 +19,7 @@ class PlanProfileViewerTaskPanel:
 
     def __init__(self, preview: dict[str, object]):
         self.preview = dict(preview or {})
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
 
     def getStandardButtons(self):
         return 0

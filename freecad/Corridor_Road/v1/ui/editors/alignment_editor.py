@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 def configure_alignment_editor_task_panel_runtime(bindings) -> None:
@@ -388,7 +389,7 @@ class V1AlignmentEditorTaskPanel:
     def __init__(self, *, alignment=None, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.alignment = alignment or find_v1_alignment(self.document)
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
 
     def getStandardButtons(self):
         return 0

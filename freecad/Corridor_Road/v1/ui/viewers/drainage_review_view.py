@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 def configure_drainage_review_task_panel_runtime(bindings) -> None:
@@ -61,7 +62,7 @@ class V1DrainageReviewTaskPanel:
         self._pipeline_candidate_rows = []
         self._pipeline_candidate_display_indices = []
         self._region_assignment_rows = []
-        self.form = self._build_ui()
+        self.form = fit_task_panel_width(self._build_ui())
         self.refresh()
 
     def getStandardButtons(self):

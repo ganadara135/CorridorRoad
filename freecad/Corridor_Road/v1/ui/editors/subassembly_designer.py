@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 def configure_sub_assembly_designer_task_panel_runtime(bindings) -> None:
@@ -104,7 +105,7 @@ class V1SubAssemblyDesignerTaskPanel:
         self._locked_definition_index: int | None = None
         self._allow_definition_selection_change = False
         self._loading = False
-        self.form = self._build_form()
+        self.form = fit_task_panel_width(self._build_form())
         self._load_model(self.library_model)
 
     def getStandardButtons(self):  # noqa: N802 - Qt API name
@@ -362,7 +363,8 @@ class V1SubAssemblyDesignerTaskPanel:
         self.detail_summary.setWordWrap(True)
         detail_layout.addWidget(self.detail_summary)
 
-        detail_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        # tables above the preview: side by side they are wider than the task panel
+        detail_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         detail_table_panel = QtWidgets.QWidget()
         detail_table_layout = QtWidgets.QVBoxLayout(detail_table_panel)
         detail_table_layout.setContentsMargins(0, 0, 0, 0)
@@ -407,7 +409,7 @@ class V1SubAssemblyDesignerTaskPanel:
         try:
             detail_splitter.setStretchFactor(0, 3)
             detail_splitter.setStretchFactor(1, 2)
-            detail_splitter.setSizes([620, 420])
+            detail_splitter.setSizes([360, 240])
         except Exception:
             pass
         detail_layout.addWidget(detail_splitter, 1)
