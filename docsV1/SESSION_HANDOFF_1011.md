@@ -132,7 +132,14 @@ Headless tests do not cover these. Procedures are in
   counterclockwise in plan. No consumer depended on the old order (sampling and audits are
   orientation-free; no exporter writes corridor surface triangles yet). Covered by
   `test_corridor_surface_facet_orientation.py` and the downward-facet check of
-  `smoke_v1_workflow.py`. Gate 1,146 passed / 18 skipped, runners PASS.
+  `smoke_v1_workflow.py`. Gate 1,146 passed / 18 skipped, runners PASS. GUI check by the user:
+  the surfaces shade light on top.
+- **Task panel width**: done on 2026-10-12. Every v1 task panel calls
+  `fit_task_panel_width` (`v1/ui/common/panel_width.py`) on its built form, so rows wrap inside
+  FreeCAD's task panel instead of hiding their right-hand buttons. A new panel should do the same:
+  `self.form = fit_task_panel_width(self._build_ui())`. Rows built as `QGridLayout` are not
+  wrapped; use a `QHBoxLayout` for a row of buttons. Gate 1,149 passed / 18 skipped, GUI check by
+  the user.
 - **Cross Section viewer**: done on 2026-10-12. `v1/commands/cmd_view_sections.py` no longer
   reads `project.Corridor` or `project.CutFillCalc`, and `_build_earthwork_hint_rows` lost its
   `cut_fill_calc` argument. Gate 1,142 passed / 18 skipped, runners PASS, GUI check by the user.
