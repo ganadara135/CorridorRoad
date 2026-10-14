@@ -6,6 +6,7 @@ Branch: `ganada_0902`, 5 commits ahead of `main`
 Head: `06fe861` Note the mesh quality check of the v1 workflow smoke in the handoff
 Supersedes: [SESSION_HANDOFF_1009.md](./SESSION_HANDOFF_1009.md), which stays as the record of the
 intersection redesign and the legacy removal up to the release
+Superseded by: [SESSION_HANDOFF_1014.md](./SESSION_HANDOFF_1014.md) for the current state and next steps
 
 ## 1. What this document is
 
