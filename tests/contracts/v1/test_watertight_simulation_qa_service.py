@@ -25,7 +25,7 @@ def test_watertight_simulation_qa_reports_first_slice_ready_state() -> None:
                 ),
                 WatertightSimulationQaSolidInput(
                     output_ref="DrainageNetwork",
-                    target_families=["drainage_pipeline_network_body"],
+                    target_families=["lined_ditch_body"],
                     volumes=[2.0],
                     valid_solid_statuses=[True],
                     shape_valid=True,
@@ -45,13 +45,11 @@ def test_watertight_simulation_qa_reports_first_slice_ready_state() -> None:
     assert output.solid_validity_status == "ok"
     assert output.geometry_contact_status == "ok"
     assert output.terrain_domain_status == "ok"
-    assert output.port_connection_status == "not_checked"
     assert output.contact_issue_count == 0
     assert output.terrain_issue_count == 0
-    assert output.port_issue_count == 0
     assert output.total_volume == 12.0
     assert output.missing_contexts == ["structure"]
-    assert [row.family for row in output.family_rows] == ["drainage_pipeline_network_body", "road_body_envelope"]
+    assert [row.family for row in output.family_rows] == ["lined_ditch_body", "road_body_envelope"]
 
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
@@ -130,7 +128,7 @@ def test_watertight_simulation_qa_warns_solid_output_missing_source_refs() -> No
                 ),
                 WatertightSimulationQaSolidInput(
                     output_ref="DrainageNetwork",
-                    target_families=["drainage_pipeline_network_body"],
+                    target_families=["lined_ditch_body"],
                     volumes=[2.0],
                     valid_solid_statuses=[True],
                     shape_valid=True,
@@ -164,7 +162,7 @@ def test_watertight_simulation_qa_blocks_disconnected_drainage_body() -> None:
                 ),
                 WatertightSimulationQaSolidInput(
                     output_ref="DrainageNetwork",
-                    target_families=["drainage_pipeline_network_body"],
+                    target_families=["lined_ditch_body"],
                     volumes=[2.0],
                     valid_solid_statuses=[True],
                     shape_valid=True,
@@ -383,7 +381,7 @@ def test_watertight_simulation_qa_blocks_road_outside_terrain_domain() -> None:
                 ),
                 WatertightSimulationQaSolidInput(
                     output_ref="DrainageNetwork",
-                    target_families=["drainage_pipeline_network_body"],
+                    target_families=["lined_ditch_body"],
                     volumes=[2.0],
                     valid_solid_statuses=[True],
                     shape_valid=True,
@@ -399,80 +397,3 @@ def test_watertight_simulation_qa_blocks_road_outside_terrain_domain() -> None:
     assert "solid_outside_terrain_domain" in {row.kind for row in output.diagnostic_rows}
 
 
-def test_watertight_simulation_qa_reports_port_connection_ready_state() -> None:
-    output = WatertightSimulationQaService().build(
-        WatertightSimulationQaBuildRequest(
-            project_id="proj-1",
-            terrain_ready=True,
-            solid_inputs=[
-                WatertightSimulationQaSolidInput(
-                    output_ref="RoadBody",
-                    target_families=["road_body_envelope"],
-                    volumes=[10.0],
-                    valid_solid_statuses=[True],
-                    shape_valid=True,
-                    bound_box=(0.0, 10.0, 0.0, 6.0, 0.0, 2.0),
-                ),
-                WatertightSimulationQaSolidInput(
-                    output_ref="StructureBody",
-                    target_families=["structure_body"],
-                    volumes=[1.0],
-                    valid_solid_statuses=[True],
-                    shape_valid=True,
-                    bound_box=(5.0, 6.0, 2.0, 3.0, 0.5, 1.0),
-                    structure_refs=["structure:inlet-01"],
-                ),
-                WatertightSimulationQaSolidInput(
-                    output_ref="DrainageNetwork",
-                    target_families=["drainage_pipeline_network_body"],
-                    volumes=[2.0],
-                    valid_solid_statuses=[True],
-                    shape_valid=True,
-                    bound_box=(5.0, 6.0, 2.0, 3.0, 0.5, 1.0),
-                    structure_refs=["structure:inlet-01"],
-                    source_refs=["connection:inlet-01:pipe-out"],
-                ),
-            ],
-        )
-    )
-
-    assert output.simulation_ready is True
-    assert output.structure_status == "ready"
-    assert output.port_connection_status == "ok"
-    assert output.port_issue_count == 0
-
-
-def test_watertight_simulation_qa_blocks_missing_port_connection_context() -> None:
-    output = WatertightSimulationQaService().build(
-        WatertightSimulationQaBuildRequest(
-            project_id="proj-1",
-            terrain_ready=True,
-            solid_inputs=[
-                WatertightSimulationQaSolidInput(
-                    output_ref="RoadBody",
-                    target_families=["road_body_envelope"],
-                    volumes=[10.0],
-                    valid_solid_statuses=[True],
-                    shape_valid=True,
-                    bound_box=(0.0, 10.0, 0.0, 6.0, 0.0, 2.0),
-                ),
-                WatertightSimulationQaSolidInput(
-                    output_ref="DrainageNetwork",
-                    target_families=["drainage_pipeline_network_body"],
-                    volumes=[2.0],
-                    valid_solid_statuses=[True],
-                    shape_valid=True,
-                    bound_box=(5.0, 6.0, 2.0, 3.0, 0.5, 1.0),
-                    structure_refs=["structure:inlet-01"],
-                ),
-            ],
-        )
-    )
-
-    assert output.simulation_ready is False
-    assert output.port_connection_status == "check"
-    assert output.port_issue_count == 2
-    assert {
-        "drainage_port_connection_points_missing",
-        "drainage_structure_body_missing_for_port",
-    }.issubset({row.kind for row in output.diagnostic_rows})

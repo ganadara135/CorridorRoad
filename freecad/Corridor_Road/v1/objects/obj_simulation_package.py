@@ -65,19 +65,6 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "TerrainStatus", "Simulation Package", "terrain readiness status")
     _add_property(obj, "App::PropertyString", "TerrainRef", "Simulation Package", "terrain source/output ref")
     _add_property(obj, "App::PropertyString", "TerrainBoundBox", "Simulation Package", "terrain bound box")
-    _add_property(obj, "App::PropertyString", "DrainageReadinessStatus", "Simulation Package", "drainage readiness status")
-    _add_property(obj, "App::PropertyString", "DrainageSourceStatus", "Simulation Package", "drainage source status")
-    _add_property(obj, "App::PropertyInteger", "DrainageFlowRouteCount", "Simulation Package", "drainage flow route count")
-    _add_property(obj, "App::PropertyInteger", "DrainageCaptureOnlyRouteCount", "Simulation Package", "drainage capture-only route count")
-    _add_property(obj, "App::PropertyInteger", "DrainagePipeCandidateCount", "Simulation Package", "drainage pipe candidate count")
-    _add_property(obj, "App::PropertyInteger", "DrainageUnresolvedPortRouteCount", "Simulation Package", "drainage unresolved port route count")
-    _add_property(obj, "App::PropertyInteger", "DrainageMissingElementRouteCount", "Simulation Package", "drainage missing element route count")
-    _add_property(obj, "App::PropertyInteger", "DrainageLinedDitchTargetCount", "Simulation Package", "drainage lined ditch target count")
-    _add_property(obj, "App::PropertyInteger", "DrainagePipeSegmentTargetCount", "Simulation Package", "drainage pipe segment target count")
-    _add_property(obj, "App::PropertyInteger", "DrainagePipelineNetworkTargetCount", "Simulation Package", "drainage pipeline network target count")
-    _add_property(obj, "App::PropertyInteger", "DrainageStructureBodyTargetCount", "Simulation Package", "drainage structure body target count")
-    _add_property(obj, "App::PropertyInteger", "DrainageBuiltOutputCount", "Simulation Package", "built drainage solid output count")
-    _add_property(obj, "App::PropertyString", "DrainageNetworkFuseStatus", "Simulation Package", "drainage network fuse status")
     _add_property(obj, "App::PropertyString", "IntersectionTrimStatus", "Simulation Package", "intersection trim readiness status")
     _add_property(obj, "App::PropertyString", "IntersectionTrimResultRef", "Simulation Package", "intersection trim-boundary result ref")
     _add_property(obj, "App::PropertyInteger", "IntersectionTrimBoundaryPairCount", "Simulation Package", "intersection trim boundary-pair count")
@@ -127,7 +114,6 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "SolidTargetFamilies", "Solids", "solid target families")
     _add_property(obj, "App::PropertyStringList", "SolidSubassemblyRefs", "Solids", "solid subassembly refs")
     _add_property(obj, "App::PropertyStringList", "SolidStructureRefs", "Solids", "solid structure refs")
-    _add_property(obj, "App::PropertyStringList", "SolidDrainageRefs", "Solids", "solid drainage refs")
     _add_property(obj, "App::PropertyStringList", "SolidFlowRouteRefs", "Solids", "solid flow route refs")
     _add_property(obj, "App::PropertyStringList", "SolidMaterialRefs", "Solids", "solid material refs")
     _add_property(obj, "App::PropertyStringList", "SolidSourceRefs", "Solids", "solid source refs")
@@ -207,19 +193,6 @@ def update_v1_simulation_package_output_object(
     obj.TerrainStatus = str(getattr(simulation_package_output, "terrain_status", "") or "missing")
     obj.TerrainRef = str(getattr(simulation_package_output, "terrain_ref", "") or "")
     obj.TerrainBoundBox = _bound_box_text(getattr(simulation_package_output, "terrain_bound_box", None))
-    obj.DrainageReadinessStatus = str(getattr(simulation_package_output, "drainage_readiness_status", "") or "missing")
-    obj.DrainageSourceStatus = str(getattr(simulation_package_output, "drainage_source_status", "") or "missing")
-    obj.DrainageFlowRouteCount = int(getattr(simulation_package_output, "drainage_flow_route_count", 0) or 0)
-    obj.DrainageCaptureOnlyRouteCount = int(getattr(simulation_package_output, "drainage_capture_only_route_count", 0) or 0)
-    obj.DrainagePipeCandidateCount = int(getattr(simulation_package_output, "drainage_pipe_candidate_count", 0) or 0)
-    obj.DrainageUnresolvedPortRouteCount = int(getattr(simulation_package_output, "drainage_unresolved_port_route_count", 0) or 0)
-    obj.DrainageMissingElementRouteCount = int(getattr(simulation_package_output, "drainage_missing_element_route_count", 0) or 0)
-    obj.DrainageLinedDitchTargetCount = int(getattr(simulation_package_output, "drainage_lined_ditch_target_count", 0) or 0)
-    obj.DrainagePipeSegmentTargetCount = int(getattr(simulation_package_output, "drainage_pipe_segment_target_count", 0) or 0)
-    obj.DrainagePipelineNetworkTargetCount = int(getattr(simulation_package_output, "drainage_pipeline_network_target_count", 0) or 0)
-    obj.DrainageStructureBodyTargetCount = int(getattr(simulation_package_output, "drainage_structure_body_target_count", 0) or 0)
-    obj.DrainageBuiltOutputCount = int(getattr(simulation_package_output, "drainage_built_output_count", 0) or 0)
-    obj.DrainageNetworkFuseStatus = str(getattr(simulation_package_output, "drainage_network_fuse_status", "") or "not_available")
     obj.IntersectionTrimStatus = str(getattr(simulation_package_output, "intersection_trim_status", "") or "not_available")
     obj.IntersectionTrimResultRef = str(getattr(simulation_package_output, "intersection_trim_result_ref", "") or "")
     obj.IntersectionTrimBoundaryPairCount = int(getattr(simulation_package_output, "intersection_trim_boundary_pair_count", 0) or 0)
@@ -278,7 +251,6 @@ def update_v1_simulation_package_output_object(
     obj.SolidTargetFamilies = [_join_refs(getattr(row, "target_families", []) or []) for row in rows]
     obj.SolidSubassemblyRefs = [_join_refs(getattr(row, "subassembly_refs", []) or []) for row in rows]
     obj.SolidStructureRefs = [_join_refs(getattr(row, "structure_refs", []) or []) for row in rows]
-    obj.SolidDrainageRefs = [_join_refs(getattr(row, "drainage_refs", []) or []) for row in rows]
     obj.SolidFlowRouteRefs = [_join_refs(getattr(row, "flow_route_refs", []) or []) for row in rows]
     obj.SolidMaterialRefs = [_join_refs(getattr(row, "material_refs", []) or []) for row in rows]
     obj.SolidSourceRefs = [_join_refs(getattr(row, "source_refs", []) or []) for row in rows]
@@ -306,7 +278,6 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
             target_families=_split_refs(_list_value(getattr(obj, "SolidTargetFamilies", []), index, "")),
             subassembly_refs=_split_refs(_list_value(getattr(obj, "SolidSubassemblyRefs", []), index, "")),
             structure_refs=_split_refs(_list_value(getattr(obj, "SolidStructureRefs", []), index, "")),
-            drainage_refs=_split_refs(_list_value(getattr(obj, "SolidDrainageRefs", []), index, "")),
             flow_route_refs=_split_refs(_list_value(getattr(obj, "SolidFlowRouteRefs", []), index, "")),
             material_refs=_split_refs(_list_value(getattr(obj, "SolidMaterialRefs", []), index, "")),
             source_refs=_split_refs(_list_value(getattr(obj, "SolidSourceRefs", []), index, "")),
@@ -328,19 +299,6 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
         terrain_status=str(getattr(obj, "TerrainStatus", "") or "missing"),
         terrain_ref=str(getattr(obj, "TerrainRef", "") or ""),
         terrain_bound_box=_bound_box_tuple(str(getattr(obj, "TerrainBoundBox", "") or "")),
-        drainage_readiness_status=str(getattr(obj, "DrainageReadinessStatus", "") or "missing"),
-        drainage_source_status=str(getattr(obj, "DrainageSourceStatus", "") or "missing"),
-        drainage_flow_route_count=int(getattr(obj, "DrainageFlowRouteCount", 0) or 0),
-        drainage_capture_only_route_count=int(getattr(obj, "DrainageCaptureOnlyRouteCount", 0) or 0),
-        drainage_pipe_candidate_count=int(getattr(obj, "DrainagePipeCandidateCount", 0) or 0),
-        drainage_unresolved_port_route_count=int(getattr(obj, "DrainageUnresolvedPortRouteCount", 0) or 0),
-        drainage_missing_element_route_count=int(getattr(obj, "DrainageMissingElementRouteCount", 0) or 0),
-        drainage_lined_ditch_target_count=int(getattr(obj, "DrainageLinedDitchTargetCount", 0) or 0),
-        drainage_pipe_segment_target_count=int(getattr(obj, "DrainagePipeSegmentTargetCount", 0) or 0),
-        drainage_pipeline_network_target_count=int(getattr(obj, "DrainagePipelineNetworkTargetCount", 0) or 0),
-        drainage_structure_body_target_count=int(getattr(obj, "DrainageStructureBodyTargetCount", 0) or 0),
-        drainage_built_output_count=int(getattr(obj, "DrainageBuiltOutputCount", 0) or 0),
-        drainage_network_fuse_status=str(getattr(obj, "DrainageNetworkFuseStatus", "") or "not_available"),
         intersection_trim_status=str(getattr(obj, "IntersectionTrimStatus", "") or "not_available"),
         intersection_trim_result_ref=str(getattr(obj, "IntersectionTrimResultRef", "") or ""),
         intersection_trim_boundary_pair_count=int(getattr(obj, "IntersectionTrimBoundaryPairCount", 0) or 0),

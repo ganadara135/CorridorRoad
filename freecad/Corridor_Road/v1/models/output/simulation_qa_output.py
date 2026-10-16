@@ -43,7 +43,6 @@ class SimulationQaOutput(OutputModelBase):
     solid_validity_status: str = "check"
     geometry_contact_status: str = "not_checked"
     terrain_domain_status: str = "not_checked"
-    port_connection_status: str = "not_checked"
     intersection_trim_status: str = "not_available"
     intersection_trim_fuse_status: str = "not_available"
     intersection_trim_handoff_status: str = "not_available"
@@ -56,7 +55,6 @@ class SimulationQaOutput(OutputModelBase):
     zero_volume_output_count: int = 0
     contact_issue_count: int = 0
     terrain_issue_count: int = 0
-    port_issue_count: int = 0
     intersection_trim_ready_pair_count: int = 0
     intersection_trim_blocked_pair_count: int = 0
     intersection_trim_max_gap: float = 0.0

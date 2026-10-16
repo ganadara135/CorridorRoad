@@ -35,7 +35,6 @@ from freecad.Corridor_Road.v1.models.result.applied_section_solid_profile import
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
 from freecad.Corridor_Road.v1.models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow
 from freecad.Corridor_Road.v1.models.output.simulation_qa_output import SimulationQaOutput
-from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionArmPolicyRow,
     IntersectionControlArea,
@@ -56,7 +55,6 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_corridor import create_or_update_v1_corridor_model_object
-from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_intersection import create_or_update_v1_intersection_model_object
 from freecad.Corridor_Road.v1.objects.obj_intersection_trim_boundary import to_intersection_trim_boundary_result
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
@@ -86,7 +84,6 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     _create_or_update_intersection_trim_shell_reconstruction_output_object,
     _create_or_update_intersection_trim_solid_reconstruction_output_object,
     _create_or_update_intersection_trim_preview_object,
-    drainage_watertight_handoff_summary,
     _profile_set_on_centerline3d,
     _simulation_package_status_line,
     discover_watertight_solid_targets,
@@ -1632,7 +1629,6 @@ def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
         assert qa_output is not None
         assert qa_output.road_body_status == "ready"
         assert qa_output.terrain_domain_status == "not_checked"
-        assert qa_output.port_connection_status == "not_checked"
         assert qa_output.output_count == 1
         assert panel._qa_family_table.rowCount() == 1
         assert panel._qa_family_table.item(0, 0).text() == "road_body_envelope"
@@ -2199,36 +2195,6 @@ def test_watertight_solids_lined_ditch_target_carries_the_ditch_run_of_its_point
         assert state.target_row.drainage_ref == "ditch-run:right"
         assert "ditch-run:right" in state.target_row.source_refs
         assert "ditch-run:right" in panel._target_table.item(_target_table_row(panel, state.target_id), 4).text()
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_watertight_solids_status_summarizes_drainage_solid_handoff_readiness() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsDrainageHandoffSummaryTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True, ditch_run_ref="ditch-run:right")
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                ditch_run_rows=[DitchRun("ditch-run:right", "right", "ditch:right", 0.0, 20.0)],
-            ),
-        )
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        summary = drainage_watertight_handoff_summary(doc, target_model=panel._target_model)
-        status_text = panel._status.toPlainText()
-
-        # Drainage reaches Watertight Solids only as lined ditch bodies; pipes wait for the Structure rebuild
-        assert summary.readiness_status == "ready"
-        assert summary.lined_ditch_target_count == 1
-        assert (summary.flow_route_count, summary.pipe_candidate_count, summary.pipeline_network_target_count) == (0, 0, 0)
-        assert "Drainage Solid QA:" in status_text
-        assert "status=ready" in status_text
-        assert "lined_ditch=1" in status_text
     finally:
         App.closeDocument(doc.Name)
 

@@ -23,7 +23,6 @@ from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from ..objects.obj_applied_section import find_v1_applied_section_set
 from ..objects.obj_applied_section import to_applied_section_set
 from ..objects.obj_corridor import find_v1_corridor_model, to_corridor_model
-from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
 from ..objects.obj_intersection_trim_boundary import (
     create_or_update_v1_intersection_trim_boundary_result_object,
@@ -119,32 +118,6 @@ class WatertightSolidTargetPanelState:
     part_result: object | None = None
     watertight_output: object | None = None
     output_object: object | None = None
-
-
-@dataclass(frozen=True)
-class DrainageWatertightHandoffSummary:
-    """Drainage-specific readiness summary for Watertight Solid handoff."""
-
-    source_status: str = "missing"
-    flow_route_count: int = 0
-    capture_only_route_count: int = 0
-    pipe_candidate_count: int = 0
-    unresolved_port_route_count: int = 0
-    missing_element_route_count: int = 0
-    lined_ditch_target_count: int = 0
-    pipe_segment_target_count: int = 0
-    pipeline_network_target_count: int = 0
-    structure_body_target_count: int = 0
-    built_drainage_output_count: int = 0
-    network_fuse_status: str = "not_available"
-
-    @property
-    def readiness_status(self) -> str:
-        if self.source_status != "ready":
-            return "missing"
-        if self.lined_ditch_target_count <= 0:
-            return "check"
-        return "ready"
 
 
 @dataclass(frozen=True)
@@ -619,10 +592,6 @@ class V1WatertightSolidsTaskPanel:
         if qa_lines:
             lines.append("")
             lines.extend(qa_lines)
-        drainage_qa_lines = _drainage_watertight_handoff_lines(self.document, self._target_model)
-        if drainage_qa_lines:
-            lines.append("")
-            lines.extend(drainage_qa_lines)
         intersection_qa_lines = _intersection_watertight_handoff_lines(self.document, self._target_model)
         if intersection_qa_lines:
             lines.append("")
@@ -1438,11 +1407,6 @@ def _target_display_label(row: object) -> str:
     if family == "lined_ditch_body":
         ref = drainage_ref or subassembly_ref
         return f"Drainage Lined Ditch Solid - {ref}" if ref else "Drainage Lined Ditch Solid"
-    if family == "drainage_pipeline_body":
-        flow_route_ref = str(getattr(row, "flow_route_ref", "") or "").strip()
-        return f"Drainage Pipe Segment Solid - {flow_route_ref or drainage_ref}" if flow_route_ref or drainage_ref else "Drainage Pipe Segment Solid"
-    if family == "drainage_pipeline_network_body":
-        return f"Drainage Pipe Network Solid - {drainage_ref}" if drainage_ref else "Drainage Pipe Network Solid"
     if family == "intersection_patch_body":
         source_refs = list(getattr(row, "source_refs", []) or [])
         intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
@@ -1476,10 +1440,6 @@ def _target_family_label(row: object) -> str:
         return "Subassembly"
     if family == "lined_ditch_body":
         return "Drainage: Lined Ditch"
-    if family == "drainage_pipeline_body":
-        return "Drainage: Pipe Segment"
-    if family == "drainage_pipeline_network_body":
-        return "Drainage: Pipe Network"
     if family == "intersection_patch_body":
         return "Intersection Patch (Transitional)"
     if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
@@ -3076,18 +3036,6 @@ def _target_diagnostic_text(row: object, target_model: object, state: Watertight
     return str(getattr(row, "notes", "") or "")
 
 
-def _drainage_watertight_handoff_lines(document, target_model=None) -> list[str]:
-    summary = drainage_watertight_handoff_summary(document, target_model=target_model)
-    return [
-        "Drainage Solid QA:",
-        f"status={summary.readiness_status}; source={summary.source_status}",
-        (
-            f"targets: lined_ditch={summary.lined_ditch_target_count}; structure_bodies={summary.structure_body_target_count}; "
-            f"built_drainage_outputs={summary.built_drainage_output_count}"
-        ),
-    ]
-
-
 def _intersection_watertight_handoff_lines(document, target_model=None) -> list[str]:
     summary = intersection_watertight_handoff_summary(document, target_model=target_model)
     if summary.source_status == "missing" and summary.target_count <= 0:
@@ -3281,39 +3229,8 @@ def _join_notes(existing: str, addition: str) -> str:
     return f"{existing_text} {addition_text}"
 
 
-def drainage_watertight_handoff_summary(document=None, *, target_model=None) -> DrainageWatertightHandoffSummary:
-    """Return Drainage readiness focused on Watertight Solid simulation handoff.
-
-    Drainage reaches Watertight Solids only as lined ditch bodies; pipe bodies wait for the
-    Structure rebuild (docsV1/V1_DRAINAGE_REWORK_PLAN.md), so the route and pipe counts stay 0.
-    """
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    if doc is None:
-        return DrainageWatertightHandoffSummary(source_status="missing")
-    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
-    source_status = "ready" if drainage_model is not None and drainage_model.ditch_run_rows else "missing"
-    active_target_model = target_model or discover_watertight_solid_targets(doc)
-    target_rows = list(getattr(active_target_model, "target_rows", []) or [])
-    return DrainageWatertightHandoffSummary(
-        source_status=source_status,
-        lined_ditch_target_count=_solid_target_family_count(target_rows, "lined_ditch_body"),
-        structure_body_target_count=_solid_target_family_count(target_rows, "structure_body"),
-        built_drainage_output_count=_built_drainage_output_count(doc),
-    )
-
-
 def _solid_target_family_count(rows: list[object], family: str) -> int:
     return sum(1 for row in rows if str(getattr(row, "target_family", "") or "") == family)
-
-
-def _built_drainage_output_count(document) -> int:
-    count = 0
-    for obj in _watertight_output_objects(document):
-        families = {str(value or "") for value in list(getattr(obj, "TargetFamilies", []) or [])}
-        if "lined_ditch_body" in families:
-            count += 1
-    return count
 
 
 def _simulation_ready_qa_lines(document) -> list[str]:
@@ -3347,8 +3264,6 @@ def _simulation_ready_qa_lines(document) -> list[str]:
             f"contact_issues={int(getattr(qa, 'contact_issue_count', 0) or 0)}; "
             f"terrain_domain={str(getattr(qa, 'terrain_domain_status', '') or 'not_checked')}; "
             f"terrain_issues={int(getattr(qa, 'terrain_issue_count', 0) or 0)}; "
-            f"port_connection={str(getattr(qa, 'port_connection_status', '') or 'not_checked')}; "
-            f"port_issues={int(getattr(qa, 'port_issue_count', 0) or 0)}; "
             f"intersection_trim={str(getattr(qa, 'intersection_trim_status', '') or 'not_available')}; "
             f"trim_handoff={str(getattr(qa, 'intersection_trim_handoff_status', '') or 'not_available')}; "
             f"trim_ready_pairs={int(getattr(qa, 'intersection_trim_ready_pair_count', 0) or 0)}; "
@@ -4552,33 +4467,12 @@ def _build_simulation_package_output(document, *, qa_output=None):
             solid_inputs=_simulation_qa_solid_inputs(document),
             terrain_ref=_terrain_context_ref(document),
             terrain_bound_box=_terrain_context_bound_box_tuple(document),
-            drainage_readiness=_drainage_watertight_handoff_dict(
-                drainage_watertight_handoff_summary(document, target_model=discover_watertight_solid_targets(document))
-            ),
             intersection_handoff=_intersection_watertight_handoff_dict(
                 intersection_watertight_handoff_summary(document, target_model=discover_watertight_solid_targets(document))
             ),
             intersection_trim=_intersection_trim_handoff_dict(document),
         )
     )
-
-
-def _drainage_watertight_handoff_dict(summary: DrainageWatertightHandoffSummary) -> dict[str, object]:
-    return {
-        "readiness_status": summary.readiness_status,
-        "source_status": summary.source_status,
-        "flow_route_count": summary.flow_route_count,
-        "capture_only_route_count": summary.capture_only_route_count,
-        "pipe_candidate_count": summary.pipe_candidate_count,
-        "unresolved_port_route_count": summary.unresolved_port_route_count,
-        "missing_element_route_count": summary.missing_element_route_count,
-        "lined_ditch_target_count": summary.lined_ditch_target_count,
-        "pipe_segment_target_count": summary.pipe_segment_target_count,
-        "pipeline_network_target_count": summary.pipeline_network_target_count,
-        "structure_body_target_count": summary.structure_body_target_count,
-        "built_drainage_output_count": summary.built_drainage_output_count,
-        "network_fuse_status": summary.network_fuse_status,
-    }
 
 
 def _intersection_watertight_handoff_dict(summary: IntersectionWatertightHandoffSummary) -> dict[str, object]:
@@ -5107,10 +5001,6 @@ def _build_order_rank(row: object) -> int:
     family = str(getattr(row, "target_family", "") or "").strip().lower()
     if family == "structure_body":
         return 0
-    if family == "drainage_pipeline_network_body":
-        return 3
-    if family == "drainage_pipeline_body":
-        return 2
     return 1
 
 

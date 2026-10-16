@@ -72,6 +72,19 @@ class DrainageCheck:
 
 
 @dataclass(frozen=True)
+class DrainageLinkRow:
+    """A Link measured between its points' places on the flowlines; `grade_percent` falls negative."""
+
+    link_ref: str
+    from_ref: str
+    to_ref: str
+    length_m: float
+    from_z: float
+    to_z: float
+    grade_percent: float
+
+
+@dataclass(frozen=True)
 class DrainageSuggestion:
     """A point the evaluation proposes; the Drainage panel adds it to the source on request."""
 
@@ -92,4 +105,5 @@ class DrainageResult(ResultModelBase):
     flowline_rows: list[DitchRunFlowline] = field(default_factory=list)
     check_rows: list[DrainageCheck] = field(default_factory=list)
     suggestion_rows: list[DrainageSuggestion] = field(default_factory=list)
+    link_rows: list[DrainageLinkRow] = field(default_factory=list)
     status: str = "empty"

@@ -5,12 +5,15 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
     SubassemblySectionTemplate,
     TemplateSubassembly,
 )
-from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainagePoint, DrainagePolicy
+from freecad.Corridor_Road.v1.models.result.drainage_result import DitchRunFlowline, FlowlineStation
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageLink, DrainagePoint, DrainagePolicy
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.services.editing.drainage_editing_service import (
     RoadStationSpan,
     ditch_choices,
     ditch_run_diagnostics,
+    downhill_links,
+    link_diagnostics,
     next_point_id,
     point_diagnostics,
     policy_diagnostics,
@@ -162,3 +165,42 @@ def test_point_checks_name_the_problem() -> None:
         "outfall:1: Ditch Run 'run:gone' does not exist.",
     ]
     assert next_point_id("inlet", {"inlet:1", "inlet:2"}) == "inlet:3"
+
+
+def test_link_checks_name_the_problem() -> None:
+    points = [DrainagePoint("inlet:1", "inlet", 40.0, ditch_run_ref="run:left"), DrainagePoint("outfall:1", "outfall", 100.0, ditch_run_ref="run:left")]
+    links = [
+        DrainageLink("link:1", "inlet:1", "outfall:1"),
+        DrainageLink("link:1", "inlet:1", "outfall:9"),
+        DrainageLink("link:3", "outfall:1", "outfall:1"),
+        DrainageLink("link:4", "inlet:1", "outfall:1"),
+    ]
+
+    assert link_diagnostics(links, points) == [
+        "link:1: the id is used twice.",
+        "link:1: To point 'outfall:9' does not exist.",
+        "link:3: links outfall:1 to itself.",
+        "link:4: inlet:1 is already linked to outfall:1.",
+    ]
+
+
+def test_downhill_links_join_each_unlinked_inlet_to_the_nearest_lower_point() -> None:
+    # a run falling 1 % from STA 0 to STA 200
+    stations = [FlowlineStation(float(s), float(s), 0.0, 10.0 - s / 100.0) for s in range(0, 201, 20)]
+    flowline = DitchRunFlowline("run:left", "left", "ditch:left", station_rows=stations)
+    points = [
+        DrainagePoint("inlet:1", "inlet", 40.0, ditch_run_ref="run:left"),
+        DrainagePoint("inlet:2", "inlet", 100.0, ditch_run_ref="run:left"),
+        DrainagePoint("inlet:3", "inlet", 160.0, ditch_run_ref="run:left"),
+        DrainagePoint("outfall:1", "outfall", 200.0, ditch_run_ref="run:left"),
+        # on another run: never a target
+        DrainagePoint("outfall:other", "outfall", 120.0, ditch_run_ref="run:right"),
+    ]
+    existing = [DrainageLink("link:1", "inlet:3", "outfall:1")]
+
+    added = downhill_links(points, existing, [flowline])
+
+    assert [(link.link_id, link.from_ref, link.to_ref) for link in added] == [
+        ("link:2", "inlet:1", "inlet:2"),
+        ("link:3", "inlet:2", "inlet:3"),
+    ]

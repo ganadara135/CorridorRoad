@@ -1,10 +1,16 @@
-"""Ditch Run flowlines checked against the Drainage Policy (DR-2), with its points (DR-3)."""
+"""Ditch Run flowlines checked against the Drainage Policy (DR-2), with its points (DR-3) and links (DR-4)."""
 
 import pytest
 
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet
-from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel, DrainagePoint, DrainagePolicy
+from freecad.Corridor_Road.v1.models.source.drainage_model import (
+    DitchRun,
+    DrainageLink,
+    DrainageModel,
+    DrainagePoint,
+    DrainagePolicy,
+)
 from freecad.Corridor_Road.v1.services.evaluation.drainage_evaluation_service import DrainageEvaluationService
 
 RUN = "ditch-run:left"
@@ -37,6 +43,7 @@ def _model(
     spacing: float = 60.0,
     rule: str = "require_inlet",
     points: list[DrainagePoint] | None = None,
+    links: list[DrainageLink] | None = None,
 ) -> DrainageModel:
     return DrainageModel(
         schema_version=1,
@@ -44,6 +51,7 @@ def _model(
         policy=DrainagePolicy(min_grade_percent=min_grade, max_inlet_spacing_m=spacing, low_point_rule=rule),
         ditch_run_rows=list(runs) or [DitchRun(RUN, "left", "ditch:left", 0.0, 400.0, alignment_ref="alignment:main")],
         point_rows=list(points or []),
+        link_rows=list(links or []),
     )
 
 
@@ -123,8 +131,9 @@ def test_applying_the_spacing_suggestions_clears_the_check() -> None:
 
     result = DrainageEvaluationService().evaluate(_model(points=points), _sections(falling))
 
-    assert result.status == "ok"
     assert result.suggestion_rows == []
+    # the inlets still have to be linked to where they discharge
+    assert {row.kind for row in result.check_rows if row.severity != "info"} == {"drains_nowhere"}
 
 
 def test_a_point_outside_its_run_collects_nothing_and_says_so() -> None:
@@ -193,3 +202,90 @@ def test_a_switched_off_run_is_not_evaluated() -> None:
     result = DrainageEvaluationService().evaluate(_model(off), _sections(SAG))
 
     assert (result.flowline_rows, result.check_rows, result.status) == ([], [], "ok")
+
+
+# falls 1 % over 300 m to an outfall at its end, with inlets every 60 m
+FALLING = [(float(station), 10.0 - station / 100.0) for station in range(0, 301, 20)]
+CHAIN = [DrainagePoint(f"inlet:{n}", "inlet", 60.0 * n, ditch_run_ref=RUN) for n in range(1, 5)] + [
+    DrainagePoint("outfall:1", "outfall", 300.0, ditch_run_ref=RUN)
+]
+
+
+def _chain_links() -> list[DrainageLink]:
+    names = [point.point_id for point in CHAIN]
+    return [DrainageLink(f"link:{n}", first, second) for n, (first, second) in enumerate(zip(names, names[1:]), 1)]
+
+
+def test_a_linked_chain_down_to_the_outfall_is_clean_and_measured() -> None:
+    result = DrainageEvaluationService().evaluate(_model(points=CHAIN, links=_chain_links()), _sections(FALLING))
+
+    assert result.status == "ok", [row.message for row in result.check_rows]
+    assert [(row.link_ref, round(row.length_m, 6), round(row.grade_percent, 6)) for row in result.link_rows] == [
+        ("link:1", 60.0, -1.0),
+        ("link:2", 60.0, -1.0),
+        ("link:3", 60.0, -1.0),
+        ("link:4", 60.0, -1.0),
+    ]
+
+
+def test_an_uphill_link_and_a_flat_link_are_warnings() -> None:
+    links = _chain_links() + [DrainageLink("link:back", "inlet:2", "inlet:1")]
+
+    result = DrainageEvaluationService().evaluate(_model(points=CHAIN, links=links, min_grade=2.0), _sections(FALLING))
+
+    uphill = [row for row in result.check_rows if row.kind == "link_uphill"]
+    assert [row.check_id for row in uphill] == ["link_uphill:link:back"]
+    assert "0.60 m higher" in uphill[0].message
+    # 1 % falls, but under a 2 % minimum
+    assert len([row for row in result.check_rows if row.kind == "link_flat"]) == 4
+    assert "drains_twice:inlet:2" in {row.check_id for row in result.check_rows}
+
+
+def test_a_loop_is_an_error_reported_once() -> None:
+    links = [DrainageLink("link:a", "inlet:1", "inlet:2"), DrainageLink("link:b", "inlet:2", "inlet:1")]
+
+    result = DrainageEvaluationService().evaluate(_model(points=CHAIN, links=links), _sections(FALLING))
+
+    loops = [row for row in result.check_rows if row.kind == "link_loop"]
+    assert [row.message for row in loops] == ["The links inlet:1 -> inlet:2 -> inlet:1 form a loop; water has no way out."]
+    assert result.status == "error"
+
+
+def test_an_outfall_on_a_high_point_gets_no_water() -> None:
+    hump = [(0.0, 9.0), (50.0, 9.5), (100.0, 9.0)]
+    points = [
+        DrainagePoint("outfall:top", "outfall", 50.0, ditch_run_ref=RUN),
+        DrainagePoint("outfall:end", "outfall", 100.0, ditch_run_ref=RUN),
+    ]
+
+    result = DrainageEvaluationService().evaluate(_model(points=points, spacing=1000.0), _sections(hump))
+
+    assert [row.check_id for row in result.check_rows if row.kind == "reverse_flow"] == ["reverse_flow:outfall:top"]
+
+
+def test_a_link_into_a_culvert_is_measured_at_the_culvert_on_the_flowline() -> None:
+    points = [
+        DrainagePoint("inlet:1", "inlet", 60.0, ditch_run_ref=RUN),
+        DrainagePoint("culvert:1", "culvert", 160.0, alignment_ref="alignment:main"),
+    ]
+
+    result = DrainageEvaluationService().evaluate(
+        _model(points=points, links=[DrainageLink("link:1", "inlet:1", "culvert:1")]), _sections(FALLING)
+    )
+
+    (row,) = result.link_rows
+    assert (round(row.length_m, 6), round(row.from_z, 6), round(row.to_z, 6)) == (100.0, 9.4, 8.4)
+
+
+def test_a_link_to_a_point_off_every_flowline_cannot_be_measured() -> None:
+    points = [
+        DrainagePoint("inlet:1", "inlet", 60.0, ditch_run_ref=RUN),
+        DrainagePoint("outfall:far", "outfall", 900.0, ditch_run_ref=RUN),
+    ]
+
+    result = DrainageEvaluationService().evaluate(
+        _model(points=points, links=[DrainageLink("link:1", "inlet:1", "outfall:far")]), _sections(FALLING)
+    )
+
+    assert result.link_rows == []
+    assert "outfall:far lies on no flowline" in next(row.message for row in result.check_rows if row.kind == "link_unplaced")

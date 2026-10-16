@@ -24,6 +24,8 @@ from ..services.editing.drainage_editing_service import (
     RoadStationSpan,
     ditch_choices,
     ditch_run_diagnostics,
+    downhill_links,
+    link_diagnostics,
     point_diagnostics,
     policy_diagnostics,
     prefill_ditch_runs,
@@ -102,6 +104,7 @@ def apply_v1_drainage_model(*, document=None, drainage_model: DrainageModel):
         policy_diagnostics(drainage_model.policy)
         + ditch_run_diagnostics(drainage_model.ditch_run_rows, ditch_choices(_assembly_models(doc)))
         + point_diagnostics(drainage_model.point_rows, drainage_model.ditch_run_rows)
+        + link_diagnostics(drainage_model.link_rows, drainage_model.point_rows)
     )
     if messages:
         raise ValueError("Drainage was not applied:\n" + "\n".join(messages))
@@ -142,6 +145,19 @@ def drainage_suggestions(document) -> tuple[list, str]:
     if not result.suggestion_rows:
         return [], "No suggestions: every low point is collected and the inlet spacing holds."
     return list(result.suggestion_rows), f"{len(result.suggestion_rows)} suggestion(s)."
+
+
+def drainage_downhill_links(document, points: list, links: list) -> tuple[list, str]:
+    """Links from each unlinked inlet to the nearest lower point, from the stored result's flowlines."""
+
+    result = to_drainage_result(find_v1_drainage_result_object(document))
+    if result is None:
+        return [], "No Drainage result yet: Apply, or run Rebuild Downstream, before linking downhill."
+    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
+    if row.status != CURRENT:
+        return [], "The Drainage result is stale; run Rebuild Downstream before linking downhill."
+    added = downhill_links(points, links, result.flowline_rows)
+    return added, f"{len(added)} link(s) added from inlets to the nearest lower point. Apply to keep them."
 
 
 def drainage_status_text(document) -> str:
@@ -195,6 +211,7 @@ configure_drainage_editor_task_panel_runtime(
         "Gui": Gui,
         "apply_v1_drainage_model": apply_v1_drainage_model,
         "drainage_editor_inputs": drainage_editor_inputs,
+        "drainage_downhill_links": drainage_downhill_links,
         "drainage_status_text": drainage_status_text,
         "drainage_suggestions": drainage_suggestions,
         "refresh_drainage_result": refresh_drainage_result,

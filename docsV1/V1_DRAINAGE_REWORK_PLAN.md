@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: DR-1 to DR-3 done on 2026-10-16; DR-4 is next
+Status: DR-1 to DR-4 done on 2026-10-16; DR-5 is next
 Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
 culverts, flowline checks against a policy, and their review
 Related:
@@ -255,6 +255,32 @@ Done on 2026-10-16:
   removed the pipe bodies).
 - Tests: link grade and length; uphill and loop diagnostics; Watertight smokes still pass without
   Drainage input.
+
+Done on 2026-10-16:
+
+- A point sits on its run's flowline at its station (a culvert that names no run on the lowest
+  flowline of its road there); `point_places` in the evaluation service. A Link is measured between
+  its points' places: `DrainageResult.link_rows` hold its plan length, end elevations and grade.
+- Link checks: `link_uphill` (warning: the To point is higher), `link_flat` (warning: falls less
+  than the Policy minimum grade), `link_loop` (error, each loop once), `link_unplaced` (warning: an
+  end on no flowline), `drains_nowhere` (warning: an inlet without an outgoing link; outfalls and
+  culverts may end the water's way) and `drains_twice` (warning: more than one outgoing link).
+- The reverse check from DR-2: `reverse_flow` (warning) for an inlet or outfall where the flowline
+  falls away on every side, so no water reaches it.
+- Source checks refuse a link with a repeated id, an unknown point, the same point at both ends or a
+  repeated pair (`link_diagnostics`). The panel's Links tab adds and deletes links; Link Downhill
+  joins every inlet that drains nowhere to the nearest lower point on its run (or a culvert crossing
+  its road), from the current result's flowlines.
+- Removed: the Drainage readiness of the Simulation package (its 13 fields, the object properties
+  and the export block) and the per-solid drainage refs; the Drainage handoff summary and status
+  lines of Watertight Solids; the pipe families `drainage_pipeline_body` and
+  `drainage_pipeline_network_body` with their labels, and the Simulation QA pipe-to-Structure port
+  check (`port_connection_status`, `port_issue_count`), which only pipe bodies could fail. Lined
+  ditch bodies stay; they are Assembly ditch solids and carry their Ditch Run.
+- Tests: the link, loop, reverse, culvert and unplaced cases in `test_drainage_evaluation_service.py`;
+  the link checks and Link Downhill in `test_drainage_editing_service.py`; the panel test links the
+  sample road's inlets downhill and checks the links fall. The Watertight and Simulation tests use
+  lined ditch bodies; their port and Drainage handoff tests are removed.
 
 ### DR-5 Review and outputs
 

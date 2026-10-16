@@ -1,8 +1,8 @@
 """Drainage editor panel for CorridorRoad v1.
 
 The panel edits the Drainage Policy, the Ditch Runs (which Assembly ditch drains which side of
-which road over which stations) and the Points (inlets and outfalls on a run, culverts crossing the
-road). Nothing is written until Apply; opening the panel prefills the runs from the Regions and the
+which road over which stations), the Points (inlets and outfalls on a run, culverts crossing the
+road) and the Links (which point drains into which). Nothing is written until Apply; opening the panel prefills the runs from the Regions and the
 Assembly when the stored Drainage has none, and adding a suggestion only adds a table row.
 """
 
@@ -14,6 +14,7 @@ from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DRAINAGE_POINT_KINDS,
     LOW_POINT_RULES,
     DitchRun,
+    DrainageLink,
     DrainageModel,
     DrainagePoint,
     DrainagePolicy,
@@ -33,6 +34,7 @@ def configure_drainage_editor_task_panel_runtime(bindings) -> None:
 App = None
 Gui = None
 apply_v1_drainage_model = None
+drainage_downhill_links = None
 drainage_editor_inputs = None
 drainage_status_text = None
 drainage_suggestions = None
@@ -45,10 +47,12 @@ POINT_COLUMNS = ("ID", "Kind", "Ditch Run", "STA")
 POINT_ID_COLUMN, POINT_KIND_COLUMN, POINT_RUN_COLUMN, POINT_STATION_COLUMN = range(len(POINT_COLUMNS))
 # A culvert crosses the road and collects from every run it meets, so it may name no run.
 CROSSES_ROAD = ""
+LINK_COLUMNS = ("ID", "From", "To")
+LINK_ID_COLUMN, LINK_FROM_COLUMN, LINK_TO_COLUMN = range(len(LINK_COLUMNS))
 
 
 class V1DrainageEditorTaskPanel:
-    """Drainage Policy, Ditch Runs and Points editor."""
+    """Drainage Policy, Ditch Runs, Points and Links editor."""
 
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -139,8 +143,9 @@ class V1DrainageEditorTaskPanel:
         runs_layout.addLayout(edit_row)
         self._tabs.addTab(runs_tab, "Ditch Runs")
         self._tabs.addTab(self._build_points_tab(), "Points")
-        # the Points tab names runs, so its run lists follow the Ditch Runs tab
-        self._tabs.currentChanged.connect(lambda _index: self._refresh_point_run_choices())
+        self._tabs.addTab(self._build_links_tab(), "Links")
+        # Points name runs and Links name points, so their lists follow the other tabs
+        self._tabs.currentChanged.connect(lambda _index: self._refresh_reference_choices())
         layout.addWidget(self._tabs, 1)
 
         self._status = QtWidgets.QPlainTextEdit()
@@ -200,6 +205,87 @@ class V1DrainageEditorTaskPanel:
         suggestion_row.addStretch(1)
         layout.addLayout(suggestion_row)
         return tab
+
+    def _build_links_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.addWidget(QtWidgets.QLabel("Which point drains into which; an inlet must drain somewhere"))
+        self._link_table = QtWidgets.QTableWidget(0, len(LINK_COLUMNS))
+        self._link_table.setHorizontalHeaderLabels(list(LINK_COLUMNS))
+        self._link_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        try:
+            self._link_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        layout.addWidget(self._link_table, 1)
+        row = QtWidgets.QHBoxLayout()
+        add_button = QtWidgets.QPushButton("Add Link")
+        add_button.clicked.connect(lambda: self._append_link(None))
+        row.addWidget(add_button)
+        downhill_button = QtWidgets.QPushButton("Link Downhill")
+        downhill_button.setToolTip("Link every inlet that drains nowhere to the nearest lower point on its run.")
+        downhill_button.clicked.connect(self._link_downhill)
+        row.addWidget(downhill_button)
+        delete_button = QtWidgets.QPushButton("Delete Link")
+        delete_button.clicked.connect(self._delete_selected_links)
+        row.addWidget(delete_button)
+        row.addStretch(1)
+        layout.addLayout(row)
+        return tab
+
+    def _append_link(self, link: DrainageLink | None) -> None:
+        point_ids = sorted(self._point_ids())
+        if link is None:
+            used = {self._link_text(row, LINK_ID_COLUMN) for row in range(self._link_table.rowCount())}
+            first = point_ids[0] if point_ids else ""
+            second = point_ids[1] if len(point_ids) > 1 else first
+            link = DrainageLink(next_point_id("link", used), first, second)
+        row = self._link_table.rowCount()
+        self._link_table.insertRow(row)
+        id_item = QtWidgets.QTableWidgetItem(link.link_id)
+        id_item.setFlags(id_item.flags() & ~QtCore.Qt.ItemIsEditable)
+        self._link_table.setItem(row, LINK_ID_COLUMN, id_item)
+        self._link_table.setCellWidget(row, LINK_FROM_COLUMN, _combo(point_ids, link.from_ref))
+        self._link_table.setCellWidget(row, LINK_TO_COLUMN, _combo(point_ids, link.to_ref))
+
+    def _delete_selected_links(self) -> None:
+        for row in sorted({index.row() for index in self._link_table.selectionModel().selectedRows()}, reverse=True):
+            self._link_table.removeRow(row)
+
+    def _link_downhill(self) -> None:
+        try:
+            added, note = drainage_downhill_links(self.document, self._points(), self._links())
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return
+        for link in added:
+            self._append_link(link)
+        self._set_status(note)
+
+    def _links(self) -> list[DrainageLink]:
+        return [
+            DrainageLink(
+                self._link_text(row, LINK_ID_COLUMN),
+                self._link_text(row, LINK_FROM_COLUMN, combo=True),
+                self._link_text(row, LINK_TO_COLUMN, combo=True),
+            )
+            for row in range(self._link_table.rowCount())
+        ]
+
+    def _link_text(self, row: int, column: int, *, combo: bool = False) -> str:
+        if combo:
+            widget = self._link_table.cellWidget(row, column)
+            return str(widget.currentText() if widget is not None else "").strip()
+        item = self._link_table.item(row, column)
+        return str(item.text() if item is not None else "").strip()
+
+    def _refresh_reference_choices(self) -> None:
+        self._refresh_point_run_choices()
+        point_ids = sorted(self._point_ids())
+        for row in range(self._link_table.rowCount()):
+            for column in (LINK_FROM_COLUMN, LINK_TO_COLUMN):
+                current = self._link_text(row, column, combo=True)
+                self._link_table.setCellWidget(row, column, _combo(point_ids, current))
 
     def _append_point(self, point: DrainagePoint | None, *, kind: str = "inlet") -> None:
         if point is None:
@@ -295,6 +381,9 @@ class V1DrainageEditorTaskPanel:
         self._point_table.setRowCount(0)
         for point in model.point_rows:
             self._append_point(point)
+        self._link_table.setRowCount(0)
+        for link in model.link_rows:
+            self._append_link(link)
 
     def _set_runs(self, runs: list[DitchRun]) -> None:
         self._table.setRowCount(0)
@@ -362,7 +451,8 @@ class V1DrainageEditorTaskPanel:
         except RuntimeError as exc:
             evaluation = f"The Drainage was not evaluated: {exc}"
         self._set_status(
-            f"Applied to {obj.Label}: {len(model.ditch_run_rows)} Ditch Run(s), {len(model.point_rows)} point(s).\n{evaluation}"
+            f"Applied to {obj.Label}: {len(model.ditch_run_rows)} Ditch Run(s), {len(model.point_rows)} point(s), "
+            f"{len(model.link_rows)} link(s).\n{evaluation}"
         )
         self._refresh_suggestions()
         if close_after and _gui_available():
@@ -383,7 +473,7 @@ class V1DrainageEditorTaskPanel:
             policy=policy,
             ditch_run_rows=[self._run(row) for row in range(self._table.rowCount())],
             point_rows=self._points(),
-            link_rows=list(self._model.link_rows),
+            link_rows=self._links(),
         )
 
     def _run(self, row: int) -> DitchRun:

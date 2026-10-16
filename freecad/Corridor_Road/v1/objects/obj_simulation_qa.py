@@ -68,7 +68,6 @@ def ensure_v1_simulation_qa_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "SolidValidityStatus", "Simulation QA", "solid validity status")
     _add_property(obj, "App::PropertyString", "GeometryContactStatus", "Simulation QA", "geometry contact status")
     _add_property(obj, "App::PropertyString", "TerrainDomainStatus", "Simulation QA", "terrain domain status")
-    _add_property(obj, "App::PropertyString", "PortConnectionStatus", "Simulation QA", "pipe/structure port connection status")
     _add_property(obj, "App::PropertyString", "IntersectionTrimStatus", "Simulation QA", "intersection trim readiness status")
     _add_property(obj, "App::PropertyString", "IntersectionTrimFuseStatus", "Simulation QA", "intersection trim fuse status")
     _add_property(obj, "App::PropertyString", "IntersectionTrimHandoffStatus", "Simulation QA", "intersection trim handoff status")
@@ -81,7 +80,6 @@ def ensure_v1_simulation_qa_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "ZeroVolumeOutputCount", "Simulation QA", "zero-volume output count")
     _add_property(obj, "App::PropertyInteger", "ContactIssueCount", "Simulation QA", "geometry contact issue count")
     _add_property(obj, "App::PropertyInteger", "TerrainIssueCount", "Simulation QA", "terrain domain issue count")
-    _add_property(obj, "App::PropertyInteger", "PortIssueCount", "Simulation QA", "pipe/structure port issue count")
     _add_property(obj, "App::PropertyInteger", "IntersectionTrimReadyPairCount", "Simulation QA", "intersection trim ready pair count")
     _add_property(obj, "App::PropertyInteger", "IntersectionTrimBlockedPairCount", "Simulation QA", "intersection trim blocked pair count")
     _add_property(obj, "App::PropertyFloat", "IntersectionTrimMaxGap", "Simulation QA", "intersection trim maximum XY gap")
@@ -180,7 +178,6 @@ def update_v1_simulation_qa_output_object(
     obj.SolidValidityStatus = str(getattr(simulation_qa_output, "solid_validity_status", "") or "check")
     obj.GeometryContactStatus = str(getattr(simulation_qa_output, "geometry_contact_status", "") or "not_checked")
     obj.TerrainDomainStatus = str(getattr(simulation_qa_output, "terrain_domain_status", "") or "not_checked")
-    obj.PortConnectionStatus = str(getattr(simulation_qa_output, "port_connection_status", "") or "not_checked")
     obj.IntersectionTrimStatus = str(getattr(simulation_qa_output, "intersection_trim_status", "") or "not_available")
     obj.IntersectionTrimFuseStatus = str(getattr(simulation_qa_output, "intersection_trim_fuse_status", "") or "not_available")
     obj.IntersectionTrimHandoffStatus = str(getattr(simulation_qa_output, "intersection_trim_handoff_status", "") or "not_available")
@@ -193,7 +190,6 @@ def update_v1_simulation_qa_output_object(
     obj.ZeroVolumeOutputCount = int(getattr(simulation_qa_output, "zero_volume_output_count", 0) or 0)
     obj.ContactIssueCount = int(getattr(simulation_qa_output, "contact_issue_count", 0) or 0)
     obj.TerrainIssueCount = int(getattr(simulation_qa_output, "terrain_issue_count", 0) or 0)
-    obj.PortIssueCount = int(getattr(simulation_qa_output, "port_issue_count", 0) or 0)
     obj.IntersectionTrimReadyPairCount = int(getattr(simulation_qa_output, "intersection_trim_ready_pair_count", 0) or 0)
     obj.IntersectionTrimBlockedPairCount = int(getattr(simulation_qa_output, "intersection_trim_blocked_pair_count", 0) or 0)
     obj.IntersectionTrimMaxGap = float(getattr(simulation_qa_output, "intersection_trim_max_gap", 0.0) or 0.0)
@@ -262,7 +258,6 @@ def to_simulation_qa_output(obj) -> SimulationQaOutput | None:
         solid_validity_status=str(getattr(obj, "SolidValidityStatus", "") or "check"),
         geometry_contact_status=str(getattr(obj, "GeometryContactStatus", "") or "not_checked"),
         terrain_domain_status=str(getattr(obj, "TerrainDomainStatus", "") or "not_checked"),
-        port_connection_status=str(getattr(obj, "PortConnectionStatus", "") or "not_checked"),
         intersection_trim_status=str(getattr(obj, "IntersectionTrimStatus", "") or "not_available"),
         intersection_trim_fuse_status=str(getattr(obj, "IntersectionTrimFuseStatus", "") or "not_available"),
         intersection_trim_handoff_status=str(getattr(obj, "IntersectionTrimHandoffStatus", "") or "not_available"),
@@ -275,7 +270,6 @@ def to_simulation_qa_output(obj) -> SimulationQaOutput | None:
         zero_volume_output_count=int(getattr(obj, "ZeroVolumeOutputCount", 0) or 0),
         contact_issue_count=int(getattr(obj, "ContactIssueCount", 0) or 0),
         terrain_issue_count=int(getattr(obj, "TerrainIssueCount", 0) or 0),
-        port_issue_count=int(getattr(obj, "PortIssueCount", 0) or 0),
         intersection_trim_ready_pair_count=int(getattr(obj, "IntersectionTrimReadyPairCount", 0) or 0),
         intersection_trim_blocked_pair_count=int(getattr(obj, "IntersectionTrimBlockedPairCount", 0) or 0),
         intersection_trim_max_gap=float(getattr(obj, "IntersectionTrimMaxGap", 0.0) or 0.0),

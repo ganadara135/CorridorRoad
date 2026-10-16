@@ -73,7 +73,7 @@ class WatertightSimulationQaService:
 
         family_set = set(families)
         road_ready = "road_body_envelope" in family_set or "region_body" in family_set or "intersection_patch_body" in family_set
-        drainage_ready = any(family in family_set for family in {"lined_ditch_body", "drainage_pipeline_body", "drainage_pipeline_network_body"})
+        drainage_ready = "lined_ditch_body" in family_set
         structure_ready = "structure_body" in family_set
         terrain_ready = bool(getattr(request, "terrain_ready", False))
         solid_validity_ok = invalid_count == 0 and zero_volume_count == 0
@@ -81,17 +81,12 @@ class WatertightSimulationQaService:
         contact_check_applied = _contact_check_applied(inputs)
         terrain_diagnostics = _terrain_domain_diagnostics(inputs, getattr(request, "terrain_bound_box", None))
         terrain_check_applied = terrain_ready and getattr(request, "terrain_bound_box", None) is not None
-        port_diagnostics = _port_connection_diagnostics(inputs)
-        port_check_applied = _port_check_applied(inputs)
         contact_error_count = sum(1 for row in contact_diagnostics if str(getattr(row, "severity", "") or "") == "error")
         contact_issue_count = len(contact_diagnostics)
         contact_ok = contact_error_count == 0
         terrain_error_count = sum(1 for row in terrain_diagnostics if str(getattr(row, "severity", "") or "") == "error")
         terrain_issue_count = len(terrain_diagnostics)
         terrain_domain_ok = terrain_error_count == 0
-        port_error_count = sum(1 for row in port_diagnostics if str(getattr(row, "severity", "") or "") == "error")
-        port_issue_count = len(port_diagnostics)
-        port_connection_ok = port_error_count == 0
         traceability_diagnostics = _traceability_diagnostics(inputs)
         traceability_error_count = sum(1 for row in traceability_diagnostics if str(getattr(row, "severity", "") or "") == "error")
         traceability_ok = traceability_error_count == 0
@@ -109,8 +104,7 @@ class WatertightSimulationQaService:
         )
         geometry_contact_status = "ok" if contact_check_applied and contact_ok else "check" if contact_diagnostics else "not_checked"
         terrain_domain_status = "ok" if terrain_check_applied and terrain_domain_ok else "check" if terrain_diagnostics else "not_checked"
-        port_connection_status = "ok" if port_check_applied and port_connection_ok else "check" if port_diagnostics else "not_checked"
-        simulation_ready = bool(inputs and road_ready and terrain_ready and drainage_ready and solid_validity_ok and contact_ok and terrain_domain_ok and port_connection_ok and traceability_ok)
+        simulation_ready = bool(inputs and road_ready and terrain_ready and drainage_ready and solid_validity_ok and contact_ok and terrain_domain_ok and traceability_ok)
         missing_contexts = []
         if not road_ready:
             missing_contexts.append("road_body")
@@ -129,7 +123,6 @@ class WatertightSimulationQaService:
         )
         diagnostics.extend(contact_diagnostics)
         diagnostics.extend(terrain_diagnostics)
-        diagnostics.extend(port_diagnostics)
         diagnostics.extend(traceability_diagnostics)
         diagnostics.extend(_intersection_trim_diagnostics(intersection_trim, handoff_status=intersection_trim_handoff_status))
         return SimulationQaOutput(
@@ -148,7 +141,6 @@ class WatertightSimulationQaService:
             solid_validity_status="ok" if solid_validity_ok else "check",
             geometry_contact_status=geometry_contact_status,
             terrain_domain_status=terrain_domain_status,
-            port_connection_status=port_connection_status,
             intersection_trim_status=intersection_trim_status,
             intersection_trim_fuse_status=intersection_trim_fuse_status,
             intersection_trim_handoff_status=intersection_trim_handoff_status,
@@ -157,7 +149,6 @@ class WatertightSimulationQaService:
             zero_volume_output_count=zero_volume_count,
             contact_issue_count=contact_issue_count,
             terrain_issue_count=terrain_issue_count,
-            port_issue_count=port_issue_count,
             intersection_trim_ready_pair_count=intersection_trim_ready_pair_count,
             intersection_trim_blocked_pair_count=intersection_trim_blocked_pair_count,
             intersection_trim_max_gap=intersection_trim_max_gap,
@@ -305,7 +296,7 @@ def _contact_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list
         return []
     rows: list[SimulationQaDiagnosticRow] = []
     for row in inputs:
-        if _has_family(row, {"drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body"}):
+        if _has_family(row, {"lined_ditch_body"}):
             if not _touches_any_road(row, road_rows):
                 rows.append(
                     _diagnostic(
@@ -386,7 +377,7 @@ def _contact_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list
 def _contact_check_applied(inputs: list[WatertightSimulationQaSolidInput]) -> bool:
     road_has_bbox = any(_has_family(row, {"road_body_envelope", "region_body"}) and getattr(row, "bound_box", None) is not None for row in inputs)
     subject_has_bbox = any(
-        _has_family(row, {"drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body", "intersection_patch_body", "structure_body"})
+        _has_family(row, {"lined_ditch_body", "intersection_patch_body", "structure_body"})
         and getattr(row, "bound_box", None) is not None
         for row in inputs
     )
@@ -401,7 +392,7 @@ def _terrain_domain_diagnostics(
         return []
     rows: list[SimulationQaDiagnosticRow] = []
     for row in inputs:
-        if not _has_family(row, {"road_body_envelope", "region_body", "intersection_patch_body", "drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body"}):
+        if not _has_family(row, {"road_body_envelope", "region_body", "intersection_patch_body", "lined_ditch_body"}):
             continue
         bbox = getattr(row, "bound_box", None)
         if bbox is None:
@@ -418,52 +409,6 @@ def _terrain_domain_diagnostics(
             )
         )
     return rows
-
-
-def _port_connection_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list[SimulationQaDiagnosticRow]:
-    structure_body_refs = set()
-    for row in inputs:
-        if _has_family(row, {"structure_body"}):
-            structure_body_refs.update(_input_ref_values(getattr(row, "structure_refs", []) or []))
-    rows: list[SimulationQaDiagnosticRow] = []
-    for row in inputs:
-        if not _has_family(row, {"drainage_pipeline_body", "drainage_pipeline_network_body"}):
-            continue
-        drainage_structure_refs = _input_ref_values(getattr(row, "structure_refs", []) or [])
-        if not drainage_structure_refs:
-            continue
-        connection_refs = [
-            ref for ref in _input_ref_values(getattr(row, "source_refs", []) or [])
-            if ref.startswith("connection:") or ref.startswith("structure-connection:")
-        ]
-        if not connection_refs:
-            rows.append(
-                _diagnostic(
-                    "error",
-                    "drainage_port_connection_points_missing",
-                    f"Drainage solid {row.output_ref} references Structure ports but has no connection point provenance.",
-                    source_ref=str(getattr(row, "output_ref", "") or ""),
-                )
-            )
-        missing_structure_refs = [ref for ref in drainage_structure_refs if ref not in structure_body_refs]
-        if missing_structure_refs:
-            rows.append(
-                _diagnostic(
-                    "error",
-                    "drainage_structure_body_missing_for_port",
-                    f"Drainage solid {row.output_ref} references Structure body ports without built structure_body outputs: {','.join(missing_structure_refs)}.",
-                    source_ref=str(getattr(row, "output_ref", "") or ""),
-                )
-            )
-    return rows
-
-
-def _port_check_applied(inputs: list[WatertightSimulationQaSolidInput]) -> bool:
-    return any(
-        _has_family(row, {"drainage_pipeline_body", "drainage_pipeline_network_body"})
-        and bool(_input_ref_values(getattr(row, "structure_refs", []) or []))
-        for row in inputs
-    )
 
 
 def _has_family(row: WatertightSimulationQaSolidInput, families: set[str]) -> bool:

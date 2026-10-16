@@ -261,5 +261,16 @@ def test_the_panel_adds_the_suggested_points_and_apply_settles_the_checks() -> N
         assert not {row.kind for row in result.check_rows} & {"low_point_uncollected", "inlet_spacing"}
         assert _freshness(doc)["drainage"] == ("current", ())
         assert panel._suggestions == []
+
+        # every suggested inlet now drains nowhere until Link Downhill joins it to a lower point
+        inlets = [point.point_id for point in stored.point_rows if point.kind == "inlet"]
+        assert {row.check_id for row in result.check_rows if row.kind == "drains_nowhere"} == {f"drains_nowhere:{name}" for name in inlets}
+        panel._link_downhill()
+        assert panel._link_table.rowCount() == len(inlets)
+        assert panel._apply() is True
+        result = to_drainage_result(find_v1_drainage_result_object(doc))
+        assert not {row.kind for row in result.check_rows} & {"drains_nowhere", "link_uphill", "link_loop", "link_unplaced"}
+        assert len(result.link_rows) == len(inlets)
+        assert all(row.grade_percent < 0.0 for row in result.link_rows)
     finally:
         App.closeDocument(doc.Name)

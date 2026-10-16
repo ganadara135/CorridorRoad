@@ -6,6 +6,8 @@ flowline come the grades, the low and high points and the flow direction. The ru
 outfalls, and the culverts crossing its road, collect its water: a low point must have one near it
 when the Policy requires it, and no stretch of ditch may run longer than the Policy's inlet
 spacing without one. Where they are missing the evaluation suggests points; it never adds them.
+A point sits on its run's flowline; Links carry water from point to point and are measured
+between those places: they must fall, must not loop, and every inlet must drain somewhere.
 Nothing here reads FreeCAD.
 
 Units: stations, lengths and elevations in meters, grades in percent.
@@ -25,6 +27,7 @@ from ...models.result.drainage_result import (
     FLOW_TOWARD_START,
     DitchRunFlowline,
     DrainageCheck,
+    DrainageLinkRow,
     DrainageResult,
     DrainageSuggestion,
     FlowlineSegment,
@@ -84,6 +87,7 @@ class DrainageEvaluationService:
             checks.extend(_flat_grade_checks(run, segments, float(policy.min_grade_percent)))
             collectors, off_run = _collectors(run, drainage_model.point_rows, stations)
             checks.extend(off_run)
+            checks.extend(_reverse_flow_checks(run, stations, segments, collectors))
             low_checks, low_suggestions = _low_point_checks(run, stations, lows, collectors, policy.low_point_rule)
             checks.extend(low_checks)
             spacing_checks, spacing_suggestions = _spacing_checks(
@@ -95,6 +99,9 @@ class DrainageEvaluationService:
             )
             checks.extend(spacing_checks)
             suggestions.extend(_numbered(run, low_suggestions + spacing_suggestions))
+        places = point_places(drainage_model.point_rows, flowlines)
+        link_rows, link_checks = _link_checks(drainage_model, places, float(policy.min_grade_percent))
+        checks.extend(link_checks)
         severities = {check.severity for check in checks}
         if not drainage_model.ditch_run_rows:
             status = "empty"
@@ -113,6 +120,7 @@ class DrainageEvaluationService:
             flowline_rows=flowlines,
             check_rows=checks,
             suggestion_rows=suggestions,
+            link_rows=link_rows,
             status=status,
             source_refs=[drainage_model.drainage_model_id],
         )
@@ -211,6 +219,167 @@ def _collectors(run: DitchRun, points: list[DrainagePoint], stations: list[Flowl
                 )
             )
     return collectors, off_run
+
+
+def _reverse_flow_checks(run: DitchRun, stations, segments, collectors: list[DrainagePoint]) -> list[DrainageCheck]:
+    """An inlet or outfall where the flowline falls away on every side gets no water: the reverse
+    of a collector at a low point. A point on a slope between stations still takes what passes."""
+
+    checks: list[DrainageCheck] = []
+    values = [row.station for row in stations]
+    for point in collectors:
+        if point.ditch_run_ref != run.ditch_run_id:
+            continue
+        at = next((index for index, value in enumerate(values) if abs(value - point.station) <= STATION_TOLERANCE_M), None)
+        if at is None:
+            continue
+        before = segments[at - 1] if at > 0 else None
+        after = segments[at] if at < len(segments) else None
+        away_before = before is None or before.grade_percent > 0.0
+        away_after = after is None or after.grade_percent < 0.0
+        if away_before and away_after and (before is not None or after is not None):
+            checks.append(
+                DrainageCheck(
+                    f"reverse_flow:{point.point_id}",
+                    "reverse_flow",
+                    CHECK_WARNING,
+                    run.ditch_run_id,
+                    point.station,
+                    point.station,
+                    f"{point.point_id}: the flowline falls away from STA {point.station:.3f} on every side, "
+                    "so no water reaches it. Move it to a low point.",
+                )
+            )
+    return checks
+
+
+def point_places(points: list[DrainagePoint], flowlines: list[DitchRunFlowline]) -> dict[str, tuple[float, float, float]]:
+    """Where each point sits: on its run's flowline at its station; a culvert that names no run at
+    the lowest flowline of its road there. A point no flowline reaches has no place."""
+
+    places: dict[str, tuple[float, float, float]] = {}
+    for point in points:
+        candidates = [
+            row
+            for row in flowlines
+            if row.ditch_run_ref == point.ditch_run_ref
+            or (
+                not point.ditch_run_ref
+                and point.kind == "culvert"
+                and (not point.alignment_ref or not row.alignment_ref or row.alignment_ref == point.alignment_ref)
+            )
+        ]
+        found = [place for place in (_flowline_place(row.station_rows, point.station) for row in candidates) if place is not None]
+        if found:
+            places[point.point_id] = min(found, key=lambda place: place[2])
+    return places
+
+
+def _flowline_place(stations: list[FlowlineStation], station: float) -> tuple[float, float, float] | None:
+    for first, second in zip(stations, stations[1:]):
+        if first.station - STATION_TOLERANCE_M <= station <= second.station + STATION_TOLERANCE_M:
+            span = second.station - first.station
+            ratio = 0.0 if span <= 0.0 else min(max((station - first.station) / span, 0.0), 1.0)
+            return (
+                first.x + (second.x - first.x) * ratio,
+                first.y + (second.y - first.y) * ratio,
+                first.z + (second.z - first.z) * ratio,
+            )
+    return None
+
+
+def _link_checks(model: DrainageModel, places: dict, min_grade_percent: float):
+    rows: list[DrainageLinkRow] = []
+    checks: list[DrainageCheck] = []
+    points = {point.point_id: point for point in model.point_rows}
+    outgoing: dict[str, list[str]] = {}
+    for link in model.link_rows:
+        outgoing.setdefault(link.from_ref, []).append(link.to_ref)
+        source, target = places.get(link.from_ref), places.get(link.to_ref)
+        if source is None or target is None:
+            missing = link.from_ref if source is None else link.to_ref
+            checks.append(_link_check(link, "link_unplaced", CHECK_WARNING, points, f"{link.link_id}: {missing} lies on no flowline, so the link cannot be measured."))
+            continue
+        length = math.hypot(target[0] - source[0], target[1] - source[1])
+        drop = target[2] - source[2]
+        grade = 0.0 if length <= 0.0 else drop / length * 100.0
+        rows.append(DrainageLinkRow(link.link_id, link.from_ref, link.to_ref, length, source[2], target[2], grade))
+        if drop > ELEVATION_TOLERANCE_M:
+            checks.append(
+                _link_check(link, "link_uphill", CHECK_WARNING, points, f"{link.link_id}: {link.to_ref} is {drop:.2f} m higher than {link.from_ref}; the water would run uphill.")
+            )
+        elif -grade < min_grade_percent:
+            checks.append(
+                _link_check(link, "link_flat", CHECK_WARNING, points, f"{link.link_id}: falls {-grade:.2f} % over {length:.1f} m, under the {min_grade_percent:.2f} % minimum.")
+            )
+    for cycle in _cycles(outgoing):
+        checks.append(
+            DrainageCheck(
+                f"link_loop:{cycle[0]}",
+                "link_loop",
+                CHECK_ERROR,
+                "",
+                points[cycle[0]].station if cycle[0] in points else 0.0,
+                points[cycle[0]].station if cycle[0] in points else 0.0,
+                "The links " + " -> ".join([*cycle, cycle[0]]) + " form a loop; water has no way out.",
+            )
+        )
+    for point in model.point_rows:
+        targets = outgoing.get(point.point_id, [])
+        if point.kind == "inlet" and not targets:
+            checks.append(
+                DrainageCheck(
+                    f"drains_nowhere:{point.point_id}",
+                    "drains_nowhere",
+                    CHECK_WARNING,
+                    point.ditch_run_ref,
+                    point.station,
+                    point.station,
+                    f"{point.point_id}: the inlet drains nowhere. Link it to the inlet, culvert or outfall it discharges to.",
+                )
+            )
+        elif len(targets) > 1:
+            checks.append(
+                DrainageCheck(
+                    f"drains_twice:{point.point_id}",
+                    "drains_twice",
+                    CHECK_WARNING,
+                    point.ditch_run_ref,
+                    point.station,
+                    point.station,
+                    f"{point.point_id}: links to {', '.join(targets)}; a point drains to one place.",
+                )
+            )
+    return rows, checks
+
+
+def _link_check(link, kind: str, severity: str, points: dict, message: str) -> DrainageCheck:
+    point = points.get(link.from_ref)
+    station = point.station if point is not None else 0.0
+    return DrainageCheck(f"{kind}:{link.link_id}", kind, severity, point.ditch_run_ref if point is not None else "", station, station, message)
+
+
+def _cycles(outgoing: dict[str, list[str]]) -> list[list[str]]:
+    """Each loop of the link graph once, starting at its first point in sorted order."""
+
+    found: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    def walk(node: str, path: list[str]) -> None:
+        for target in outgoing.get(node, []):
+            if target in path:
+                cycle = path[path.index(target):]
+                start = cycle.index(min(cycle))
+                key = tuple(cycle[start:] + cycle[:start])
+                if key not in seen:
+                    seen.add(key)
+                    found.append(list(key))
+            else:
+                walk(target, path + [target])
+
+    for node in sorted(outgoing):
+        walk(node, [node])
+    return found
 
 
 def _low_point_checks(run: DitchRun, stations, lows: list[float], collectors: list[DrainagePoint], rule: str):
@@ -347,4 +516,4 @@ def _flat_grade_checks(run: DitchRun, segments: list[FlowlineSegment], min_grade
     return checks
 
 
-__all__ = ["DrainageEvaluationService", "ELEVATION_TOLERANCE_M", "STATION_TOLERANCE_M"]
+__all__ = ["DrainageEvaluationService", "ELEVATION_TOLERANCE_M", "STATION_TOLERANCE_M", "point_places"]

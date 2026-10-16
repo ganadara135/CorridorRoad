@@ -15,10 +15,12 @@ from ...models.source.drainage_model import (
     DRAINAGE_POINT_KINDS,
     LOW_POINT_RULES,
     DitchRun,
+    DrainageLink,
     DrainagePoint,
     DrainagePolicy,
 )
 from ...models.source.region_model import RegionModel
+from ..evaluation.drainage_evaluation_service import point_places
 
 # Stations closer than this are the same station: Region ends and Stationing values are stored
 # rounded, and two Regions meeting at one station must join into one run.
@@ -165,6 +167,64 @@ def point_diagnostics(points: list[DrainagePoint], runs: list[DitchRun]) -> list
         elif not point.ditch_run_ref and point.kind != "culvert":
             messages.append(f"{label}: an {point.kind} needs the Ditch Run it collects from.")
     return messages
+
+
+def link_diagnostics(links: list[DrainageLink], points: list[DrainagePoint]) -> list[str]:
+    """Plain-language problems with the Links; empty when they can be applied. Whether a link
+    falls, loops or doubles is the Drainage evaluation's to report."""
+
+    messages: list[str] = []
+    point_ids = {point.point_id for point in list(points or [])}
+    seen: set[str] = set()
+    pairs: set[tuple[str, str]] = set()
+    for link in list(links or []):
+        label = link.link_id or "(no id)"
+        if not link.link_id:
+            messages.append("A link has no id.")
+        elif link.link_id in seen:
+            messages.append(f"{label}: the id is used twice.")
+        seen.add(link.link_id)
+        for end, ref in (("From", link.from_ref), ("To", link.to_ref)):
+            if ref not in point_ids:
+                messages.append(f"{label}: {end} point '{ref}' does not exist.")
+        if link.from_ref and link.from_ref == link.to_ref:
+            messages.append(f"{label}: links {link.from_ref} to itself.")
+        if (link.from_ref, link.to_ref) in pairs:
+            messages.append(f"{label}: {link.from_ref} is already linked to {link.to_ref}.")
+        pairs.add((link.from_ref, link.to_ref))
+    return messages
+
+
+def downhill_links(points: list[DrainagePoint], links: list[DrainageLink], flowlines: list) -> list[DrainageLink]:
+    """A link for every inlet that drains nowhere yet, to the nearest lower point on its run (or a
+    culvert crossing its road); an inlet with no lower point near it stays unlinked.
+
+    `flowlines` are the stored Drainage result's; the points' places come from them.
+    """
+
+    places = point_places(points, flowlines)
+    draining = {link.from_ref for link in links}
+    used = {link.link_id for link in links}
+    output: list[DrainageLink] = []
+    for inlet in [point for point in points if point.kind == "inlet" and point.point_id not in draining]:
+        here = places.get(inlet.point_id)
+        if here is None:
+            continue
+        lower = [
+            point
+            for point in points
+            if point.point_id != inlet.point_id
+            and point.point_id in places
+            and places[point.point_id][2] < here[2]
+            and (point.ditch_run_ref == inlet.ditch_run_ref or (point.kind == "culvert" and not point.ditch_run_ref))
+        ]
+        if not lower:
+            continue
+        target = min(lower, key=lambda point: abs(point.station - inlet.station))
+        link_id = next_point_id("link", used)
+        used.add(link_id)
+        output.append(DrainageLink(link_id, inlet.point_id, target.point_id))
+    return output
 
 
 def next_point_id(kind: str, used: set[str]) -> str:
