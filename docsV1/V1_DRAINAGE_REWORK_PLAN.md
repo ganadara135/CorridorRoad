@@ -1,0 +1,209 @@
+# Parametric Road V1 Drainage Rework Plan
+
+Date: 2026-10-16
+Branch: `ganada_0902`
+Status: Proposed; DR-1 is next
+Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
+culverts, flowline checks against a policy, and their review
+Related:
+
+- [V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md](./V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md) (done; this plan builds on GR-1 and GR-3)
+- [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md), [V1_DRAINAGE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_IMPLEMENTATION_PLAN.md),
+  [V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md) (the current design; replaced by this plan)
+- [V1_STRUCTURE_CONNECTION_NODE_PLAN.md](./V1_STRUCTURE_CONNECTION_NODE_PLAN.md) (pipe ports; revisited in the Structure rebuild)
+
+## 1. Purpose
+
+The current Drainage is about 12,900 lines across source, services, mappers, editor, review and
+tests, and still misses its main engineering check. A review on 2026-10-16 found:
+
+- ditch points take the first Drainage element active on their side, whatever its kind; an inlet or
+  an outfall can tag a ditch, two ditches on one side get the same ref, and a fallback guesses the
+  side from "left"/"right" in the id;
+- `_element_route_offset` reads an `offset` field elements do not have, so it is always 0;
+- policy families are guessed from words such as "culvert" or "outfall" in ids and free text;
+- `min_grade_rule` and `low_point_rule` are stored but never used: the flowline grade check
+  (ok / flat / reverse) does not compare with the policy's minimum grade;
+- `direction` holds a preset's route label (`ditch_to_inlet`), which nothing reads;
+- the editor offers 7 element kinds, services carry their own alias sets (gutter, swale, channel,
+  lined_ditch, catch_basin, outlet_reference), and Applied Sections only ever produce `ditch`;
+- pipe results take six steps (candidate, segment, geometry, solid, network, junction); solid,
+  network and junction feed only the paused Watertight Solids and the Simulation package.
+
+The rework starts from what a user does, asks for the least input, and derives everything else
+from the road results.
+
+## 2. Decisions taken
+
+- Rewrite, not repair. The old Drainage source, services, mappers, editor, review and their tests
+  are removed; existing documents need no migration (standing rule of this branch). A saved
+  document's old Drainage object is replaced when the new editor first applies.
+- Kept: the command IDs `CorridorRoad_V1EditDrainage` and `CorridorRoad_V1DrainageReview`, the
+  `05_Drainage` tree folder, the icons, and the Assembly `ditch` subassembly with its
+  `ditch_surface` point role and the corridor `drainage_surface`.
+- Drainage owns where water is collected and where it goes. The ditch shape stays owned by the
+  Assembly; Drainage never edits section geometry.
+- Flow direction, grades, low points and elevations are evaluated, never authored.
+- Kinds are a closed list. No kind, family or side is ever inferred from an id or a label.
+- Pipes stop at a checked link: from, to, length and grade. Pipe bodies, Structure ports and the
+  network and junction results wait for the Structure rebuild, which owns the ports.
+- The Drainage paths of Watertight Solids and the Simulation package are removed with the old
+  pipe results (D2 of the general road plan deferred this to here).
+
+## 3. User workflow
+
+```text
+1. Which ditches drain the road?        -> Ditch Runs (prefilled from the Assembly)
+2. Where is water collected or let out? -> Points: inlet, outfall, culvert (suggested at low points)
+3. What flows where?                     -> Links: from -> to
+4. Does it drain?                        -> Review: flowline profile and checks against the Policy
+```
+
+Every step has a default or a suggestion, so a road with a ditch gets a complete, checked Drainage
+in a few clicks: open the editor, accept the prefilled runs, accept the suggested inlets, Apply.
+
+## 4. Source model (`v1/models/source/drainage_model.py`, rewritten)
+
+| Row | Fields | Notes |
+|---|---|---|
+| `DrainagePolicy` (one per document) | `min_grade_percent`, `max_inlet_spacing_m`, `low_point_rule` (`require_inlet`, `allow_ponding`) | numbers and choices only |
+| `DitchRun` | `ditch_run_id`, `side` (`left`/`right`), `subassembly_ref`, `station_start`, `station_end` | the subassembly must be an Assembly `ditch`; one run per ditch and span |
+| `DrainagePoint` | `point_id`, `kind` (`inlet`/`outfall`/`culvert`), `station`, `side` or `offset_m`, `ditch_run_ref` | an inlet on a run takes the run's side and flowline; a culvert crosses the road and has both sides |
+| `DrainageLink` | `link_id`, `from_ref`, `to_ref` | refs to points; a run drains to the points on it by evaluation, not by a link |
+
+- Units are explicit in field names: stations and offsets in meters, grade in percent.
+- Identity: one Drainage object per project, as GR-1 settled. Ids are stable and generated by the
+  editor (`ditch:left:1`, `inlet:3`).
+- Persistence follows the object adapter pattern (`obj_drainage.py` rewritten): one property per
+  column, `if not hasattr` guards, no schema migration.
+
+## 5. Evaluation and result
+
+```text
+Applied Sections -> Drainage evaluation -> Drainage result -> Build Parametric tags / Review / Outputs
+```
+
+`v1/services/evaluation/drainage_evaluation_service.py` (new, pure Python):
+
+- Flowline per Ditch Run: the run's `ditch_surface` low point at every Applied Section in its span,
+  with station, x, y, z.
+- Derived per run: grade between sections, low points, high points, and the flow direction of each
+  segment.
+- Checks against the Policy, each with run or point ref, station and status:
+  - grade below `min_grade_percent` (flat) or against the outlet (reverse);
+  - a low point with no inlet or outfall within one section spacing (`require_inlet`);
+  - inlet spacing above `max_inlet_spacing_m`;
+  - a point off its run's span, or a culvert outside the road;
+  - a link whose `to` is higher than its `from`, a link loop, a point that drains nowhere.
+- Suggestions: an inlet at each uncovered low point, and inlets where spacing is exceeded, as
+  rows the editor can apply.
+
+`DrainageResult` (`v1/models/result/drainage_result.py`, replaces `drainage_pipeline.py`) holds the
+flowlines, checks, suggestions and links with length and grade. It is stored on its object and is a
+freshness stage after Applied Sections (GR-3): Profile, Superelevation, Assembly or Drainage source
+edits make it stale, and Rebuild Downstream rebuilds it.
+
+Applied Sections tag `ditch_surface` points with the `ditch_run_id` whose `subassembly_ref` and side
+match the point's own subassembly, and nothing else. The Region/station context no longer carries
+Drainage refs.
+
+## 6. UI
+
+- **Drainage editor** (`ui/editors/drainage_editor.py`, rewritten): one panel.
+  - Policy: three fields at the top.
+  - Ditch Runs table: prefilled from the active Assembly's ditches over the Region spans when the
+    source is empty; editing is by station range and on/off.
+  - Points table in station order, with a Suggestions list beside it; "Apply suggestion" adds the
+    point to the table, not to the document.
+  - Links table with from/to pickers listing the points.
+  - Nothing is written until Apply; Cancel writes nothing; opening the editor never creates sample
+    data.
+- **Drainage Review** (`ui/viewers/drainage_review_view.py`, rewritten): a flowline profile per
+  run with points, low points and failing segments marked, a checks table that focuses the 3D view
+  on a row, and the GR-3 freshness line. It edits nothing.
+- **Build Parametric** keeps one Drainage line: the result's status and check count, with a button
+  to open the review. The old Drainage and flow review rows and highlights leave the command.
+
+## 7. Removal list
+
+Removed with DR-1 unless noted (roughly 7,500 lines of code and tests):
+
+- `services/evaluation/drainage_resolution_service.py`
+- `services/mapping/drainage_review_mapper.py`, `drainage_pipeline_geometry_mapper.py`,
+  `drainage_pipeline_solid_mapper.py`, `drainage_pipeline_network_mapper.py`
+- `models/result/drainage_pipeline.py`; `models/output/drainage_output.py` is rewritten in DR-5
+- `ui/presentation/drainage_review_presentation.py`, `drainage_flow_review_presentation.py`
+- the Drainage review, flow review, highlight and pipe preview functions of `cmd_build_corridor.py`
+  (`corridor_drainage_*`, `_drainage_*`, `create_corridor_drainage_surface_preview` is kept)
+- the Drainage refs in `station_context_resolver.py` and the side guessing in
+  `applied_section_service.py` (`_section_row_drainage_refs` and helpers)
+- the Drainage paths of `cmd_watertight_solids.py`, `watertight_simulation_*`,
+  `solid_target_discovery_service.py` and the Simulation package (DR-4)
+- the old tests: `test_v1_drainage_source_object.py`, `test_drainage_editor_command.py`,
+  `test_drainage_review_command.py` and Drainage cases elsewhere, replaced phase by phase
+- `V1_DRAINAGE_MODEL.md`, `V1_DRAINAGE_IMPLEMENTATION_PLAN.md`,
+  `V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md` and `wiki/Drainage.md`, rewritten in DR-5
+
+Between DR-1 and DR-5 the Drainage Review command stays registered and shows "being rebuilt"; this
+branch is not released in between.
+
+## 8. Phases
+
+### DR-1 Source model and Ditch Runs
+
+- Rewrite `drainage_model.py` and `obj_drainage.py`; remove the files in section 7.
+- Applied Sections tag ditch points by `subassembly_ref` and side through the Ditch Run.
+- Editor: Policy and Ditch Runs, with prefill from the Assembly.
+- Tests: model round trip and save/reopen; prefill from "Full Set Road"; two ditches on one side
+  get their own runs; a ditch outside every run is untagged.
+
+### DR-2 Flowline evaluation and checks
+
+- `drainage_evaluation_service.py` and `DrainageResult` with flowlines and the grade checks.
+- Freshness stage `drainage` after `applied_sections`; Rebuild Downstream includes it.
+- Tests: grade, low point and direction on a profile with a sag; flat and reverse against the
+  policy; stale after a Profile edit and current after a rebuild.
+
+### DR-3 Points and suggestions
+
+- Points table, suggestions and "Apply suggestion"; low point and spacing checks.
+- Tests: a sag yields one inlet suggestion; applying it clears the check; spacing suggestion count.
+
+### DR-4 Links
+
+- Links table and checks (uphill link, loop, point draining nowhere); length and grade per link.
+- Remove the Drainage paths of Watertight Solids and the Simulation package.
+- Tests: link grade and length; uphill and loop diagnostics; Watertight smokes still pass without
+  Drainage input.
+
+### DR-5 Review and outputs
+
+- Drainage Review rewritten; Build Parametric Drainage line; `drainage_output.py` rewritten from the
+  result; docs and wiki rewritten.
+- `smoke_v1_workflow.py` adds a ditch run, an accepted inlet suggestion and a link, and checks the
+  Drainage stage goes stale and current with the others.
+
+Each phase ends with the gate and a GUI check, then a commit.
+
+## 9. Validation per phase
+
+```powershell
+& "C:\Program Files\FreeCAD 1.1\bin\python.exe" -m pytest tests\architecture tests\contracts -q -p no:cacheprovider
+.\tests\regression\run_short_term_smokes.ps1
+.\tests\regression\run_practical_scope_smokes.ps1
+.\tests\regression\run_loft_retirement_gate_smokes.ps1
+```
+
+## 10. Non-goals
+
+- Hydraulics: catchment areas, runoff, capacity and pipe sizing.
+- Pipe bodies, manholes and Structure ports (Structure rebuild).
+- Intersection drainage beyond what the intersection kernel already reports as a low point.
+- Drainage in Watertight Solids or the Simulation package.
+
+## 11. Open questions
+
+- Q1: Should a culvert carry a diameter now, for review only, or wait for the Structure rebuild?
+  Proposed: wait.
+- Q2: Should the editor's Ditch Run prefill follow Region spans, or run over the whole Alignment
+  where the Assembly has a ditch? Proposed: Region spans, since Regions own the Assembly assignment.
