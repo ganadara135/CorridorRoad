@@ -15,8 +15,7 @@ STATIONING = "stationing"
 CENTERLINE3D = "centerline3d"
 APPLIED_SECTIONS = "applied_sections"
 BUILD_PARAMETRIC = "build_parametric"
-# Workflow order. The 3D Centerline stage is its review object; Applied Sections evaluate their own
-# centerline, so both consume Stations directly (GR-4 makes the 3D Centerline their shared input).
+# Workflow order. Applied Sections take their station frames from the stored 3D Centerline.
 RESULT_STAGES = (STATIONING, CENTERLINE3D, APPLIED_SECTIONS, BUILD_PARAMETRIC)
 STAGE_LABELS = {
     STATIONING: "Stations",
@@ -25,7 +24,7 @@ STAGE_LABELS = {
     BUILD_PARAMETRIC: "Build Parametric",
 }
 # The stage each stage consumes directly.
-UPSTREAM_STAGE = {CENTERLINE3D: STATIONING, APPLIED_SECTIONS: STATIONING, BUILD_PARAMETRIC: APPLIED_SECTIONS}
+UPSTREAM_STAGE = {CENTERLINE3D: STATIONING, APPLIED_SECTIONS: CENTERLINE3D, BUILD_PARAMETRIC: APPLIED_SECTIONS}
 
 CURRENT = "current"
 STALE = "stale"

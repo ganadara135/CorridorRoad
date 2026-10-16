@@ -27,10 +27,11 @@ from ..common.model_fields import (
 )
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
 from ..objects.document_kind import is_general_road_document
-from ..objects.result_freshness import build_parametric_inputs, document_result_freshness
+from ..objects.obj_centerline3d import find_v1_centerline3d_object, to_centerline3d_result
+from ..objects.result_freshness import build_parametric_inputs, document_result_freshness  # noqa: F401 - runtime-injected UI collaborator
 from ..objects.stage_inputs import record_stage_inputs
-from ..services.evaluation.result_freshness_service import freshness_text
-from .cmd_rebuild_downstream import run_v1_rebuild_downstream_command
+from ..services.evaluation.result_freshness_service import freshness_text  # noqa: F401 - runtime-injected UI collaborator
+from .cmd_rebuild_downstream import run_v1_rebuild_downstream_command  # noqa: F401 - runtime-injected UI collaborator
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model, to_corridor_model
@@ -4619,14 +4620,8 @@ def _build_corridor_consumed_centerline_source_mode(document=None) -> str:
         value = str(getattr(obj, "PreviewSource", "") or getattr(obj, "ConsumedCenterlineSourceMode", "") or "")
         if value:
             return value
-    try:
-        from .cmd_centerline3d import build_document_centerline3d_result
-
-        result = build_document_centerline3d_result(doc)
-        if result is not None:
-            return "centerline3d_result"
-    except Exception:
-        pass
+    if to_centerline3d_result(find_v1_centerline3d_object(doc)) is not None:
+        return "centerline3d_result"
     return ""
 
 
@@ -4642,13 +4637,8 @@ def _build_corridor_consumed_centerline_result_id(document=None) -> str:
         value = str(getattr(obj, "Centerline3DResultId", "") or getattr(obj, "ConsumedCenterline3DResultId", "") or "")
         if value:
             return value
-    try:
-        from .cmd_centerline3d import build_document_centerline3d_result
-
-        result = build_document_centerline3d_result(doc)
-        return str(getattr(result, "centerline3d_result_id", "") or "")
-    except Exception:
-        return ""
+    result = to_centerline3d_result(find_v1_centerline3d_object(doc))
+    return str(getattr(result, "centerline3d_result_id", "") or "")
 
 
 def _corridor_surface_preview_source_refs(corridor_model, surface_model, applied_section_set=None) -> list[str]:
@@ -8253,12 +8243,9 @@ def _corridor_centerline_preview_shape(document, app_module, part_module):
 
 
 def _build_corridor_centerline3d_result(document):
-    try:
-        from .cmd_centerline3d import build_document_centerline3d_result
+    """The stored 3D Centerline the Applied Sections were built on; None when there is none."""
 
-        return build_document_centerline3d_result(document)
-    except Exception:
-        return None
+    return to_centerline3d_result(find_v1_centerline3d_object(document))
 
 
 def _corridor_supplemental_frame_resolver(document):

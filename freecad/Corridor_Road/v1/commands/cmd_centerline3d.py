@@ -24,6 +24,7 @@ from ..models.result.centerline3d_arc_fit import Centerline3DArcFitResult
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_stationing import find_v1_stationing
+from ..objects.obj_centerline3d import write_v1_centerline3d_result
 from ..objects.result_freshness import centerline3d_inputs
 from ..objects.stage_inputs import record_stage_inputs
 from ..services.evaluation import (
@@ -208,6 +209,8 @@ def show_v1_centerline3d_preview_object(
     _set_float(obj, "ElevationMin", float(active_result.elevation_min))
     _set_float(obj, "ElevationMax", float(active_result.elevation_max))
     _set_string_list(obj, "DiagnosticRows", list(active_result.diagnostic_rows or ()))
+    # The stored result Applied Sections and Build Parametric read their station frames from.
+    write_v1_centerline3d_result(obj, active_result)
     # What it was built from and how, for result freshness and Rebuild Downstream.
     record_stage_inputs(
         obj,

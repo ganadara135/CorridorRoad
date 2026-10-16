@@ -7,6 +7,7 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     assembly_subassembly_preset_model_from_document,
 )
 import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections as applied_sections_command
+from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     CmdV1AppliedSections,
     V1AppliedSectionsTaskPanel,
@@ -68,6 +69,8 @@ def test_build_document_applied_section_set_uses_v1_sources() -> None:
         region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
 
+        show_v1_centerline3d_preview_object(doc, project=project)
+
         result = build_document_applied_section_set(doc, project=project)
 
         # Applied Sections owns supplemental density, so the set holds the five
@@ -109,6 +112,8 @@ def test_build_document_applied_section_set_uses_superelevation_source() -> None
             ),
         )
 
+        show_v1_centerline3d_preview_object(doc, project=project)
+
         result = build_document_applied_section_set(doc, project=project)
         section = next(section for section in result.sections if round(section.station, 3) == 60.0)
         right_rows = [row for row in section.subassembly_rows if row.kind in {"lane", "shoulder"} and row.side == "right"]
@@ -145,6 +150,8 @@ def test_assembly_preset_apply_syncs_region_refs_for_benched_build() -> None:
             assembly_model=assembly_subassembly_preset_model_from_document("Benched Slope Road", doc, project=project, alignment=alignment),
         )
 
+        show_v1_centerline3d_preview_object(doc, project=project)
+
         result = build_document_applied_section_set(doc, project=project)
 
         assert result.sections
@@ -172,6 +179,7 @@ def test_applied_section_review_rows_summarize_station_context() -> None:
         create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        show_v1_centerline3d_preview_object(doc, project=project)
         result = build_document_applied_section_set(doc, project=project)
 
         rows = applied_section_review_rows(result)
@@ -211,6 +219,8 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
             priority=first.priority,
         )
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+
+        show_v1_centerline3d_preview_object(doc, project=project)
 
         result = build_document_applied_section_set(doc, project=project)
         rows = applied_section_review_rows(result)
@@ -277,6 +287,8 @@ def test_build_document_applied_sections_resolves_drainage_from_drainage_model_r
             ),
         )
 
+        show_v1_centerline3d_preview_object(doc, project=project)
+
         result = build_document_applied_section_set(doc, project=project)
 
         ditch_subassemblies = [row for row in result.sections[0].subassembly_rows if row.kind == "ditch"]
@@ -325,6 +337,8 @@ def test_build_document_applied_section_set_uses_region_specific_assembly_object
         )
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
 
+        show_v1_centerline3d_preview_object(doc, project=project)
+
         result = build_document_applied_section_set(doc, project=project)
 
         assert result.sections
@@ -345,6 +359,8 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
         create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+
+        show_v1_centerline3d_preview_object(doc, project=project)
 
         obj = apply_v1_applied_section_set(document=doc, project=project)
 
@@ -410,6 +426,7 @@ def test_applied_sections_validate_allows_drainage_element_without_region() -> N
                 ],
             ),
         )
+        show_v1_centerline3d_preview_object(doc, project=project)
 
         panel = V1AppliedSectionsTaskPanel(document=doc)
 
@@ -490,6 +507,8 @@ def test_applied_sections_carry_intersection_source_status_diagnostics() -> None
             ),
         )
 
+        show_v1_centerline3d_preview_object(doc, project=project)
+
         result = build_document_applied_section_set(doc, project=project)
         section = next(section for section in result.sections if round(float(section.station), 3) == 60.0)
         diagnostic_kinds = {row.kind for row in section.diagnostic_rows}
@@ -526,6 +545,7 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        show_v1_centerline3d_preview_object(doc, project=project)
         result = build_document_applied_section_set(doc, project=project)
 
         obj = show_applied_section_preview_object(doc, result, 0)
@@ -559,6 +579,7 @@ def test_show_all_applied_sections_preview_object_creates_combined_section_lines
         create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        show_v1_centerline3d_preview_object(doc, project=project)
         result = build_document_applied_section_set(doc, project=project)
 
         obj = show_all_applied_sections_preview_object(doc, result)
@@ -588,6 +609,7 @@ def test_hide_applied_sections_preview_objects_hides_existing_previews() -> None
         create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        show_v1_centerline3d_preview_object(doc, project=project)
         result = build_document_applied_section_set(doc, project=project)
 
         selected_preview = show_applied_section_preview_object(doc, result, 0)

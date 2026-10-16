@@ -22,12 +22,14 @@ from ...misc.resources import icon_path
 from ..objects.obj_alignment import find_v1_alignment
 from ..objects.obj_applied_section import find_v1_applied_section_set
 from ..objects.obj_corridor import find_v1_corridor_model
-from ..objects.result_freshness import document_result_freshness, find_centerline3d_object, stationing_freshness_rows
+from ..objects.obj_centerline3d import find_v1_centerline3d_object
+from ..objects.result_freshness import document_result_freshness, stationing_freshness_rows
 from ..objects.stage_inputs import read_stage_options
 from ..services.evaluation.result_freshness_service import (
     APPLIED_SECTIONS,
     BUILD_PARAMETRIC,
     CENTERLINE3D,
+    CURRENT,
     MISSING,
     RESULT_STAGES,
     STAGE_LABELS,
@@ -111,10 +113,10 @@ def rebuild_downstream(document, *, through: str = BUILD_PARAMETRIC) -> RebuildD
     for stage in RESULT_STAGES[: RESULT_STAGES.index(through) + 1]:
         row = freshness[stage]
         upstream_rebuilt = UPSTREAM_STAGE.get(stage) in rebuilt
-        if row.status == MISSING:
+        if row.status == MISSING and not _needed_by_applied_sections(stage, freshness, through):
             outcomes.append(RebuildStageOutcome(stage, SKIPPED, message="not built yet"))
             continue
-        if row.status != STALE and not upstream_rebuilt:
+        if row.status == CURRENT and not upstream_rebuilt:
             outcomes.append(RebuildStageOutcome(stage, SKIPPED, row.object_names, "current"))
             continue
         try:
@@ -126,6 +128,17 @@ def rebuild_downstream(document, *, through: str = BUILD_PARAMETRIC) -> RebuildD
         rebuilt.add(stage)
         outcomes.append(RebuildStageOutcome(stage, REBUILT, names))
     return RebuildDownstreamReport(tuple(outcomes))
+
+
+def _needed_by_applied_sections(stage: str, freshness: dict, through: str) -> bool:
+    """Applied Sections read the stored 3D Centerline, so a run that reaches existing Applied
+    Sections generates a missing 3D Centerline with the default options."""
+
+    return (
+        stage == CENTERLINE3D
+        and RESULT_STAGES.index(through) >= RESULT_STAGES.index(APPLIED_SECTIONS)
+        and freshness[APPLIED_SECTIONS].status != MISSING
+    )
 
 
 def _rebuild_stationing(document) -> tuple[str, ...]:
@@ -149,7 +162,7 @@ def _rebuild_stationing(document) -> tuple[str, ...]:
 def _rebuild_centerline3d(document) -> tuple[str, ...]:
     from .cmd_centerline3d import show_v1_centerline3d_preview_object
 
-    options = _known_options(read_stage_options(find_centerline3d_object(document)), _CENTERLINE3D_OPTIONS)
+    options = _known_options(read_stage_options(find_v1_centerline3d_object(document)), _CENTERLINE3D_OPTIONS)
     obj = show_v1_centerline3d_preview_object(document, **options)
     return (str(obj.Name),)
 

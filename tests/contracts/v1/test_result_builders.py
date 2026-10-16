@@ -128,6 +128,7 @@ def test_applied_section_service_builds_subassembly_rows_from_template() -> None
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -141,7 +142,12 @@ def test_applied_section_service_builds_subassembly_rows_from_template() -> None
                 control_point_id="pvi-1",
                 station=0.0,
                 elevation=10.0,
-            )
+            ),
+            ProfileControlPoint(
+                control_point_id="pvi-1-end",
+                station=100.0,
+                elevation=10.0,
+            ),
         ],
     )
     assembly = AssemblySubassemblyModel(
@@ -209,14 +215,14 @@ def test_applied_section_service_evaluates_designer_subassembly_definitions() ->
         schema_version=1,
         project_id="proj-1",
         alignment_id="align-designer",
-        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0, geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]})],
     )
     profile = ProfileModel(
         schema_version=1,
         project_id="proj-1",
         profile_id="prof-designer",
         alignment_id="align-designer",
-        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0), ProfileControlPoint("pvi-1-end", station=100.0, elevation=10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -305,14 +311,14 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
         schema_version=1,
         project_id="proj-1",
         alignment_id="align-1",
-        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0, geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]})],
     )
     profile = ProfileModel(
         schema_version=1,
         project_id="proj-1",
         profile_id="prof-1",
         alignment_id="align-1",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -407,14 +413,14 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
         schema_version=1,
         project_id="proj-1",
         alignment_id="align-1",
-        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0, geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]})],
     )
     profile = ProfileModel(
         schema_version=1,
         project_id="proj-1",
         profile_id="prof-1",
         alignment_id="align-1",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -661,6 +667,7 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -669,7 +676,7 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
         project_id="proj-1",
         profile_id="prof-bench",
         alignment_id="align-bench",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -763,6 +770,7 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -771,7 +779,7 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
         project_id="proj-1",
         profile_id="prof-bench-terrain",
         alignment_id="align-bench-terrain",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -871,6 +879,7 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -879,7 +888,7 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
         project_id="proj-1",
         profile_id="prof-bench-cut",
         alignment_id="align-bench-cut",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -961,6 +970,7 @@ def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_bef
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -969,7 +979,7 @@ def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_bef
         project_id="proj-1",
         profile_id="prof-bench-max-daylight",
         alignment_id="align-bench-max-daylight",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1057,6 +1067,7 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1065,7 +1076,7 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
         project_id="proj-1",
         profile_id="prof-ditch",
         alignment_id="align-ditch",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1174,6 +1185,7 @@ def test_applied_section_service_starts_ditch_from_sloped_fg_edge() -> None:
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1182,7 +1194,7 @@ def test_applied_section_service_starts_ditch_from_sloped_fg_edge() -> None:
         project_id="proj-1",
         profile_id="prof-ditch-edge",
         alignment_id="align-ditch-edge",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1239,6 +1251,7 @@ def test_applied_section_service_connects_definition_shoulder_to_ditch() -> None
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1247,7 +1260,7 @@ def test_applied_section_service_connects_definition_shoulder_to_ditch() -> None
         project_id="proj-1",
         profile_id="prof-shoulder-ditch",
         alignment_id="align-shoulder-ditch",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1339,6 +1352,7 @@ def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1347,7 +1361,7 @@ def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -
         project_id="proj-1",
         profile_id="prof-bench-ditch",
         alignment_id="align-bench-ditch",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1422,6 +1436,7 @@ def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> No
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1430,7 +1445,7 @@ def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> No
         project_id="proj-1",
         profile_id="prof-ditch-shapes",
         alignment_id="align-ditch-shapes",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     region_model = RegionModel(
         schema_version=1,
@@ -1513,6 +1528,7 @@ def test_applied_section_service_reports_invalid_ditch_shape_parameters() -> Non
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1521,7 +1537,7 @@ def test_applied_section_service_reports_invalid_ditch_shape_parameters() -> Non
         project_id="proj-1",
         profile_id="prof-ditch-validation",
         alignment_id="align-ditch-validation",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1588,6 +1604,7 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -1596,7 +1613,7 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
         project_id="proj-1",
         profile_id="prof-assembly-ref",
         alignment_id="align-assembly-ref",
-        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0), ProfileControlPoint("pvi-1-end", station=100.0, elevation=10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -1656,7 +1673,7 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
         project_id="proj-1",
         alignment_id="align-structure-context",
         geometry_sequence=[
-            AlignmentElement("el-1", "tangent", station_start=0.0, station_end=100.0)
+            AlignmentElement("el-1", "tangent", station_start=0.0, station_end=100.0, geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]})
         ],
     )
     profile = ProfileModel(
@@ -1664,7 +1681,7 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
         project_id="proj-1",
         profile_id="prof-structure-context",
         alignment_id="align-structure-context",
-        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0), ProfileControlPoint("pvi-1-end", station=100.0, elevation=10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -2300,6 +2317,7 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch_and_uses_
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -2308,7 +2326,7 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch_and_uses_
         project_id="proj-1",
         profile_id="prof-assembly-mismatch",
         alignment_id="align-assembly-mismatch",
-        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0), ProfileControlPoint("pvi-1-end", station=100.0, elevation=10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -2367,6 +2385,7 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
                 kind="tangent",
                 station_start=0.0,
                 station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
             )
         ],
     )
@@ -2375,7 +2394,7 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
         project_id="proj-1",
         profile_id="prof-section-set",
         alignment_id="align-section-set",
-        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0), ProfileControlPoint("pvi-1-end", station=100.0, elevation=10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,
@@ -3479,14 +3498,14 @@ def test_corridor_surface_geometry_service_uses_superelevation_resolved_section_
         schema_version=1,
         project_id="proj-1",
         alignment_id="align-1",
-        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0, geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]})],
     )
     profile = ProfileModel(
         schema_version=1,
         project_id="proj-1",
         profile_id="prof-1",
         alignment_id="align-1",
-        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-1-end", 100.0, 10.0)],
     )
     assembly = AssemblySubassemblyModel(
         schema_version=1,

@@ -51,9 +51,16 @@ from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_superelevation import to_superelevation_model
 from ..objects.document_kind import is_general_road_document
+from ..objects.obj_centerline3d import find_v1_centerline3d_object, to_centerline3d_result
 from ..objects.result_freshness import applied_sections_inputs, document_result_freshness
 from ..objects.stage_inputs import record_stage_inputs
-from ..services.evaluation.result_freshness_service import APPLIED_SECTIONS, RESULT_STAGES, freshness_text
+from ..services.evaluation.result_freshness_service import (
+    APPLIED_SECTIONS,
+    CENTERLINE3D,
+    RESULT_STAGES,
+    STALE,
+    freshness_text,
+)
 from ..objects.source_identity import duplicate_source_rows, duplicate_source_text
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 from ..services.builders.corridor_surface_geometry_service import (
@@ -220,7 +227,7 @@ def _build_applied_section_set_pass(
         raise RuntimeError("Required v1 sources are missing: " + ", ".join(missing))
 
     project_id = _project_id(project or find_project(doc))
-    centerline3d_result = _build_applied_sections_centerline3d_result(doc)
+    centerline3d_result = stored_centerline3d_result(doc)
     if len(source_bundles) > 1:
         return _build_multi_alignment_applied_section_set(
             source_bundles,
@@ -1503,13 +1510,36 @@ def _clamp_station(value: float, *, station_min: float, station_max: float) -> f
     return max(float(station_min), min(float(station_max), float(value)))
 
 
-def _build_applied_sections_centerline3d_result(document):
-    try:
-        from .cmd_centerline3d import build_document_centerline3d_result
+def stored_centerline3d_result(document) -> Centerline3DResult:
+    """The stored 3D Centerline the station frames come from.
 
-        return build_document_centerline3d_result(document)
-    except Exception:
-        return None
+    Applied Sections never evaluate a centerline of their own: a missing, stale, unreadable or
+    failed 3D Centerline stops the build and says which, so no section takes its frame from
+    another source.
+    """
+
+    obj = find_v1_centerline3d_object(document)
+    if obj is None:
+        raise RuntimeError(
+            "Applied Sections need the 3D Centerline, which has not been generated. "
+            "Generate it in 3D Centerline, or run Rebuild Downstream."
+        )
+    row = next(row for row in document_result_freshness(document) if row.stage == CENTERLINE3D)
+    if row.status == STALE:
+        raise RuntimeError(
+            f"The 3D Centerline is stale ({', '.join(row.changed_inputs)}). "
+            "Generate it again in 3D Centerline, or run Rebuild Downstream."
+        )
+    result = to_centerline3d_result(obj)
+    if result is None:
+        raise RuntimeError(f"{obj.Label} holds no stored 3D Centerline result. Generate it again in 3D Centerline.")
+    if str(result.status or "") != "ready":
+        raise RuntimeError(
+            f"The 3D Centerline of {result.alignment_id or 'the road'} is {result.status or 'not ready'}: "
+            + "; ".join(list(result.diagnostic_rows or ()) or ["no diagnostic was recorded"])
+            + ". Check the Alignment, Profile and Stations."
+        )
+    return result
 
 
 def _source_status(obj) -> str:
@@ -1562,15 +1592,10 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
         diagnostics.append("profile_source_not_readable: Profile source model could not be read.")
         return diagnostics
 
-    centerline_result = _build_applied_sections_centerline3d_result(document)
-    if centerline_result is None:
-        diagnostics.append("missing_centerline3d_result: 3D Centerline could not be evaluated.")
-        return diagnostics
-    if str(getattr(centerline_result, "status", "") or "") != "ready":
-        diagnostics.append(
-            "centerline3d_not_ready: "
-            + "; ".join(list(getattr(centerline_result, "diagnostic_rows", []) or []) or ["3D Centerline is not ready."])
-        )
+    try:
+        centerline_result = stored_centerline3d_result(document)
+    except RuntimeError as exc:
+        diagnostics.append(f"centerline3d_not_usable: {exc}")
         return diagnostics
 
     frame_service = Centerline3DFrameService()

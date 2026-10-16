@@ -13,6 +13,7 @@ from freecad.Corridor_Road.objects.obj_project import (
 )
 import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
 from freecad.Corridor_Road.v1.models.output.surface_output import intersection_surface_replacement_blocker_kind
+from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
     _hide_applied_section_set_review_shape,
@@ -3977,6 +3978,8 @@ def test_apply_v1_corridor_model_prefers_shared_centerline3d_result_preview() ->
         alignment = create_sample_v1_alignment(doc, project=project)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
+        # Build Parametric draws its centerline from the stored 3D Centerline.
+        show_v1_centerline3d_preview_object(doc, project=project)
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
 
         apply_v1_corridor_model(document=doc, project=project)
@@ -4676,6 +4679,8 @@ def test_corridor_build_review_warns_when_centerline_consumer_uses_fallback() ->
         alignment = create_sample_v1_alignment(doc, project=project)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
+        # Build Parametric draws its centerline from the stored 3D Centerline.
+        show_v1_centerline3d_preview_object(doc, project=project)
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
 
         apply_v1_corridor_model(document=doc, project=project)

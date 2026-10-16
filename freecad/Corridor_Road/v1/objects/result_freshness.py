@@ -20,6 +20,7 @@ from ..services.evaluation.result_freshness_service import (
 )
 from .obj_alignment import find_v1_alignment, list_v1_alignments, to_alignment_model
 from .obj_applied_section import find_v1_applied_section_set
+from .obj_centerline3d import centerline3d_result_fingerprint, find_v1_centerline3d_object
 from .obj_corridor import find_v1_corridor_model
 from .obj_drainage import find_v1_drainage_model, to_drainage_model
 from .obj_intersection import find_v1_intersection_model, stored_intersection_spec, to_intersection_model
@@ -88,6 +89,10 @@ def applied_sections_inputs(document) -> dict[str, str]:
             [to_subassembly_preset_library(obj) for obj in list_v1_subassembly_preset_libraries(document)],
         ]
     )
+    centerline_obj = find_v1_centerline3d_object(document)
+    if centerline_obj is not None:
+        # The stored 3D Centerline the station frames come from.
+        inputs["centerline3d"] = centerline3d_result_fingerprint(centerline_obj)
     _optional_input(inputs, "structure", to_structure_model(find_v1_structure_model(document)))
     _optional_input(inputs, "drainage", to_drainage_model(find_v1_drainage_model(document)))
     intersection_obj = find_v1_intersection_model(document)
@@ -133,7 +138,7 @@ def document_result_freshness(document) -> list[StageFreshness]:
     """Freshness of every result stage, in workflow order."""
 
     stationing = merge_stage_rows(STATIONING, stationing_freshness_rows(document))
-    centerline_obj = find_centerline3d_object(document)
+    centerline_obj = find_v1_centerline3d_object(document)
     centerline = stage_freshness(
         CENTERLINE3D,
         object_names=_names(centerline_obj),
@@ -158,14 +163,6 @@ def document_result_freshness(document) -> list[StageFreshness]:
         upstream=applied,
     )
     return [stationing, centerline, applied, build]
-
-
-# The review object the 3D Centerline command writes (`cmd_centerline3d`).
-CENTERLINE3D_OBJECT_NAME = "V1Centerline3DPreview"
-
-
-def find_centerline3d_object(document):
-    return document.getObject(CENTERLINE3D_OBJECT_NAME) if document is not None else None
 
 
 def terrain_token(document) -> list[object] | None:
@@ -225,11 +222,9 @@ def _names(obj) -> tuple[str, ...]:
 
 __all__ = [
     "applied_sections_inputs",
-    "CENTERLINE3D_OBJECT_NAME",
     "build_parametric_inputs",
     "centerline3d_inputs",
     "document_result_freshness",
-    "find_centerline3d_object",
     "stationing_freshness_rows",
     "stationing_inputs",
     "terrain_token",

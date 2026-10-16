@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1, GR-1B, GR-2 and GR-3 done and D1-D3 decided on 2026-10-16; GR-4 next
+Status: In progress. GR-1 to GR-4 done and D1-D3 decided on 2026-10-16; GR-5 next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -278,6 +278,31 @@ Done on 2026-10-16:
 
 Acceptance: a Centerline failure is visible in the Applied Sections status and diagnostics; no silent
 frame switch remains.
+
+Done on 2026-10-16. Decided by the user: Applied Sections require the stored 3D Centerline, and the
+separate Alignment/Profile fallback frame is removed.
+
+- `v1/objects/obj_centerline3d.py` stores the `Centerline3DResult` as a typed payload on the 3D
+  Centerline object; `show_v1_centerline3d_preview_object` writes it.
+- Applied Sections read it through `stored_centerline3d_result`: missing, stale (with the changed
+  inputs), unreadable or not ready stops the build with a message that says which and what to run.
+  The panel's validation shows the same as `centerline3d_not_usable`. Freshness: Applied Sections
+  consume the 3D Centerline stage and record its result fingerprint as the `centerline3d` input.
+- The `alignment_profile_fallback` frame is gone. A station the 3D Centerline gives no frame for
+  stops the build with the road, the station and the causes: a section without a frame has no
+  position, so it is not built rather than marked. Within the 3D Centerline frame service, the
+  exact source-geometry frame and the interpolation of the stored result are both 3D Centerline
+  frames and stay; each records its `source_mode`.
+- Build Parametric's centerline preview, supplemental frames and consumed-centerline ids read the
+  stored result; its `except Exception: return None` evaluation is gone.
+- Rebuild Downstream generates a missing 3D Centerline, with the default options, when the run
+  reaches existing Applied Sections.
+- Tests: `tests/contracts/v1/test_centerline3d_stored_result.py` (new). Applied Sections, Build
+  Parametric and result-builder tests now generate the 3D Centerline, or give their synthetic roads
+  coordinates and a second profile point, which the removed fallback used to cover.
+- Left for later: the Superelevation, Structure and Intersection editors and Drainage Review still
+  evaluate a centerline for their own previews; Applied Section readers keep recognising
+  `alignment_profile_fallback` in results stored before this change.
 
 ### GR-5. Surface Transitions authored in Regions
 

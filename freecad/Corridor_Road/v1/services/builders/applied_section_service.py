@@ -237,6 +237,7 @@ class AppliedSectionService:
         )
         frame = self._build_frame(
             station=request.station,
+            alignment_id=request.alignment.alignment_id,
             alignment_result=alignment_result,
             profile_result=profile_result,
             centerline_frame=centerline_frame,
@@ -487,6 +488,7 @@ class AppliedSectionService:
     def _build_frame(
         *,
         station: float,
+        alignment_id: str = "",
         alignment_result,
         profile_result,
         centerline_frame: Centerline3DFrame | None = None,
@@ -521,41 +523,15 @@ class AppliedSectionService:
                 source_diagnostic_rows=source_diagnostics,
                 notes=centerline_notes,
             )
-        fallback_diagnostics = [
+        # No frame source is substituted: a section without a 3D Centerline frame has no position.
+        causes = [
             str(item)
-            for item in [
-                str(getattr(alignment_result, "notes", "") or "").strip(),
-                str(getattr(profile_result, "notes", "") or "").strip(),
-                *(list(getattr(centerline_frame, "diagnostic_rows", []) or []) if centerline_frame is not None else []),
-            ]
+            for item in list(getattr(centerline_frame, "diagnostic_rows", []) or [])
             if str(item)
-        ]
-        notes = "; ".join(
-            text
-            for text in [
-                "source=alignment_profile_fallback",
-                *fallback_diagnostics,
-            ]
-            if text
-        )
-
-        return AppliedSectionFrame(
-            station=float(station),
-            x=float(getattr(alignment_result, "x", 0.0) or 0.0),
-            y=float(getattr(alignment_result, "y", 0.0) or 0.0),
-            z=float(getattr(profile_result, "elevation", 0.0) or 0.0),
-            tangent_direction_deg=float(getattr(alignment_result, "tangent_direction_deg", 0.0) or 0.0),
-            profile_grade=float(getattr(profile_result, "grade", 0.0) or 0.0),
-            alignment_status=str(getattr(alignment_result, "status", "") or ""),
-            profile_status=str(getattr(profile_result, "status", "") or ""),
-            active_alignment_element_id=str(getattr(alignment_result, "active_element_id", "") or ""),
-            active_profile_segment_start_id=str(getattr(profile_result, "active_segment_start_id", "") or ""),
-            active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
-            active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
-            source_mode="alignment_profile_fallback",
-            source_status="fallback",
-            source_diagnostic_rows=fallback_diagnostics,
-            notes=notes,
+        ] if centerline_frame is not None else ["no 3D Centerline frame was resolved"]
+        raise RuntimeError(
+            f"{alignment_id or 'Alignment'} STA {float(station):.3f}: the 3D Centerline gives no frame here "
+            f"({'; '.join(causes) or 'no diagnostic'}). Check the Alignment and Profile at this station."
         )
 
     def _evaluate_superelevation(

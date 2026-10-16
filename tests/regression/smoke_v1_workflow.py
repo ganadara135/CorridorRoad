@@ -33,6 +33,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     TREE_KEY_PROP,
 )
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import apply_v1_corridor_model
+from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
@@ -115,6 +116,7 @@ def _build(doc, project):
     alignment = create_sample_v1_alignment(doc, project=project)
     create_sample_v1_profile(doc, project=project, alignment=alignment)
     create_v1_stationing(doc, project=project, alignment=alignment, interval=20.0)
+    show_v1_centerline3d_preview_object(doc, project=project)
     apply_v1_assembly_subassembly_model(
         document=doc,
         project=project,
