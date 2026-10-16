@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1 to GR-6 done and D1-D3 decided on 2026-10-16; GR-7 next
+Status: In progress. GR-1 to GR-7 done and D1-D3 decided on 2026-10-16; GR-8 next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -365,6 +365,26 @@ Done on 2026-10-16:
 - Behavior does not change; one move per commit.
 
 Acceptance: the command module keeps only document, service and UI coordination.
+
+Done on 2026-10-16, one commit per move, no behaviour change:
+
+1. Shared breakline construction (23 pure functions) to
+   `services/builders/corridor_shared_breakline_service.py`.
+2. Guided Review step table and step rules to `ui/presentation/guided_review_presentation.py`.
+3. Region review rows to `ui/presentation/region_review_presentation.py`; the command passes the
+   generated-object check, which reads the document, as a function.
+4. The intersection Guided Review summary to `ui/presentation/intersection_kernel_review_presentation.py`,
+   next to the kernel review rows that were already there.
+
+The command imports the moved names back, so callers, tests and the Build Parametric panel's
+runtime bindings are unchanged; `tests/contracts/v1/test_build_corridor_runtime_bindings.py` (new)
+checks that every collaborator the panel expects is still bound. `cmd_build_corridor.py` went from
+8,957 lines and 330 functions to 7,844 lines and 292 functions.
+
+Not met yet: the module still holds the FreeCAD preview builders (surfaces, Region previews,
+highlights, markers), which are document coordination, and some pure helpers they use. Splitting
+the preview builders into an adapter is a separate step; the Drainage review rows wait for the
+Drainage rework, as planned.
 
 ### GR-8. Workflow smoke coverage
 
