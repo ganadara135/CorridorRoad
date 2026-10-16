@@ -24,6 +24,7 @@ from ..services.editing.drainage_editing_service import (
     RoadStationSpan,
     ditch_choices,
     ditch_run_diagnostics,
+    point_diagnostics,
     policy_diagnostics,
     prefill_ditch_runs,
 )
@@ -97,9 +98,10 @@ def apply_v1_drainage_model(*, document=None, drainage_model: DrainageModel):
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
-    messages = policy_diagnostics(drainage_model.policy) + ditch_run_diagnostics(
-        drainage_model.ditch_run_rows,
-        ditch_choices(_assembly_models(doc)),
+    messages = (
+        policy_diagnostics(drainage_model.policy)
+        + ditch_run_diagnostics(drainage_model.ditch_run_rows, ditch_choices(_assembly_models(doc)))
+        + point_diagnostics(drainage_model.point_rows, drainage_model.ditch_run_rows)
     )
     if messages:
         raise ValueError("Drainage was not applied:\n" + "\n".join(messages))
@@ -123,6 +125,23 @@ def refresh_drainage_result(document) -> str:
             "Run Rebuild Downstream to retag the ditch points and evaluate the Drainage."
         )
     return drainage_result_summary(to_drainage_result(apply_v1_drainage_result(document)))
+
+
+def drainage_suggestions(document) -> tuple[list, str]:
+    """The points the stored Drainage result suggests, and a note when there are none to offer.
+
+    Suggestions of a stale result may sit at stations that no longer hold, so none are offered then.
+    """
+
+    result = to_drainage_result(find_v1_drainage_result_object(document))
+    if result is None:
+        return [], "No Drainage result yet: Apply, or run Rebuild Downstream, to get suggestions."
+    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
+    if row.status != CURRENT:
+        return [], "The Drainage result is stale; run Rebuild Downstream for current suggestions."
+    if not result.suggestion_rows:
+        return [], "No suggestions: every low point is collected and the inlet spacing holds."
+    return list(result.suggestion_rows), f"{len(result.suggestion_rows)} suggestion(s)."
 
 
 def drainage_status_text(document) -> str:
@@ -177,6 +196,7 @@ configure_drainage_editor_task_panel_runtime(
         "apply_v1_drainage_model": apply_v1_drainage_model,
         "drainage_editor_inputs": drainage_editor_inputs,
         "drainage_status_text": drainage_status_text,
+        "drainage_suggestions": drainage_suggestions,
         "refresh_drainage_result": refresh_drainage_result,
     }
 )

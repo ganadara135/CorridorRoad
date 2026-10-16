@@ -5,12 +5,14 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
     SubassemblySectionTemplate,
     TemplateSubassembly,
 )
-from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainagePolicy
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainagePoint, DrainagePolicy
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.services.editing.drainage_editing_service import (
     RoadStationSpan,
     ditch_choices,
     ditch_run_diagnostics,
+    next_point_id,
+    point_diagnostics,
     policy_diagnostics,
     prefill_ditch_runs,
 )
@@ -139,3 +141,24 @@ def test_policy_checks() -> None:
         "Maximum inlet spacing must be above 0 m.",
         "Low point rule must be one of require_inlet, allow_ponding.",
     ]
+
+
+def test_point_checks_name_the_problem() -> None:
+    runs = [DitchRun("run:left", "left", "ditch:left", 0.0, 100.0)]
+    points = [
+        DrainagePoint("inlet:1", "inlet", 40.0, ditch_run_ref="run:left"),
+        DrainagePoint("inlet:1", "inlet", 60.0, ditch_run_ref="run:left"),
+        DrainagePoint("inlet:2", "inlet", 60.0),
+        DrainagePoint("pump:1", "pump", 60.0, ditch_run_ref="run:left"),
+        DrainagePoint("outfall:1", "outfall", 100.0, ditch_run_ref="run:gone"),
+        # a culvert crosses the road and may name no run; one far off its run is the evaluation's to report
+        DrainagePoint("culvert:1", "culvert", 500.0),
+    ]
+
+    assert point_diagnostics(points, runs) == [
+        "inlet:1: the id is used twice.",
+        "inlet:2: an inlet needs the Ditch Run it collects from.",
+        "pump:1: kind must be one of inlet, outfall, culvert, not 'pump'.",
+        "outfall:1: Ditch Run 'run:gone' does not exist.",
+    ]
+    assert next_point_id("inlet", {"inlet:1", "inlet:2"}) == "inlet:3"

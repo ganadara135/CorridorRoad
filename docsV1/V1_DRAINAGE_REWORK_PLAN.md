@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: DR-1 and DR-2 done on 2026-10-16; DR-3 is next
+Status: DR-1 to DR-3 done on 2026-10-16; DR-4 is next
 Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
 culverts, flowline checks against a policy, and their review
 Related:
@@ -223,6 +223,30 @@ Done on 2026-10-16:
 
 - Points table, suggestions and "Apply suggestion"; low point and spacing checks.
 - Tests: a sag yields one inlet suggestion; applying it clears the check; spacing suggestion count.
+
+Done on 2026-10-16:
+
+- Collectors of a run: its own inlets and outfalls, and culverts that name no run and cross its
+  road. A run's point outside its flowline stations collects nothing and is a `point_off_run`
+  warning.
+- `low_point_uncollected` (warning, under `require_inlet`): no collector within one section spacing
+  of a low point (the larger station step beside it). The suggestion is an outfall at a run end the
+  flowline falls toward and an inlet elsewhere. Under `allow_ponding` the low point stays an info
+  row.
+- `inlet_spacing` (warning): a stretch between collectors, suggested low-point collectors, high
+  points and run ends longer than the maximum spacing, measured along the flowline. Inlets are
+  suggested to split it into equal parts.
+- `DrainageResult.suggestion_rows`; the source checks refuse a point with an unknown kind, an
+  unknown run, a repeated id, or an inlet or outfall without a run
+  (`drainage_editing_service.point_diagnostics`).
+- The Drainage panel has Ditch Runs and Points tabs. The Points tab adds inlets, outfalls and
+  culverts, and lists the current result's suggestions: Add Selected and Add All put them in the
+  table (once), Apply writes them and evaluates at once, since points do not change the Applied
+  Sections. A stale result offers no suggestions.
+- Tests: the sag, collector, culvert, ponding, spacing and off-run cases in
+  `test_drainage_evaluation_service.py`; the point checks in `test_drainage_editing_service.py`;
+  the panel adding every suggestion of the sample road and Apply clearing its checks in
+  `test_drainage_source_and_editor.py`.
 
 ### DR-4 Links
 

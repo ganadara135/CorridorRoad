@@ -227,3 +227,39 @@ def test_the_drainage_result_is_a_stage_after_applied_sections() -> None:
         assert _freshness(doc)["drainage"] == ("current", ())
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_the_panel_adds_the_suggested_points_and_apply_settles_the_checks() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageSuggestions")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        suggestions = list(panel._suggestions)
+        assert suggestions, "the sample road's low points need inlets or outfalls"
+        assert {row.reason for row in suggestions} <= {"low_point", "spacing"}
+
+        panel._add_suggestions(selected_only=False)
+        assert panel._point_table.rowCount() == len(suggestions)
+        # adding them twice adds nothing
+        panel._add_suggestions(selected_only=False)
+        assert panel._point_table.rowCount() == len(suggestions)
+        # nothing is written until Apply
+        assert to_drainage_model(find_v1_drainage_model(doc)).point_rows == []
+
+        assert panel._apply() is True
+        stored = to_drainage_model(find_v1_drainage_model(doc))
+        assert len(stored.point_rows) == len(suggestions)
+        assert all(point.side in {"left", "right"} for point in stored.point_rows)
+        result = to_drainage_result(find_v1_drainage_result_object(doc))
+        assert result.suggestion_rows == []
+        assert not {row.kind for row in result.check_rows} & {"low_point_uncollected", "inlet_spacing"}
+        assert _freshness(doc)["drainage"] == ("current", ())
+        assert panel._suggestions == []
+    finally:
+        App.closeDocument(doc.Name)

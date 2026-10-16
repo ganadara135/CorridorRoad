@@ -71,6 +71,18 @@ class DrainageCheck:
     message: str
 
 
+@dataclass(frozen=True)
+class DrainageSuggestion:
+    """A point the evaluation proposes; the Drainage panel adds it to the source on request."""
+
+    suggestion_id: str
+    kind: str
+    ditch_run_ref: str
+    station: float
+    reason: str
+    message: str
+
+
 @dataclass
 class DrainageResult(ResultModelBase):
     drainage_result_id: str = "drainage-result:main"
@@ -79,4 +91,5 @@ class DrainageResult(ResultModelBase):
     min_grade_percent: float = 0.0
     flowline_rows: list[DitchRunFlowline] = field(default_factory=list)
     check_rows: list[DrainageCheck] = field(default_factory=list)
+    suggestion_rows: list[DrainageSuggestion] = field(default_factory=list)
     status: str = "empty"

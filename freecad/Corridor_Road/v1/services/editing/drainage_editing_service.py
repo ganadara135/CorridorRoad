@@ -10,7 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...models.source.assembly_model import AssemblySubassemblyModel
-from ...models.source.drainage_model import DITCH_RUN_SIDES, LOW_POINT_RULES, DitchRun, DrainagePolicy
+from ...models.source.drainage_model import (
+    DITCH_RUN_SIDES,
+    DRAINAGE_POINT_KINDS,
+    LOW_POINT_RULES,
+    DitchRun,
+    DrainagePoint,
+    DrainagePolicy,
+)
 from ...models.source.region_model import RegionModel
 
 # Stations closer than this are the same station: Region ends and Stationing values are stored
@@ -132,6 +139,39 @@ def ditch_run_diagnostics(runs: list[DitchRun], choices: list[DitchChoice]) -> l
             if overlap > STATION_TOLERANCE_M:
                 messages.append(f"{run.ditch_run_id} and {other.ditch_run_id} overlap on the same ditch and side.")
     return messages
+
+
+def point_diagnostics(points: list[DrainagePoint], runs: list[DitchRun]) -> list[str]:
+    """Plain-language problems with the inlets, outfalls and culverts; empty when they can be applied.
+
+    An inlet or outfall belongs to a Ditch Run. A culvert crosses the road and may name none. A point
+    outside its run's stations is not refused here: the Drainage evaluation reports it.
+    """
+
+    messages: list[str] = []
+    run_ids = {run.ditch_run_id for run in list(runs or [])}
+    seen: set[str] = set()
+    for point in list(points or []):
+        label = point.point_id or "(no id)"
+        if not point.point_id:
+            messages.append("A point has no id.")
+        elif point.point_id in seen:
+            messages.append(f"{label}: the id is used twice.")
+        seen.add(point.point_id)
+        if point.kind not in DRAINAGE_POINT_KINDS:
+            messages.append(f"{label}: kind must be one of {', '.join(DRAINAGE_POINT_KINDS)}, not '{point.kind}'.")
+        if point.ditch_run_ref and point.ditch_run_ref not in run_ids:
+            messages.append(f"{label}: Ditch Run '{point.ditch_run_ref}' does not exist.")
+        elif not point.ditch_run_ref and point.kind != "culvert":
+            messages.append(f"{label}: an {point.kind} needs the Ditch Run it collects from.")
+    return messages
+
+
+def next_point_id(kind: str, used: set[str]) -> str:
+    index = 1
+    while f"{kind}:{index}" in used:
+        index += 1
+    return f"{kind}:{index}"
 
 
 def policy_diagnostics(policy: DrainagePolicy) -> list[str]:
