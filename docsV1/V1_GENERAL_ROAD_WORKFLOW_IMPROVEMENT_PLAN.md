@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1, GR-1B and GR-2 done and D1-D3 decided on 2026-10-16; GR-3 next
+Status: In progress. GR-1, GR-1B, GR-2 and GR-3 done and D1-D3 decided on 2026-10-16; GR-4 next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -238,6 +238,36 @@ Acceptance:
 - The toolbar command is disabled on a document whose results are all current.
 - The Applied Sections panel button does not rebuild Corridor or Surfaces.
 - Opening a viewer never changes a fingerprint or a result.
+
+Done on 2026-10-16:
+
+- Stages: Stations (one record per road), 3D Centerline (its review object
+  `V1Centerline3DPreview`, regenerated with its recorded display options), Applied Sections and
+  Build Parametric (recorded on the Corridor object; Surfaces are built in the same run). Applied
+  Sections still evaluate their own centerline, so 3D Centerline and Applied Sections both consume
+  Stations directly until GR-4 makes the stored 3D Centerline their shared input.
+- `v1/objects/stage_inputs.py` records `StageInputRows` (input key -> content fingerprint) and
+  `StageBuildOptions` on each result when it is built: `update_v1_stationing_from_alignment`,
+  `show_v1_centerline3d_preview_object`, `apply_v1_applied_section_set` (new `build_options`) and
+  `apply_v1_corridor_model`. The Stationing
+  `SourceGeometrySignature` and its "previous stationing was stale" note are replaced by it.
+- `v1/services/evaluation/result_freshness_service.py` holds the rules (changed keys, upstream
+  propagation, text); `v1/objects/result_freshness.py` reads the current inputs. Fingerprints are of
+  source model content without labels and display fields. The terrain is fingerprinted by its
+  objects' names, counts, bounds and placement, not by converting it to a TIN.
+- `CorridorRoad_RebuildDownstream` (toolbar and Corridor menu after Build Parametric): enabled when
+  a stage is stale, answer cached for 2 seconds per document because FreeCAD asks often.
+  Applied Sections panel button (through Applied Sections), Build Parametric panel button (all).
+- Freshness lines in the Applied Sections and Build Parametric summaries; the Cross Section viewer
+  reports stale Applied Sections as its result state.
+- Tests: `tests/contracts/v1/test_result_freshness.py` (new), updated Stationing tests.
+- Left for later:
+  - the `ResultStatus` property: keeping it current would mean writing to result objects whenever
+    a source changes or a panel reads freshness, which the read-only rule forbids;
+  - freshness lines in Plan/Profile (with GR-4), Drainage Review (with the Drainage rework) and
+    Earthwork review: their panels are built from preview payloads without the document;
+  - `make_incremental_record` still fingerprints the consumed id lists; the stage records above are
+    what freshness reads.
 
 ### GR-4. 3D Centerline as the frame owner
 

@@ -76,6 +76,13 @@ Applied Sections, Corridor, and Surface result objects expose:
 
 Presentation-only fields such as visibility, colors, line width, transparency, display mode, and style are excluded from engineering fingerprints.
 
+Since 2026-10-16 (GR-3) Stationing, 3D Centerline review, Applied Sections and Corridor result objects also record what they were built from, for result freshness and Rebuild Downstream (`v1/objects/stage_inputs.py`):
+
+- `StageInputRows`: one `input key=content fingerprint` row per consumed input, such as `profile@alignment:main`, `assembly` or `terrain`
+- `StageBuildOptions`: the build options as JSON (Stations: interval; 3D Centerline: display mode, arc-fit tolerances, sample spacing and station markers; Applied Sections: supplemental sampling; Build Parametric: the `apply_v1_corridor_model` options)
+
+A result without `StageInputRows` was built before inputs were recorded and reads as stale. Stationing no longer writes `SourceGeometrySignature`; the property is removed when the object is next written.
+
 Build Parametric persists Corridor and Surface results through a single document transaction. Accepted unchanged result models are reused, presentation adapters may refresh separately, and the transaction performs one final recompute.
 
 ## Intersection Source Row Families

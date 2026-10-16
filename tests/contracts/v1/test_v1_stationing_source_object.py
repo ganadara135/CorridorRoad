@@ -14,6 +14,8 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_stations import (
     generate_v1_stations,
 )
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import apply_alignment_ip_rows
+from freecad.Corridor_Road.v1.objects.result_freshness import document_result_freshness
+from freecad.Corridor_Road.v1.objects.stage_inputs import read_stage_inputs, read_stage_options
 from freecad.Corridor_Road.v1.commands.cmd_review_stations import (
     show_station_highlight,
     stationing_review_summary_lines,
@@ -170,7 +172,7 @@ def test_v1_stationing_persists_source_rows_and_tree_routing_after_reopen() -> N
         )
         stationing_name = stationing.Name
         expected_values = list(stationing.StationValues)
-        expected_signature = str(stationing.SourceGeometrySignature)
+        expected_inputs = read_stage_inputs(stationing)
 
         with tempfile.TemporaryDirectory(prefix="cr_v1_stationing_reload_") as temp_dir:
             path = Path(temp_dir) / "stationing_source_reload.FCStd"
@@ -189,7 +191,8 @@ def test_v1_stationing_persists_source_rows_and_tree_routing_after_reopen() -> N
                 assert restored.V1ObjectType == "V1Stationing"
                 assert restored.Interval == 30.0
                 assert list(restored.StationValues) == expected_values
-                assert str(restored.SourceGeometrySignature) == expected_signature
+                assert read_stage_inputs(restored) == expected_inputs
+                assert read_stage_options(restored) == {"interval": 30.0}
                 assert restored.Name in _group_names(tree[V1_TREE_STATIONS])
                 assert getattr(restored, "Shape", None) is not None
                 assert not restored.Shape.isNull()
@@ -235,7 +238,7 @@ def test_generate_v1_stations_includes_transition_curve_samples_and_review_rows(
         ]
 
         assert int(stationing.SourceGeometryElementCount) == 3
-        assert str(stationing.SourceGeometrySignature)
+        assert list(read_stage_inputs(stationing)) == [f"alignment@{alignment.AlignmentId}"]
         assert int(stationing.TransitionStationCount) >= 1
         assert "transition_curve" in str(stationing.ActiveElementKindSummary)
         assert transition_indexes
@@ -246,7 +249,7 @@ def test_generate_v1_stations_includes_transition_curve_samples_and_review_rows(
         App.closeDocument(doc.Name)
 
 
-def test_generate_v1_stations_marks_previous_stationing_as_stale_when_alignment_changes() -> None:
+def test_stationing_is_stale_after_an_alignment_edit_until_it_is_generated_again() -> None:
     doc, project = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -256,7 +259,7 @@ def test_generate_v1_stations_marks_previous_stationing_as_stale_when_alignment_
             alignment=alignment,
             interval=30.0,
         )
-        first_signature = str(first.SourceGeometrySignature)
+        assert document_result_freshness(doc)[0].status == "current"
 
         apply_alignment_ip_rows(
             alignment,
@@ -271,6 +274,10 @@ def test_generate_v1_stations_marks_previous_stationing_as_stale_when_alignment_
             min_tangent_length=10.0,
             min_transition_length=5.0,
         )
+        stale = document_result_freshness(doc)[0]
+        assert stale.status == "stale"
+        assert stale.changed_inputs == (f"alignment@{alignment.AlignmentId}",)
+
         second = generate_v1_stations(
             document=doc,
             project=project,
@@ -278,8 +285,8 @@ def test_generate_v1_stations_marks_previous_stationing_as_stale_when_alignment_
             interval=30.0,
         )
 
-        assert first_signature != str(second.SourceGeometrySignature)
-        assert "previous_stationing_was_stale=true" in str(second.Notes)
+        assert second is first
+        assert document_result_freshness(doc)[0].status == "current"
     finally:
         App.closeDocument(doc.Name)
 

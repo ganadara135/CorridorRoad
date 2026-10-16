@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover - Part is not available in plain Python.
 from ..services.evaluation import AlignmentStationSamplingService
 from .obj_alignment import find_v1_alignment, to_alignment_model
 from .project_document_adapter import ProjectDocumentAdapter
+from .stage_inputs import input_fingerprint, record_stage_inputs, scoped_input_key
 
 
 class V1StationingObject:
@@ -93,7 +94,6 @@ def ensure_v1_stationing_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "ReviewRows", "Stations", "station review summary rows")
     _add_property(obj, "App::PropertyString", "SourceAlignmentLabel", "Source", "linked v1 alignment label")
     _add_property(obj, "App::PropertyInteger", "SourceGeometryElementCount", "Source", "source alignment geometry element count")
-    _add_property(obj, "App::PropertyString", "SourceGeometrySignature", "Source", "source alignment geometry signature")
     _add_property(obj, "App::PropertyString", "ActiveElementKindSummary", "Diagnostics", "active element kind summary")
     _add_property(obj, "App::PropertyInteger", "TangentStationCount", "Diagnostics", "sampled tangent station count")
     _add_property(obj, "App::PropertyInteger", "CurveStationCount", "Diagnostics", "sampled curve station count")
@@ -106,6 +106,9 @@ def ensure_v1_stationing_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "Status", "Diagnostics", "stationing build status")
     _add_property(obj, "App::PropertyString", "Notes", "Diagnostics", "stationing build notes")
     _add_property(obj, "Part::PropertyPartShape", "Shape", "Display", "station tick display shape")
+    # Replaced by the recorded stage inputs (StageInputRows).
+    if hasattr(obj, "SourceGeometrySignature"):
+        obj.removeProperty("SourceGeometrySignature")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1Stationing"
@@ -199,7 +202,12 @@ def update_v1_stationing_from_alignment(stationing, alignment_model, *, interval
     stationing.AlignmentId = str(getattr(alignment_model, "alignment_id", "") or "")
     stationing.SourceAlignmentLabel = str(getattr(alignment_model, "label", "") or "")
     stationing.SourceGeometryElementCount = int(len(geometry_sequence))
-    stationing.SourceGeometrySignature = _alignment_geometry_signature(alignment_model)
+    # The Alignment content this sampling used; result freshness compares it with the Alignment now.
+    record_stage_inputs(
+        stationing,
+        {scoped_input_key("alignment", stationing.AlignmentId): input_fingerprint(alignment_model)},
+        {"interval": float(interval)},
+    )
     stationing.Interval = float(interval)
     stationing.StationValues = [float(row.station) for row in rows]
     stationing.StationKinds = _station_kinds(
@@ -366,30 +374,6 @@ def _alignment_key_stations(elements) -> list[float]:
         if kind in {"sampled_curve", "circular_curve", "transition_curve"}:
             values.append(0.5 * (start + end))
     return values
-
-
-def _alignment_geometry_signature(alignment_model) -> str:
-    """Build a compact signature for detecting stale stationing rows."""
-
-    tokens = []
-    for element in list(getattr(alignment_model, "geometry_sequence", []) or []):
-        payload = dict(getattr(element, "geometry_payload", {}) or {})
-        x_values = payload.get("x_values", [])
-        y_values = payload.get("y_values", [])
-        tokens.append(
-            "|".join(
-                [
-                    str(getattr(element, "element_id", "") or ""),
-                    str(getattr(element, "kind", "") or ""),
-                    f"{float(getattr(element, 'station_start', 0.0) or 0.0):.6f}",
-                    f"{float(getattr(element, 'station_end', 0.0) or 0.0):.6f}",
-                    f"{float(getattr(element, 'length', 0.0) or 0.0):.6f}",
-                    str(len(list(x_values or []))),
-                    str(len(list(y_values or []))),
-                ]
-            )
-        )
-    return ";".join(tokens)
 
 
 def _active_element_kind_counts(rows) -> dict[str, int]:

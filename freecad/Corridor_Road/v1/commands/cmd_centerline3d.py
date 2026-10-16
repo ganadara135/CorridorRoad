@@ -24,6 +24,8 @@ from ..models.result.centerline3d_arc_fit import Centerline3DArcFitResult
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_stationing import find_v1_stationing
+from ..objects.result_freshness import centerline3d_inputs
+from ..objects.stage_inputs import record_stage_inputs
 from ..services.evaluation import (
     AlignmentEvaluationService,
     Centerline3DEvaluationRequest,
@@ -206,6 +208,18 @@ def show_v1_centerline3d_preview_object(
     _set_float(obj, "ElevationMin", float(active_result.elevation_min))
     _set_float(obj, "ElevationMax", float(active_result.elevation_max))
     _set_string_list(obj, "DiagnosticRows", list(active_result.diagnostic_rows or ()))
+    # What it was built from and how, for result freshness and Rebuild Downstream.
+    record_stage_inputs(
+        obj,
+        centerline3d_inputs(doc),
+        {
+            "show_station_markers": bool(show_station_markers),
+            "display_mode": normalized_display_mode,
+            "arc_fit_absolute_tolerance": float(arc_fit_absolute_tolerance),
+            "arc_fit_relative_tolerance": float(arc_fit_relative_tolerance),
+            "source_geometry_sample_spacing": float(source_geometry_sample_spacing),
+        },
+    )
     _style_centerline3d_preview(obj)
     try:
         prj = project or find_project(doc)

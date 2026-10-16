@@ -16,9 +16,9 @@ from ...objects.obj_project import (
     find_project,
 )
 from ...objects.project_links import link_project
-from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
+from ..objects.obj_alignment import find_v1_alignment
 from ..objects.project_document_adapter import ProjectDocumentAdapter
-from ..objects.obj_stationing import create_v1_stationing, find_v1_stationing
+from ..objects.obj_stationing import create_v1_stationing
 from .cmd_create_alignment import create_v1_sample_alignment
 
 
@@ -54,9 +54,6 @@ def generate_v1_stations(
         alignment_obj = alignment or find_v1_alignment(doc)
         if alignment_obj is None:
             alignment_obj = create_v1_sample_alignment(document=doc, project=prj)
-        previous_stationing = find_v1_stationing(doc, alignment_id=str(getattr(alignment_obj, "AlignmentId", "") or ""))
-        stale_note = _previous_stationing_stale_note(previous_stationing, alignment_obj)
-
         stationing = create_v1_stationing(
             doc,
             project=prj,
@@ -64,8 +61,6 @@ def generate_v1_stations(
             interval=interval,
             document_adapter=adapter,
         )
-        if stale_note:
-            adapter.set_value(stationing, "Notes", f"{stationing.Notes} | {stale_note}")
         link_project(
             prj,
             links={"Stationing": stationing},
@@ -103,24 +98,6 @@ class CmdV1GenerateStations:
 
 if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
     Gui.addCommand("CorridorRoad_V1GenerateStations", CmdV1GenerateStations())
-
-
-def _previous_stationing_stale_note(previous_stationing, alignment_obj) -> str:
-    if previous_stationing is None or alignment_obj is None:
-        return ""
-    alignment_model = to_alignment_model(alignment_obj)
-    if alignment_model is None:
-        return ""
-    try:
-        from ..objects.obj_stationing import _alignment_geometry_signature
-
-        new_signature = _alignment_geometry_signature(alignment_model)
-    except Exception:
-        return ""
-    old_signature = str(getattr(previous_stationing, "SourceGeometrySignature", "") or "")
-    if old_signature and old_signature != new_signature:
-        return "previous_stationing_was_stale=true"
-    return ""
 
 
 def _station_generation_console_text(stationing) -> str:

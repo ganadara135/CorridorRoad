@@ -170,6 +170,9 @@ corridor_guided_review_step_available = None
 corridor_guided_review_step_visibility = None
 corridor_intersection_contract_review_rows = None
 is_general_road_document = None
+document_result_freshness = None
+freshness_text = None
+run_v1_rebuild_downstream_command = None
 corridor_region_boundary_rows = None
 corridor_shared_breakline_audit_rows = None
 corridor_shared_breakline_audit_summary = None
@@ -664,6 +667,12 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         row.addWidget(apply_button)
+        rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
+        rebuild_button.setToolTip(
+            "Rebuild stale Stations, 3D Centerline, Applied Sections and Build Parametric results with the options they were last built with."
+        )
+        rebuild_button.clicked.connect(self._rebuild_downstream)
+        row.addWidget(rebuild_button)
         row.addStretch(1)
         layout.addLayout(row)
 
@@ -779,6 +788,9 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                     f"Source Structure: {_format_structure_review_summary(applied_summary)}",
                     f"Source Diagnostics: {applied_summary.get('diagnostics', '')}",
                     "",
+                    "Result freshness:",
+                    freshness_text(document_result_freshness(self.document)),
+                    "",
                     "Click Apply to create or update the v1 CorridorModel.",
             ]
         )
@@ -788,6 +800,16 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         for tab_id in sorted(previously_loaded_tabs - {"guided"}):
             self._load_review_tab(tab_id, force=True)
         self._sync_tabs_height_later()
+
+    def _rebuild_downstream(self) -> None:
+        try:
+            report = run_v1_rebuild_downstream_command(self.document)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(None, "Rebuild Downstream", str(exc))
+            return
+        self._refresh_summary()
+        show = QtWidgets.QMessageBox.warning if report.failed else QtWidgets.QMessageBox.information
+        show(None, "Rebuild Downstream", report.text)
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:

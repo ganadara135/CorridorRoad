@@ -52,6 +52,27 @@ def _build_result_state(
     }
 
 
+def _with_freshness_state(result_state: dict[str, str], document) -> dict[str, str]:
+    """Report stale Applied Sections, unless the section is already blocked.
+
+    The viewer reviews the stored Applied Sections; when their inputs changed after the build it
+    shows what it shows as stale and names the inputs. It starts no rebuild.
+    """
+
+    if document is None or result_state.get("state") == "blocked":
+        return result_state
+    from ..objects.result_freshness import document_result_freshness
+    from ..services.evaluation.result_freshness_service import APPLIED_SECTIONS, STALE
+
+    applied = next(row for row in document_result_freshness(document) if row.stage == APPLIED_SECTIONS)
+    if applied.status != STALE:
+        return result_state
+    return _build_result_state(
+        state="stale",
+        reason=f"Applied Sections are stale ({', '.join(applied.changed_inputs)}). Run Rebuild Downstream.",
+    )
+
+
 def _status_text(obj) -> str:
     """Return a normalized status text for one source/result object."""
 
@@ -1719,9 +1740,12 @@ def _build_v1_applied_section_set_preview(
         "section_output": section_output,
         "drawing_payload": drawing_payload,
         "station_row": station_payload,
-        "result_state": _resolve_result_state(
-            diagnostic_rows=diagnostic_rows,
-            source_objects=source_objects,
+        "result_state": _with_freshness_state(
+            _resolve_result_state(
+                diagnostic_rows=diagnostic_rows,
+                source_objects=source_objects,
+            ),
+            document,
         ),
         "source_inspector": _build_source_inspector(
             applied_section=applied_section,

@@ -51,6 +51,7 @@ def corridorroad_workflow_command_groups():
         "corridor": [
             "CorridorRoad_V1AppliedSections",
             "CorridorRoad_GenerateCorridor",
+            "CorridorRoad_RebuildDownstream",
         ],
         "review": [
             "CorridorRoad_ViewCrossSection",
@@ -115,6 +116,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_region_editor  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_view_cross_section  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_corridor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_rebuild_downstream  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_outputs_exchange  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_ai_assist  # noqa: F401

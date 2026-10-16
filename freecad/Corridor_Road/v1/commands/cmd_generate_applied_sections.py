@@ -51,6 +51,9 @@ from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_superelevation import to_superelevation_model
 from ..objects.document_kind import is_general_road_document
+from ..objects.result_freshness import applied_sections_inputs, document_result_freshness
+from ..objects.stage_inputs import record_stage_inputs
+from ..services.evaluation.result_freshness_service import APPLIED_SECTIONS, RESULT_STAGES, freshness_text
 from ..objects.source_identity import duplicate_source_rows, duplicate_source_text
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 from ..services.builders.corridor_surface_geometry_service import (
@@ -598,8 +601,13 @@ def apply_v1_applied_section_set(
     document=None,
     project=None,
     applied_section_set=None,
+    build_options: dict[str, object] | None = None,
 ):
-    """Persist a v1 AppliedSectionSet result object."""
+    """Persist a v1 AppliedSectionSet result object.
+
+    `build_options` are the `build_document_applied_section_set` keyword options the set was built
+    with; they are recorded with the inputs so Rebuild Downstream builds it the same way again.
+    """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
@@ -614,13 +622,15 @@ def apply_v1_applied_section_set(
         prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
+    options = dict(build_options or {})
     if applied_section_set is None:
-        applied_section_set = build_document_applied_section_set(doc, project=prj)
+        applied_section_set = build_document_applied_section_set(doc, project=prj, **options)
     obj = create_or_update_v1_applied_section_set_object(
         document=doc,
         project=prj,
         applied_section_set=applied_section_set,
     )
+    record_stage_inputs(obj, applied_sections_inputs(doc), options)
     try:
         doc.recompute()
     except Exception:
@@ -1040,6 +1050,10 @@ class V1AppliedSectionsTaskPanel:
         build_button = QtWidgets.QPushButton("Build Sections")
         build_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(build_button)
+        rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
+        rebuild_button.setToolTip("Rebuild stale Stations, 3D Centerline and Applied Sections with the options they were last built with.")
+        rebuild_button.clicked.connect(self._rebuild_downstream)
+        action_row.addWidget(rebuild_button)
         show_all_button = QtWidgets.QPushButton("Show All")
         show_all_button.setToolTip("Show every generated Applied Section in the 3D View.")
         show_all_button.clicked.connect(self._show_all_review_rows)
@@ -1055,6 +1069,19 @@ class V1AppliedSectionsTaskPanel:
         layout.addLayout(action_row)
         return widget
 
+    def _rebuild_downstream(self) -> None:
+        # Imported here: the rebuild command imports this module for the Applied Sections stage.
+        from .cmd_rebuild_downstream import run_v1_rebuild_downstream_command
+
+        try:
+            report = run_v1_rebuild_downstream_command(self.document, through=APPLIED_SECTIONS)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(None, "Rebuild Downstream", str(exc))
+            return
+        self._refresh_summary()
+        show = QtWidgets.QMessageBox.warning if report.failed else QtWidgets.QMessageBox.information
+        show(None, "Rebuild Downstream", report.text)
+
     def _refresh_summary(self) -> None:
         try:
             station_count = len(_station_values(find_v1_stationing(self.document)))
@@ -1069,6 +1096,9 @@ class V1AppliedSectionsTaskPanel:
                 f"Stations: {station_count} row(s)",
                 *_incomplete_alignment_summary_lines(self.document),
                 *_duplicate_source_summary_lines(self.document),
+                "",
+                "Result freshness:",
+                freshness_text(document_result_freshness(self.document)[: RESULT_STAGES.index(APPLIED_SECTIONS) + 1]),
                 "",
                 "Click Build Sections to validate sources and create or update the v1 AppliedSectionSet result.",
             ]
@@ -1100,17 +1130,17 @@ class V1AppliedSectionsTaskPanel:
                 return False
             self._set_progress(0, "Preparing Applied Sections...")
             self._set_progress(15, "Reading v1 source models...")
-            result = build_document_applied_section_set(
-                self.document,
-                supplemental_sections_enabled=self._use_supplemental_sections(),
-                supplemental_sections_max_spacing=self._supplemental_sections_max_spacing(),
-                supplemental_sections_tangent_delta_deg=self._supplemental_sections_tangent_delta_deg(),
-                supplemental_sections_chord_deviation=self._supplemental_sections_chord_deviation(),
-                supplemental_sections_vertical_chord_deviation=self._supplemental_sections_vertical_chord_deviation(),
-                supplemental_sections_grade_delta=self._supplemental_sections_grade_delta(),
-            )
+            options = {
+                "supplemental_sections_enabled": self._use_supplemental_sections(),
+                "supplemental_sections_max_spacing": self._supplemental_sections_max_spacing(),
+                "supplemental_sections_tangent_delta_deg": self._supplemental_sections_tangent_delta_deg(),
+                "supplemental_sections_chord_deviation": self._supplemental_sections_chord_deviation(),
+                "supplemental_sections_vertical_chord_deviation": self._supplemental_sections_vertical_chord_deviation(),
+                "supplemental_sections_grade_delta": self._supplemental_sections_grade_delta(),
+            }
+            result = build_document_applied_section_set(self.document, **options)
             self._set_progress(65, "Writing AppliedSectionSet result...")
-            obj = apply_v1_applied_section_set(document=self.document, applied_section_set=result)
+            obj = apply_v1_applied_section_set(document=self.document, applied_section_set=result, build_options=options)
             self._set_progress(85, "Refreshing station review...")
             diagnostic_count = sum(len(section.diagnostic_rows) for section in result.sections)
             supplemental_count = _supplemental_applied_section_count(result)

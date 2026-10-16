@@ -27,6 +27,10 @@ from ..common.model_fields import (
 )
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
 from ..objects.document_kind import is_general_road_document
+from ..objects.result_freshness import build_parametric_inputs, document_result_freshness
+from ..objects.stage_inputs import record_stage_inputs
+from ..services.evaluation.result_freshness_service import freshness_text
+from .cmd_rebuild_downstream import run_v1_rebuild_downstream_command
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model, to_corridor_model
@@ -493,19 +497,27 @@ def apply_v1_corridor_model(
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    options = {
+        "build_surfaces": bool(build_surfaces),
+        "show_daylight_contact_markers": bool(show_daylight_contact_markers),
+        "supplemental_sampling_enabled": bool(supplemental_sampling_enabled),
+        "supplemental_sampling_max_spacing": float(supplemental_sampling_max_spacing),
+        "supplemental_sampling_tangent_delta_deg": float(supplemental_sampling_tangent_delta_deg),
+        "supplemental_sampling_chord_deviation": float(supplemental_sampling_chord_deviation),
+    }
     with ProjectDocumentAdapter(doc).transaction("Build v1 corridor", recompute=True):
-        return _apply_v1_corridor_model_in_transaction(
+        obj = _apply_v1_corridor_model_in_transaction(
             document=doc,
             project=project,
             corridor_model=corridor_model,
-            build_surfaces=build_surfaces,
-            show_daylight_contact_markers=show_daylight_contact_markers,
-            supplemental_sampling_enabled=supplemental_sampling_enabled,
-            supplemental_sampling_max_spacing=supplemental_sampling_max_spacing,
-            supplemental_sampling_tangent_delta_deg=supplemental_sampling_tangent_delta_deg,
-            supplemental_sampling_chord_deviation=supplemental_sampling_chord_deviation,
             progress_callback=progress_callback,
+            **options,
         )
+        corridor_obj = find_v1_corridor_model(doc)
+        if corridor_obj is not None:
+            # Recorded so result freshness can compare, and Rebuild Downstream reuse the options.
+            record_stage_inputs(corridor_obj, build_parametric_inputs(doc), options)
+        return obj
 
 
 def _apply_v1_corridor_model_in_transaction(
