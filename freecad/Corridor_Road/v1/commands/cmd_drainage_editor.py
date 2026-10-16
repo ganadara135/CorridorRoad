@@ -14,9 +14,11 @@ from freecad.Corridor_Road.objects.obj_project import find_project
 
 from ..models.source.drainage_model import DrainageModel
 from ..objects.obj_drainage import create_or_update_v1_drainage_model_object, find_v1_drainage_model, to_drainage_model
+from ..objects.obj_drainage_result import find_v1_drainage_result_object, to_drainage_result
 from ..objects.obj_region import list_v1_region_models, to_region_model
 from ..objects.obj_stationing import list_v1_stationings, station_value_rows
 from ..objects.obj_subassembly_assembly import list_v1_assembly_subassembly_models, to_assembly_subassembly_model
+from ..objects.result_freshness import document_result_freshness
 from ..services.editing import prepare_drainage_edit
 from ..services.editing.drainage_editing_service import (
     RoadStationSpan,
@@ -25,6 +27,8 @@ from ..services.editing.drainage_editing_service import (
     policy_diagnostics,
     prefill_ditch_runs,
 )
+from ..services.evaluation.result_freshness_service import APPLIED_SECTIONS, CURRENT, DRAINAGE, MISSING, STALE
+from .cmd_drainage_result import apply_v1_drainage_result, drainage_result_summary
 from ..ui.editors.drainage_editor import V1DrainageEditorTaskPanel, configure_drainage_editor_task_panel_runtime
 
 
@@ -103,6 +107,35 @@ def apply_v1_drainage_model(*, document=None, drainage_model: DrainageModel):
     return create_or_update_v1_drainage_model_object(doc, drainage_model=prepared.model, project=find_project(doc))
 
 
+def refresh_drainage_result(document) -> str:
+    """After a Drainage write: evaluate it when the Applied Sections are current, else say what to run.
+
+    A Ditch Run change retags the ditch points, so it makes the Applied Sections stale and the
+    evaluation waits for Rebuild Downstream; a Policy change evaluates at once.
+    """
+
+    applied = next(row for row in document_result_freshness(document) if row.stage == APPLIED_SECTIONS)
+    if applied.status == MISSING:
+        return "Build Applied Sections, then run Rebuild Downstream to evaluate the Drainage."
+    if applied.status == STALE:
+        return (
+            f"Applied Sections are stale ({', '.join(applied.changed_inputs)}). "
+            "Run Rebuild Downstream to retag the ditch points and evaluate the Drainage."
+        )
+    return drainage_result_summary(to_drainage_result(apply_v1_drainage_result(document)))
+
+
+def drainage_status_text(document) -> str:
+    """The stored Drainage result's summary and whether it is current."""
+
+    result = to_drainage_result(find_v1_drainage_result_object(document))
+    if result is None:
+        return ""
+    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
+    state = "current" if row.status == CURRENT else f"stale ({', '.join(row.changed_inputs)}); run Rebuild Downstream"
+    return f"Stored Drainage result: {state}.\n" + drainage_result_summary(result)
+
+
 def _assembly_models(document) -> list:
     models = [to_assembly_subassembly_model(obj) for obj in list_v1_assembly_subassembly_models(document)]
     return [model for model in models if model is not None]
@@ -143,6 +176,8 @@ configure_drainage_editor_task_panel_runtime(
         "Gui": Gui,
         "apply_v1_drainage_model": apply_v1_drainage_model,
         "drainage_editor_inputs": drainage_editor_inputs,
+        "drainage_status_text": drainage_status_text,
+        "refresh_drainage_result": refresh_drainage_result,
     }
 )
 

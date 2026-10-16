@@ -1,6 +1,6 @@
 """Rebuild Downstream: rebuild the stale result stages in workflow order.
 
-It rebuilds results only (Stations, 3D Centerline, Applied Sections, Build Parametric), never writes a source and
+It rebuilds results only (Stations, 3D Centerline, Applied Sections, Drainage, Build Parametric), never writes a source and
 never runs a review. A stage runs when it is stale or when a stage it consumes was rebuilt in the
 same run; current and missing stages are skipped. Each stage reuses the options recorded with its
 result, so no dialog is shown. A failing stage stops the run; the stages after it stay stale.
@@ -30,6 +30,7 @@ from ..services.evaluation.result_freshness_service import (
     BUILD_PARAMETRIC,
     CENTERLINE3D,
     CURRENT,
+    DRAINAGE,
     MISSING,
     RESULT_STAGES,
     STAGE_LABELS,
@@ -113,7 +114,9 @@ def rebuild_downstream(document, *, through: str = BUILD_PARAMETRIC) -> RebuildD
     for stage in RESULT_STAGES[: RESULT_STAGES.index(through) + 1]:
         row = freshness[stage]
         upstream_rebuilt = UPSTREAM_STAGE.get(stage) in rebuilt
-        if row.status == MISSING and not _needed_by_applied_sections(stage, freshness, through):
+        if row.status == MISSING and not (
+            _needed_by_applied_sections(stage, freshness, through) or _drainage_awaits_evaluation(stage, document, freshness)
+        ):
             outcomes.append(RebuildStageOutcome(stage, SKIPPED, message="not built yet"))
             continue
         if row.status == CURRENT and not upstream_rebuilt:
@@ -139,6 +142,17 @@ def _needed_by_applied_sections(stage: str, freshness: dict, through: str) -> bo
         and RESULT_STAGES.index(through) >= RESULT_STAGES.index(APPLIED_SECTIONS)
         and freshness[APPLIED_SECTIONS].status != MISSING
     )
+
+
+def _drainage_awaits_evaluation(stage: str, document, freshness: dict) -> bool:
+    """A Drainage source with Ditch Runs over existing Applied Sections gets its first evaluation."""
+
+    if stage != DRAINAGE or freshness[APPLIED_SECTIONS].status == MISSING:
+        return False
+    from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
+
+    model = to_drainage_model(find_v1_drainage_model(document))
+    return model is not None and bool(model.ditch_run_rows)
 
 
 def _rebuild_stationing(document) -> tuple[str, ...]:
@@ -176,6 +190,12 @@ def _rebuild_applied_sections(document) -> tuple[str, ...]:
     return (str(obj.Name),)
 
 
+def _rebuild_drainage(document) -> tuple[str, ...]:
+    from .cmd_drainage_result import apply_v1_drainage_result
+
+    return (str(apply_v1_drainage_result(document).Name),)
+
+
 def _rebuild_build_parametric(document) -> tuple[str, ...]:
     from .cmd_build_corridor import apply_v1_corridor_model, build_document_corridor_model
 
@@ -188,6 +208,7 @@ _REBUILDERS = {
     STATIONING: _rebuild_stationing,
     CENTERLINE3D: _rebuild_centerline3d,
     APPLIED_SECTIONS: _rebuild_applied_sections,
+    DRAINAGE: _rebuild_drainage,
     BUILD_PARAMETRIC: _rebuild_build_parametric,
 }
 
@@ -238,7 +259,7 @@ class CmdV1RebuildDownstream:
         return {
             "Pixmap": icon_path("rebuild_downstream.svg"),
             "MenuText": "Rebuild Downstream",
-            "ToolTip": "Rebuild the stale Stations, 3D Centerline, Applied Sections and Build Parametric results with their last options",
+            "ToolTip": "Rebuild the stale Stations, 3D Centerline, Applied Sections, Drainage and Build Parametric results with their last options",
         }
 
     def IsActive(self):

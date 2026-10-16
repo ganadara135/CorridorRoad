@@ -14,17 +14,25 @@ from dataclasses import dataclass
 STATIONING = "stationing"
 CENTERLINE3D = "centerline3d"
 APPLIED_SECTIONS = "applied_sections"
+DRAINAGE = "drainage"
 BUILD_PARAMETRIC = "build_parametric"
-# Workflow order. Applied Sections take their station frames from the stored 3D Centerline.
-RESULT_STAGES = (STATIONING, CENTERLINE3D, APPLIED_SECTIONS, BUILD_PARAMETRIC)
+# Workflow order. Applied Sections take their station frames from the stored 3D Centerline; the
+# Drainage evaluation and Build Parametric both read the Applied Sections.
+RESULT_STAGES = (STATIONING, CENTERLINE3D, APPLIED_SECTIONS, DRAINAGE, BUILD_PARAMETRIC)
 STAGE_LABELS = {
     STATIONING: "Stations",
     CENTERLINE3D: "3D Centerline",
     APPLIED_SECTIONS: "Applied Sections",
+    DRAINAGE: "Drainage",
     BUILD_PARAMETRIC: "Build Parametric",
 }
 # The stage each stage consumes directly.
-UPSTREAM_STAGE = {CENTERLINE3D: STATIONING, APPLIED_SECTIONS: CENTERLINE3D, BUILD_PARAMETRIC: APPLIED_SECTIONS}
+UPSTREAM_STAGE = {
+    CENTERLINE3D: STATIONING,
+    APPLIED_SECTIONS: CENTERLINE3D,
+    DRAINAGE: APPLIED_SECTIONS,
+    BUILD_PARAMETRIC: APPLIED_SECTIONS,
+}
 
 CURRENT = "current"
 STALE = "stale"
@@ -120,6 +128,7 @@ __all__ = [
     "BUILD_PARAMETRIC",
     "CENTERLINE3D",
     "CURRENT",
+    "DRAINAGE",
     "MISSING",
     "NOT_RECORDED",
     "RESULT_STAGES",

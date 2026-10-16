@@ -1006,7 +1006,7 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
     if record_kind == "v1_quantity_model":
         return tree.get(V1_TREE_QUANTITIES, None)
-    if record_kind == "v1_drainage_model":
+    if record_kind in {"v1_drainage_model", "v1_drainage_result"}:
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "v1_structure_pipe_connection_point_preview":
         return tree.get(V1_TREE_STRUCTURES, None)

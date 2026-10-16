@@ -69,7 +69,12 @@ def test_prefill_joins_a_ditch_across_regions_and_splits_it_where_a_region_has_n
         ("ditch:left", "left", 240.0, 400.0),
         ("ditch:right", "right", 240.0, 400.0),
     ]
-    assert len({run.ditch_run_id for run in runs}) == 4
+    assert [run.ditch_run_id for run in runs] == [
+        "ditch-run:ditch:left",
+        "ditch-run:ditch:right",
+        "ditch-run:ditch:left:2",
+        "ditch-run:ditch:right:2",
+    ]
     assert {run.alignment_ref for run in runs} == {"alignment:main"}
     assert ditch_run_diagnostics(runs, ditch_choices([DITCHED, BRIDGE])) == []
 
@@ -79,6 +84,20 @@ def test_prefill_without_regions_covers_the_road_with_the_first_assembly() -> No
 
     # a "both" ditch drains each side of the road
     assert _spans(runs) == [("ditch:both", "left", 0.0, 250.0), ("ditch:both", "right", 0.0, 250.0)]
+
+
+def test_prefill_names_the_road_only_when_there_are_several() -> None:
+    roads = [RoadStationSpan("alignment:a", None, 0.0, 100.0), RoadStationSpan("alignment:b", None, 0.0, 80.0)]
+
+    runs = prefill_ditch_runs(roads, [DITCHED])
+
+    assert [(run.ditch_run_id, run.alignment_ref) for run in runs] == [
+        ("ditch-run:alignment:a:ditch:left", "alignment:a"),
+        ("ditch-run:alignment:a:ditch:right", "alignment:a"),
+        ("ditch-run:alignment:b:ditch:left", "alignment:b"),
+        ("ditch-run:alignment:b:ditch:right", "alignment:b"),
+    ]
+    assert prefill_ditch_runs([RoadStationSpan("alignment:main", None, 0.0, 250.0)], [BOTH_SIDES])[0].ditch_run_id == "ditch-run:ditch:both:left"
 
 
 def test_prefill_is_empty_without_a_ditch() -> None:

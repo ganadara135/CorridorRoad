@@ -13,6 +13,7 @@ from ..services.evaluation.result_freshness_service import (
     APPLIED_SECTIONS,
     BUILD_PARAMETRIC,
     CENTERLINE3D,
+    DRAINAGE,
     STATIONING,
     StageFreshness,
     merge_stage_rows,
@@ -23,6 +24,7 @@ from .obj_applied_section import find_v1_applied_section_set
 from .obj_centerline3d import centerline3d_result_fingerprint, find_v1_centerline3d_object
 from .obj_corridor import find_v1_corridor_model
 from .obj_drainage import find_v1_drainage_model, to_drainage_model
+from .obj_drainage_result import find_v1_drainage_result_object
 from .obj_intersection import find_v1_intersection_model, stored_intersection_spec, to_intersection_model
 from .obj_profile import list_v1_profiles, to_profile_model
 from .obj_region import list_v1_region_models, to_region_model
@@ -94,13 +96,28 @@ def applied_sections_inputs(document) -> dict[str, str]:
         # The stored 3D Centerline the station frames come from.
         inputs["centerline3d"] = centerline3d_result_fingerprint(centerline_obj)
     _optional_input(inputs, "structure", to_structure_model(find_v1_structure_model(document)))
-    _optional_input(inputs, "drainage", to_drainage_model(find_v1_drainage_model(document)))
+    drainage_model = to_drainage_model(find_v1_drainage_model(document))
+    if drainage_model is not None:
+        # Applied Sections read only the Ditch Runs, to tag the ditch points; the Policy is the
+        # Drainage evaluation's.
+        inputs["drainage_ditch_runs"] = input_fingerprint(drainage_model.ditch_run_rows)
     intersection_obj = find_v1_intersection_model(document)
     if intersection_obj is not None:
         inputs["intersection"] = input_fingerprint(
             [to_intersection_model(intersection_obj), stored_intersection_spec(intersection_obj)]
         )
     _optional_input(inputs, "terrain", terrain_token(document))
+    return inputs
+
+
+def drainage_inputs(document) -> dict[str, str]:
+    """The Drainage evaluation reads the Applied Sections result and the whole Drainage source."""
+
+    inputs: dict[str, str] = {}
+    applied_obj = find_v1_applied_section_set(document)
+    if applied_obj is not None:
+        inputs["applied_sections"] = str(getattr(applied_obj, PAYLOAD_PROPERTIES.fingerprint, "") or "")
+    _optional_input(inputs, "drainage", to_drainage_model(find_v1_drainage_model(document)))
     return inputs
 
 
@@ -154,6 +171,14 @@ def document_result_freshness(document) -> list[StageFreshness]:
         current=applied_sections_inputs(document) if applied_obj is not None else {},
         upstream=stationing,
     )
+    drainage_obj = find_v1_drainage_result_object(document)
+    drainage = stage_freshness(
+        DRAINAGE,
+        object_names=_names(drainage_obj),
+        recorded=read_stage_inputs(drainage_obj),
+        current=drainage_inputs(document) if drainage_obj is not None else {},
+        upstream=applied,
+    )
     corridor_obj = find_v1_corridor_model(document)
     build = stage_freshness(
         BUILD_PARAMETRIC,
@@ -162,7 +187,7 @@ def document_result_freshness(document) -> list[StageFreshness]:
         current=build_parametric_inputs(document) if corridor_obj is not None else {},
         upstream=applied,
     )
-    return [stationing, centerline, applied, build]
+    return [stationing, centerline, applied, drainage, build]
 
 
 def terrain_token(document) -> list[object] | None:
@@ -225,6 +250,7 @@ __all__ = [
     "build_parametric_inputs",
     "centerline3d_inputs",
     "document_result_freshness",
+    "drainage_inputs",
     "stationing_freshness_rows",
     "stationing_inputs",
     "terrain_token",

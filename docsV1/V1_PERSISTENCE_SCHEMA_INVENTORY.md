@@ -26,6 +26,7 @@ The typed model payload is authoritative for newly written objects. Readable Fre
 | Assembly/Subassembly | source | `AssemblySubassemblyModel` | templates and their nested placed rows | `project_id`, `assembly_id` |
 | Regions | source | `RegionModel` | regions, policies, transitions, constraints | `project_id`, `region_model_id` |
 | 3D Centerline | result | `Centerline3DResult` | point rows | `project_id`, `centerline3d_result_id` |
+| Drainage result | result | `DrainageResult` | flowlines, checks | `project_id`, `drainage_result_id` |
 | Applied Sections | result | `AppliedSectionSet` | station rows and evaluated sections | `project_id`, `applied_section_set_id` |
 | Corridor | result | `CorridorModel` | stations and output-build refs | `project_id`, `corridor_id` |
 | Surface | result | `SurfaceModel` | surfaces, build relations, comparisons, spans | `project_id`, `surface_model_id` |

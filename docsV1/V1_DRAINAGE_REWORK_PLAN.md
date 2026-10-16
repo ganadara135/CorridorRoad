@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: DR-1 done on 2026-10-16; DR-2 is next
+Status: DR-1 and DR-2 done on 2026-10-16; DR-3 is next
 Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
 culverts, flowline checks against a policy, and their review
 Related:
@@ -189,6 +189,35 @@ Done on 2026-10-16:
 - Freshness stage `drainage` after `applied_sections`; Rebuild Downstream includes it.
 - Tests: grade, low point and direction on a profile with a sag; flat and reverse against the
   policy; stale after a Profile edit and current after a rebuild.
+
+Done on 2026-10-16:
+
+- `models/result/drainage_result.py`: `DrainageResult` with one `DitchRunFlowline` per enabled run
+  (stations, segments with plan length, grade and flow direction, low and high points) and
+  `DrainageCheck` rows. Stored on `V1DrainageResult` in the Drainage folder
+  (`objects/obj_drainage_result.py`), with the check rows as text for the property view.
+- `services/evaluation/drainage_evaluation_service.py`: the flowline is the run's tagged
+  `ditch_flowline` point at each Applied Section in its span; a grade is the rise over the plan
+  length along the flowline. Low points are where it turns from falling to rising (the lowest
+  station of a flat bottom) and the ends it falls toward; high points the reverse. Checks:
+  `flowline_missing` (error: fewer than two stations), `flat_grade` (warning: under the Policy
+  minimum, one row per stretch) and `low_point` (info).
+- Freshness stage `drainage` after `applied_sections`: it reads the Applied Sections result and the
+  whole Drainage source. Applied Sections now record only the Ditch Runs of the Drainage
+  (`drainage_ditch_runs`), so a Policy edit leaves them current. Rebuild Downstream rebuilds a stale
+  Drainage result and makes the first one when a Drainage with runs meets existing Applied Sections
+  (`commands/cmd_drainage_result.py`).
+- The Drainage panel shows the stored result and whether it is current when it opens. Apply
+  evaluates at once when the Applied Sections are current (a Policy edit) and otherwise says to run
+  Rebuild Downstream (a run edit retags the ditch points first).
+- Ditch Run ids are shorter: `ditch-run:ditch:left`, with the road only in a document of several.
+- The workflow smoke fills the Drainage from the Assembly, evaluates it, checks both flowlines and no
+  errors, and expects the Drainage stage stale after the Profile edit and rebuilt by Rebuild
+  Downstream.
+- Tests: `test_drainage_evaluation_service.py` (new); the stage test in
+  `test_drainage_source_and_editor.py`.
+- Moved: the "reverse" check needs to know where the water must go, so it comes with the outfalls
+  and links (DR-3, DR-4): a run draining away from its outfall is the reverse case.
 
 ### DR-3 Points and suggestions
 

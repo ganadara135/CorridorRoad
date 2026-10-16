@@ -31,6 +31,8 @@ App = None
 Gui = None
 apply_v1_drainage_model = None
 drainage_editor_inputs = None
+drainage_status_text = None
+refresh_drainage_result = None
 
 COLUMNS = ("ID", "Road", "Side", "Ditch", "Start STA", "End STA", "On")
 ID_COLUMN, ROAD_COLUMN, SIDE_COLUMN, DITCH_COLUMN, START_COLUMN, END_COLUMN, ON_COLUMN = range(len(COLUMNS))
@@ -56,6 +58,8 @@ class V1DrainageEditorTaskPanel:
             )
         elif not self._choices:
             self._set_status("The Assembly has no ditch. Add a ditch Subassembly to the Assembly first.")
+        else:
+            self._set_status(drainage_status_text(self.document))
 
     def getStandardButtons(self):
         return 0
@@ -180,9 +184,11 @@ class V1DrainageEditorTaskPanel:
         end = max((run.station_end for run in spans), default=0.0)
         used = {self._text(row, ID_COLUMN) for row in range(self._table.rowCount())}
         index = 1
-        while ditch_run_id(alignment_id, side, subassembly_ref, index) in used:
+        road = alignment_id if len(self._alignment_ids) > 1 else ""
+        while ditch_run_id(subassembly_ref, side, index, road=road) in used:
             index += 1
-        return DitchRun(ditch_run_id(alignment_id, side, subassembly_ref, index), side, subassembly_ref, start, end, alignment_ref=alignment_id)
+        run_id = ditch_run_id(subassembly_ref, side, index, road=road)
+        return DitchRun(run_id, side, subassembly_ref, start, end, alignment_ref=alignment_id)
 
     def _fill_from_assembly(self) -> None:
         if not self._prefill:
@@ -204,10 +210,11 @@ class V1DrainageEditorTaskPanel:
             self._set_status(str(exc))
             return False
         self._model = model
-        self._set_status(
-            f"Applied to {obj.Label}: {len(model.ditch_run_rows)} Ditch Run(s). "
-            "Rebuild Applied Sections to tag the ditch points."
-        )
+        try:
+            evaluation = refresh_drainage_result(self.document)
+        except RuntimeError as exc:
+            evaluation = f"The Drainage was not evaluated: {exc}"
+        self._set_status(f"Applied to {obj.Label}: {len(model.ditch_run_rows)} Ditch Run(s).\n{evaluation}")
         if close_after and _gui_available():
             Gui.Control.closeDialog()
         return True

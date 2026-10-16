@@ -1,4 +1,4 @@
-"""The Drainage source object and the Drainage editor (DR-1)."""
+"""The Drainage source object, the Drainage editor (DR-1) and the Drainage result stage (DR-2)."""
 
 import os
 import tempfile
@@ -10,8 +10,17 @@ import pytest
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
-from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import V1DrainageEditorTaskPanel, apply_v1_drainage_model
-from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import build_document_applied_section_set
+from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
+    V1DrainageEditorTaskPanel,
+    apply_v1_drainage_model,
+    drainage_editor_inputs,
+    refresh_drainage_result,
+)
+from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
+    apply_v1_applied_section_set,
+    build_document_applied_section_set,
+)
+from freecad.Corridor_Road.v1.commands.cmd_rebuild_downstream import rebuild_downstream
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import apply_v1_region_model, region_preset_model_from_document
 from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     apply_v1_assembly_subassembly_model,
@@ -30,7 +39,9 @@ from freecad.Corridor_Road.v1.objects.obj_drainage import (
     find_v1_drainage_model,
     to_drainage_model,
 )
+from freecad.Corridor_Road.v1.objects.obj_drainage_result import find_v1_drainage_result_object, to_drainage_result
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
+from freecad.Corridor_Road.v1.objects.result_freshness import document_result_freshness
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.persistence_payload_adapter import write_model_payload
 
@@ -164,5 +175,55 @@ def test_apply_refuses_a_run_on_a_ditch_the_assembly_does_not_have() -> None:
         with pytest.raises(ValueError, match="'ditch:median' is not a ditch in any Assembly"):
             apply_v1_drainage_model(document=doc, drainage_model=model)
         assert find_v1_drainage_model(doc) is None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def _freshness(doc) -> dict[str, tuple[str, tuple[str, ...]]]:
+    return {row.stage: (row.status, row.changed_inputs) for row in document_result_freshness(doc)}
+
+
+def test_the_drainage_result_is_a_stage_after_applied_sections() -> None:
+    doc, project = _road_with_ditches("V1DrainageResultStage")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        prefilled = drainage_editor_inputs(doc)["model"]
+        apply_v1_drainage_model(document=doc, drainage_model=prefilled)
+
+        # new Ditch Runs retag the ditch points: Applied Sections are stale, Drainage not built yet
+        freshness = _freshness(doc)
+        assert freshness["applied_sections"] == ("stale", ("drainage_ditch_runs",))
+        assert freshness["drainage"][0] == "missing"
+        assert "Run Rebuild Downstream" in refresh_drainage_result(doc)
+        assert find_v1_drainage_result_object(doc) is None
+
+        report = rebuild_downstream(doc)
+        assert not report.failed, report.text
+        assert report.rebuilt_stages == ("applied_sections", "drainage")
+        assert _freshness(doc)["drainage"] == ("current", ())
+        result = to_drainage_result(find_v1_drainage_result_object(doc))
+        assert sorted(row.side for row in result.flowline_rows) == ["left", "right"]
+        assert not [row for row in result.check_rows if row.kind == "flowline_missing"]
+        assert all(len(row.station_rows) >= 2 for row in result.flowline_rows)
+
+        # a Policy edit makes only the Drainage stale, and the panel's Apply evaluates it at once
+        stricter = DrainagePolicy(min_grade_percent=50.0)
+        apply_v1_drainage_model(
+            document=doc,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id=prefilled.project_id,
+                policy=stricter,
+                ditch_run_rows=prefilled.ditch_run_rows,
+            ),
+        )
+        freshness = _freshness(doc)
+        assert freshness["applied_sections"] == ("current", ())
+        assert freshness["drainage"] == ("stale", ("drainage",))
+        summary = refresh_drainage_result(doc)
+        assert summary.startswith("Drainage checks: warning")
+        assert "under the 50.00 % minimum" in summary
+        assert _freshness(doc)["drainage"] == ("current", ())
     finally:
         App.closeDocument(doc.Name)

@@ -105,6 +105,8 @@ def test_a_full_build_is_current_and_records_its_options() -> None:
             "stationing": "current",
             "centerline3d": "current",
             "applied_sections": "current",
+            # the document has no Drainage source, so there is nothing to evaluate
+            "drainage": "missing",
             "build_parametric": "current",
         }
         assert read_stage_options(find_v1_applied_section_set(doc)) == APPLIED_OPTIONS
@@ -138,7 +140,9 @@ def test_a_profile_edit_makes_applied_sections_and_corridor_stale_and_rebuild_ma
         # the 3D Centerline follows the raised profile, with its recorded display options
         assert centerline.Shape.BoundBox.ZMax != z_max_before
         assert read_stage_options(centerline)["display_mode"] == "polyline"
-        assert {value[0] for value in _status(doc).values()} == {"current"}
+        assert {stage: value[0] for stage, value in _status(doc).items() if stage != "drainage"} == dict.fromkeys(
+            ("stationing", "centerline3d", "applied_sections", "build_parametric"), "current"
+        )
         assert list(stationing.StageInputRows) == stationing_record
         # the recorded options were reused
         assert read_stage_options(find_v1_applied_section_set(doc)) == APPLIED_OPTIONS
@@ -184,7 +188,9 @@ def test_an_alignment_edit_resamples_the_stations_first() -> None:
         report = rebuild_downstream(doc)
 
         assert report.rebuilt_stages == ("stationing", "centerline3d", "applied_sections", "build_parametric")
-        assert {value[0] for value in _status(doc).values()} == {"current"}
+        assert {stage: value[0] for stage, value in _status(doc).items() if stage != "drainage"} == dict.fromkeys(
+            ("stationing", "centerline3d", "applied_sections", "build_parametric"), "current"
+        )
     finally:
         App.closeDocument(doc.Name)
 

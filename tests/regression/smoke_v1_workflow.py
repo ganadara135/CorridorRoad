@@ -5,9 +5,10 @@
 v1 workflow smoke test: one document through the main v1 path.
 
 Project -> existing ground terrain -> Alignment -> Profile -> Superelevation -> Stations ->
-3D Centerline -> Assembly -> Region -> Applied Sections -> Build Parametric, then save, reopen
-and rebuild. It checks that every stage leaves its result in its project tree folder, that the
-side slopes daylight on the terrain and the lanes take the superelevation in the curve, that the
+3D Centerline -> Assembly -> Region -> Drainage -> Applied Sections -> Drainage result -> Build
+Parametric, then save, reopen and rebuild. It checks that every stage leaves its result in its
+project tree folder, that the side slopes daylight on the terrain and the lanes take the
+superelevation in the curve, that each Ditch Run has a flowline, that the
 corridor surfaces have geometry and are manifold meshes without zero-area or downward-facing
 facets, that a saved document reopens with the same objects, folders, surfaces and current
 results, that rebuilding the reopened document reproduces the same surfaces, and that a Profile
@@ -31,6 +32,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_CENTERLINE3D,
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DESIGN_TIN,
+    V1_TREE_DRAINAGE,
     V1_TREE_PROFILES,
     V1_TREE_REGIONS,
     V1_TREE_STATIONS,
@@ -40,6 +42,8 @@ from freecad.Corridor_Road.objects.obj_project import (
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import apply_alignment_ip_rows
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import apply_v1_corridor_model
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
+from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import apply_v1_drainage_model, drainage_editor_inputs
+from freecad.Corridor_Road.v1.commands.cmd_drainage_result import apply_v1_drainage_result
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
@@ -58,6 +62,7 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
+from freecad.Corridor_Road.v1.objects.obj_drainage_result import find_v1_drainage_result_object, to_drainage_result
 from freecad.Corridor_Road.v1.objects.obj_profile import find_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.result_freshness import document_result_freshness
@@ -74,6 +79,8 @@ EXPECTED_FOLDERS = {
     "V1Centerline3DPreview": V1_TREE_CENTERLINE3D,
     "V1AssemblySubassemblyModel": V1_TREE_ASSEMBLIES,
     "V1RegionModel": V1_TREE_REGIONS,
+    "V1DrainageModel": V1_TREE_DRAINAGE,
+    "V1DrainageResult": V1_TREE_DRAINAGE,
     "V1AppliedSectionSet": V1_TREE_APPLIED_SECTIONS,
     "V1CorridorModel": V1_TREE_CORRIDOR_MODEL,
     "V1SurfaceModel": V1_TREE_DESIGN_TIN,
@@ -179,9 +186,12 @@ def _build(doc, project):
         project=project,
         region_model=region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment),
     )
+    # the Ditch Runs the Drainage panel fills from the Regions and the Assembly
+    apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
     applied = build_document_applied_section_set(doc, project=project)
     _assert(len(applied.sections) >= 10, f"Applied Sections built only {len(applied.sections)} sections")
     apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
+    apply_v1_drainage_result(doc)
     apply_v1_corridor_model(document=doc, project=project)
 
 
@@ -194,6 +204,17 @@ def _check_terrain_and_superelevation(doc, stage):
     _assert(fallbacks == 0, f"{stage}: {fallbacks} side slopes fell back instead of reaching the terrain")
     lane_slopes = [abs(float(row.slope)) for section in sections for row in section.subassembly_rows if row.kind == "lane"]
     _assert(max(lane_slopes) > 0.05, f"{stage}: the lanes never take the superelevation, steepest {max(lane_slopes):.3f}")
+
+
+def _check_drainage(doc, stage):
+    result = to_drainage_result(find_v1_drainage_result_object(doc))
+    _assert(result is not None, f"{stage}: no stored Drainage result")
+    sides = sorted(row.side for row in result.flowline_rows)
+    _assert(sides == ["left", "right"], f"{stage}: Drainage flowlines on {sides}, expected left and right")
+    short = [row.ditch_run_ref for row in result.flowline_rows if len(row.station_rows) < 10]
+    _assert(not short, f"{stage}: Ditch Runs with fewer than 10 flowline stations: {short}")
+    errors = [row.message for row in result.check_rows if row.severity == "error"]
+    _assert(not errors, f"{stage}: Drainage errors: {errors}")
 
 
 def _freshness(doc) -> dict[str, tuple[str, tuple[str, ...]]]:
@@ -213,12 +234,12 @@ def _check_stale_and_rebuild(doc):
     key = f"profile@{profile.AlignmentId}"
     freshness = _freshness(doc)
     _assert(freshness["stationing"][0] == "current", f"profile edit: Stations went stale: {freshness}")
-    for name in ("centerline3d", "applied_sections", "build_parametric"):
+    for name in ("centerline3d", "applied_sections", "drainage", "build_parametric"):
         _assert(freshness[name] == ("stale", (key,)), f"profile edit: {name} is {freshness[name]}, expected stale on {key}")
     report = rebuild_downstream(doc)
     _assert(not report.failed, f"Rebuild Downstream failed:\n{report.text}")
     _assert(
-        report.rebuilt_stages == ("centerline3d", "applied_sections", "build_parametric"),
+        report.rebuilt_stages == ("centerline3d", "applied_sections", "drainage", "build_parametric"),
         f"Rebuild Downstream rebuilt {report.rebuilt_stages}",
     )
     _check_current(doc, "rebuild downstream")
@@ -237,6 +258,7 @@ def run():
         _assert(all(count > 0 for count in facets.values()), f"Corridor surfaces without geometry: {facets}")
         _check_mesh_quality(doc, "build")
         _check_terrain_and_superelevation(doc, "build")
+        _check_drainage(doc, "build")
         _check_current(doc, "build")
 
         doc.saveAs(path)
@@ -258,6 +280,7 @@ def run():
         _check_tree(reopened, "rebuild downstream")
         _check_mesh_quality(reopened, "rebuild downstream")
         _check_terrain_and_superelevation(reopened, "rebuild downstream")
+        _check_drainage(reopened, "rebuild downstream")
 
         print(f"[PASS] v1 workflow smoke test completed: {facets}")
     finally:

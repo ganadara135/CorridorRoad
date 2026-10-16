@@ -36,9 +36,13 @@ class DitchChoice:
     sides: tuple[str, ...]
 
 
-def ditch_run_id(alignment_id: str, side: str, subassembly_ref: str, index: int = 1) -> str:
-    road = str(alignment_id or "").strip()
-    stem = f"ditch-run:{road}:{side}:{subassembly_ref}" if road else f"ditch-run:{side}:{subassembly_ref}"
+def ditch_run_id(subassembly_ref: str, side: str, index: int = 1, *, road: str = "") -> str:
+    """`ditch-run:ditch:left` for the left run of ditch `ditch:left`; the road is named only when
+    the document has more than one, and a second run on the same ditch and side is numbered."""
+
+    ref = str(subassembly_ref or "")
+    stem = ref if ref.endswith(str(side)) else f"{ref}:{side}"
+    stem = f"ditch-run:{road}:{stem}" if road else f"ditch-run:{stem}"
     return stem if index <= 1 else f"{stem}:{index}"
 
 
@@ -64,6 +68,7 @@ def prefill_ditch_runs(
     """
 
     runs: list[DitchRun] = []
+    several_roads = len(list(roads or [])) > 1
     for road in list(roads or []):
         open_runs: dict[tuple[str, str], int] = {}
         for start, end, template in _road_templates(road, assembly_models):
@@ -85,7 +90,7 @@ def prefill_ditch_runs(
                     count = sum(1 for run in runs if (run.alignment_ref, run.subassembly_ref, run.side) == (road.alignment_id, key[0], side))
                     runs.append(
                         DitchRun(
-                            ditch_run_id(road.alignment_id, side, key[0], count + 1),
+                            ditch_run_id(key[0], side, count + 1, road=road.alignment_id if several_roads else ""),
                             side,
                             key[0],
                             start,
