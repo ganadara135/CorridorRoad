@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import atan2, cos, degrees, radians, sin
+from math import atan2, cos, degrees, pi, radians, sin
 
 from ...models.source.alignment_model import AlignmentElement, AlignmentModel
 
@@ -21,6 +21,18 @@ class AlignmentStationResult:
     offset_on_element: float = 0.0
     status: str = "not_found"
     notes: str = ""
+
+
+# Stationing stores its station values rounded (9 decimals), so the last station of a road can lie a
+# fraction of a nanometre past the end of the last element. Within this distance a station belongs to
+# the element; the sampling clamps it onto the element.
+_STATION_TOLERANCE = 1.0e-6
+
+
+def _wrapped(angle: float) -> float:
+    """An angle difference brought into (-pi, pi]."""
+
+    return (angle + pi) % (2.0 * pi) - pi
 
 
 class AlignmentEvaluationService:
@@ -99,7 +111,7 @@ class AlignmentEvaluationService:
         station: float,
     ) -> AlignmentElement | None:
         for element in elements:
-            if element.station_start <= station <= element.station_end:
+            if element.station_start - _STATION_TOLERANCE <= station <= element.station_end + _STATION_TOLERANCE:
                 return element
         return None
 
@@ -137,10 +149,39 @@ class AlignmentEvaluationService:
                 ratio = local_offset / segment_length
                 x = x0 + (x1 - x0) * ratio
                 y = y0 + (y1 - y0) * ratio
-                tangent = degrees(atan2(y1 - y0, x1 - x0))
+                tangent = self._smooth_tangent_deg(points, index, ratio)
                 return x, y, tangent, clamped_station_offset
             traversed += segment_length
         return None
+
+    @staticmethod
+    def _smooth_tangent_deg(points: list[tuple[float, float]], index: int, ratio: float) -> float:
+        """Heading at `ratio` along segment `index` of a sampled element.
+
+        A sampled curve is a polyline whose chords are each a few degrees apart. Taking the chord's
+        own heading turns the station frame by that whole step at every vertex, so neighbouring
+        section lines cross a short distance out on the inside of the curve. The heading instead
+        runs from the bisector at one vertex to the bisector at the next; at the element's first
+        and last point it is the end chord's heading, so a two-point (tangent) element keeps its
+        heading and adjoining elements meet with the heading they had.
+        """
+
+        def chord(i: int) -> float:
+            (ax, ay), (bx, by) = points[i], points[i + 1]
+            return atan2(by - ay, bx - ax)
+
+        def vertex(i: int) -> float:
+            # heading at vertex i: the chord's at the ends, the bisector of its two chords inside
+            if i <= 0:
+                return chord(0)
+            if i >= len(points) - 1:
+                return chord(len(points) - 2)
+            before, after = chord(i - 1), chord(i)
+            return before + 0.5 * _wrapped(after - before)
+
+        start = vertex(index)
+        end = vertex(index + 1)
+        return degrees(start + _wrapped(end - start) * float(ratio))
 
     @staticmethod
     def _numeric_values(values) -> list[float]:

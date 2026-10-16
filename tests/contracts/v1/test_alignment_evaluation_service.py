@@ -81,16 +81,19 @@ def test_evaluate_station_on_tangent_returns_xy_and_tangent() -> None:
     assert abs(result.offset_on_element - 25.0) < 1e-9
 
 
-def test_evaluate_station_on_sampled_polyline_uses_active_segment_tangent() -> None:
-    result = AlignmentEvaluationService().evaluate_station(
-        _sampled_polyline_alignment(),
-        15.0,
-    )
+def test_evaluate_station_on_sampled_polyline_turns_from_vertex_to_vertex() -> None:
+    service = AlignmentEvaluationService()
+    alignment = _sampled_polyline_alignment()
+    result = service.evaluate_station(alignment, 15.0)
 
+    # the position stays on the chord; the heading runs from the vertex bisector (45) to the end
+    # chord's heading (90)
     assert result.status == "ok"
     assert abs(result.x - 10.0) < 1e-9
     assert abs(result.y - 5.0) < 1e-9
-    assert abs(result.tangent_direction_deg - 90.0) < 1e-9
+    assert abs(result.tangent_direction_deg - 67.5) < 1e-9
+    assert abs(service.evaluate_station(alignment, 10.0).tangent_direction_deg - 45.0) < 1e-9
+    assert abs(service.evaluate_station(alignment, 20.0).tangent_direction_deg - 90.0) < 1e-9
 
 
 def test_evaluate_station_outside_alignment_reports_status() -> None:
