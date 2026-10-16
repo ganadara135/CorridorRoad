@@ -371,7 +371,6 @@ def _drainage_quantity_fragment_rows(
     rows: list[QuantityFragment] = []
     diagnostics: list[DiagnosticMessage] = []
     drainage_refs = _drainage_refs_for_sections(sections)
-    flow_route_by_drainage_ref = _flow_route_by_drainage_ref(drainage_model)
     missing_ref_count = _ditch_points_missing_drainage_ref_count(sections)
     if missing_ref_count:
         diagnostics.append(
@@ -379,7 +378,7 @@ def _drainage_quantity_fragment_rows(
                 "warning",
                 "missing_drainage_quantity_source_ref",
                 f"{missing_ref_count} ditch_surface point row(s) cannot produce drainage-id quantities.",
-                "Rebuild Applied Sections after assigning Drainage Elements to Regions so ditch_surface rows carry drainage_ref.",
+                "Add Ditch Runs for these ditches in the Drainage panel, then rebuild Applied Sections so the ditch points carry their run id.",
             )
         )
     for drainage_ref in drainage_refs:
@@ -402,7 +401,6 @@ def _drainage_quantity_fragment_rows(
             _drainage_length_rows_for_ref(
                 source_sections,
                 drainage_ref=drainage_ref,
-                flow_route_ref=flow_route_by_drainage_ref.get(drainage_ref, ""),
                 fragment_id_prefix=f"{fragment_id_prefix}:{_safe_id(drainage_ref)}",
             )
         )
@@ -415,7 +413,7 @@ def _drainage_quantity_fragment_rows(
                     "First slice detects flowline rows from ditch_surface point ids containing flowline, flow, or invert.",
                 )
             )
-    return rows, diagnostics, _unique_refs(drainage_refs + [row.flow_route_ref for row in rows])
+    return rows, diagnostics, _unique_refs(drainage_refs)
 
 
 def _drainage_length_rows_for_ref(
@@ -473,23 +471,6 @@ def _drainage_length_rows_for_ref(
             )
         )
     return rows
-
-
-def _flow_route_by_drainage_ref(drainage_model: DrainageModel | None) -> dict[str, str]:
-    if drainage_model is None:
-        return {}
-    output: dict[str, str] = {}
-    for row in list(getattr(drainage_model, "flow_route_rows", []) or []):
-        route_id = str(getattr(row, "flow_route_id", "") or "").strip()
-        if not route_id:
-            continue
-        for ref in [
-            str(getattr(row, "from_element_ref", "") or "").strip(),
-            str(getattr(row, "to_element_ref", "") or "").strip(),
-        ]:
-            if ref and ref not in output:
-                output[ref] = route_id
-    return output
 
 
 def _station_ordered_sections(applied_section_set: AppliedSectionSet) -> list[AppliedSection]:

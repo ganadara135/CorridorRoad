@@ -5,7 +5,7 @@ from freecad.Corridor_Road.v1.models.persistence import (
     restore_model_payload,
     serialize_model_payload,
 )
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
 
 
@@ -51,15 +51,15 @@ def test_restore_rejects_checksum_and_row_count_corruption() -> None:
         schema_version=1,
         project_id="project:test",
         drainage_model_id="drainage:main",
-        element_rows=[DrainageElementRow("ditch:1", "ditch")],
+        ditch_run_rows=[DitchRun("ditch-run:1", "left", "ditch:left", 0.0, 100.0)],
     )
     payload = serialize_model_payload(
         model,
         model_type="DrainageModel",
-        row_fields=("element_rows",),
+        row_fields=("ditch_run_rows",),
     )
     corrupted = json.loads(payload.to_json())
-    corrupted["data"]["element_rows"] = []
+    corrupted["data"]["ditch_run_rows"] = []
 
     checksum_result = restore_model_payload(
         json.dumps(corrupted),

@@ -26,7 +26,7 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionRow,
 )
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import region_preset_model_from_document
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.superelevation_model import CrossfallControlRow, RunoffTransitionRow, SuperelevationModel
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import create_or_update_v1_assembly_subassembly_model_object
@@ -239,7 +239,7 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_build_document_applied_sections_resolves_drainage_from_drainage_model_region_refs() -> None:
+def test_build_document_applied_sections_tag_each_ditch_with_its_own_ditch_run() -> None:
     doc, project = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -266,24 +266,8 @@ def test_build_document_applied_sections_resolves_drainage_from_drainage_model_r
                 schema_version=1,
                 project_id="proj-1",
                 drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        "drainage:plain-left",
-                        "ditch",
-                        side="left",
-                        region_ref=first.region_id,
-                        station_start=0.0,
-                        station_end=240.0,
-                    ),
-                    DrainageElementRow(
-                        "drainage:plain-right",
-                        "ditch",
-                        side="right",
-                        region_ref=first.region_id,
-                        station_start=0.0,
-                        station_end=240.0,
-                    ),
-                ],
+                # only the left ditch drains into a run; the right ditch has none
+                ditch_run_rows=[DitchRun("ditch-run:left", "left", "ditch:left", 0.0, 240.0)],
             ),
         )
 
@@ -294,11 +278,14 @@ def test_build_document_applied_sections_resolves_drainage_from_drainage_model_r
         ditch_subassemblies = [row for row in result.sections[0].subassembly_rows if row.kind == "ditch"]
         ditch_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_surface"]
         flowline_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_flowline"]
-        assert [row.drainage_refs for row in ditch_subassemblies] == [["drainage:plain-left"], ["drainage:plain-right"]]
-        assert {row.drainage_ref for row in ditch_points} == {"drainage:plain-left", "drainage:plain-right"}
-        assert {row.drainage_ref for row in flowline_points} == {"drainage:plain-left", "drainage:plain-right"}
-        assert {row.side for row in flowline_points} == {"left", "right"}
+        assert [(row.subassembly_id, row.drainage_refs) for row in ditch_subassemblies] == [
+            ("ditch:left", ["ditch-run:left"]),
+            ("ditch:right", []),
+        ]
+        assert {(row.side, row.drainage_ref) for row in ditch_points} == {("left", "ditch-run:left"), ("right", "")}
+        assert {(row.side, row.drainage_ref) for row in flowline_points} == {("left", "ditch-run:left"), ("right", "")}
         assert "drainage:main" in result.source_refs
+        assert "ditch-run:left" in result.sections[0].source_refs
     finally:
         App.closeDocument(doc.Name)
 
@@ -393,49 +380,6 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
             assert obj.ViewObject.Visibility is False
             assert obj.ReviewShapeStatus == "not_built"
     finally:
-        App.closeDocument(doc.Name)
-
-
-def test_applied_sections_validate_allows_drainage_element_without_region() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc()
-    original_show_message = applied_sections_command._show_message
-    applied_sections_command._show_message = lambda *_args, **_kwargs: None
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_sample_v1_profile(doc, project=project, alignment=alignment)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
-        region_model = region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
-        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:side-ditch-right",
-                        element_kind="ditch",
-                        station_start=0.0,
-                        station_end=90.0,
-                    )
-                ],
-            ),
-        )
-        show_v1_centerline3d_preview_object(doc, project=project)
-
-        panel = V1AppliedSectionsTaskPanel(document=doc)
-
-        assert panel._validate(show_message=False) is True
-        assert "drainage_element_missing_region_ref" not in panel._summary.toPlainText()
-        assert panel._apply(close_after=False) is True
-        assert find_v1_applied_section_set(doc) is not None
-    finally:
-        applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)
 
 

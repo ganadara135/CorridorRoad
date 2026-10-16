@@ -141,7 +141,6 @@ _corridor_build_preview_object = None
 _display_source_id = None
 _document_display_name = None
 _document_identity = None
-_drainage_review_context_label = None
 _fit_build_corridor_table_to_rows = None
 _format_structure_review_summary = None
 _hide_applied_section_set_review_shape = None
@@ -163,7 +162,6 @@ corridor_build_review_row_color = None
 corridor_build_review_rows = None
 corridor_build_visibility_group_visible = None
 corridor_build_visibility_groups = None
-corridor_drainage_review_rows = None
 corridor_guided_review_step_available = None
 corridor_guided_review_step_visibility = None
 corridor_intersection_contract_review_rows = None
@@ -180,7 +178,6 @@ find_v1_applied_section_set = None
 find_v1_surface_model = None
 focus_adjacent_corridor_slope_face_issue = None
 focus_corridor_build_guided_review_step = None
-focus_corridor_drainage_review_row = None
 focus_corridor_intersection_contract_review_row = None
 focus_corridor_region_boundary_row = None
 focus_corridor_slope_face_issue = None
@@ -307,10 +304,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         regions_layout = QtWidgets.QVBoxLayout(regions_tab)
         regions_layout.setContentsMargins(8, 8, 8, 8)
         regions_layout.setAlignment(QtCore.Qt.AlignTop)
-        drainage_tab = QtWidgets.QWidget()
-        drainage_layout = QtWidgets.QVBoxLayout(drainage_tab)
-        drainage_layout.setContentsMargins(8, 8, 8, 8)
-        drainage_layout.setAlignment(QtCore.Qt.AlignTop)
         visibility_tab = QtWidgets.QWidget()
         visibility_layout = QtWidgets.QVBoxLayout(visibility_tab)
         visibility_layout.setContentsMargins(8, 8, 8, 8)
@@ -322,7 +315,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             (intersections_tab, "Intersections", "intersections"),
             (breakline_tab, "Breakline Audit", "breakline_audit"),
             (regions_tab, "Regions", "regions"),
-            (drainage_tab, "Drainage", "drainage"),
             (visibility_tab, "Visibility", "visibility"),
         ]
         self._review_tab_ids = {tabs.addTab(tab, title): tab_id for tab, title, tab_id in review_tabs}
@@ -563,25 +555,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         transition_button_row.addWidget(refresh_transitions_button)
         transition_button_row.addStretch(1)
         regions_layout.addLayout(transition_button_row)
-        drainage_label = QtWidgets.QLabel("Drainage Diagnostics")
-        drainage_label.setToolTip("Roadside Drainage reviews station-range ditch surfaces; Intersection Drainage reviews low-point coverage inside intersection control Regions.")
-        drainage_layout.addWidget(drainage_label)
-        self._drainage_table = QtWidgets.QTableWidget(0, 7)
-        self._drainage_table.setHorizontalHeaderLabels(["Context", "Station", "Status", "Points", "Left", "Right", "Notes"])
-        _compact_build_corridor_table(self._drainage_table, [150, 90, 80, 65, 55, 55, 220])
-        self._drainage_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._drainage_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self._drainage_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self._drainage_table.setStyleSheet(
-            "QTableWidget::item { color: #141414; } "
-            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
-        )
-        try:
-            self._drainage_table.horizontalHeader().setStretchLastSection(True)
-        except Exception:
-            pass
-        self._drainage_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_drainage_review_row(row_index))
-        drainage_layout.addWidget(self._drainage_table)
         visibility_label = QtWidgets.QLabel("Preview Visibility")
         visibility_label.setToolTip("Toggle corridor review objects in the 3D View without rebuilding the corridor.")
         visibility_layout.addWidget(visibility_label)
@@ -700,8 +673,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         elif tab_id == "regions":
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-        elif tab_id == "drainage":
-            self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
         elif tab_id == "visibility":
             self._sync_visibility_checks()
             self._sync_visibility_group_checks()
@@ -849,7 +820,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             self._refresh_shared_breakline_audit()
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-            self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
             self._sync_supplemental_sampling_frame_count_label()
             self._sync_tabs_height_later()
             self._set_progress(99, "Focusing review preview...")
@@ -1302,32 +1272,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             )
         )
 
-    def _set_drainage_review_rows(self, rows: list[dict[str, object]]) -> None:
-        if not hasattr(self, "_drainage_table"):
-            return
-        self._drainage_table.setRowCount(0)
-        for row in list(rows or []):
-            row_index = self._drainage_table.rowCount()
-            self._drainage_table.insertRow(row_index)
-            station = row.get("station", "")
-            station_text = "" if station == "" else f"{float(station):.3f}"
-            values = [
-                str(row.get("context_label", "") or _drainage_review_context_label(row)),
-                station_text,
-                str(row.get("status", "") or ""),
-                str(row.get("ditch_point_count", "") or "0"),
-                str(row.get("left_count", "") or "0"),
-                str(row.get("right_count", "") or "0"),
-                str(row.get("notes", "") or ""),
-            ]
-            for col, value in enumerate(values):
-                item = QtWidgets.QTableWidgetItem(value)
-                if col == 1:
-                    item.setData(32, str(row.get("marker_object", "") or ""))
-                self._drainage_table.setItem(row_index, col, item)
-            self._apply_drainage_row_style(row_index, str(row.get("status", "") or ""))
-        _fit_build_corridor_table_to_rows(self._drainage_table)
-
     def _set_region_boundary_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_region_table"):
             return
@@ -1433,30 +1377,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             )
         except Exception as exc:
             _show_message(self.form, "Build Parametric", f"Region surface object was not selected.\n{exc}")
-
-    def _show_drainage_review_row(self, row_index: int) -> None:
-        try:
-            rows = corridor_drainage_review_rows(self.document)
-            row = rows[int(row_index)]
-            obj = focus_corridor_drainage_review_row(self.document, int(row_index))
-            self._sync_visibility_checks()
-            try:
-                self._drainage_table.selectRow(int(row_index))
-            except Exception:
-                pass
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Drainage station highlight shown.",
-                        f"Station: {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Station: n/a",
-                        f"Status: {row.get('status', '')}",
-                        f"Points: {row.get('ditch_point_count', 0)}",
-                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                    ]
-                )
-            )
-        except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Drainage station highlight was not shown.\n{exc}")
 
     def _show_slope_face_issue_row(self, row_index: int) -> None:
         try:
@@ -1773,23 +1693,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
             for column_index in range(int(self._intersection_contract_table.columnCount())):
                 item = self._intersection_contract_table.item(int(row_index), column_index)
-                if item is not None:
-                    item.setBackground(brush)
-                    item.setForeground(text_brush)
-        except Exception:
-            pass
-
-    def _apply_drainage_row_style(self, row_index: int, status: str) -> None:
-        color = corridor_build_review_row_color("empty" if str(status or "") == "warn" else status)
-        if color is None:
-            return
-        try:
-            from freecad.Corridor_Road.qt_compat import QtGui
-
-            brush = QtGui.QBrush(QtGui.QColor(*color))
-            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
-            for column_index in range(int(self._drainage_table.columnCount())):
-                item = self._drainage_table.item(int(row_index), column_index)
                 if item is not None:
                     item.setBackground(brush)
                     item.setForeground(text_brush)

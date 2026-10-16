@@ -24,7 +24,6 @@ from .alignment_curve_preview import (
 from .corridor_model import CorridorModel
 from .centerline3d import Centerline3DPointRow, Centerline3DResult
 from .centerline3d_arc_fit import Centerline3DArcFitResult
-from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from .earthwork_balance_model import EarthworkBalanceModel
 from .intersection_patch_constraint_build import (
     IntersectionPatchConstraintBuildResult,
@@ -70,8 +69,6 @@ __all__ = [
     "Centerline3DResult",
     "Centerline3DArcFitResult",
     "CorridorModel",
-    "DrainagePipelineResult",
-    "DrainagePipelineSegment",
     "EarthworkBalanceModel",
     "IntersectionPatchConstraintBuildResult",
     "IntersectionTieInEdgeRow",

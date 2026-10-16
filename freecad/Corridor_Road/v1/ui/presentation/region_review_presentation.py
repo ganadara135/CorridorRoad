@@ -244,7 +244,6 @@ def _region_group_station_contexts(
 
 def _region_group_drainage_summary(sections: list[object], *, region_model=None, drainage_model=None) -> str:
     drainage_refs: list[str] = []
-    flow_route_refs: list[str] = []
     if region_model is not None and drainage_model is not None:
         for context in _region_group_station_contexts(
             sections,
@@ -256,11 +255,6 @@ def _region_group_drainage_summary(sections: list[object], *, region_model=None,
                 for value in list(getattr(context, "active_drainage_refs", []) or [])
                 if str(value or "").strip()
             )
-            flow_route_refs.extend(
-                str(value or "").strip()
-                for value in list(getattr(context, "active_flow_route_refs", []) or [])
-                if str(value or "").strip()
-            )
     ditch_count = sum(
         1
         for section in list(sections or [])
@@ -269,11 +263,8 @@ def _region_group_drainage_summary(sections: list[object], *, region_model=None,
     )
     summary_parts: list[str] = []
     drainage_summary = unique_join(drainage_refs)
-    route_summary = unique_join(flow_route_refs)
     if drainage_summary:
         summary_parts.append(drainage_summary)
-    if route_summary:
-        summary_parts.append(f"routes: {route_summary}")
     if ditch_count:
         summary_parts.append(f"ditch points: {ditch_count}")
     return "; ".join(summary_parts) if summary_parts else "-"

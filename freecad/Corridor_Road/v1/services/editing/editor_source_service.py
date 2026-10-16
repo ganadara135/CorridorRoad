@@ -48,8 +48,8 @@ def prepare_drainage_edit(model: DrainageModel) -> PreparedSourceEdit[DrainageMo
         model,
         DrainageModel,
         source_id=getattr(model, "drainage_model_id", ""),
-        rows=getattr(model, "element_rows", ()),
-        row_id="drainage_element_id",
+        rows=getattr(model, "ditch_run_rows", ()),
+        row_id="ditch_run_id",
     )
 
 

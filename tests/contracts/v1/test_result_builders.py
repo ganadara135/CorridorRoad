@@ -47,7 +47,7 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint
 from freecad.Corridor_Road.v1.models.source.region_model import RegionRow
 from freecad.Corridor_Road.v1.models.source.superelevation_model import CrossfallControlRow, RunoffTransitionRow, SuperelevationModel
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionControlArea,
     IntersectionGradingPolicyRow,
@@ -1127,23 +1127,11 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
         schema_version=1,
         project_id="proj-1",
         drainage_model_id="drainage:main",
-        element_rows=[
-            DrainageElementRow(
-                "drainage:side-ditch-left",
-                "ditch",
-                side="left",
-                region_ref="region-1",
-                station_start=0.0,
-                station_end=100.0,
-            ),
-            DrainageElementRow(
-                "drainage:side-ditch-right",
-                "ditch",
-                side="right",
-                region_ref="region-1",
-                station_start=0.0,
-                station_end=100.0,
-            ),
+        ditch_run_rows=[
+            DitchRun("drainage:side-ditch-left", "left", "ditch-left", 0.0, 100.0, alignment_ref="align-ditch"),
+            DitchRun("drainage:side-ditch-right", "right", "ditch-right", 0.0, 100.0, alignment_ref="align-ditch"),
+            # a run naming the left ditch on the right side matches no ditch point
+            DitchRun("drainage:wrong-side", "right", "ditch-left", 0.0, 100.0, alignment_ref="align-ditch"),
         ],
     )
 
@@ -1172,6 +1160,10 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
     assert "drainage:main" in result.source_refs
     assert "drainage:side-ditch-left" in result.source_refs
     assert "drainage:side-ditch-right" in result.source_refs
+    assert {(point.subassembly_ref, point.side, point.drainage_ref) for point in ditch_points} == {
+        ("ditch-left", "left", "drainage:side-ditch-left"),
+        ("ditch-right", "right", "drainage:side-ditch-right"),
+    }
 
 
 def test_applied_section_service_starts_ditch_from_sloped_fg_edge() -> None:
@@ -5273,31 +5265,7 @@ def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> No
             drainage_model=DrainageModel(
                 schema_version=1,
                 project_id="proj-1",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:right",
-                        element_kind="ditch",
-                        side="right",
-                        station_start=0.0,
-                        station_end=10.0,
-                    ),
-                    DrainageElementRow(
-                        drainage_element_id="drainage:outfall-right",
-                        element_kind="outfall_reference",
-                        side="right",
-                        station_start=10.0,
-                        station_end=10.1,
-                    ),
-                ],
-                flow_route_rows=[
-                    DrainageFlowRoute(
-                        flow_route_id="flow-route:right",
-                        from_element_ref="drainage:right",
-                        to_element_ref="drainage:outfall-right",
-                        outlet_ref="drainage:outfall-right",
-                    )
-                ],
+                ditch_run_rows=[DitchRun("drainage:right", "right", "ditch:right", 0.0, 10.0)],
             ),
         )
     )
@@ -5307,8 +5275,7 @@ def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> No
     assert abs(rows["drainage_flowline_length"].value - 10.0) < 1.0e-9
     assert rows["drainage_ditch_length"].measurement_kind == "drainage_applied_section_longitudinal"
     assert rows["drainage_ditch_length"].drainage_ref == "drainage:right"
-    assert rows["drainage_ditch_length"].flow_route_ref == "flow-route:right"
-    assert rows["drainage_flowline_length"].flow_route_ref == "flow-route:right"
+    assert rows["drainage_ditch_length"].flow_route_ref == ""
     assert rows["drainage_ditch_length"].subassembly_ref == "ditch:right"
     assert "drainage:right" in result.source_refs
     assert not any(row.kind == "missing_drainage_quantity_source_ref" for row in result.diagnostic_rows)
@@ -5417,7 +5384,7 @@ def test_quantity_build_service_missing_drainage_ref_points_to_drainage_region_a
 
     diagnostics = [row for row in result.diagnostic_rows if row.kind == "missing_drainage_quantity_source_ref"]
     assert len(diagnostics) == 1
-    assert "Drainage Elements to Regions" in diagnostics[0].notes
+    assert "Ditch Runs" in diagnostics[0].notes
     assert "Region/Drainage handoff" not in diagnostics[0].notes
 
 

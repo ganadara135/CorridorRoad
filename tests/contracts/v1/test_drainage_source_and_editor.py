@@ -1,0 +1,168 @@
+"""The Drainage source object and the Drainage editor (DR-1)."""
+
+import os
+import tempfile
+from dataclasses import dataclass, field
+
+import FreeCAD as App
+import pytest
+
+from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
+from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import V1DrainageEditorTaskPanel, apply_v1_drainage_model
+from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import build_document_applied_section_set
+from freecad.Corridor_Road.v1.commands.cmd_region_editor import apply_v1_region_model, region_preset_model_from_document
+from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
+    apply_v1_assembly_subassembly_model,
+    assembly_subassembly_preset_model_from_document,
+)
+from freecad.Corridor_Road.v1.models.source.drainage_model import (
+    DitchRun,
+    DrainageLink,
+    DrainageModel,
+    DrainagePoint,
+    DrainagePolicy,
+)
+from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
+from freecad.Corridor_Road.v1.objects.obj_drainage import (
+    create_or_update_v1_drainage_model_object,
+    find_v1_drainage_model,
+    to_drainage_model,
+)
+from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
+from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
+from freecad.Corridor_Road.v1.objects.persistence_payload_adapter import write_model_payload
+
+_QAPP = None
+
+
+def _new_project_doc(name: str):
+    doc = App.newDocument(name)
+    project = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+    CorridorRoadProject(project)
+    ensure_project_tree(project, include_references=False)
+    return doc, project
+
+
+def _road_with_ditches(name: str):
+    """A road whose Full Set Road Assembly has a ditch on each side, over one Region."""
+
+    doc, project = _new_project_doc(name)
+    alignment = create_sample_v1_alignment(doc, project=project)
+    create_sample_v1_profile(doc, project=project, alignment=alignment)
+    create_v1_stationing(doc, project=project, alignment=alignment, interval=40.0)
+    apply_v1_assembly_subassembly_model(
+        document=doc,
+        project=project,
+        assembly_model=assembly_subassembly_preset_model_from_document("Full Set Road", doc, project=project, alignment=alignment),
+    )
+    apply_v1_region_model(
+        document=doc,
+        project=project,
+        region_model=region_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment),
+    )
+    return doc, project
+
+
+def _model() -> DrainageModel:
+    return DrainageModel(
+        schema_version=1,
+        project_id="p",
+        policy=DrainagePolicy(min_grade_percent=0.5, max_inlet_spacing_m=45.0, low_point_rule="allow_ponding"),
+        ditch_run_rows=[DitchRun("ditch-run:left", "left", "ditch:left", 0.0, 120.0, alignment_ref="alignment:main")],
+        point_rows=[DrainagePoint("inlet:1", "inlet", 60.0, side="left", ditch_run_ref="ditch-run:left")],
+        link_rows=[DrainageLink("link:1", "inlet:1", "outfall:1")],
+    )
+
+
+def test_the_drainage_model_survives_save_and_reopen() -> None:
+    doc, project = _new_project_doc("V1DrainageSourceRoundTrip")
+    path = os.path.join(tempfile.mkdtemp(), "drainage.FCStd")
+    try:
+        obj = create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_model())
+        assert (obj.DitchRunCount, obj.PointCount, obj.LinkCount) == (1, 1, 1)
+        assert obj.LowPointRule == "allow_ponding"
+        doc.saveAs(path)
+    finally:
+        App.closeDocument(doc.Name)
+    reopened = App.openDocument(path)
+    try:
+        assert to_drainage_model(find_v1_drainage_model(reopened)) == _model()
+    finally:
+        App.closeDocument(reopened.Name)
+
+
+@dataclass
+class _DrainageBeforeTheRework:
+    schema_version: int
+    project_id: str
+    drainage_model_id: str = "drainage:main"
+    element_rows: list[dict] = field(default_factory=list)
+
+
+def test_a_drainage_object_from_before_the_rework_restores_empty_and_drops_its_old_rows() -> None:
+    doc, project = _new_project_doc("V1DrainageSourceOld")
+    try:
+        obj = create_or_update_v1_drainage_model_object(doc, project=project)
+        obj.addProperty("App::PropertyStringList", "ElementKinds", "Drainage Elements", "old")
+        obj.ElementKinds = ["ditch"]
+        old = _DrainageBeforeTheRework(1, "p", element_rows=[{"drainage_element_id": "drainage:left", "element_kind": "ditch"}])
+        write_model_payload(obj, old, model_type="DrainageModel", row_fields=("element_rows",))
+
+        model = to_drainage_model(obj)
+        assert model is not None
+        assert (model.ditch_run_rows, model.point_rows, model.link_rows) == ([], [], [])
+        assert model.policy == DrainagePolicy()
+
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_model())
+        assert not hasattr(obj, "ElementKinds")
+        assert to_drainage_model(obj) == _model()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_editor_prefills_ditch_runs_without_writing_and_apply_tags_the_ditch_points() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageEditorPrefill")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+
+        # opening the editor writes nothing
+        assert find_v1_drainage_model(doc) is None
+        runs = [panel._run(row) for row in range(panel._table.rowCount())]
+        assert [(run.subassembly_ref, run.side) for run in runs] == [("ditch:left", "left"), ("ditch:right", "right")]
+        assert "Apply to keep them" in panel._status.toPlainText()
+
+        assert panel._apply() is True
+        stored = to_drainage_model(find_v1_drainage_model(doc))
+        assert [run.ditch_run_id for run in stored.ditch_run_rows] == [run.ditch_run_id for run in runs]
+
+        show_v1_centerline3d_preview_object(doc, project=project)
+        applied = build_document_applied_section_set(doc, project=project)
+        refs = {
+            (point.side, point.drainage_ref)
+            for section in applied.sections
+            for point in section.point_rows
+            if point.point_role == "ditch_surface"
+        }
+        assert refs == {(run.side, run.ditch_run_id) for run in runs}
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_refuses_a_run_on_a_ditch_the_assembly_does_not_have() -> None:
+    doc, project = _road_with_ditches("V1DrainageEditorRefuse")
+    try:
+        model = DrainageModel(
+            schema_version=1,
+            project_id="p",
+            ditch_run_rows=[DitchRun("ditch-run:x", "left", "ditch:median", 0.0, 100.0)],
+        )
+
+        with pytest.raises(ValueError, match="'ditch:median' is not a ditch in any Assembly"):
+            apply_v1_drainage_model(document=doc, drainage_model=model)
+        assert find_v1_drainage_model(doc) is None
+    finally:
+        App.closeDocument(doc.Name)

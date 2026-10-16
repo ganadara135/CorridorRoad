@@ -22,7 +22,6 @@ from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ..objects.obj_applied_section import find_v1_applied_section_set
 from ..objects.obj_applied_section import to_applied_section_set
-from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_corridor import find_v1_corridor_model, to_corridor_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
@@ -59,9 +58,7 @@ from ..services.builders import (
     WatertightSimulationPackageBuildRequest,
     WatertightSimulationPackageService,
 )
-from ..services.evaluation.drainage_resolution_service import build_drainage_pipeline_segment_candidates
 from ..services.mapping import (
-    DrainageReviewMapper,
     WatertightSolidOutputMapper,
     WatertightSolidOutputMappingRequest,
     WatertightSolidPartMapper,
@@ -125,21 +122,6 @@ class WatertightSolidTargetPanelState:
 
 
 @dataclass(frozen=True)
-class DrainagePipelineNetworkShapeResult:
-    """Part shape plus network fuse metadata for Drainage pipeline builds."""
-
-    shape: object
-    fuse_mode: str = "compound_fallback"
-    connector_count: int = 0
-    structure_body_count: int = 0
-    port_connector_count: int = 0
-    endpoint_trim_count: int = 0
-    structure_port_terminal_count: int = 0
-    structure_port_contact_status: str = "not_checked"
-    notes: str = ""
-
-
-@dataclass(frozen=True)
 class DrainageWatertightHandoffSummary:
     """Drainage-specific readiness summary for Watertight Solid handoff."""
 
@@ -160,9 +142,7 @@ class DrainageWatertightHandoffSummary:
     def readiness_status(self) -> str:
         if self.source_status != "ready":
             return "missing"
-        if self.unresolved_port_route_count > 0 or self.missing_element_route_count > 0:
-            return "blocked"
-        if self.pipe_candidate_count <= 0 and self.lined_ditch_target_count <= 0:
+        if self.lined_ditch_target_count <= 0:
             return "check"
         return "ready"
 
@@ -361,13 +341,11 @@ def discover_watertight_solid_targets(document=None):
     region_obj = find_v1_region_model(doc)
     intersection_obj = find_v1_intersection_model(doc)
     structure_obj = find_v1_structure_model(doc)
-    drainage_obj = find_v1_drainage_model(doc)
     applied = to_applied_section_set(applied_obj)
     corridor = to_corridor_model(corridor_obj)
     region_model = to_region_model(region_obj)
     intersection_model = to_intersection_model(intersection_obj)
     structure_model = to_structure_model(structure_obj)
-    drainage_model = to_drainage_model(drainage_obj)
     target_model = SolidTargetDiscoveryService().discover(
         SolidTargetDiscoveryRequest(
             project_id=str(getattr(applied, "project_id", "") or getattr(corridor, "project_id", "") or "corridorroad-v1"),
@@ -377,7 +355,6 @@ def discover_watertight_solid_targets(document=None):
             region_model=region_model,
             intersection_model=intersection_model,
             structure_model=structure_model,
-            drainage_model=drainage_model,
         )
     )
     target_model = _annotate_shared_breakline_solid_readiness_targets(target_model, doc)
@@ -755,8 +732,6 @@ class V1WatertightSolidsTaskPanel:
             return False
         if _is_structure_body_target(selected_state.target_row):
             return self._validate_structure_body_target_state(selected_state)
-        if _is_drainage_pipeline_target(selected_state.target_row):
-            return self._validate_drainage_pipeline_target_state(selected_state)
         if _is_intersection_patch_target(selected_state.target_row):
             return self._validate_intersection_patch_target_state(selected_state)
 
@@ -867,63 +842,6 @@ class V1WatertightSolidsTaskPanel:
         self._refresh_target_row(selected_state.target_id)
         return selected_state.validation_status == "ok"
 
-    def _validate_drainage_pipeline_target_state(self, selected_state: WatertightSolidTargetPanelState) -> bool:
-        try:
-            if _is_drainage_pipeline_network_target(selected_state.target_row):
-                _output, network_row, geometry_rows, solid_rows, junction_rows = _drainage_pipeline_network_output_context(self.document, selected_state.target_row)
-                point_count = sum(len(list(getattr(row, "centerline_points", []) or [])) for row in geometry_rows)
-                cap_count = sum(int(getattr(row, "cap_count", 0) or 0) for row in solid_rows)
-                connector_count = _network_connector_count(junction_rows)
-                selected_state.profile_set = geometry_rows
-                selected_state.edge_network = network_row
-                selected_state.profile_count = point_count
-                selected_state.face_count = max(0, sum(max(0, len(list(getattr(row, "centerline_points", []) or [])) - 1) * 3 for row in geometry_rows) + cap_count + connector_count)
-                selected_state.edge_count = selected_state.face_count
-                selected_state.volume = float(getattr(network_row, "volume", 0.0) or 0.0)
-                selected_state.validation_status = "ok" if str(getattr(network_row, "validation_status", "") or "") == "ready" else "error"
-                selected_state.validation_message = (
-                    "Drainage pipeline network candidate ready; "
-                    f"segments={int(getattr(network_row, 'segment_count', 0) or 0)}; "
-                    f"junctions={int(getattr(network_row, 'junction_count', 0) or 0)}; "
-                    f"connectors={connector_count}; "
-                    f"caps={cap_count}; length={float(getattr(network_row, 'length', 0.0) or 0.0):.3f}; "
-                    f"fuse_mode=compound_first_slice."
-                )
-                if selected_state.validation_status != "ok":
-                    selected_state.build_status = "blocked"
-                self._refresh_target_row(selected_state.target_id)
-                return selected_state.validation_status == "ok"
-
-            _output, geometry_row, solid_row = _drainage_pipeline_output_context(self.document, selected_state.target_row)
-            point_count = len(list(getattr(geometry_row, "centerline_points", []) or []))
-            cap_count = int(getattr(solid_row, "cap_count", 0) or 0)
-            selected_state.profile_set = geometry_row
-            selected_state.edge_network = solid_row
-            selected_state.profile_count = point_count
-            selected_state.face_count = max(0, (point_count - 1) * 3 + cap_count)
-            selected_state.edge_count = max(0, (point_count - 1) * 3 + cap_count)
-            selected_state.volume = float(getattr(solid_row, "volume", 0.0) or 0.0)
-            selected_state.validation_status = "ok" if str(getattr(solid_row, "status", "") or "") == "ready" else "error"
-            selected_state.validation_message = (
-                "Drainage pipeline solid candidate ready; "
-                f"points={point_count}; caps={cap_count}; length={float(getattr(solid_row, 'length', 0.0) or 0.0):.3f}; "
-                f"coordinate_mode={str(getattr(solid_row, 'coordinate_mode', '') or '')}."
-            )
-            if selected_state.validation_status != "ok":
-                selected_state.build_status = "blocked"
-        except Exception as exc:
-            selected_state.profile_set = None
-            selected_state.edge_network = None
-            selected_state.profile_count = 0
-            selected_state.face_count = 0
-            selected_state.edge_count = 0
-            selected_state.volume = 0.0
-            selected_state.validation_status = "error"
-            selected_state.build_status = "blocked"
-            selected_state.validation_message = f"Drainage pipeline validation failed: {exc}"
-        self._refresh_target_row(selected_state.target_id)
-        return selected_state.validation_status == "ok"
-
     def _validate_intersection_patch_target_state(self, selected_state: WatertightSolidTargetPanelState) -> bool:
         try:
             patch = _intersection_patch_context(self.document, selected_state.target_row)
@@ -977,8 +895,6 @@ class V1WatertightSolidsTaskPanel:
     def _build_target_state(self, selected_state: WatertightSolidTargetPanelState) -> bool:
         if _is_structure_body_target(selected_state.target_row):
             return self._build_structure_body_target_state(selected_state)
-        if _is_drainage_pipeline_target(selected_state.target_row):
-            return self._build_drainage_pipeline_target_state(selected_state)
         if _is_intersection_patch_target(selected_state.target_row):
             return self._build_intersection_patch_target_state(selected_state)
         if selected_state.validation_status != "ok" or selected_state.profile_set is None or selected_state.edge_network is None:
@@ -1159,128 +1075,6 @@ class V1WatertightSolidsTaskPanel:
             selected_state.validation_message = f"Structure body build failed: {exc}"
         self._refresh_target_row(selected_state.target_id)
         return selected_state.build_status == "built"
-
-    def _build_drainage_pipeline_target_state(self, selected_state: WatertightSolidTargetPanelState) -> bool:
-        if selected_state.validation_status != "ok":
-            if not self._validate_drainage_pipeline_target_state(selected_state):
-                return False
-        try:
-            if _is_drainage_pipeline_network_target(selected_state.target_row):
-                drainage_output, network_row, geometry_rows, solid_rows, junction_rows = _drainage_pipeline_network_output_context(self.document, selected_state.target_row)
-                dependency_count = self._build_structure_body_dependencies_for_network(junction_rows)
-                structure_refs = _network_note_refs(junction_rows, "structure_refs")
-                structure_body_shape_map = _built_structure_body_shape_map_for_refs(self.document, structure_refs)
-                structure_body_shapes, structure_body_object_refs = _structure_body_shape_map_values(structure_body_shape_map)
-                connection_point_map = _structure_connection_point_map(self.document)
-                shape_result = _drainage_pipeline_network_solid_shape(
-                    geometry_rows,
-                    junction_rows=junction_rows,
-                    structure_body_shapes=structure_body_shapes,
-                    structure_body_shape_map=structure_body_shape_map,
-                    connection_point_map=connection_point_map,
-                )
-                shape = getattr(shape_result, "shape", shape_result)
-                selected_state.volume = max(float(getattr(shape, "Volume", 0.0) or 0.0), float(getattr(network_row, "volume", 0.0) or 0.0))
-                selected_state.face_count = max(_shape_count(shape, "Faces"), selected_state.face_count)
-                selected_state.edge_count = max(_shape_count(shape, "Edges"), selected_state.edge_count)
-                object_name = _solid_output_object_name(selected_state.target_id)
-                output = _drainage_pipeline_network_watertight_output(
-                    selected_state.target_row,
-                    drainage_output=drainage_output,
-                    network_row=network_row,
-                    geometry_rows=geometry_rows,
-                    solid_rows=solid_rows,
-                    junction_rows=junction_rows,
-                    shape=shape,
-                    fuse_mode=str(getattr(shape_result, "fuse_mode", "") or ""),
-                    connector_count=int(getattr(shape_result, "connector_count", 0) or 0),
-                    structure_body_count=int(getattr(shape_result, "structure_body_count", 0) or 0),
-                    port_connector_count=int(getattr(shape_result, "port_connector_count", 0) or 0),
-                    endpoint_trim_count=int(getattr(shape_result, "endpoint_trim_count", 0) or 0),
-                    structure_port_terminal_count=int(getattr(shape_result, "structure_port_terminal_count", 0) or 0),
-                    structure_port_contact_status=str(getattr(shape_result, "structure_port_contact_status", "") or ""),
-                    structure_body_object_refs=structure_body_object_refs,
-                    fuse_notes=str(getattr(shape_result, "notes", "") or ""),
-                    generated_object_ref=object_name,
-                )
-                obj = create_or_update_v1_watertight_solid_output_object(
-                    document=self.document,
-                    watertight_solid_output=output,
-                    shape=shape,
-                    project=find_project(self.document),
-                    object_name=object_name,
-                    label=f"Watertight Solid - {_target_display_label(selected_state.target_row)}",
-                )
-                selected_state.watertight_output = output
-                selected_state.output_object = obj
-                selected_state.output_object_ref = str(getattr(obj, "Name", "") or object_name)
-                selected_state.build_status = "built"
-                selected_state.validation_message = (
-                    "Drainage pipeline network solid candidate built; "
-                    f"network={str(getattr(network_row, 'network_id', '') or '')}; "
-                    f"segments={int(getattr(network_row, 'segment_count', 0) or 0)}; "
-                    f"connectors={int(getattr(shape_result, 'connector_count', 0) or 0)}; "
-                    f"structure_bodies={int(getattr(shape_result, 'structure_body_count', 0) or 0)}; "
-                    f"port_connectors={int(getattr(shape_result, 'port_connector_count', 0) or 0)}; "
-                    f"endpoint_trims={int(getattr(shape_result, 'endpoint_trim_count', 0) or 0)}; "
-                    f"structure_port_terminals={int(getattr(shape_result, 'structure_port_terminal_count', 0) or 0)}; "
-                    f"structure_port_status={str(getattr(shape_result, 'structure_port_contact_status', '') or '')}; "
-                    f"dependencies_built={dependency_count}; "
-                    f"fuse_mode={str(getattr(shape_result, 'fuse_mode', '') or '')}; "
-                    f"volume={selected_state.volume:.6g}."
-                )
-                self._refresh_target_row(selected_state.target_id)
-                return selected_state.build_status == "built"
-
-            drainage_output, geometry_row, solid_row = _drainage_pipeline_output_context(self.document, selected_state.target_row)
-            shape = _drainage_pipeline_solid_shape(geometry_row)
-            selected_state.volume = float(getattr(solid_row, "volume", 0.0) or 0.0)
-            selected_state.face_count = max(_shape_count(shape, "Faces"), selected_state.face_count)
-            selected_state.edge_count = max(_shape_count(shape, "Edges"), selected_state.edge_count)
-            object_name = _solid_output_object_name(selected_state.target_id)
-            output = _drainage_pipeline_watertight_output(
-                selected_state.target_row,
-                drainage_output=drainage_output,
-                geometry_row=geometry_row,
-                solid_row=solid_row,
-                shape=shape,
-                generated_object_ref=object_name,
-            )
-            obj = create_or_update_v1_watertight_solid_output_object(
-                document=self.document,
-                watertight_solid_output=output,
-                shape=shape,
-                project=find_project(self.document),
-                object_name=object_name,
-                label=f"Watertight Solid - {_target_display_label(selected_state.target_row)}",
-            )
-            selected_state.watertight_output = output
-            selected_state.output_object = obj
-            selected_state.output_object_ref = str(getattr(obj, "Name", "") or object_name)
-            selected_state.build_status = "built"
-            selected_state.validation_message = (
-                "Drainage pipeline capped pipe solid candidate built; "
-                f"solid={str(getattr(solid_row, 'solid_row_id', '') or '')}; "
-                f"volume={selected_state.volume:.6g}."
-            )
-        except Exception as exc:
-            selected_state.build_status = "error"
-            selected_state.validation_message = f"Drainage pipeline build failed: {exc}"
-        self._refresh_target_row(selected_state.target_id)
-        return selected_state.build_status == "built"
-
-    def _build_structure_body_dependencies_for_network(self, junction_rows) -> int:
-        built_count = 0
-        for structure_ref in _network_note_refs(junction_rows, "structure_refs"):
-            existing_shapes, _object_refs = _built_structure_body_shapes_for_refs(self.document, [structure_ref])
-            if existing_shapes:
-                continue
-            dependency_state = self._structure_body_target_state_for_ref(structure_ref)
-            if dependency_state is None:
-                continue
-            if self._build_structure_body_target_state(dependency_state):
-                built_count += 1
-        return built_count
 
     def _structure_body_target_state_for_ref(self, structure_ref: str) -> WatertightSolidTargetPanelState | None:
         target_ref = str(structure_ref or "").strip()
@@ -1760,14 +1554,6 @@ def _target_context_text(row: object) -> str:
     if material_ref:
         values.append(f"material={material_ref}")
     return "; ".join(values)
-
-
-def _is_drainage_pipeline_target(row: object) -> bool:
-    return str(getattr(row, "target_family", "") or "").strip().lower() in {"drainage_pipeline_body", "drainage_pipeline_network_body"}
-
-
-def _is_drainage_pipeline_network_target(row: object) -> bool:
-    return str(getattr(row, "target_family", "") or "").strip().lower() == "drainage_pipeline_network_body"
 
 
 def _is_structure_body_target(row: object) -> bool:
@@ -2313,85 +2099,6 @@ def _axis_distance(value: float, minimum: float, maximum: float) -> float:
     return 0.0
 
 
-def _drainage_pipeline_output_context(document, target_row):
-    alignment_model = to_alignment_model(find_v1_alignment(document))
-    drainage_model = to_drainage_model(find_v1_drainage_model(document))
-    structure_model = to_structure_model(find_v1_structure_model(document))
-    if drainage_model is None or structure_model is None:
-        raise RuntimeError("DrainageModel and StructureModel are required for Drainage pipeline solid output.")
-    coordinate_frame = _centerline3d_coordinate_frame(document)
-    output = DrainageReviewMapper().map(
-        drainage_model=drainage_model,
-        alignment_model=alignment_model,
-        structure_model=structure_model,
-        project_id=str(getattr(drainage_model, "project_id", "") or "corridorroad-v1"),
-        station_offset_to_xy=coordinate_frame.get("adapter"),
-        coordinate_mode=str(coordinate_frame.get("coordinate_mode", "") or ""),
-    )
-    segment_ref = str(getattr(target_row, "drainage_ref", "") or "").strip()
-    flow_route_ref = str(getattr(target_row, "flow_route_ref", "") or "").strip()
-    geometry_row = None
-    for row in list(getattr(output, "pipeline_geometry_rows", []) or []):
-        if segment_ref and str(getattr(row, "pipeline_segment_id", "") or "") == segment_ref:
-            geometry_row = row
-            break
-        if flow_route_ref and str(getattr(row, "flow_route_ref", "") or "") == flow_route_ref:
-            geometry_row = row
-            break
-    if geometry_row is None:
-        raise RuntimeError("No matching Drainage pipeline geometry row is available for the selected target.")
-    solid_row = None
-    for row in list(getattr(output, "pipeline_solid_rows", []) or []):
-        if str(getattr(row, "pipeline_segment_id", "") or "") == str(getattr(geometry_row, "pipeline_segment_id", "") or ""):
-            solid_row = row
-            break
-    if solid_row is None:
-        raise RuntimeError("No matching Drainage pipeline solid candidate row is available for the selected target.")
-    return output, geometry_row, solid_row
-
-
-def _drainage_pipeline_network_output_context(document, target_row):
-    alignment_model = to_alignment_model(find_v1_alignment(document))
-    drainage_model = to_drainage_model(find_v1_drainage_model(document))
-    structure_model = to_structure_model(find_v1_structure_model(document))
-    if drainage_model is None or structure_model is None:
-        raise RuntimeError("DrainageModel and StructureModel are required for Drainage pipeline network solid output.")
-    coordinate_frame = _centerline3d_coordinate_frame(document)
-    output = DrainageReviewMapper().map(
-        drainage_model=drainage_model,
-        alignment_model=alignment_model,
-        structure_model=structure_model,
-        project_id=str(getattr(drainage_model, "project_id", "") or "corridorroad-v1"),
-        station_offset_to_xy=coordinate_frame.get("adapter"),
-        coordinate_mode=str(coordinate_frame.get("coordinate_mode", "") or ""),
-    )
-    network_ref = str(getattr(target_row, "drainage_ref", "") or "").strip() or "drainage-pipeline-network:main"
-    network_row = None
-    for row in list(getattr(output, "pipeline_network_rows", []) or []):
-        if str(getattr(row, "network_id", "") or "") == network_ref:
-            network_row = row
-            break
-    if network_row is None:
-        raise RuntimeError("No matching Drainage pipeline network row is available for the selected target.")
-    solid_refs = set(str(value) for value in list(getattr(network_row, "solid_row_refs", []) or []) if str(value))
-    solid_rows = [
-        row for row in list(getattr(output, "pipeline_solid_rows", []) or [])
-        if str(getattr(row, "solid_row_id", "") or "") in solid_refs
-    ]
-    geometry_refs = set(str(getattr(row, "geometry_row_ref", "") or "") for row in solid_rows if str(getattr(row, "geometry_row_ref", "") or ""))
-    geometry_rows = [
-        row for row in list(getattr(output, "pipeline_geometry_rows", []) or [])
-        if str(getattr(row, "geometry_row_id", "") or "") in geometry_refs
-    ]
-    if not geometry_rows or not solid_rows:
-        raise RuntimeError("Drainage pipeline network has no matching geometry or solid candidate rows.")
-    junction_rows = [
-        row for row in list(getattr(output, "pipeline_junction_rows", []) or [])
-        if str(getattr(row, "network_ref", "") or "") == network_ref
-    ]
-    return output, network_row, geometry_rows, solid_rows, junction_rows
-
-
 def _centerline3d_coordinate_frame(document) -> dict[str, object]:
     try:
         from .cmd_centerline3d import build_document_centerline3d_result
@@ -2803,274 +2510,6 @@ def _structure_body_watertight_output(
     )
 
 
-def _drainage_pipeline_solid_shape(geometry_row):
-    if App is None or Part is None:
-        raise RuntimeError("FreeCAD Part workbench is required for Drainage pipeline solid build.")
-    points = [
-        App.Vector(float(point[0]), float(point[1]), float(point[2]))
-        for point in list(getattr(geometry_row, "centerline_points", []) or [])
-        if len(point) >= 3
-    ]
-    diameter = max(float(getattr(geometry_row, "diameter", 0.0) or 0.0), 0.0)
-    if len(points) < 2 or diameter <= 0.0:
-        raise RuntimeError("Drainage pipeline solid needs at least two centerline points and a positive diameter.")
-    shapes = []
-    for point0, point1 in zip(points, points[1:]):
-        direction = point1.sub(point0)
-        length = direction.Length
-        if length <= 1.0e-9:
-            continue
-        shapes.append(Part.makeCylinder(diameter / 2.0, length, point0, direction))
-    if not shapes:
-        raise RuntimeError("Drainage pipeline solid has no usable pipe segments.")
-    if len(shapes) == 1:
-        return shapes[0]
-    return Part.Compound(shapes)
-
-
-def _drainage_pipeline_network_solid_shape(
-    geometry_rows,
-    *,
-    junction_rows=None,
-    structure_body_shapes=None,
-    structure_body_shape_map=None,
-    connection_point_map=None,
-):
-    if Part is None:
-        raise RuntimeError("FreeCAD Part workbench is required for Drainage pipeline network solid build.")
-    active_geometry_rows, active_junction_rows, endpoint_trim_count = _trim_network_geometry_rows_to_structure_ports(
-        geometry_rows,
-        junction_rows,
-        structure_body_shape_map or {},
-    )
-    pipe_shapes = []
-    for geometry_row in list(active_geometry_rows or []):
-        shape = _drainage_pipeline_solid_shape(geometry_row)
-        if shape is not None:
-            pipe_shapes.append(shape)
-    connector_shapes = _drainage_pipeline_network_connector_shapes(active_junction_rows, active_geometry_rows)
-    port_connector_shapes = _drainage_pipeline_network_port_connector_shapes(
-        active_junction_rows,
-        active_geometry_rows,
-        structure_body_shape_map or {},
-        connection_point_map or {},
-    )
-    valid_structure_shapes = [
-        shape for shape in list(structure_body_shapes or [])
-        if shape is not None and (_shape_count(shape, "Solids") > 0 or _shape_count(shape, "Faces") > 0)
-    ]
-    port_contact = _structure_port_contact_status(
-        active_junction_rows,
-        structure_body_shape_map or {},
-        port_connector_count=len(port_connector_shapes),
-        endpoint_trim_count=endpoint_trim_count,
-    )
-    shapes = pipe_shapes + connector_shapes + port_connector_shapes + valid_structure_shapes
-    if not shapes:
-        raise RuntimeError("Drainage pipeline network has no usable pipe segment shapes.")
-    if len(shapes) == 1:
-        return DrainagePipelineNetworkShapeResult(
-            shape=shapes[0],
-            fuse_mode="single_segment",
-            connector_count=len(connector_shapes),
-            structure_body_count=len(valid_structure_shapes),
-            port_connector_count=len(port_connector_shapes),
-            endpoint_trim_count=endpoint_trim_count,
-            structure_port_terminal_count=port_contact["terminal_count"],
-            structure_port_contact_status=port_contact["status"],
-            notes=(
-                f"shape_count=1;pipe_count={len(pipe_shapes)};"
-                f"connector_count={len(connector_shapes)};port_connector_count={len(port_connector_shapes)};"
-                f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};"
-                f"{port_contact['notes']}"
-            ),
-        )
-    fused = _try_boolean_fuse_shapes(shapes)
-    if fused is not None:
-        return DrainagePipelineNetworkShapeResult(
-            shape=fused,
-            fuse_mode="boolean_fuse",
-            connector_count=len(connector_shapes),
-            structure_body_count=len(valid_structure_shapes),
-            port_connector_count=len(port_connector_shapes),
-            endpoint_trim_count=endpoint_trim_count,
-            structure_port_terminal_count=port_contact["terminal_count"],
-            structure_port_contact_status=port_contact["status"],
-            notes=(
-                f"shape_count={len(shapes)};pipe_count={len(pipe_shapes)};"
-                f"connector_count={len(connector_shapes)};port_connector_count={len(port_connector_shapes)};"
-                f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};"
-                f"{port_contact['notes']};fallback=no"
-            ),
-        )
-    return DrainagePipelineNetworkShapeResult(
-        shape=Part.Compound(shapes),
-        fuse_mode="compound_fallback",
-        connector_count=len(connector_shapes),
-        structure_body_count=len(valid_structure_shapes),
-        port_connector_count=len(port_connector_shapes),
-        endpoint_trim_count=endpoint_trim_count,
-        structure_port_terminal_count=port_contact["terminal_count"],
-        structure_port_contact_status=port_contact["status"],
-        notes=(
-            f"shape_count={len(shapes)};pipe_count={len(pipe_shapes)};"
-            f"connector_count={len(connector_shapes)};port_connector_count={len(port_connector_shapes)};"
-            f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};"
-            f"{port_contact['notes']};fallback=yes"
-        ),
-    )
-
-
-def _structure_port_contact_status(
-    junction_rows,
-    structure_body_shape_map: dict[str, list[tuple[object, str]]],
-    *,
-    port_connector_count: int,
-    endpoint_trim_count: int,
-) -> dict[str, object]:
-    terminal_count = 0
-    direct_contact_count = 0
-    missing_structure_body_count = 0
-    for junction in list(junction_rows or []):
-        if str(getattr(junction, "junction_kind", "") or "") != "terminal":
-            continue
-        notes = str(getattr(junction, "notes", "") or "")
-        structure_refs = _split_ref_text(_note_value(notes, "structure_refs"))
-        if not structure_refs:
-            continue
-        terminal_count += 1
-        point = _junction_point_vector(junction)
-        if point is None:
-            continue
-        matched = False
-        for structure_ref in structure_refs:
-            for structure_shape, _object_ref in list(structure_body_shape_map.get(structure_ref, []) or []):
-                bbox = getattr(structure_shape, "BoundBox", None)
-                if bbox is not None and _bound_box_contains_point(bbox, point, tolerance=0.05):
-                    matched = True
-                    break
-            if matched:
-                break
-        if matched:
-            direct_contact_count += 1
-        else:
-            missing_structure_body_count += 1
-    if terminal_count <= 0:
-        status = "not_checked"
-    elif not structure_body_shape_map:
-        status = "pending_structure_body"
-    elif int(port_connector_count or 0) > 0:
-        status = "bridged"
-    elif int(endpoint_trim_count or 0) > 0:
-        status = "trimmed"
-    elif direct_contact_count >= terminal_count:
-        status = "direct"
-    else:
-        status = "gap"
-    return {
-        "terminal_count": terminal_count,
-        "status": status,
-        "notes": (
-            f"structure_port_terminal_count={terminal_count};"
-            f"structure_port_direct_contact_count={direct_contact_count};"
-            f"structure_port_missing_body_count={missing_structure_body_count};"
-            f"structure_port_contact_status={status}"
-        ),
-    }
-
-
-def _drainage_pipeline_network_connector_shapes(junction_rows, geometry_rows) -> list[object]:
-    if App is None or Part is None:
-        return []
-    geometry_by_segment = {
-        str(getattr(row, "pipeline_segment_id", "") or ""): row
-        for row in list(geometry_rows or [])
-        if str(getattr(row, "pipeline_segment_id", "") or "")
-    }
-    shapes = []
-    for junction in list(junction_rows or []):
-        junction_kind = str(getattr(junction, "junction_kind", "") or "")
-        notes = str(getattr(junction, "notes", "") or "")
-        if junction_kind == "terminal" and not _note_value(notes, "connection_point_refs"):
-            continue
-        segment_refs = list(getattr(junction, "pipeline_segment_refs", []) or [])
-        radius = _junction_connector_radius(segment_refs, geometry_by_segment)
-        if radius <= 0.0:
-            continue
-        point = getattr(junction, "point", (0.0, 0.0, 0.0))
-        try:
-            center = App.Vector(float(point[0]), float(point[1]), float(point[2]))
-        except Exception:
-            continue
-        try:
-            shapes.append(Part.makeSphere(radius, center))
-        except Exception:
-            continue
-    return shapes
-
-
-def _trim_network_geometry_rows_to_structure_ports(geometry_rows, junction_rows, structure_body_shape_map: dict[str, list[tuple[object, str]]]):
-    if App is None or not structure_body_shape_map:
-        return list(geometry_rows or []), list(junction_rows or []), 0
-    geometry_by_segment = {
-        str(getattr(row, "pipeline_segment_id", "") or ""): row
-        for row in list(geometry_rows or [])
-        if str(getattr(row, "pipeline_segment_id", "") or "")
-    }
-    replacement_points: dict[str, list[tuple[float, float, float]]] = {}
-    replacement_junction_points: dict[str, tuple[float, float, float]] = {}
-    trim_count = 0
-    for junction in list(junction_rows or []):
-        if str(getattr(junction, "junction_kind", "") or "") != "terminal":
-            continue
-        notes = str(getattr(junction, "notes", "") or "")
-        structure_refs = _split_ref_text(_note_value(notes, "structure_refs"))
-        segment_refs = list(getattr(junction, "pipeline_segment_refs", []) or [])
-        if not structure_refs or not segment_refs:
-            continue
-        junction_point = _junction_point_vector(junction)
-        if junction_point is None:
-            continue
-        for segment_ref in segment_refs:
-            segment_id = str(segment_ref or "")
-            geometry = geometry_by_segment.get(segment_id)
-            points = _geometry_row_vectors(geometry)
-            endpoint_index = _matching_endpoint_index(points, junction_point)
-            if endpoint_index < 0:
-                continue
-            pipe_direction = _pipe_direction_from_endpoint(points, endpoint_index)
-            if pipe_direction is None:
-                continue
-            trim_point = None
-            for structure_ref in structure_refs:
-                for structure_shape, _object_ref in list(structure_body_shape_map.get(structure_ref, []) or []):
-                    candidate = _trim_point_to_structure_exit(junction_point, pipe_direction, structure_shape)
-                    if candidate is not None:
-                        trim_point = candidate
-                        break
-                if trim_point is not None:
-                    break
-            if trim_point is None:
-                continue
-            next_points = list(replacement_points.get(segment_id) or _point_tuples(points))
-            next_points[endpoint_index] = _vector_tuple(trim_point)
-            replacement_points[segment_id] = next_points
-            junction_id = _junction_replacement_key(junction)
-            replacement_junction_points[junction_id] = _vector_tuple(trim_point)
-            trim_count += 1
-    if not replacement_points:
-        return list(geometry_rows or []), list(junction_rows or []), 0
-    trimmed_geometry_rows = [
-        _replace_row(row, centerline_points=replacement_points.get(str(getattr(row, "pipeline_segment_id", "") or ""), getattr(row, "centerline_points", [])))
-        for row in list(geometry_rows or [])
-    ]
-    trimmed_junction_rows = [
-        _replace_row(row, point=replacement_junction_points.get(_junction_replacement_key(row), getattr(row, "point", (0.0, 0.0, 0.0))))
-        for row in list(junction_rows or [])
-    ]
-    return trimmed_geometry_rows, trimmed_junction_rows, trim_count
-
-
 def _trim_point_to_structure_exit(point, pipe_direction, structure_shape):
     bbox = getattr(structure_shape, "BoundBox", None)
     if bbox is None or not _bound_box_contains_point(bbox, point, tolerance=0.0):
@@ -3104,16 +2543,6 @@ def _geometry_row_vectors(geometry_row) -> list[object]:
     return output
 
 
-def _matching_endpoint_index(points: list[object], target) -> int:
-    if len(points) < 2:
-        return -1
-    if points[0].sub(target).Length <= 1.0e-6:
-        return 0
-    if points[-1].sub(target).Length <= 1.0e-6:
-        return len(points) - 1
-    return -1
-
-
 def _pipe_direction_from_endpoint(points: list[object], endpoint_index: int):
     if len(points) < 2:
         return None
@@ -3128,17 +2557,6 @@ def _point_tuples(points: list[object]) -> list[tuple[float, float, float]]:
 
 def _vector_tuple(point) -> tuple[float, float, float]:
     return (float(point.x), float(point.y), float(point.z))
-
-
-def _junction_replacement_key(junction) -> str:
-    junction_row_id = str(getattr(junction, "junction_row_id", "") or "")
-    if junction_row_id:
-        return junction_row_id
-    point = getattr(junction, "point", (0.0, 0.0, 0.0))
-    try:
-        return f"point:{float(point[0]):.9f}:{float(point[1]):.9f}:{float(point[2]):.9f}"
-    except Exception:
-        return str(id(junction))
 
 
 def _replace_row(row, **changes):
@@ -3156,82 +2574,6 @@ def _replace_row(row, **changes):
                 except Exception:
                     pass
             return row
-
-
-def _drainage_pipeline_network_port_connector_shapes(
-    junction_rows,
-    geometry_rows,
-    structure_body_shape_map: dict[str, list[tuple[object, str]]],
-    connection_point_map: dict[str, object],
-) -> list[object]:
-    if App is None or Part is None or not structure_body_shape_map:
-        return []
-    geometry_by_segment = {
-        str(getattr(row, "pipeline_segment_id", "") or ""): row
-        for row in list(geometry_rows or [])
-        if str(getattr(row, "pipeline_segment_id", "") or "")
-    }
-    shapes: list[object] = []
-    for junction in list(junction_rows or []):
-        if str(getattr(junction, "junction_kind", "") or "") != "terminal":
-            continue
-        notes = str(getattr(junction, "notes", "") or "")
-        structure_refs = _split_ref_text(_note_value(notes, "structure_refs"))
-        connection_point_refs = _split_ref_text(_note_value(notes, "connection_point_refs"))
-        if not structure_refs:
-            continue
-        point = _junction_point_vector(junction)
-        if point is None:
-            continue
-        segment_refs = list(getattr(junction, "pipeline_segment_refs", []) or [])
-        fallback_radius = _junction_connector_radius(segment_refs, geometry_by_segment)
-        connection_point = _first_connection_point(connection_point_refs, connection_point_map)
-        radius = _connection_point_connector_radius(connection_point, fallback_radius)
-        terminal_direction = _terminal_pipe_outward_direction(point, segment_refs, geometry_by_segment)
-        if radius <= 0.0:
-            continue
-        for structure_ref in structure_refs:
-            for structure_shape, _object_ref in list(structure_body_shape_map.get(structure_ref, []) or []):
-                connector = _port_bridge_connector_shape(
-                    point,
-                    structure_shape,
-                    radius,
-                    connection_point=connection_point,
-                    terminal_direction=terminal_direction,
-                )
-                if connector is not None:
-                    shapes.append(connector)
-                    break
-    return shapes
-
-
-def _port_bridge_connector_shape(point, structure_shape, radius: float, *, connection_point=None, terminal_direction=None):
-    if App is None or Part is None or structure_shape is None:
-        return None
-    bbox = getattr(structure_shape, "BoundBox", None)
-    if bbox is None:
-        return None
-    if _bound_box_contains_point(bbox, point, tolerance=max(radius, 0.0)):
-        return None
-    direction = _port_connector_direction(point, bbox, connection_point=connection_point, terminal_direction=terminal_direction)
-    length = float(getattr(direction, "Length", 0.0) or 0.0)
-    if length <= 1.0e-9:
-        return None
-    try:
-        return Part.makeCylinder(max(radius, 0.001), length, point, direction)
-    except Exception:
-        return None
-
-
-def _port_connector_direction(point, bbox, *, connection_point=None, terminal_direction=None):
-    center = _bound_box_center_vector(bbox)
-    preferred = _connection_point_direction_vector(connection_point)
-    if preferred is None:
-        preferred = terminal_direction
-    ray_direction = _ray_to_bound_box_direction(point, bbox, preferred)
-    if ray_direction is not None:
-        return ray_direction
-    return center.sub(point)
 
 
 def _ray_to_bound_box_direction(point, bbox, direction):
@@ -3322,26 +2664,6 @@ def _first_connection_point(connection_point_refs: list[str], connection_point_m
     return None
 
 
-def _connection_point_connector_radius(connection_point, fallback_radius: float) -> float:
-    if connection_point is not None:
-        diameter = float(getattr(connection_point, "diameter", 0.0) or 0.0)
-        if diameter > 0.0:
-            return diameter / 2.0
-        width = float(getattr(connection_point, "width", 0.0) or 0.0)
-        height = float(getattr(connection_point, "height", 0.0) or 0.0)
-        if width > 0.0 or height > 0.0:
-            return max(width, height) / 2.0
-    return float(fallback_radius or 0.0)
-
-
-def _junction_point_vector(junction):
-    point = getattr(junction, "point", (0.0, 0.0, 0.0))
-    try:
-        return App.Vector(float(point[0]), float(point[1]), float(point[2]))
-    except Exception:
-        return None
-
-
 def _bound_box_contains_point(bbox, point, *, tolerance: float = 0.0) -> bool:
     tol = max(float(tolerance or 0.0), 0.0)
     try:
@@ -3360,32 +2682,6 @@ def _bound_box_center_vector(bbox):
         (float(getattr(bbox, "YMin", 0.0)) + float(getattr(bbox, "YMax", 0.0))) / 2.0,
         (float(getattr(bbox, "ZMin", 0.0)) + float(getattr(bbox, "ZMax", 0.0))) / 2.0,
     )
-
-
-def _junction_connector_radius(segment_refs: list[str], geometry_by_segment: dict[str, object]) -> float:
-    diameters = []
-    for segment_ref in list(segment_refs or []):
-        geometry = geometry_by_segment.get(str(segment_ref or ""))
-        if geometry is None:
-            continue
-        diameter = float(getattr(geometry, "diameter", 0.0) or 0.0)
-        if diameter > 0.0:
-            diameters.append(diameter)
-    if not diameters:
-        return 0.0
-    return max(diameters) / 2.0
-
-
-def _network_connector_count(junction_rows) -> int:
-    count = 0
-    for row in list(junction_rows or []):
-        kind = str(getattr(row, "junction_kind", "") or "")
-        if kind == "junction":
-            count += 1
-            continue
-        if kind == "terminal" and _note_value(str(getattr(row, "notes", "") or ""), "connection_point_refs"):
-            count += 1
-    return count
 
 
 def _built_structure_body_shapes_for_refs(document, structure_refs: list[str]) -> tuple[list[object], list[str]]:
@@ -3498,205 +2794,6 @@ def _try_boolean_fuse_shapes(shapes: list[object]):
         except Exception:
             continue
     return None
-
-
-def _drainage_pipeline_watertight_output(
-    target_row,
-    *,
-    drainage_output,
-    geometry_row,
-    solid_row,
-    shape,
-    generated_object_ref: str,
-) -> WatertightSolidOutput:
-    target_id = str(getattr(target_row, "target_id", "") or "")
-    output_object_id = f"watertight-solid:{_safe_object_id(target_id)}"
-    face_count = _shape_count(shape, "Faces")
-    edge_count = _shape_count(shape, "Edges")
-    volume = max(float(getattr(solid_row, "volume", 0.0) or 0.0), 0.0)
-    source_refs = _unique_refs(
-        [
-            target_id,
-            str(getattr(geometry_row, "geometry_row_id", "") or ""),
-            str(getattr(solid_row, "solid_row_id", "") or ""),
-            str(getattr(solid_row, "pipeline_segment_id", "") or ""),
-            str(getattr(solid_row, "flow_route_ref", "") or ""),
-            *list(getattr(target_row, "source_refs", []) or []),
-            *list(getattr(drainage_output, "source_refs", []) or []),
-            *list(getattr(drainage_output, "result_refs", []) or []),
-        ]
-    )
-    solid = WatertightSolidOutputRow(
-        output_object_id=output_object_id,
-        target_id=target_id,
-        target_family=str(getattr(target_row, "target_family", "") or ""),
-        scope_kind=str(getattr(target_row, "scope_kind", "") or ""),
-        station_start=float(getattr(target_row, "station_start", getattr(solid_row, "station_start", 0.0)) or 0.0),
-        station_end=float(getattr(target_row, "station_end", getattr(solid_row, "station_end", 0.0)) or 0.0),
-        source_refs=source_refs,
-        generated_object_ref=str(generated_object_ref or ""),
-        validation_status="ok",
-        is_watertight=bool(getattr(solid_row, "is_capped", False)),
-        is_valid_solid=bool(getattr(solid_row, "is_capped", False)),
-        volume=volume,
-        face_count=face_count,
-        edge_count=edge_count,
-        profile_count=len(list(getattr(geometry_row, "centerline_points", []) or [])),
-        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
-        drainage_ref=str(getattr(target_row, "drainage_ref", "") or ""),
-        flow_route_ref=str(getattr(target_row, "flow_route_ref", "") or ""),
-        material_ref=str(getattr(target_row, "material_ref", "") or ""),
-        path_source=str(getattr(solid_row, "coordinate_mode", "") or ""),
-        notes=(
-            f"Drainage pipeline solid candidate from {str(getattr(solid_row, 'solid_row_id', '') or '')}; "
-            f"coordinate_mode={str(getattr(solid_row, 'coordinate_mode', '') or '')}; "
-            f"cap_count={int(getattr(solid_row, 'cap_count', 0) or 0)}."
-        ),
-    )
-    segment = WatertightSolidSegmentRow(
-        segment_id=f"{output_object_id}:segment:1",
-        parent_output_object_id=output_object_id,
-        station_start=float(getattr(solid_row, "station_start", getattr(target_row, "station_start", 0.0)) or 0.0),
-        station_end=float(getattr(solid_row, "station_end", getattr(target_row, "station_end", 0.0)) or 0.0),
-        notes=f"pipeline_segment_id={str(getattr(solid_row, 'pipeline_segment_id', '') or '')}",
-    )
-    return WatertightSolidOutput(
-        schema_version=1,
-        project_id=str(getattr(drainage_output, "project_id", "") or "corridorroad-v1"),
-        watertight_solid_output_id="watertight-solids:drainage-pipeline",
-        corridor_id="corridor:main",
-        label="Watertight Solids",
-        selection_scope={"scope_kind": str(getattr(target_row, "scope_kind", "") or ""), "target_id": target_id},
-        source_refs=source_refs,
-        result_refs=_unique_refs(
-            [
-                str(getattr(drainage_output, "drainage_output_id", "") or ""),
-                str(getattr(geometry_row, "geometry_row_id", "") or ""),
-                str(getattr(solid_row, "solid_row_id", "") or ""),
-            ]
-        ),
-        solid_rows=[solid],
-        segment_rows=[segment],
-    )
-
-
-def _drainage_pipeline_network_watertight_output(
-    target_row,
-    *,
-    drainage_output,
-    network_row,
-    geometry_rows,
-    solid_rows,
-    junction_rows,
-    shape,
-    generated_object_ref: str,
-    fuse_mode: str = "compound_fallback",
-    connector_count: int = 0,
-    structure_body_count: int = 0,
-    port_connector_count: int = 0,
-    endpoint_trim_count: int = 0,
-    structure_port_terminal_count: int = 0,
-    structure_port_contact_status: str = "",
-    structure_body_object_refs: list[str] | None = None,
-    fuse_notes: str = "",
-) -> WatertightSolidOutput:
-    target_id = str(getattr(target_row, "target_id", "") or "")
-    output_object_id = f"watertight-solid:{_safe_object_id(target_id)}"
-    face_count = _shape_count(shape, "Faces")
-    edge_count = _shape_count(shape, "Edges")
-    volume = max(float(getattr(shape, "Volume", 0.0) or 0.0), float(getattr(network_row, "volume", 0.0) or 0.0), 0.0)
-    segment_refs = _unique_refs([str(getattr(row, "pipeline_segment_id", "") or "") for row in list(solid_rows or [])])
-    flow_route_refs = _unique_refs([str(getattr(row, "flow_route_ref", "") or "") for row in list(solid_rows or [])])
-    connection_point_refs = _network_note_refs(junction_rows, "connection_point_refs")
-    structure_refs = _network_note_refs(junction_rows, "structure_refs")
-    active_structure_body_object_refs = _unique_refs(structure_body_object_refs or [])
-    source_refs = _unique_refs(
-        [
-            target_id,
-            str(getattr(network_row, "network_row_id", "") or ""),
-            str(getattr(network_row, "network_id", "") or ""),
-            *list(getattr(network_row, "solid_row_refs", []) or []),
-            *segment_refs,
-            *flow_route_refs,
-            *connection_point_refs,
-            *structure_refs,
-            *active_structure_body_object_refs,
-            *list(getattr(target_row, "source_refs", []) or []),
-            *list(getattr(drainage_output, "source_refs", []) or []),
-            *list(getattr(drainage_output, "result_refs", []) or []),
-        ]
-    )
-    all_capped = bool(solid_rows) and all(bool(getattr(row, "is_capped", False)) for row in list(solid_rows or []))
-    active_fuse_mode = str(fuse_mode or "compound_fallback")
-    solid = WatertightSolidOutputRow(
-        output_object_id=output_object_id,
-        target_id=target_id,
-        target_family=str(getattr(target_row, "target_family", "") or ""),
-        scope_kind=str(getattr(target_row, "scope_kind", "") or ""),
-        station_start=float(getattr(target_row, "station_start", 0.0) or 0.0),
-        station_end=float(getattr(target_row, "station_end", 0.0) or 0.0),
-        source_refs=source_refs,
-        generated_object_ref=str(generated_object_ref or ""),
-        validation_status="ok",
-        is_watertight=all_capped,
-        is_valid_solid=all_capped,
-        volume=volume,
-        face_count=face_count,
-        edge_count=edge_count,
-        profile_count=sum(len(list(getattr(row, "centerline_points", []) or [])) for row in list(geometry_rows or [])),
-        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
-        structure_ref=",".join(structure_refs),
-        drainage_ref=str(getattr(target_row, "drainage_ref", "") or ""),
-        flow_route_ref=",".join(flow_route_refs),
-        material_ref=str(getattr(target_row, "material_ref", "") or ""),
-        path_source=str(getattr(network_row, "coordinate_mode", "") or ""),
-        notes=(
-            f"Drainage pipeline network solid candidate from {str(getattr(network_row, 'network_id', '') or '')}; "
-            f"segments={len(segment_refs)}; junctions={int(getattr(network_row, 'junction_count', 0) or 0)}; "
-            f"connector_count={int(connector_count or 0)}; "
-            f"port_connector_count={int(port_connector_count or 0)}; "
-            f"port_connector_status={'added' if int(port_connector_count or 0) > 0 else 'not_needed'}; "
-            f"endpoint_trim_count={int(endpoint_trim_count or 0)}; "
-            f"endpoint_trim_status={'applied' if int(endpoint_trim_count or 0) > 0 else 'not_needed'}; "
-            f"structure_port_terminal_count={int(structure_port_terminal_count or 0)}; "
-            f"structure_port_contact_status={str(structure_port_contact_status or 'not_checked')}; "
-            f"structure_body_count={int(structure_body_count or 0)}; "
-            f"structure_fuse_status={'included' if int(structure_body_count or 0) > 0 else 'pending'}; "
-            f"structure_body_object_refs={','.join(active_structure_body_object_refs)}; "
-            f"structure_refs={','.join(structure_refs)}; "
-            f"connection_point_refs={','.join(connection_point_refs)}; "
-            f"fuse_mode={active_fuse_mode}; {str(fuse_notes or '').strip()}"
-        ),
-    )
-    segment_rows = []
-    for index, solid_row in enumerate(list(solid_rows or []), start=1):
-        segment_rows.append(
-            WatertightSolidSegmentRow(
-                segment_id=f"{output_object_id}:segment:{index}",
-                parent_output_object_id=output_object_id,
-                station_start=float(getattr(solid_row, "station_start", getattr(target_row, "station_start", 0.0)) or 0.0),
-                station_end=float(getattr(solid_row, "station_end", getattr(target_row, "station_end", 0.0)) or 0.0),
-                notes=f"pipeline_segment_id={str(getattr(solid_row, 'pipeline_segment_id', '') or '')}",
-            )
-        )
-    return WatertightSolidOutput(
-        schema_version=1,
-        project_id=str(getattr(drainage_output, "project_id", "") or "corridorroad-v1"),
-        watertight_solid_output_id="watertight-solids:drainage-pipeline-network",
-        corridor_id="corridor:main",
-        label="Watertight Solids",
-        selection_scope={"scope_kind": str(getattr(target_row, "scope_kind", "") or ""), "target_id": target_id},
-        source_refs=source_refs,
-        result_refs=_unique_refs(
-            [
-                str(getattr(drainage_output, "drainage_output_id", "") or ""),
-                str(getattr(network_row, "network_row_id", "") or ""),
-                *list(getattr(network_row, "solid_row_refs", []) or []),
-            ]
-        ),
-        solid_rows=[solid],
-        segment_rows=segment_rows,
-    )
 
 
 def _external_structure_body_watertight_output(
@@ -3983,16 +3080,10 @@ def _drainage_watertight_handoff_lines(document, target_model=None) -> list[str]
     summary = drainage_watertight_handoff_summary(document, target_model=target_model)
     return [
         "Drainage Solid QA:",
+        f"status={summary.readiness_status}; source={summary.source_status}",
         (
-            f"status={summary.readiness_status}; source={summary.source_status}; "
-            f"flow_routes={summary.flow_route_count}; capture_only={summary.capture_only_route_count}; "
-            f"pipe_candidates={summary.pipe_candidate_count}; unresolved_ports={summary.unresolved_port_route_count}; "
-            f"missing_elements={summary.missing_element_route_count}"
-        ),
-        (
-            f"targets: lined_ditch={summary.lined_ditch_target_count}; pipe_segments={summary.pipe_segment_target_count}; "
-            f"pipeline_networks={summary.pipeline_network_target_count}; structure_bodies={summary.structure_body_target_count}; "
-            f"built_drainage_outputs={summary.built_drainage_output_count}; network_fuse={summary.network_fuse_status}"
+            f"targets: lined_ditch={summary.lined_ditch_target_count}; structure_bodies={summary.structure_body_target_count}; "
+            f"built_drainage_outputs={summary.built_drainage_output_count}"
         ),
     ]
 
@@ -4191,35 +3282,24 @@ def _join_notes(existing: str, addition: str) -> str:
 
 
 def drainage_watertight_handoff_summary(document=None, *, target_model=None) -> DrainageWatertightHandoffSummary:
-    """Return Drainage readiness focused on Watertight Solid simulation handoff."""
+    """Return Drainage readiness focused on Watertight Solid simulation handoff.
+
+    Drainage reaches Watertight Solids only as lined ditch bodies; pipe bodies wait for the
+    Structure rebuild (docsV1/V1_DRAINAGE_REWORK_PLAN.md), so the route and pipe counts stay 0.
+    """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         return DrainageWatertightHandoffSummary(source_status="missing")
-    drainage_obj = find_v1_drainage_model(doc)
-    structure_obj = find_v1_structure_model(doc)
-    drainage_model = to_drainage_model(drainage_obj)
-    structure_model = to_structure_model(structure_obj)
-    source_status = "ready" if drainage_model is not None and structure_model is not None else "missing"
-    candidates = build_drainage_pipeline_segment_candidates(drainage_model, structure_model)
-    statuses = [str(getattr(row, "status", "") or "") for row in candidates]
+    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
+    source_status = "ready" if drainage_model is not None and drainage_model.ditch_run_rows else "missing"
     active_target_model = target_model or discover_watertight_solid_targets(doc)
     target_rows = list(getattr(active_target_model, "target_rows", []) or [])
-    network_targets = [row for row in target_rows if str(getattr(row, "target_family", "") or "") == "drainage_pipeline_network_body"]
-    network_fuse_status = _drainage_network_fuse_status(doc, network_targets)
     return DrainageWatertightHandoffSummary(
         source_status=source_status,
-        flow_route_count=len(list(getattr(drainage_model, "flow_route_rows", []) or [])) if drainage_model is not None else 0,
-        capture_only_route_count=statuses.count("capture_only"),
-        pipe_candidate_count=statuses.count("ready"),
-        unresolved_port_route_count=sum(1 for value in statuses if value in {"missing_connection_point_ref", "missing_connection_point"}),
-        missing_element_route_count=statuses.count("missing_element"),
         lined_ditch_target_count=_solid_target_family_count(target_rows, "lined_ditch_body"),
-        pipe_segment_target_count=_solid_target_family_count(target_rows, "drainage_pipeline_body"),
-        pipeline_network_target_count=len(network_targets),
         structure_body_target_count=_solid_target_family_count(target_rows, "structure_body"),
         built_drainage_output_count=_built_drainage_output_count(doc),
-        network_fuse_status=network_fuse_status,
     )
 
 
@@ -4231,26 +3311,9 @@ def _built_drainage_output_count(document) -> int:
     count = 0
     for obj in _watertight_output_objects(document):
         families = {str(value or "") for value in list(getattr(obj, "TargetFamilies", []) or [])}
-        if families.intersection({"lined_ditch_body", "drainage_pipeline_body", "drainage_pipeline_network_body"}):
+        if "lined_ditch_body" in families:
             count += 1
     return count
-
-
-def _drainage_network_fuse_status(document, network_targets: list[object]) -> str:
-    network_outputs = [
-        obj for obj in _watertight_output_objects(document)
-        if "drainage_pipeline_network_body" in {str(value or "") for value in list(getattr(obj, "TargetFamilies", []) or [])}
-    ]
-    if network_outputs:
-        diagnostic_notes = []
-        for obj in network_outputs:
-            diagnostic_notes.extend(str(value or "") for value in list(getattr(obj, "DiagnosticNotes", []) or []) if str(value or ""))
-        if any("compound_fallback" in value for value in diagnostic_notes):
-            return "compound_fallback"
-        return "built"
-    if network_targets:
-        return "compound_first_slice"
-    return "not_available"
 
 
 def _simulation_ready_qa_lines(document) -> list[str]:

@@ -7,14 +7,6 @@ from .cross_section_drawing import (
     CrossSectionDrawingPayload,
     CrossSectionDrawingSummaryRow,
 )
-from .drainage_output import (
-    DrainageOutput,
-    DrainagePipelineGeometryOutputRow,
-    DrainagePipelineJunctionOutputRow,
-    DrainagePipelineNetworkOutputRow,
-    DrainagePipelineSegmentOutputRow,
-    DrainagePipelineSolidOutputRow,
-)
 from .earthwork_output import EarthworkBalanceOutput, MassHaulOutput
 from .exchange_output import ExchangeOutput
 from .plan_output import PlanOutput
@@ -52,12 +44,6 @@ __all__ = [
     "CrossSectionDrawingLabelRow",
     "CrossSectionDrawingPayload",
     "CrossSectionDrawingSummaryRow",
-    "DrainageOutput",
-    "DrainagePipelineGeometryOutputRow",
-    "DrainagePipelineJunctionOutputRow",
-    "DrainagePipelineNetworkOutputRow",
-    "DrainagePipelineSegmentOutputRow",
-    "DrainagePipelineSolidOutputRow",
     "EarthworkBalanceOutput",
     "ExchangeOutput",
     "MassHaulOutput",

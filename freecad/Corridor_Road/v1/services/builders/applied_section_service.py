@@ -27,7 +27,7 @@ from ...models.source.assembly_model import (
 )
 from ...models.source.subassembly_definition_model import SubassemblyDefinition, SubassemblyLibrary
 from ...models.source.subassembly_preset_model import SubassemblyPreset, SubassemblyPresetLibrary
-from ...models.source.drainage_model import DrainageModel
+from ...models.source.drainage_model import DitchRun, DrainageModel
 from ...models.source.intersection_model import IntersectionModel
 from ...models.source.profile_model import ProfileModel
 from ...models.source.region_model import RegionModel
@@ -196,8 +196,7 @@ class AppliedSectionService:
             assembly_ref=region_context.assembly_ref,
         )
         structure_result = station_context.structure_result
-        active_drainage_refs = list(station_context.active_drainage_refs or [])
-        active_drainage_refs_by_side = dict(station_context.active_drainage_refs_by_side or {})
+        ditch_runs = list(station_context.active_ditch_runs or [])
 
         template_id = self._resolve_template_id(
             assembly,
@@ -300,8 +299,7 @@ class AppliedSectionService:
                 if structure_result is not None
                 else []
             ),
-            drainage_refs=active_drainage_refs,
-            drainage_refs_by_side=active_drainage_refs_by_side,
+            ditch_runs=ditch_runs,
             subassembly_libraries=request.subassembly_libraries,
             subassembly_preset_libraries=request.subassembly_preset_libraries,
         )
@@ -312,8 +310,7 @@ class AppliedSectionService:
             surface_left_width=left_width,
             surface_right_width=right_width,
             subgrade_depth=subgrade_depth,
-            drainage_refs=active_drainage_refs,
-            drainage_refs_by_side=active_drainage_refs_by_side,
+            ditch_runs=ditch_runs,
             subassembly_template=effective_subassembly_template,
             bench_evaluations=bench_evaluations,
         )
@@ -421,8 +418,7 @@ class AppliedSectionService:
                     if request.intersection_model is not None
                     else "",
                     str(getattr(intersection_result, "active_intersection_id", "") or ""),
-                    *active_drainage_refs,
-                    *list(station_context.active_flow_route_refs or []),
+                    *list(station_context.active_drainage_refs or []),
                 ]
                 if ref
             ],
@@ -702,8 +698,7 @@ class AppliedSectionService:
         *,
         region_id: str,
         structure_ids: list[str],
-        drainage_refs: list[str],
-        drainage_refs_by_side: dict[str, list[str]] | None = None,
+        ditch_runs: list[DitchRun] | None = None,
         subassembly_libraries: list[SubassemblyLibrary] | None = None,
         subassembly_preset_libraries: list[SubassemblyPresetLibrary] | None = None,
     ) -> list[AppliedSectionSubassemblyRow]:
@@ -730,7 +725,7 @@ class AppliedSectionService:
                     thickness=max(float(getattr(subassembly, "thickness", 0.0) or 0.0), 0.0),
                     material=str(getattr(subassembly, "material", "") or ""),
                     structure_ids=list(structure_ids or []),
-                    drainage_refs=_section_row_drainage_refs(subassembly, drainage_refs, drainage_refs_by_side),
+                    drainage_refs=_ditch_run_refs_for_row(subassembly, ditch_runs),
                     parameters=dict(getattr(subassembly, "parameters", {}) or {}),
                     point_code_rules=tuple(getattr(subassembly, "point_code_rules", ()) or ()),
                     link_code_rules=tuple(getattr(subassembly, "link_code_rules", ()) or ()),
@@ -875,8 +870,7 @@ class AppliedSectionService:
         surface_left_width: float,
         surface_right_width: float,
         subgrade_depth: float,
-        drainage_refs: list[str] | None = None,
-        drainage_refs_by_side: dict[str, list[str]] | None = None,
+        ditch_runs: list[DitchRun] | None = None,
         subassembly_template: SubassemblySectionTemplate | None = None,
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionPoint]:
@@ -921,8 +915,7 @@ class AppliedSectionService:
                 fg_points=fg_points,
                 surface_left_width=surface_left_width,
                 surface_right_width=surface_right_width,
-                drainage_refs=list(drainage_refs or []),
-                drainage_refs_by_side=drainage_refs_by_side,
+                ditch_runs=ditch_runs,
                 subassembly_template=subassembly_template,
             )
         )
@@ -2766,49 +2759,25 @@ def _superelevation_source_rows(result: SuperelevationStationResult | None) -> l
     return rows
 
 
-def _section_row_drainage_refs(row, drainage_refs: list[str], drainage_refs_by_side: dict[str, list[str]] | None = None) -> list[str]:
-    """Return Drainage refs for one active Subassembly row."""
+def _ditch_run_ref(ditch_runs: list[DitchRun] | None, *, subassembly_ref: str, side: str) -> str:
+    """The id of the Ditch Run of this ditch Subassembly on this side, or ""."""
 
-    if str(getattr(row, "kind", "") or "").strip().lower() not in {"ditch", "gutter", "swale", "channel"}:
+    for run in list(ditch_runs or []):
+        if str(run.subassembly_ref) == str(subassembly_ref or "") and str(run.side) == str(side or ""):
+            return str(run.ditch_run_id)
+    return ""
+
+
+def _ditch_run_refs_for_row(row, ditch_runs: list[DitchRun] | None) -> list[str]:
+    """The Ditch Run ids of one active ditch Subassembly row, on each side it has."""
+
+    if str(getattr(row, "kind", "") or "").strip().lower() != "ditch":
         return []
+    subassembly_ref = str(getattr(row, "subassembly_id", "") or "")
     side = str(getattr(row, "side", "") or "center").strip().lower()
-    if side in {"left", "right"}:
-        return _unique_refs(_drainage_refs_for_side(drainage_refs, side, drainage_refs_by_side))
-    if side == "both":
-        return _unique_refs(
-            _drainage_refs_for_side(drainage_refs, "left", drainage_refs_by_side)
-            + _drainage_refs_for_side(drainage_refs, "right", drainage_refs_by_side)
-        )
-    return _unique_refs(list(drainage_refs or []))
-
-
-def _drainage_ref_for_side(
-    drainage_refs: list[str] | None,
-    side: str,
-    drainage_refs_by_side: dict[str, list[str]] | None = None,
-) -> str:
-    refs = _drainage_refs_for_side(drainage_refs, side, drainage_refs_by_side)
-    return refs[0] if refs else ""
-
-
-def _drainage_refs_for_side(
-    drainage_refs: list[str] | None,
-    side: str,
-    drainage_refs_by_side: dict[str, list[str]] | None = None,
-) -> list[str]:
-    side_text = str(side or "").strip().lower()
-    if side_text and drainage_refs_by_side:
-        direct = _unique_refs(list(drainage_refs_by_side.get(side_text, []) or []))
-        if direct:
-            return direct
-    refs = _unique_refs(list(drainage_refs or []))
-    if not refs:
-        return []
-    if side_text:
-        for ref in refs:
-            if side_text in str(ref or "").lower():
-                return [ref]
-    return refs if len(refs) == 1 else []
+    sides = (side,) if side in {"left", "right"} else ("left", "right")
+    refs = [_ditch_run_ref(ditch_runs, subassembly_ref=subassembly_ref, side=label) for label in sides]
+    return _unique_refs([ref for ref in refs if ref])
 
 
 def _bench_evaluations(
@@ -3846,11 +3815,13 @@ def _ditch_section_points(
     fg_points: list[tuple[float, float, float, float]] | None = None,
     surface_left_width: float,
     surface_right_width: float,
-    drainage_refs: list[str] | None = None,
-    drainage_refs_by_side: dict[str, list[str]] | None = None,
+    ditch_runs: list[DitchRun] | None = None,
     subassembly_template: SubassemblySectionTemplate | None = None,
 ) -> list[AppliedSectionPoint]:
-    """Return first-slice ditch surface strip points outside FG edges."""
+    """Return first-slice ditch surface strip points outside FG edges.
+
+    Each point carries the id of the Drainage Ditch Run of its own ditch and side, if any.
+    """
 
     if template is None and subassembly_template is None:
         return []
@@ -3879,7 +3850,7 @@ def _ditch_section_points(
                     direction=1.0,
                     side_label="left",
                     subassembly_ref=source_ref,
-                    drainage_ref=_drainage_ref_for_side(drainage_refs, "left", drainage_refs_by_side),
+                    drainage_ref=_ditch_run_ref(ditch_runs, subassembly_ref=source_ref, side="left"),
                 )
             )
         if side in {"right", "both", "center"}:
@@ -3891,7 +3862,7 @@ def _ditch_section_points(
                     direction=-1.0,
                     side_label="right",
                     subassembly_ref=source_ref,
-                    drainage_ref=_drainage_ref_for_side(drainage_refs, "right", drainage_refs_by_side),
+                    drainage_ref=_ditch_run_ref(ditch_runs, subassembly_ref=source_ref, side="right"),
                 )
             )
     output: list[AppliedSectionPoint] = []

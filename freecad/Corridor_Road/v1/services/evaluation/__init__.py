@@ -6,7 +6,6 @@ from .alignment_station_sampling_service import AlignmentStationSamplingService
 from .centerline3d_evaluation_service import Centerline3DEvaluationRequest, Centerline3DEvaluationService
 from .centerline3d_frame_service import Centerline3DFrame, Centerline3DFrameService
 from .centerline3d_source_geometry_service import Centerline3DSourceGeometryService, Centerline3DSourceStationResult
-from .drainage_resolution_service import DrainageResolutionService, DrainageValidationService
 from .intersection_evaluation_service import IntersectionEvaluationService
 from .intersection_alignment_detection_service import (
     AlignmentIntersectionDetectionResult,
@@ -66,8 +65,6 @@ __all__ = [
     "Centerline3DFrameService",
     "Centerline3DSourceGeometryService",
     "Centerline3DSourceStationResult",
-    "DrainageResolutionService",
-    "DrainageValidationService",
     "IntersectionEvaluationService",
     "AlignmentIntersectionDetectionResult",
     "AlignmentIntersectionDetectionService",

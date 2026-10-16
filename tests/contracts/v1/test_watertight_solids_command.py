@@ -35,7 +35,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section_solid_profile import
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
 from freecad.Corridor_Road.v1.models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow
 from freecad.Corridor_Road.v1.models.output.simulation_qa_output import SimulationQaOutput
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionArmPolicyRow,
     IntersectionControlArea,
@@ -75,7 +75,6 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     V1WatertightSolidsTaskPanel,
     WATERTIGHT_SOLIDS_BLOCKED_MESSAGE,
     WATERTIGHT_SOLIDS_COMMAND_ID,
-    _drainage_pipeline_network_solid_shape,
     _create_or_update_intersection_trim_boundary_result_object,
     _create_or_update_intersection_trim_application_output_object,
     _create_or_update_intersection_trim_application_preview_object,
@@ -112,7 +111,12 @@ def _new_project_doc(name: str):
     return doc, project
 
 
-def _sample_sections(*, include_subassembly: bool = False, include_lined_ditch: bool = False) -> AppliedSectionSet:
+def _sample_sections(
+    *,
+    include_subassembly: bool = False,
+    include_lined_ditch: bool = False,
+    ditch_run_ref: str = "",
+) -> AppliedSectionSet:
     subassembly_rows = [
         AppliedSectionSubassemblyRow(
             "pavement:base",
@@ -138,10 +142,11 @@ def _sample_sections(*, include_subassembly: bool = False, include_lined_ditch: 
     def point_rows(station: float) -> list[AppliedSectionPoint]:
         if not include_lined_ditch:
             return []
+        tag = ("ditch:right", "right", ditch_run_ref) if ditch_run_ref else ()
         return [
-            AppliedSectionPoint("ditch:right-edge", station, -5.0, 10.0, "ditch_surface", -5.0),
-            AppliedSectionPoint("ditch:right-mid", station, -5.6, 9.7, "ditch_surface", -5.6),
-            AppliedSectionPoint("ditch:right-flow", station, -6.2, 9.8, "ditch_surface", -6.2),
+            AppliedSectionPoint("ditch:right-edge", station, -5.0, 10.0, "ditch_surface", -5.0, *tag),
+            AppliedSectionPoint("ditch:right-mid", station, -5.6, 9.7, "ditch_surface", -5.6, *tag),
+            AppliedSectionPoint("ditch:right-flow", station, -6.2, 9.8, "ditch_surface", -6.2, *tag),
         ]
 
     return AppliedSectionSet(
@@ -384,11 +389,16 @@ def _populate_ready_build_corridor_outputs(
     *,
     include_subassembly: bool = False,
     include_lined_ditch: bool = False,
+    ditch_run_ref: str = "",
 ) -> None:
     create_or_update_v1_applied_section_set_object(
         doc,
         project=project,
-        applied_section_set=_sample_sections(include_subassembly=include_subassembly, include_lined_ditch=include_lined_ditch),
+        applied_section_set=_sample_sections(
+            include_subassembly=include_subassembly,
+            include_lined_ditch=include_lined_ditch,
+            ditch_run_ref=ditch_run_ref,
+        ),
     )
     create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
     create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
@@ -410,166 +420,6 @@ def _add_ready_build_parametric_preview_objects(doc) -> None:
         if not hasattr(obj, "TriangleCount"):
             obj.addProperty("App::PropertyInteger", "TriangleCount", "Test")
         obj.TriangleCount = 2
-
-
-def _pipeline_structure_model(*, include_native_specs: bool = False) -> StructureModel:
-    geometry_spec_rows = []
-    inlet_spec_ref = "geometry-spec:inlet-01" if include_native_specs else ""
-    outlet_spec_ref = "geometry-spec:outlet-01" if include_native_specs else ""
-    if include_native_specs:
-        geometry_spec_rows = [
-            StructureGeometrySpec(
-                "geometry-spec:inlet-01",
-                "structure:inlet-01",
-                shape_kind="inlet_box",
-                width=1.2,
-                height=1.0,
-                material="concrete",
-            ),
-            StructureGeometrySpec(
-                "geometry-spec:outlet-01",
-                "structure:outlet-01",
-                shape_kind="outlet_headwall",
-                width=1.4,
-                height=1.1,
-                material="concrete",
-            ),
-        ]
-    return StructureModel(
-        schema_version=1,
-        project_id="proj-1",
-        structure_model_id="structures:pipeline",
-        structure_rows=[
-            StructureRow(
-                "structure:inlet-01",
-                "utility",
-                "reference",
-                StructurePlacement("placement:inlet-01", "alignment:main", 30.0, 32.0),
-                geometry_spec_ref=inlet_spec_ref,
-                native_type="inlet" if include_native_specs else "",
-            ),
-            StructureRow(
-                "structure:outlet-01",
-                "utility",
-                "reference",
-                StructurePlacement("placement:outlet-01", "alignment:main", 90.0, 92.0),
-                geometry_spec_ref=outlet_spec_ref,
-                native_type="outlet" if include_native_specs else "",
-            ),
-        ],
-        geometry_spec_rows=geometry_spec_rows,
-        connection_point_rows=[
-            StructureConnectionPoint(
-                "connection:inlet-01:pipe-out",
-                "structure:inlet-01",
-                "pipe_out",
-                station=32.0,
-                offset=-4.5,
-                invert_elevation=44.2,
-                diameter=0.6,
-                shape_kind="circular",
-            ),
-            StructureConnectionPoint(
-                "connection:outlet-01:pipe-in",
-                "structure:outlet-01",
-                "pipe_in",
-                station=90.0,
-                offset=-6.0,
-                invert_elevation=43.6,
-                diameter=0.6,
-                shape_kind="circular",
-            ),
-        ],
-    )
-
-
-def _pipeline_drainage_model() -> DrainageModel:
-    return DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:pipeline",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:inlet-01",
-                element_kind="inlet_reference",
-                structure_ref="structure:inlet-01",
-                connection_point_ref="connection:inlet-01:pipe-out",
-                station_start=30.0,
-                station_end=32.0,
-            ),
-            DrainageElementRow(
-                drainage_element_id="drainage:outlet-01",
-                element_kind="outfall_reference",
-                structure_ref="structure:outlet-01",
-                connection_point_ref="connection:outlet-01:pipe-in",
-                station_start=90.0,
-                station_end=92.0,
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:pipe-01",
-                from_element_ref="drainage:inlet-01",
-                to_element_ref="drainage:outlet-01",
-                outlet_ref="drainage:outlet-01",
-            )
-        ],
-    )
-
-
-def _populate_pipeline_sources(doc, project) -> None:
-    create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
-    create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
-
-
-def _populate_pipeline_sources_with_structure_specs(doc, project) -> None:
-    create_or_update_v1_structure_model_object(
-        doc,
-        project=project,
-        structure_model=_pipeline_structure_model(include_native_specs=True),
-    )
-    create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
-
-
-def _drainage_handoff_mixed_model() -> DrainageModel:
-    base = _pipeline_drainage_model()
-    return DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:mixed-handoff",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:ditch-right",
-                element_kind="ditch",
-                side="right",
-                station_start=0.0,
-                station_end=30.0,
-            ),
-            *list(base.element_rows),
-            DrainageElementRow(
-                drainage_element_id="drainage:node-no-port",
-                element_kind="junction_reference",
-                structure_ref="structure:no-port",
-                station_start=44.0,
-                station_end=45.0,
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:capture-01",
-                from_element_ref="drainage:ditch-right",
-                to_element_ref="drainage:inlet-01",
-                outlet_ref="drainage:outlet-01",
-            ),
-            *list(base.flow_route_rows),
-            DrainageFlowRoute(
-                flow_route_id="flow-route:unresolved-01",
-                from_element_ref="drainage:node-no-port",
-                to_element_ref="drainage:outlet-01",
-                outlet_ref="drainage:outlet-01",
-            ),
-        ],
-    )
 
 
 def _structure_body_source_model() -> StructureModel:
@@ -2337,38 +2187,18 @@ def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_cont
         App.closeDocument(doc.Name)
 
 
-def test_watertight_solids_discovery_reads_document_drainage_model_owner() -> None:
+def test_watertight_solids_lined_ditch_target_carries_the_ditch_run_of_its_points() -> None:
     _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsPanelDrainageOwnerTest")
+    doc, project = _new_project_doc("V1WatertightSolidsPanelDitchRunTest")
     try:
-        _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True)
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:side-ditch-right",
-                        element_kind="ditch",
-                        side="right",
-                        station_start=0.0,
-                        station_end=20.0,
-                        policy_set_ref="drainage-policy:lined-concrete",
-                    )
-                ],
-            ),
-        )
+        _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True, ditch_run_ref="ditch-run:right")
 
         panel = V1WatertightSolidsTaskPanel(document=doc)
         state = panel._target_state_by_id["solid-target:lined-ditch:right"]
 
-        assert state.target_row.drainage_ref == "drainage:side-ditch-right"
-        assert "drainage:main" in state.target_row.source_refs
-        assert "drainage-policy:lined-concrete" in state.target_row.source_refs
-        assert "drainage:side-ditch-right" in panel._target_table.item(_target_table_row(panel, state.target_id), 4).text()
+        assert state.target_row.drainage_ref == "ditch-run:right"
+        assert "ditch-run:right" in state.target_row.source_refs
+        assert "ditch-run:right" in panel._target_table.item(_target_table_row(panel, state.target_id), 4).text()
     finally:
         App.closeDocument(doc.Name)
 
@@ -2377,69 +2207,28 @@ def test_watertight_solids_status_summarizes_drainage_solid_handoff_readiness() 
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsDrainageHandoffSummaryTest")
     try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
-        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_drainage_handoff_mixed_model())
+        _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True, ditch_run_ref="ditch-run:right")
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                ditch_run_rows=[DitchRun("ditch-run:right", "right", "ditch:right", 0.0, 20.0)],
+            ),
+        )
 
         panel = V1WatertightSolidsTaskPanel(document=doc)
         summary = drainage_watertight_handoff_summary(doc, target_model=panel._target_model)
         status_text = panel._status.toPlainText()
 
-        assert summary.readiness_status == "blocked"
-        assert summary.flow_route_count == 3
-        assert summary.capture_only_route_count == 1
-        assert summary.pipe_candidate_count == 1
-        assert summary.unresolved_port_route_count == 1
-        assert summary.pipe_segment_target_count == 1
-        assert summary.pipeline_network_target_count == 1
+        # Drainage reaches Watertight Solids only as lined ditch bodies; pipes wait for the Structure rebuild
+        assert summary.readiness_status == "ready"
+        assert summary.lined_ditch_target_count == 1
+        assert (summary.flow_route_count, summary.pipe_candidate_count, summary.pipeline_network_target_count) == (0, 0, 0)
         assert "Drainage Solid QA:" in status_text
-        assert "status=blocked" in status_text
-        assert "capture_only=1" in status_text
-        assert "pipe_candidates=1" in status_text
-        assert "unresolved_ports=1" in status_text
-        assert "network_fuse=compound_first_slice" in status_text
-    finally:
-        App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineBuildTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        _populate_pipeline_sources(doc, project)
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:drainage-pipeline:pipeline-segment-flow-route-pipe-01"
-        row_index = _target_table_row(panel, target_id)
-
-        assert row_index >= 0
-        assert panel._target_table.item(row_index, 1).text() == "Drainage Pipe Segment Solid - flow-route:pipe-01"
-        assert panel._target_table.item(row_index, 2).text() == "Drainage: Pipe Segment"
-        assert "flow-route:pipe-01" in panel._target_table.item(row_index, 4).text()
-        assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
-
-        panel._target_table.selectRow(row_index)
-        panel._validate_button.click()
-
-        state = panel._target_state_by_id[target_id]
-        assert state.validation_status == "ok"
-        assert state.profile_count >= 2
-        assert state.volume > 0.0
-        assert "caps=2" in state.validation_message
-
-        panel._build_selected_button.click()
-
-        obj = doc.getObject(state.output_object_ref)
-        assert state.build_status == "built"
-        assert obj is not None
-        assert obj.V1ObjectType == "V1WatertightSolidOutput"
-        assert obj.TargetFamilies == ["drainage_pipeline_body"]
-        assert obj.DrainageRefs == ["pipeline-segment:flow-route-pipe-01"]
-        assert obj.FlowRouteRefs == ["flow-route:pipe-01"]
-        assert obj.Shape.Volume > 0.0
-        assert obj.Name in _group_names(ensure_project_tree(project, include_references=False)[V1_TREE_WATERTIGHT_SOLIDS])
+        assert "status=ready" in status_text
+        assert "lined_ditch=1" in status_text
     finally:
         App.closeDocument(doc.Name)
 
@@ -2624,315 +2413,6 @@ def test_watertight_solids_blocks_external_structure_body_when_connection_points
         assert "connection:external-01:pipe-in" in state.validation_message
     finally:
         App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineNetworkBuildTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        _populate_pipeline_sources(doc, project)
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:drainage-pipeline-network:main"
-        row_index = _target_table_row(panel, target_id)
-
-        assert row_index >= 0
-        assert panel._target_table.item(row_index, 1).text() == "Drainage Pipe Network Solid - drainage-pipeline-network:main"
-        assert panel._target_table.item(row_index, 2).text() == "Drainage: Pipe Network"
-        assert "flow-route:pipe-01" in panel._target_table.item(row_index, 4).text()
-        assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
-
-        panel._target_table.selectRow(row_index)
-        panel._validate_button.click()
-
-        state = panel._target_state_by_id[target_id]
-        assert state.validation_status == "ok"
-        assert state.profile_count >= 2
-        assert state.volume > 0.0
-        assert "fuse_mode=compound_first_slice" in state.validation_message
-
-        panel._build_selected_button.click()
-
-        obj = doc.getObject(state.output_object_ref)
-        assert state.build_status == "built"
-        assert obj is not None
-        assert obj.V1ObjectType == "V1WatertightSolidOutput"
-        assert obj.TargetFamilies == ["drainage_pipeline_network_body"]
-        assert obj.DrainageRefs == ["drainage-pipeline-network:main"]
-        assert obj.FlowRouteRefs == ["flow-route:pipe-01"]
-        assert obj.StructureRefs == ["structure:inlet-01,structure:outlet-01"]
-        assert obj.Shape.Volume > 0.0
-        assert "connectors=2" in state.validation_message
-        assert "connector_count=2" in state.watertight_output.solid_rows[0].notes
-        assert "structure_refs=structure:inlet-01,structure:outlet-01" in state.watertight_output.solid_rows[0].notes
-        assert "connection_point_refs=connection:inlet-01:pipe-out,connection:outlet-01:pipe-in" in state.watertight_output.solid_rows[0].notes
-        assert obj.Name in _group_names(ensure_project_tree(project, include_references=False)[V1_TREE_WATERTIGHT_SOLIDS])
-
-        panel._build_package_button.click()
-        package_obj = doc.getObject("V1SimulationPackageOutput")
-        assert package_obj is not None
-        assert package_obj.DrainageReadinessStatus == "ready"
-        assert package_obj.DrainageSourceStatus == "ready"
-        assert package_obj.DrainageFlowRouteCount == 1
-        assert package_obj.DrainagePipeCandidateCount == 1
-        assert package_obj.DrainagePipelineNetworkTargetCount == 1
-        assert package_obj.DrainageNetworkFuseStatus == "built"
-        package_output = to_simulation_package_output(package_obj)
-        assert package_output is not None
-        assert package_output.drainage_readiness_status == "ready"
-        assert package_output.drainage_network_fuse_status == "built"
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            export_path = Path(temp_dir) / "simulation_package.json"
-            export_document_simulation_package_json(str(export_path), document=doc, project=project)
-            exported = json.loads(export_path.read_text(encoding="utf-8"))
-            assert exported["drainage_readiness"]["status"] == "ready"
-            assert exported["drainage_readiness"]["pipe_candidate_count"] == 1
-            assert exported["drainage_readiness"]["pipeline_network_target_count"] == 1
-            assert exported["drainage_readiness"]["network_fuse_status"] == "built"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_drainage_pipeline_network_body_includes_built_structure_body_outputs() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineNetworkStructureFuseTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        _populate_pipeline_sources(doc, project)
-        structure_obj = _create_structure_body_output(
-            doc,
-            project,
-            structure_ref="structure:inlet-01",
-            object_name="V1WatertightSolidOutput_StructureInlet01",
-        )
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:drainage-pipeline-network:main"
-        row_index = _target_table_row(panel, target_id)
-
-        panel._target_table.selectRow(row_index)
-        panel._validate_button.click()
-        panel._build_selected_button.click()
-
-        state = panel._target_state_by_id[target_id]
-        obj = doc.getObject(state.output_object_ref)
-        notes = state.watertight_output.solid_rows[0].notes
-
-        assert state.build_status == "built"
-        assert obj is not None
-        assert obj.Shape.Volume > 0.0
-        assert "structure_bodies=1" in state.validation_message
-        assert "structure_body_count=1" in notes
-        assert "structure_fuse_status=included" in notes
-        assert f"structure_body_object_refs={structure_obj.Name}" in notes
-        assert structure_obj.Name in state.watertight_output.solid_rows[0].source_refs
-    finally:
-        App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_drainage_pipeline_network_build_enabled_autobuilds_structure_body_dependencies() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineNetworkDependencyBuildTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        _populate_pipeline_sources_with_structure_specs(doc, project)
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:drainage-pipeline-network:main"
-        row_index = _target_table_row(panel, target_id)
-
-        panel._target_table.item(row_index, 0).setCheckState(QtCore.Qt.Checked)
-        panel._build_enabled_button.click()
-
-        network_state = panel._target_state_by_id[target_id]
-        inlet_state = panel._target_state_by_id["solid-target:structure-body:structure-inlet-01"]
-        outlet_state = panel._target_state_by_id["solid-target:structure-body:structure-outlet-01"]
-        notes = network_state.watertight_output.solid_rows[0].notes
-
-        assert inlet_state.build_status == "built"
-        assert outlet_state.build_status == "built"
-        assert network_state.build_status == "built"
-        assert "dependencies_built=2" in network_state.validation_message
-        assert "port_connectors=0" in network_state.validation_message
-        assert "structure_port_terminals=2" in network_state.validation_message
-        assert "structure_port_status=direct" in network_state.validation_message
-        assert "Build Enabled summary: built=1; failed=0; targets=1" in panel._status.toPlainText()
-        assert "structure_body_count=2" in notes
-        assert "port_connector_count=0" in notes
-        assert "port_connector_status=not_needed" in notes
-        assert "structure_port_terminal_count=2" in notes
-        assert "structure_port_contact_status=direct" in notes
-        assert "structure_fuse_status=included" in notes
-        assert inlet_state.output_object_ref in notes
-        assert outlet_state.output_object_ref in notes
-        inlet_obj = doc.getObject(inlet_state.output_object_ref)
-        outlet_obj = doc.getObject(outlet_state.output_object_ref)
-        assert inlet_obj is not None
-        assert outlet_obj is not None
-        assert abs((float(inlet_obj.Shape.BoundBox.YMin) + float(inlet_obj.Shape.BoundBox.YMax)) / 2.0 - -4.5) < 0.01
-        assert abs((float(inlet_obj.Shape.BoundBox.ZMin) + float(inlet_obj.Shape.BoundBox.ZMax)) / 2.0 - 44.2) < 0.01
-        assert abs((float(outlet_obj.Shape.BoundBox.YMin) + float(outlet_obj.Shape.BoundBox.YMax)) / 2.0 - -6.0) < 0.01
-        assert abs((float(outlet_obj.Shape.BoundBox.ZMin) + float(outlet_obj.Shape.BoundBox.ZMax)) / 2.0 - 43.6) < 0.01
-        assert inlet_obj.FaceCounts[0] > 6
-        assert outlet_obj.FaceCounts[0] > 6
-        assert float(inlet_obj.Shape.Volume) < 1.2 * 1.0 * 2.0
-        assert float(outlet_obj.Shape.Volume) < 1.4 * 1.1 * 2.0
-        assert "solid_kind=inlet_body_solid" in inlet_state.watertight_output.solid_rows[0].notes
-        assert "solid_kind=outlet_body_solid" in outlet_state.watertight_output.solid_rows[0].notes
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_drainage_pipeline_network_shape_attempts_boolean_fuse_before_compound_fallback() -> None:
-    rows = [
-        SimpleNamespace(centerline_points=[(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)], diameter=1.0),
-        SimpleNamespace(centerline_points=[(5.0, 0.0, 0.0), (10.0, 0.0, 0.0)], diameter=1.0),
-    ]
-
-    result = _drainage_pipeline_network_solid_shape(rows)
-
-    assert result.fuse_mode in {"boolean_fuse", "compound_fallback"}
-    assert "shape_count=2" in result.notes
-    assert result.shape.Volume > 0.0
-
-
-def test_drainage_pipeline_network_shape_adds_junction_connector_body() -> None:
-    rows = [
-        SimpleNamespace(
-            pipeline_segment_id="pipeline-segment:a",
-            centerline_points=[(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)],
-            diameter=1.0,
-        ),
-        SimpleNamespace(
-            pipeline_segment_id="pipeline-segment:b",
-            centerline_points=[(5.0, 0.0, 0.0), (10.0, 2.0, 0.0)],
-            diameter=1.0,
-        ),
-    ]
-    junctions = [
-        SimpleNamespace(
-            junction_kind="junction",
-            point=(5.0, 0.0, 0.0),
-            pipeline_segment_refs=["pipeline-segment:a", "pipeline-segment:b"],
-        )
-    ]
-
-    result = _drainage_pipeline_network_solid_shape(rows, junction_rows=junctions)
-
-    assert result.connector_count == 1
-    assert "connector_count=1" in result.notes
-    assert result.shape.Volume > 0.0
-
-
-def test_drainage_pipeline_network_shape_adds_terminal_structure_connectors() -> None:
-    rows = [
-        SimpleNamespace(
-            pipeline_segment_id="pipeline-segment:a",
-            centerline_points=[(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)],
-            diameter=1.0,
-        )
-    ]
-    junctions = [
-        SimpleNamespace(
-            junction_kind="terminal",
-            point=(0.0, 0.0, 0.0),
-            pipeline_segment_refs=["pipeline-segment:a"],
-            notes="connection_point_refs=connection:inlet:pipe-out;structure_connector_status=pending",
-        ),
-        SimpleNamespace(
-            junction_kind="terminal",
-            point=(5.0, 0.0, 0.0),
-            pipeline_segment_refs=["pipeline-segment:a"],
-            notes="connection_point_refs=connection:outlet:pipe-in;structure_connector_status=pending",
-        ),
-    ]
-
-    result = _drainage_pipeline_network_solid_shape(rows, junction_rows=junctions)
-
-    assert result.connector_count == 2
-    assert "connector_count=2" in result.notes
-    assert result.shape.Volume > 0.0
-
-
-def test_drainage_pipeline_network_shape_adds_port_bridge_connectors_to_structure_body() -> None:
-    rows = [
-        SimpleNamespace(
-            pipeline_segment_id="pipeline-segment:a",
-            centerline_points=[(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)],
-            diameter=1.0,
-        )
-    ]
-    junctions = [
-        SimpleNamespace(
-            junction_kind="terminal",
-            point=(0.0, 0.0, 0.0),
-            pipeline_segment_refs=["pipeline-segment:a"],
-            notes="connection_point_refs=connection:inlet:pipe-out;structure_refs=structure:inlet",
-        )
-    ]
-    structure_shape = Part.makeBox(1.0, 2.0, 2.0, App.Vector(10.0, -1.0, -1.0))
-
-    result = _drainage_pipeline_network_solid_shape(
-        rows,
-        junction_rows=junctions,
-        structure_body_shapes=[structure_shape],
-        structure_body_shape_map={"structure:inlet": [(structure_shape, "StructureBodyInlet")]},
-        connection_point_map={
-            "connection:inlet:pipe-out": SimpleNamespace(
-                diameter=2.0,
-                width=0.0,
-                height=0.0,
-                direction="downstream",
-            )
-        },
-    )
-
-    assert result.connector_count == 1
-    assert result.port_connector_count == 1
-    assert result.structure_port_terminal_count == 1
-    assert result.structure_port_contact_status == "bridged"
-    assert "port_connector_count=1" in result.notes
-    assert "structure_port_contact_status=bridged" in result.notes
-    assert result.shape.Volume > 25.0
-
-
-def test_drainage_pipeline_network_shape_trims_terminal_inside_structure_body_to_boundary() -> None:
-    rows = [
-        SimpleNamespace(
-            pipeline_segment_id="pipeline-segment:a",
-            centerline_points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)],
-            diameter=1.0,
-        )
-    ]
-    junctions = [
-        SimpleNamespace(
-            junction_kind="terminal",
-            point=(0.0, 0.0, 0.0),
-            pipeline_segment_refs=["pipeline-segment:a"],
-            notes="connection_point_refs=connection:inlet:pipe-out;structure_refs=structure:inlet",
-        )
-    ]
-    structure_shape = Part.makeBox(2.0, 2.0, 2.0, App.Vector(-1.0, -1.0, -1.0))
-
-    result = _drainage_pipeline_network_solid_shape(
-        rows,
-        junction_rows=junctions,
-        structure_body_shapes=[structure_shape],
-        structure_body_shape_map={"structure:inlet": [(structure_shape, "StructureBodyInlet")]},
-    )
-
-    assert result.endpoint_trim_count == 1
-    assert result.port_connector_count == 0
-    assert result.structure_port_terminal_count == 1
-    assert result.structure_port_contact_status == "trimmed"
-    assert "endpoint_trim_count=1" in result.notes
-    assert "structure_port_contact_status=trimmed" in result.notes
-    assert result.shape.Volume > 0.0
 
 
 def _target_table_row(panel, target_id: str) -> int:

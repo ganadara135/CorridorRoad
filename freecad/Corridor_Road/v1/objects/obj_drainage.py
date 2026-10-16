@@ -1,4 +1,9 @@
-"""FreeCAD source object for v1 DrainageModel rows."""
+"""FreeCAD source object for the v1 DrainageModel.
+
+The model is stored as its typed payload; the count properties only summarize it in the property
+view. A Drainage object written before the 2026-10-16 rework restores as an empty model, and its
+old row properties are removed the next time it is written.
+"""
 
 from __future__ import annotations
 
@@ -7,34 +12,47 @@ try:
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
 
-from ..models.source.drainage_model import (
-    DrainageElementRow,
-    DrainageFlowRoute,
-    DrainageModel,
-    DrainagePolicySet,
-)
+from ..models.source.drainage_model import DrainageModel
 from .persistence_payload_adapter import (
     ensure_model_payload_properties,
     read_model_payload,
     write_model_payload,
 )
-from ..services.evaluation.drainage_resolution_service import DrainageValidationService
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
 
-_OBSOLETE_FLOW_ROUTE_PROPERTIES = (
-    "CollectionRegionCount",
-    "CollectionStationStarts",
-    "CollectionStationEnds",
-    "CollectionAlignmentRefs",
-    "CollectionRampRefs",
-    "ElementRampRefs",
-    "CollectionIntersectionRefs",
-    "FlowRouteReceiverRefs",
-    "CollectionRegionIds",
-    "CollectionExpectedReceiverRefs",
-    "CollectionRegionKinds",
-    "CollectionRiskLevels",
+_RETIRED_PROPERTIES = (
+    "ElementCount",
+    "DrainageElementIds",
+    "ElementKinds",
+    "ElementAlignmentRefs",
+    "ElementIntersectionRefs",
+    "ElementStructureRefs",
+    "ElementConnectionPointRefs",
+    "ElementSides",
+    "ElementRegionRefs",
+    "ElementSubassemblyRefs",
+    "ElementStationStarts",
+    "ElementStationEnds",
+    "ElementPolicySetRefs",
+    "PolicyCount",
+    "PolicySetIds",
+    "PolicyFlowIntents",
+    "PolicyMinGradeRules",
+    "PolicyLowPointRules",
+    "PolicyCollectionRules",
+    "PolicyDischargeRules",
+    "PolicyEarthworkPriorities",
+    "FlowRouteCount",
+    "FlowRouteIds",
+    "FlowRouteFromElementRefs",
+    "FlowRouteToElementRefs",
+    "FlowRouteOutletRefs",
+    "FlowRouteDirections",
+    "FlowRouteRiskLevels",
+    "FlowRouteNotes",
+    "ValidationStatus",
+    "DiagnosticRows",
 )
 
 
@@ -48,7 +66,6 @@ class V1DrainageModelObject:
         ensure_v1_drainage_properties(obj)
 
     def execute(self, obj):
-        ensure_v1_drainage_properties(obj)
         return
 
 
@@ -74,7 +91,7 @@ class ViewProviderV1DrainageModel:
 
 
 def ensure_v1_drainage_properties(obj) -> None:
-    """Ensure the FreeCAD object has v1 DrainageModel source properties."""
+    """Ensure the FreeCAD object has the v1 DrainageModel source properties."""
 
     if obj is None:
         return
@@ -83,39 +100,13 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "ProjectId", "CorridorRoad", "v1 project id")
     _add_property(obj, "App::PropertyString", "DrainageModelId", "CorridorRoad", "v1 drainage model id")
     _add_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1 tree routing record kind")
-    _add_property(obj, "App::PropertyInteger", "ElementCount", "Drainage Elements", "drainage element count")
-    _add_property(obj, "App::PropertyStringList", "DrainageElementIds", "Drainage Elements", "drainage element ids")
-    _add_property(obj, "App::PropertyStringList", "ElementKinds", "Drainage Elements", "drainage element kinds")
-    _add_property(obj, "App::PropertyStringList", "ElementAlignmentRefs", "Drainage Elements", "alignment refs")
-    _add_property(obj, "App::PropertyStringList", "ElementIntersectionRefs", "Drainage Elements", "intersection refs")
-    _add_property(obj, "App::PropertyStringList", "ElementStructureRefs", "Drainage Elements", "structure refs")
-    _add_property(obj, "App::PropertyStringList", "ElementConnectionPointRefs", "Drainage Elements", "structure connection point refs")
-    _add_property(obj, "App::PropertyStringList", "ElementSides", "Drainage Elements", "element sides")
-    _add_property(obj, "App::PropertyStringList", "ElementRegionRefs", "Drainage Elements", "region refs")
-    _add_property(obj, "App::PropertyStringList", "ElementSubassemblyRefs", "Drainage Elements", "subassembly refs")
-    _add_property(obj, "App::PropertyFloatList", "ElementStationStarts", "Drainage Elements", "element start stations")
-    _add_property(obj, "App::PropertyFloatList", "ElementStationEnds", "Drainage Elements", "element end stations")
-    _add_property(obj, "App::PropertyStringList", "ElementPolicySetRefs", "Drainage Elements", "policy set refs")
-    _add_property(obj, "App::PropertyInteger", "PolicyCount", "Policies", "policy row count")
-    _add_property(obj, "App::PropertyStringList", "PolicySetIds", "Policies", "policy set ids")
-    _add_property(obj, "App::PropertyStringList", "PolicyFlowIntents", "Policies", "flow intents")
-    _add_property(obj, "App::PropertyStringList", "PolicyMinGradeRules", "Policies", "min grade rules")
-    _add_property(obj, "App::PropertyStringList", "PolicyLowPointRules", "Policies", "low point rules")
-    _add_property(obj, "App::PropertyStringList", "PolicyCollectionRules", "Policies", "collection rules")
-    _add_property(obj, "App::PropertyStringList", "PolicyDischargeRules", "Policies", "discharge rules")
-    _add_property(obj, "App::PropertyStringList", "PolicyEarthworkPriorities", "Policies", "earthwork priorities")
-    _add_property(obj, "App::PropertyInteger", "FlowRouteCount", "Flow Routes", "flow route count")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteIds", "Flow Routes", "flow route ids")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteFromElementRefs", "Flow Routes", "from element refs")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteToElementRefs", "Flow Routes", "to element refs")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteOutletRefs", "Flow Routes", "outlet refs")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteDirections", "Flow Routes", "flow route directions")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteRiskLevels", "Flow Routes", "risk levels")
-    _add_property(obj, "App::PropertyStringList", "FlowRouteNotes", "Flow Routes", "notes")
-    _remove_obsolete_properties(obj, _OBSOLETE_FLOW_ROUTE_PROPERTIES)
+    _add_property(obj, "App::PropertyInteger", "DitchRunCount", "Drainage", "ditch run count")
+    _add_property(obj, "App::PropertyInteger", "PointCount", "Drainage", "inlet, outfall and culvert count")
+    _add_property(obj, "App::PropertyInteger", "LinkCount", "Drainage", "link count")
+    _add_property(obj, "App::PropertyFloat", "MinGradePercent", "Drainage", "policy minimum flowline grade (%)")
+    _add_property(obj, "App::PropertyFloat", "MaxInletSpacing", "Drainage", "policy maximum inlet spacing (m)")
+    _add_property(obj, "App::PropertyString", "LowPointRule", "Drainage", "policy low point rule")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
-    _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "validation status")
-    _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "diagnostic rows")
     ensure_model_payload_properties(obj, add_property=_add_property)
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
@@ -125,11 +116,9 @@ def ensure_v1_drainage_properties(obj) -> None:
     if not str(getattr(obj, "ProjectId", "") or ""):
         obj.ProjectId = "corridorroad-v1"
     if not str(getattr(obj, "DrainageModelId", "") or ""):
-        obj.DrainageModelId = f"drainage:{str(getattr(obj, 'Name', '') or 'main')}"
+        obj.DrainageModelId = "drainage:main"
     if not str(getattr(obj, "CRRecordKind", "") or ""):
         obj.CRRecordKind = "v1_drainage_model"
-    if not str(getattr(obj, "ValidationStatus", "") or ""):
-        obj.ValidationStatus = "empty"
 
 
 def create_or_update_v1_drainage_model_object(
@@ -140,9 +129,9 @@ def create_or_update_v1_drainage_model_object(
     object_name: str = "V1DrainageModel",
     label: str = "Drainage",
 ):
-    """Create or update the durable v1 DrainageModel source object.
+    """Create or update the project's Drainage source object.
 
-    A project has one Drainage source. The rows are written into the existing object;
+    A project has one Drainage source. The model is written into the existing object;
     `object_name` only names a new object.
     """
 
@@ -152,7 +141,7 @@ def create_or_update_v1_drainage_model_object(
     if doc is None:
         raise RuntimeError("No active document is available for v1 DrainageModel creation.")
     if drainage_model is None:
-        drainage_model = DrainageModel(schema_version=1, project_id=_project_id(project), drainage_model_id="drainage:main")
+        drainage_model = DrainageModel(schema_version=1, project_id=_project_id(project))
 
     obj = find_v1_drainage_model(doc)
     if obj is None:
@@ -175,63 +164,28 @@ def create_or_update_v1_drainage_model_object(
 
 
 def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label: str = "Drainage"):
-    """Write DrainageModel rows into an existing FreeCAD object."""
+    """Write a DrainageModel into an existing FreeCAD object."""
 
+    _remove_properties(obj, _RETIRED_PROPERTIES)
     ensure_v1_drainage_properties(obj)
-    element_rows = list(getattr(drainage_model, "element_rows", []) or [])
-    policy_rows = list(getattr(drainage_model, "policy_rows", []) or [])
-    flow_route_rows = list(getattr(drainage_model, "flow_route_rows", []) or [])
-    validation = DrainageValidationService().validate(drainage_model)
-
+    policy = drainage_model.policy
     obj.Label = label
     obj.SchemaVersion = int(getattr(drainage_model, "schema_version", 1) or 1)
     obj.ProjectId = str(getattr(drainage_model, "project_id", "") or "corridorroad-v1")
-    obj.DrainageModelId = str(getattr(drainage_model, "drainage_model_id", "") or getattr(obj, "DrainageModelId", "") or "drainage:main")
+    obj.DrainageModelId = str(getattr(drainage_model, "drainage_model_id", "") or "drainage:main")
     obj.CRRecordKind = "v1_drainage_model"
-    obj.ElementCount = len(element_rows)
-    obj.DrainageElementIds = [str(row.drainage_element_id) for row in element_rows]
-    obj.ElementKinds = [str(row.element_kind) for row in element_rows]
-    obj.ElementAlignmentRefs = [str(row.alignment_ref) for row in element_rows]
-    obj.ElementIntersectionRefs = [str(row.intersection_ref) for row in element_rows]
-    obj.ElementStructureRefs = [str(row.structure_ref) for row in element_rows]
-    obj.ElementConnectionPointRefs = [str(getattr(row, "connection_point_ref", "") or "") for row in element_rows]
-    obj.ElementSides = [str(getattr(row, "side", "") or "") for row in element_rows]
-    obj.ElementRegionRefs = [str(getattr(row, "region_ref", "") or "") for row in element_rows]
-    subassembly_refs = [_element_subassembly_ref(row) for row in element_rows]
-    obj.ElementSubassemblyRefs = subassembly_refs
-    obj.ElementStationStarts = [float(row.station_start) for row in element_rows]
-    obj.ElementStationEnds = [float(row.station_end) for row in element_rows]
-    obj.ElementPolicySetRefs = [str(row.policy_set_ref) for row in element_rows]
-    obj.PolicyCount = len(policy_rows)
-    obj.PolicySetIds = [str(row.policy_set_id) for row in policy_rows]
-    obj.PolicyFlowIntents = [str(row.flow_intent) for row in policy_rows]
-    obj.PolicyMinGradeRules = [str(row.min_grade_rule) for row in policy_rows]
-    obj.PolicyLowPointRules = [str(row.low_point_rule) for row in policy_rows]
-    obj.PolicyCollectionRules = [str(row.collection_rule) for row in policy_rows]
-    obj.PolicyDischargeRules = [str(row.discharge_rule) for row in policy_rows]
-    obj.PolicyEarthworkPriorities = [str(row.earthwork_priority) for row in policy_rows]
-    obj.FlowRouteCount = len(flow_route_rows)
-    obj.FlowRouteIds = [str(row.flow_route_id) for row in flow_route_rows]
-    obj.FlowRouteFromElementRefs = [str(row.from_element_ref) for row in flow_route_rows]
-    obj.FlowRouteToElementRefs = [str(row.to_element_ref) for row in flow_route_rows]
-    obj.FlowRouteOutletRefs = [str(row.outlet_ref) for row in flow_route_rows]
-    obj.FlowRouteDirections = [str(row.direction) for row in flow_route_rows]
-    obj.FlowRouteRiskLevels = [str(row.risk_level) for row in flow_route_rows]
-    obj.FlowRouteNotes = [str(row.notes) for row in flow_route_rows]
+    obj.DitchRunCount = len(drainage_model.ditch_run_rows)
+    obj.PointCount = len(drainage_model.point_rows)
+    obj.LinkCount = len(drainage_model.link_rows)
+    obj.MinGradePercent = float(policy.min_grade_percent)
+    obj.MaxInletSpacing = float(policy.max_inlet_spacing_m)
+    obj.LowPointRule = str(policy.low_point_rule)
     obj.SourceRefs = [str(value) for value in list(getattr(drainage_model, "source_refs", []) or []) if str(value)]
-    obj.ValidationStatus = validation.status
-    obj.DiagnosticRows = [
-        f"{getattr(row, 'severity', '')}|{getattr(row, 'kind', '')}|{getattr(row, 'source_ref', '')}|{getattr(row, 'message', '')}|{getattr(row, 'notes', '')}"
-        for row in [
-            *list(validation.diagnostic_rows or []),
-            *list(getattr(drainage_model, "diagnostic_rows", []) or []),
-        ]
-    ]
     write_model_payload(
         obj,
         drainage_model,
         model_type="DrainageModel",
-        row_fields=("element_rows", "policy_rows", "flow_route_rows"),
+        row_fields=("ditch_run_rows", "point_rows", "link_rows"),
         required_refs=("project_id", "drainage_model_id"),
     )
     try:
@@ -242,11 +196,14 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
 
 
 def to_drainage_model(obj) -> DrainageModel | None:
-    """Build a DrainageModel from a v1 Drainage FreeCAD object."""
+    """Build a DrainageModel from a v1 Drainage FreeCAD object.
+
+    An object without a payload, or with one written before the rework, gives an empty model:
+    its old rows have no meaning in the new model.
+    """
 
     if not _is_v1_drainage_model(obj):
         return None
-    ensure_v1_drainage_properties(obj)
     payload_result = read_model_payload(
         obj,
         expected_model_type="DrainageModel",
@@ -254,61 +211,16 @@ def to_drainage_model(obj) -> DrainageModel | None:
     )
     if payload_result is not None:
         return payload_result.model if payload_result.accepted else None
-    element_ids = list(getattr(obj, "DrainageElementIds", []) or [])
-    element_count = max(
-        len(element_ids),
-        len(list(getattr(obj, "ElementStationStarts", []) or [])),
-        len(list(getattr(obj, "ElementStationEnds", []) or [])),
-    )
-    element_rows = [
-        DrainageElementRow(
-            drainage_element_id=_list_value(element_ids, index, f"drainage:element:{index + 1}"),
-            element_kind=_list_value(getattr(obj, "ElementKinds", []), index, "ditch"),
-            alignment_ref=_list_value(getattr(obj, "ElementAlignmentRefs", []), index, ""),
-            intersection_ref=_list_value(getattr(obj, "ElementIntersectionRefs", []), index, ""),
-            structure_ref=_list_value(getattr(obj, "ElementStructureRefs", []), index, ""),
-            connection_point_ref=_list_value(getattr(obj, "ElementConnectionPointRefs", []), index, ""),
-            side=_list_value(getattr(obj, "ElementSides", []), index, ""),
-            region_ref=_list_value(getattr(obj, "ElementRegionRefs", []), index, ""),
-            subassembly_ref=_list_value(
-                getattr(obj, "ElementSubassemblyRefs", []),
-                index,
-                "",
-            ),
-            station_start=_float_list_value(getattr(obj, "ElementStationStarts", []), index),
-            station_end=_float_list_value(getattr(obj, "ElementStationEnds", []), index),
-            policy_set_ref=_list_value(getattr(obj, "ElementPolicySetRefs", []), index, ""),
-        )
-        for index in range(element_count)
-    ]
-    policy_ids = list(getattr(obj, "PolicySetIds", []) or [])
-    policy_rows = [
-        DrainagePolicySet(
-            policy_set_id=_list_value(policy_ids, index, f"drainage-policy:{index + 1}"),
-            flow_intent=_list_value(getattr(obj, "PolicyFlowIntents", []), index, ""),
-            min_grade_rule=_list_value(getattr(obj, "PolicyMinGradeRules", []), index, ""),
-            low_point_rule=_list_value(getattr(obj, "PolicyLowPointRules", []), index, ""),
-            collection_rule=_list_value(getattr(obj, "PolicyCollectionRules", []), index, ""),
-            discharge_rule=_list_value(getattr(obj, "PolicyDischargeRules", []), index, ""),
-            earthwork_priority=_list_value(getattr(obj, "PolicyEarthworkPriorities", []), index, ""),
-        )
-        for index in range(len(policy_ids))
-    ]
-    flow_route_rows = _flow_route_rows_from_object(obj)
     return DrainageModel(
-        schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
+        schema_version=1,
         project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
         drainage_model_id=str(getattr(obj, "DrainageModelId", "") or "drainage:main"),
         label=str(getattr(obj, "Label", "") or "Drainage"),
-        source_refs=[str(value) for value in list(getattr(obj, "SourceRefs", []) or []) if str(value)],
-        element_rows=element_rows,
-        policy_rows=policy_rows,
-        flow_route_rows=flow_route_rows,
     )
 
 
 def find_v1_drainage_model(document, preferred_drainage_model=None):
-    """Find a v1 DrainageModel object in a document."""
+    """Find the project's v1 DrainageModel object in a document."""
 
     if _is_v1_drainage_model(preferred_drainage_model):
         return preferred_drainage_model
@@ -334,33 +246,6 @@ def _is_v1_drainage_model(obj) -> bool:
     return proxy_type == "DrainageModel" or name.startswith("V1DrainageModel") or name.startswith("DrainageModel")
 
 
-def _flow_route_rows_from_object(obj) -> list[DrainageFlowRoute]:
-    route_ids = list(getattr(obj, "FlowRouteIds", []) or [])
-    route_from_refs = list(getattr(obj, "FlowRouteFromElementRefs", []) or [])
-    route_outlets = list(getattr(obj, "FlowRouteOutletRefs", []) or [])
-    route_count = max(
-        len(route_ids),
-        len(route_from_refs),
-        len(route_outlets),
-    )
-    return [
-        DrainageFlowRoute(
-            flow_route_id=_list_value(route_ids, index, f"flow-route:{index + 1}"),
-            from_element_ref=_list_value(getattr(obj, "FlowRouteFromElementRefs", []), index, ""),
-            to_element_ref=_list_value(getattr(obj, "FlowRouteToElementRefs", []), index, ""),
-            outlet_ref=_list_value(getattr(obj, "FlowRouteOutletRefs", []), index, ""),
-            direction=_list_value(getattr(obj, "FlowRouteDirections", []), index, ""),
-            risk_level=_list_value(getattr(obj, "FlowRouteRiskLevels", []), index, ""),
-            notes=_list_value(getattr(obj, "FlowRouteNotes", []), index, ""),
-        )
-        for index in range(route_count)
-    ]
-
-
-def _element_subassembly_ref(row) -> str:
-    return str(getattr(row, "subassembly_ref", "") or "")
-
-
 def _add_property(obj, property_type: str, name: str, group: str, doc: str = "") -> None:
     if obj is None or hasattr(obj, name):
         return
@@ -370,36 +255,15 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
         pass
 
 
-def _remove_obsolete_properties(obj, names: tuple[str, ...]) -> None:
-    if obj is None:
-        return
+def _remove_properties(obj, names: tuple[str, ...]) -> None:
     for name in names:
         if not hasattr(obj, name):
             continue
         try:
             obj.removeProperty(name)
         except Exception:
-            try:
-                obj.delProperty(name)
-            except Exception:
-                pass
+            pass
 
 
 def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
-
-
-def _list_value(values, index: int, default: str = "") -> str:
-    try:
-        values_list = list(values or [])
-        return str(values_list[index]) if index < len(values_list) else str(default)
-    except Exception:
-        return str(default)
-
-
-def _float_list_value(values, index: int, default: float = 0.0) -> float:
-    try:
-        values_list = list(values or [])
-        return float(values_list[index]) if index < len(values_list) else float(default)
-    except Exception:
-        return float(default)

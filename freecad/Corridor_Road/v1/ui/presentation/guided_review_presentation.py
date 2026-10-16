@@ -12,8 +12,7 @@ CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
     ("intersections", "4. Intersections", ("intersection",), "Check intersection-controlled Region context and Applied Sections handoff."),
     ("slope_issues", "5. Side Slope", ("daylight", "intersection_slope"), "Review ordinary and intersection-owned Side Slope result surfaces and their diagnostics separately."),
-    ("drainage", "6. Drainage Surface", ("centerline", "drainage"), "Check roadside ditch surfaces and intersection low-point drainage coverage."),
-    ("drainage_flow", "7. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
+    ("drainage", "6. Drainage Surface", ("centerline", "drainage"), "Check the roadside ditch surfaces and the Ditch Runs that cover them."),
 )
 
 
@@ -22,7 +21,6 @@ def guided_review_step_rows(
     review_by_role: dict[str, dict[str, object]],
     issue_count: int,
     drainage_summary: dict[str, object],
-    drainage_flow_summary: dict[str, object],
     intersection_summary: dict[str, object],
     subassembly_kind_rows: list[dict[str, object]],
     general_road: bool,
@@ -75,10 +73,6 @@ def guided_review_step_rows(
                 status = str(drainage.get("status", status) or status)
                 notes = str(drainage.get("notes", notes) or notes)
                 focus = "Drainage Surface" if source.get("status") == "ready" else "Drainage Diagnostics"
-            elif step_id == "drainage_flow":
-                status = str(drainage_flow_summary.get("status", status) or status)
-                notes = str(drainage_flow_summary.get("notes", default_notes) or default_notes)
-                focus = str(drainage_flow_summary.get("focus", "Drainage Flow") or "Drainage Flow")
             elif step_id == "intersections":
                 intersection_source = review_by_role.get("intersection", source)
                 status = str(intersection_summary.get("status", status) or status)

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from ...models.result.applied_section_set import AppliedSectionSet
 from ...models.result.corridor_model import CorridorModel
-from ...models.source.drainage_model import DrainageModel
 from ...models.source.intersection_model import IntersectionModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
@@ -15,7 +14,6 @@ from ...models.source.solid_target_model import (
     SolidTargetModel,
     SolidTargetRow,
 )
-from ..evaluation.drainage_resolution_service import build_drainage_pipeline_result
 from ..evaluation.station_context_resolver import StationContextResolver
 
 
@@ -30,7 +28,6 @@ class SolidTargetDiscoveryRequest:
     region_model: RegionModel | None = None
     intersection_model: IntersectionModel | None = None
     structure_model: StructureModel | None = None
-    drainage_model: DrainageModel | None = None
 
 
 class SolidTargetDiscoveryService:
@@ -42,7 +39,6 @@ class SolidTargetDiscoveryService:
         region_model = request.region_model
         intersection_model = request.intersection_model
         structure_model = request.structure_model
-        drainage_model = request.drainage_model
         diagnostics: list[SolidTargetDiagnosticRow] = []
         target_rows: list[SolidTargetRow] = []
         station_start, station_end, station_count = _station_range(applied)
@@ -103,7 +99,6 @@ class SolidTargetDiscoveryService:
                 region_model,
                 applied=applied,
                 structure_model=structure_model,
-                drainage_model=drainage_model,
                 source_refs=source_refs,
             )
             target_rows.extend(region_rows)
@@ -133,20 +128,10 @@ class SolidTargetDiscoveryService:
 
         lined_ditch_rows, lined_ditch_diagnostics = _lined_ditch_target_rows(
             applied,
-            region_model=region_model,
-            drainage_model=drainage_model,
             source_refs=source_refs,
         )
         target_rows.extend(lined_ditch_rows)
         diagnostics.extend(lined_ditch_diagnostics)
-
-        pipeline_rows, pipeline_diagnostics = _drainage_pipeline_target_rows(
-            drainage_model,
-            structure_model=structure_model,
-            source_refs=source_refs,
-        )
-        target_rows.extend(pipeline_rows)
-        diagnostics.extend(pipeline_diagnostics)
 
         structure_rows, structure_diagnostics = _structure_target_rows(
             structure_model,
@@ -172,7 +157,6 @@ def _region_target_rows(
     *,
     applied: AppliedSectionSet | None,
     structure_model: StructureModel | None = None,
-    drainage_model: DrainageModel | None = None,
     source_refs: list[str],
 ) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
     station_min, station_max, station_count = _station_range(applied)
@@ -199,7 +183,6 @@ def _region_target_rows(
             applied,
             region_model=region_model,
             structure_model=structure_model,
-            drainage_model=drainage_model,
             station_start=start,
             station_end=end,
             region_ref=region_id,
@@ -675,16 +658,13 @@ def _subassembly_target_rows(
 def _lined_ditch_target_rows(
     applied: AppliedSectionSet | None,
     *,
-    region_model: RegionModel | None = None,
-    drainage_model: DrainageModel | None = None,
     source_refs: list[str],
 ) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
     if applied is None:
         return [], []
     surface_stations_by_side: dict[str, list[float]] = {"left": [], "right": []}
     ditch_data_by_side: dict[str, dict[str, object]] = {"left": {}, "right": {}}
-    drainage_owner_by_side = _drainage_lined_ditch_owner_by_side(drainage_model)
-    flow_route_by_drainage_ref = _flow_route_by_drainage_ref(drainage_model)
+    ditch_run_refs_by_side = _ditch_run_refs_by_side(applied)
     for section in list(getattr(applied, "sections", []) or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
         section_sides = _ditch_surface_sides(section)
@@ -714,23 +694,8 @@ def _lined_ditch_target_rows(
         if len(all_stations) < 2:
             continue
         target_id = f"solid-target:lined-ditch:{side}"
-        station_context = _drainage_station_context_for_side(
-            applied,
-            side=side,
-            stations=all_stations,
-            region_model=region_model,
-            drainage_model=drainage_model,
-        )
-        context_drainage_refs = _unique_refs(list(getattr(station_context, "active_drainage_refs", []) or []))
-        context_flow_route_refs = _unique_refs(list(getattr(station_context, "active_flow_route_refs", []) or []))
-        drainage_owner = _drainage_owner_by_ref(
-            drainage_model,
-            context_drainage_refs[0] if context_drainage_refs else "",
-        ) or drainage_owner_by_side.get(side)
-        drainage_ref = context_drainage_refs[0] if context_drainage_refs else str(getattr(drainage_owner, "drainage_element_id", "") or "")
-        if not drainage_ref:
-            drainage_ref = f"lined_ditch:{side}"
-        flow_route_ref = context_flow_route_refs[0] if context_flow_route_refs else flow_route_by_drainage_ref.get(drainage_ref, "")
+        run_refs = ditch_run_refs_by_side.get(side, [])
+        drainage_ref = run_refs[0] if run_refs else f"lined_ditch:{side}"
         subassembly_refs = _unique_refs(list(ditch_data.get("subassembly_refs", []) or []))
         materials = _unique_refs(list(ditch_data.get("materials", []) or []))
         thicknesses = [float(value) for value in list(ditch_data.get("thicknesses", []) or [])]
@@ -766,7 +731,6 @@ def _lined_ditch_target_rows(
                 station_end=max(all_stations),
                 subassembly_ref=_single_ref(subassembly_refs),
                 drainage_ref=drainage_ref,
-                flow_route_ref=flow_route_ref,
                 enabled=False,
                 material_ref=materials[0] if len(materials) == 1 else "",
                 readiness_status="available" if has_surface and has_material and has_lining_thickness else "blocked",
@@ -774,118 +738,10 @@ def _lined_ditch_target_rows(
                     source_refs
                     + subassembly_refs
                     + [f"ditch_surface:{side}"]
-                    + _drainage_owner_source_refs(drainage_model, drainage_owner)
-                    + ([flow_route_ref] if flow_route_ref else [])
+                    + run_refs
                 ),
                 diagnostic_refs=diagnostic_refs,
-                notes=_lined_ditch_target_notes(
-                    side=side,
-                    drainage_owner=drainage_owner,
-                    drainage_ref=drainage_ref,
-                    flow_route_ref=flow_route_ref,
-                    station_context=station_context,
-                    subassembly_refs=subassembly_refs,
-                ),
-            )
-        )
-    return rows, diagnostics
-
-
-def _drainage_pipeline_target_rows(
-    drainage_model: DrainageModel | None,
-    *,
-    structure_model: StructureModel | None,
-    source_refs: list[str],
-) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
-    if drainage_model is None or structure_model is None:
-        return [], []
-    pipeline_result = build_drainage_pipeline_result(drainage_model, structure_model)
-    rows: list[SolidTargetRow] = []
-    diagnostics: list[SolidTargetDiagnosticRow] = []
-    network_segments = []
-    for segment in list(getattr(pipeline_result, "segment_rows", []) or []):
-        segment_id = str(getattr(segment, "pipeline_segment_id", "") or "").strip()
-        flow_route_ref = str(getattr(segment, "flow_route_ref", "") or "").strip()
-        if not segment_id:
-            continue
-        target_id = f"solid-target:drainage-pipeline:{_safe_id(segment_id)}"
-        start = float(getattr(segment, "station_start", 0.0) or 0.0)
-        end = float(getattr(segment, "station_end", start) or start)
-        if end < start:
-            start, end = end, start
-        diameter = float(getattr(segment, "diameter", 0.0) or 0.0)
-        diagnostic_refs: list[str] = []
-        ready = end > start and diameter > 0.0
-        if ready:
-            network_segments.append(segment)
-        if not ready:
-            diagnostic = _diagnostic(
-                "error",
-                "drainage_pipeline_target_not_ready",
-                target_id,
-                "Drainage pipeline segment needs a positive station span and diameter before it can become a solid target.",
-                notes=f"flow_route_ref={flow_route_ref};diameter={diameter:g};station_start={start:g};station_end={end:g}",
-            )
-            diagnostics.append(diagnostic)
-            diagnostic_refs.append(diagnostic.diagnostic_id)
-        rows.append(
-            SolidTargetRow(
-                target_id=target_id,
-                target_family="drainage_pipeline_body",
-                scope_kind="drainage",
-                station_start=start,
-                station_end=end,
-                drainage_ref=segment_id,
-                flow_route_ref=flow_route_ref,
-                enabled=False,
-                material_ref="drainage-pipe",
-                readiness_status="available" if ready else "blocked",
-                source_refs=_unique_refs(
-                    source_refs
-                    + list(getattr(pipeline_result, "source_refs", []) or [])
-                    + [
-                        segment_id,
-                        flow_route_ref,
-                        str(getattr(segment, "from_element_ref", "") or ""),
-                        str(getattr(segment, "to_element_ref", "") or ""),
-                        str(getattr(segment, "from_connection_point_ref", "") or ""),
-                        str(getattr(segment, "to_connection_point_ref", "") or ""),
-                    ]
-                ),
-                diagnostic_refs=diagnostic_refs,
-                notes=(
-                    "Drainage pipeline body target discovered from Flow Route endpoint Structure connection points. "
-                    f"segment={segment_id}; flow_route={flow_route_ref}; diameter={diameter:g}."
-                ),
-            )
-        )
-    if network_segments:
-        station_start = min(float(getattr(segment, "station_start", 0.0) or 0.0) for segment in network_segments)
-        station_end = max(float(getattr(segment, "station_end", 0.0) or 0.0) for segment in network_segments)
-        segment_refs = _unique_refs([str(getattr(segment, "pipeline_segment_id", "") or "") for segment in network_segments])
-        flow_route_refs = _unique_refs([str(getattr(segment, "flow_route_ref", "") or "") for segment in network_segments])
-        rows.append(
-            SolidTargetRow(
-                target_id="solid-target:drainage-pipeline-network:main",
-                target_family="drainage_pipeline_network_body",
-                scope_kind="drainage",
-                station_start=station_start,
-                station_end=station_end,
-                drainage_ref="drainage-pipeline-network:main",
-                flow_route_ref=",".join(flow_route_refs),
-                enabled=False,
-                material_ref="drainage-pipe",
-                readiness_status="available",
-                source_refs=_unique_refs(
-                    source_refs
-                    + list(getattr(pipeline_result, "source_refs", []) or [])
-                    + segment_refs
-                    + flow_route_refs
-                ),
-                notes=(
-                    "Drainage pipeline network target groups ready Flow Route pipe segments. "
-                    f"segments={len(segment_refs)}; flow_routes={len(flow_route_refs)}; fuse_mode=compound_first_slice."
-                ),
+                notes=_lined_ditch_target_notes(side=side, run_refs=run_refs, subassembly_refs=subassembly_refs),
             )
         )
     return rows, diagnostics
@@ -896,7 +752,6 @@ def _station_context_summary_for_range(
     *,
     region_model: RegionModel | None,
     structure_model: StructureModel | None,
-    drainage_model: DrainageModel | None,
     station_start: float,
     station_end: float,
     region_ref: str = "",
@@ -905,25 +760,16 @@ def _station_context_summary_for_range(
         applied,
         region_model=region_model,
         structure_model=structure_model,
-        drainage_model=drainage_model,
         station_start=station_start,
         station_end=station_end,
         region_ref=region_ref,
     )
     structure_refs: list[str] = []
-    drainage_refs: list[str] = []
-    flow_route_refs: list[str] = []
     for context in contexts:
         structure_refs.extend(list(getattr(getattr(context, "structure_result", None), "active_structure_ids", []) or []))
-        drainage_refs.extend(list(getattr(context, "active_drainage_refs", []) or []))
-        flow_route_refs.extend(list(getattr(context, "active_flow_route_refs", []) or []))
     pieces: list[str] = []
     if structure_refs:
         pieces.append(f"structures={_join_refs(structure_refs)}")
-    if drainage_refs:
-        pieces.append(f"drainage={_join_refs(drainage_refs)}")
-    if flow_route_refs:
-        pieces.append(f"flow_routes={_join_refs(flow_route_refs)}")
     return "; ".join(pieces)
 
 
@@ -932,7 +778,6 @@ def _station_contexts_for_range(
     *,
     region_model: RegionModel | None,
     structure_model: StructureModel | None = None,
-    drainage_model: DrainageModel | None = None,
     station_start: float,
     station_end: float,
     region_ref: str = "",
@@ -957,7 +802,6 @@ def _station_contexts_for_range(
             context = resolver.resolve(
                 region_model=region_model,
                 structure_model=structure_model,
-                drainage_model=drainage_model,
                 station=station,
             )
         except Exception:
@@ -969,93 +813,26 @@ def _station_contexts_for_range(
     return contexts
 
 
-def _drainage_lined_ditch_owner_by_side(drainage_model: DrainageModel | None) -> dict[str, object]:
-    if drainage_model is None:
-        return {}
-    output: dict[str, object] = {}
-    for row in list(getattr(drainage_model, "element_rows", []) or []):
-        kind = str(getattr(row, "element_kind", "") or "").strip().lower()
-        if kind not in {"ditch", "lined_ditch", "lined-ditch", "channel"}:
-            continue
-        side = _side_from_values(
-            str(getattr(row, "side", "") or ""),
-            str(getattr(row, "drainage_element_id", "") or ""),
-        )
-        if side and side not in output:
-            output[side] = row
-    return output
+def _ditch_run_refs_by_side(applied: AppliedSectionSet) -> dict[str, list[str]]:
+    """The Drainage Ditch Run ids the Applied Sections' ditch points carry, per side."""
 
-
-def _drainage_station_context_for_side(
-    applied: AppliedSectionSet | None,
-    *,
-    side: str,
-    stations: list[float],
-    region_model: RegionModel | None,
-    drainage_model: DrainageModel | None,
-):
-    if applied is None or region_model is None or drainage_model is None:
-        return None
-    station_set = {round(float(value), 6) for value in list(stations or [])}
-    if not station_set:
-        return None
-    resolver = StationContextResolver()
-    side_key = str(side or "").strip().lower()
+    output: dict[str, list[str]] = {}
     for section in list(getattr(applied, "sections", []) or []):
-        try:
-            station = float(getattr(section, "station", 0.0) or 0.0)
-        except Exception:
-            continue
-        if round(station, 6) not in station_set:
-            continue
-        try:
-            context = resolver.resolve(
-                region_model=region_model,
-                drainage_model=drainage_model,
-                station=station,
-            )
-        except Exception:
-            continue
-        refs_by_side = dict(getattr(context, "active_drainage_refs_by_side", {}) or {})
-        if side_key and refs_by_side.get(side_key):
-            return context
-    return None
+        for point in list(getattr(section, "point_rows", []) or []):
+            ref = str(getattr(point, "drainage_ref", "") or "").strip()
+            side = str(getattr(point, "side", "") or "").strip().lower()
+            if ref and side and str(getattr(point, "point_role", "") or "") == "ditch_surface":
+                output.setdefault(side, []).append(ref)
+    return {side: _unique_refs(refs) for side, refs in output.items()}
 
 
-def _drainage_owner_by_ref(drainage_model: DrainageModel | None, drainage_ref: str):
-    if drainage_model is None:
-        return None
-    active_ref = str(drainage_ref or "").strip()
-    if not active_ref:
-        return None
-    for row in list(getattr(drainage_model, "element_rows", []) or []):
-        if str(getattr(row, "drainage_element_id", "") or "").strip() == active_ref:
-            return row
-    return None
-
-
-def _lined_ditch_target_notes(
-    *,
-    side: str,
-    drainage_owner,
-    drainage_ref: str,
-    flow_route_ref: str,
-    station_context,
-    subassembly_refs: list[str] | None = None,
-) -> str:
+def _lined_ditch_target_notes(*, side: str, run_refs: list[str], subassembly_refs: list[str] | None = None) -> str:
     notes = f"Lined ditch {side} target discovered from ditch_surface rows and Subassembly ditch context."
     refs = _unique_refs(subassembly_refs or [])
     if refs:
         notes += f" Subassembly refs={_join_refs(refs)}."
-    if drainage_owner is not None:
-        notes += (
-            f" DrainageModel owner={drainage_ref};"
-            f" policy={str(getattr(drainage_owner, 'policy_set_ref', '') or '')};"
-            f" flow_route={flow_route_ref}."
-        )
-    if station_context is not None:
-        region_id = str(getattr(getattr(station_context, "region_context", None), "region_id", "") or "").strip()
-        notes += f" StationContext region={region_id or '-'}."
+    if run_refs:
+        notes += f" Ditch Runs={_join_refs(run_refs)}."
     return notes
 
 
@@ -1068,35 +845,6 @@ def _section_subassembly_rows(section, *, kind_filter: str = "") -> list[object]
         for row in list(getattr(section, "subassembly_rows", []) or [])
         if not normalized_kind or str(getattr(row, "kind", "") or "").strip().lower() == normalized_kind
     ]
-
-
-def _drainage_owner_source_refs(drainage_model: DrainageModel | None, drainage_owner: object | None) -> list[str]:
-    if drainage_model is None or drainage_owner is None:
-        return []
-    return _unique_refs(
-        [
-            str(getattr(drainage_model, "drainage_model_id", "") or ""),
-            str(getattr(drainage_owner, "drainage_element_id", "") or ""),
-            str(getattr(drainage_owner, "policy_set_ref", "") or ""),
-        ]
-    )
-
-
-def _flow_route_by_drainage_ref(drainage_model: DrainageModel | None) -> dict[str, str]:
-    if drainage_model is None:
-        return {}
-    output: dict[str, str] = {}
-    for row in list(getattr(drainage_model, "flow_route_rows", []) or []):
-        route_id = str(getattr(row, "flow_route_id", "") or "").strip()
-        if not route_id:
-            continue
-        for ref in [
-            str(getattr(row, "from_element_ref", "") or "").strip(),
-            str(getattr(row, "to_element_ref", "") or "").strip(),
-        ]:
-            if ref and ref not in output:
-                output[ref] = route_id
-    return output
 
 
 def _station_range(applied: AppliedSectionSet | None) -> tuple[float, float, int]:

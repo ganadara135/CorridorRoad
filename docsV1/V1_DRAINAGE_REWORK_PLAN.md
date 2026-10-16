@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: Proposed; DR-1 is next
+Status: DR-1 done on 2026-10-16; DR-2 is next
 Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
 culverts, flowline checks against a policy, and their review
 Related:
@@ -157,6 +157,32 @@ branch is not released in between.
 - Tests: model round trip and save/reopen; prefill from "Full Set Road"; two ditches on one side
   get their own runs; a ditch outside every run is untagged.
 
+Done on 2026-10-16:
+
+- `drainage_model.py` holds `DrainagePolicy`, `DitchRun`, `DrainagePoint` and `DrainageLink`
+  (points and links are stored now and edited from DR-3 and DR-4). A Ditch Run also names its road
+  (`alignment_ref`), so an Intersection document's roads keep their own runs.
+- `obj_drainage.py` stores the model in its payload only, with count and policy properties for the
+  property view. An object from before restores empty and drops its old row properties on write.
+- `services/editing/drainage_editing_service.py`: the prefill (one run per ditch and side, joined
+  across Regions that use it, split where a Region's Assembly has none) and the run and policy
+  checks. `cmd_drainage_editor.py` reads the document and applies; the panel edits the Policy and
+  the runs, prefills them when the source has none, and writes only on Apply.
+- `StationContext` carries the runs covering a station on its road; Applied Sections tag a ditch
+  point and a ditch Subassembly row only with the run of the same Subassembly and side. The
+  `"left"`/`"right"`-in-id guess and the first-element fallback are gone.
+- Removed as planned, and also (moved here from DR-4, since the old model they read is gone): the
+  Drainage pipe and network targets and builds of Watertight Solids; their Drainage handoff now
+  counts lined ditch bodies only. Build Parametric's Drainage tab and the Drainage Flow step are
+  removed; the Drainage Surface step counts the ditch points no run covers until DR-5 adds the
+  Drainage line. Drainage Review shows a "being rebuilt" note.
+- Tests: `test_drainage_editing_service.py` and `test_drainage_source_and_editor.py` (new); the
+  ditch tagging, station context, quantity, section viewer, solid target and Watertight tests
+  follow the runs; the old Drainage editor, review, source and validation tests are removed.
+- Left for later: the solid target families `drainage_pipeline_body` and
+  `drainage_pipeline_network_body` stay listed in the Watertight QA service; DR-4 removes them with
+  the rest of the pipe handoff.
+
 ### DR-2 Flowline evaluation and checks
 
 - `drainage_evaluation_service.py` and `DrainageResult` with flowlines and the grade checks.
@@ -172,7 +198,8 @@ branch is not released in between.
 ### DR-4 Links
 
 - Links table and checks (uphill link, loop, point draining nowhere); length and grade per link.
-- Remove the Drainage paths of Watertight Solids and the Simulation package.
+- Remove what is left of the Drainage paths of Watertight Solids and the Simulation package (DR-1
+  removed the pipe bodies).
 - Tests: link grade and length; uphill and loop diagnostics; Watertight smokes still pass without
   Drainage input.
 

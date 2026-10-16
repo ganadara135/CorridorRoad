@@ -1,17 +1,9 @@
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
-from freecad.Corridor_Road.v1.models.source.drainage_model import (
-    DrainageElementRow,
-    DrainageFlowRoute,
-    DrainageModel,
-)
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.structure_model import (
-    StructureConnectionPoint,
     StructureModel,
     StructurePlacement,
     StructureRow,
-)
-from freecad.Corridor_Road.v1.services.evaluation.drainage_resolution_service import (
-    DrainageValidationService,
 )
 from freecad.Corridor_Road.v1.services.evaluation.region_resolution_service import (
     RegionResolutionService,
@@ -121,6 +113,7 @@ def test_station_context_resolver_combines_region_structure_and_drainage_by_regi
         schema_version=1,
         project_id="proj-1",
         region_model_id="regions:main",
+        alignment_id="alignment:main",
         region_rows=[
             RegionRow("region:road", 0.0, 50.0, assembly_ref="assembly:road"),
             RegionRow("region:drainage", 50.0, 100.0, assembly_ref="assembly:ditch"),
@@ -161,30 +154,14 @@ def test_station_context_resolver_combines_region_structure_and_drainage_by_regi
         schema_version=1,
         project_id="proj-1",
         drainage_model_id="drainage:main",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:left",
-                element_kind="ditch",
-                side="left",
-                region_ref="region:drainage",
-                station_start=50.0,
-                station_end=100.0,
-            ),
-            DrainageElementRow(
-                drainage_element_id="drainage:right",
-                element_kind="ditch",
-                side="right",
-                region_ref="region:road",
-                station_start=50.0,
-                station_end=100.0,
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:left",
-                from_element_ref="drainage:left",
-                outlet_ref="drainage:outlet",
-            )
+        ditch_run_rows=[
+            DitchRun("ditch-run:left", "left", "ditch:left", 50.0, 100.0, alignment_ref="alignment:main"),
+            # ends before the station
+            DitchRun("ditch-run:right", "right", "ditch:right", 0.0, 60.0, alignment_ref="alignment:main"),
+            # another road
+            DitchRun("ditch-run:other-road", "right", "ditch:right", 0.0, 100.0, alignment_ref="alignment:other"),
+            # switched off
+            DitchRun("ditch-run:off", "right", "ditch:right", 60.0, 100.0, alignment_ref="alignment:main", enabled=False),
         ],
     )
 
@@ -198,137 +175,9 @@ def test_station_context_resolver_combines_region_structure_and_drainage_by_regi
     assert context.region_context.region_id == "region:drainage"
     assert context.region_context.assembly_ref == "assembly:ditch"
     assert context.structure_result.active_structure_ids == ["structure:culvert"]
-    assert context.active_drainage_refs == ["drainage:left"]
-    assert context.active_drainage_refs_by_side == {"left": ["drainage:left"]}
-    assert context.active_flow_route_refs == ["flow-route:left"]
-
-
-def test_drainage_validation_warns_when_flow_route_chain_has_no_outlet() -> None:
-    drainage_model = DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:open-chain",
-        element_rows=[
-            DrainageElementRow(
-                "drainage:inlet-01",
-                "inlet_reference",
-                structure_ref="structure:inlet-01",
-                station_start=10.0,
-                station_end=11.0,
-            ),
-            DrainageElementRow(
-                "drainage:culvert-01",
-                "culvert_reference",
-                structure_ref="structure:culvert-01",
-                station_start=20.0,
-                station_end=30.0,
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute("flow-route:inlet-to-culvert", "drainage:inlet-01", "drainage:culvert-01"),
-        ],
-    )
-
-    result = DrainageValidationService().validate(drainage_model)
-
-    assert result.status == "warning"
-    assert any(row.kind == "flow_route_no_reachable_outlet" for row in result.diagnostic_rows)
-
-
-def test_drainage_validation_warns_when_flow_route_chain_has_multiple_outlets() -> None:
-    drainage_model = DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:multi-outlet",
-        element_rows=[
-            DrainageElementRow("drainage:inlet-01", "inlet_reference", station_start=10.0, station_end=11.0),
-            DrainageElementRow("drainage:outlet-left", "outlet_reference", station_start=50.0, station_end=51.0),
-            DrainageElementRow("drainage:outlet-right", "outlet_reference", station_start=55.0, station_end=56.0),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                "flow-route:left",
-                "drainage:inlet-01",
-                "drainage:outlet-left",
-                outlet_ref="drainage:outlet-left",
-            ),
-            DrainageFlowRoute(
-                "flow-route:right",
-                "drainage:inlet-01",
-                "drainage:outlet-right",
-                outlet_ref="drainage:outlet-right",
-            ),
-        ],
-    )
-
-    result = DrainageValidationService().validate(drainage_model)
-
-    assert result.status == "warning"
-    diagnostic = next(row for row in result.diagnostic_rows if row.kind == "flow_route_multiple_reachable_outlets")
-    assert "drainage:outlet-left" in diagnostic.notes
-    assert "drainage:outlet-right" in diagnostic.notes
-
-
-def test_drainage_validation_warns_when_structure_pipe_ports_are_unresolved() -> None:
-    drainage_model = DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:missing-ports",
-        element_rows=[
-            DrainageElementRow(
-                "drainage:inlet-01",
-                "inlet_reference",
-                structure_ref="structure:inlet-01",
-                station_start=10.0,
-                station_end=11.0,
-            ),
-            DrainageElementRow(
-                "drainage:outlet-01",
-                "outlet_reference",
-                structure_ref="structure:outlet-01",
-                station_start=50.0,
-                station_end=51.0,
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                "flow-route:pipe-01",
-                "drainage:inlet-01",
-                "drainage:outlet-01",
-                outlet_ref="drainage:outlet-01",
-            ),
-        ],
-    )
-    structure_model = StructureModel(
-        schema_version=1,
-        project_id="proj-1",
-        structure_model_id="structures:missing-ports",
-        structure_rows=[
-            StructureRow(
-                "structure:inlet-01",
-                "utility",
-                "reference",
-                StructurePlacement("placement:inlet-01", "", 10.0, 11.0),
-                native_type="inlet",
-            ),
-            StructureRow(
-                "structure:outlet-01",
-                "utility",
-                "reference",
-                StructurePlacement("placement:outlet-01", "", 50.0, 51.0),
-                native_type="outlet",
-            ),
-        ],
-        connection_point_rows=[
-            StructureConnectionPoint("connection:inlet-01:pipe-out", "structure:inlet-01", "pipe_out", 11.0, -4.0),
-        ],
-    )
-
-    result = DrainageValidationService().validate(drainage_model, structure_model=structure_model)
-
-    assert result.status == "warning"
-    diagnostic = next(row for row in result.diagnostic_rows if row.kind == "flow_route_structure_ports_unresolved")
-    assert "to_connection_point_ref=" in diagnostic.notes
+    assert context.active_drainage_refs == ["ditch-run:left"]
+    assert context.active_drainage_refs_by_side == {"left": ["ditch-run:left"]}
+    assert [run.ditch_run_id for run in context.active_ditch_runs] == ["ditch-run:left"]
 
 
 def test_region_resolution_equal_priority_overlap_warns_and_uses_region_index() -> None:

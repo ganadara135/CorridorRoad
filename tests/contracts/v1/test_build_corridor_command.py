@@ -28,16 +28,11 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_build_review_rows,
     corridor_build_review_row_color,
     corridor_centerline_preview_style,
-    corridor_drainage_flow_review_rows,
-    corridor_drainage_flow_review_summary,
     corridor_intersection_contract_review_rows,
-    corridor_drainage_review_rows,
     corridor_drainage_review_summary,
     corridor_slope_face_issue_rows,
     focus_adjacent_corridor_slope_face_issue,
     focus_corridor_build_guided_review_step,
-    focus_corridor_drainage_flow_review,
-    focus_corridor_drainage_review_row,
     focus_corridor_region_boundary_row,
     focus_corridor_slope_face_issue,
     preferred_corridor_build_review_row_index,
@@ -90,9 +85,8 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionModel,
     IntersectionRow,
 )
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.structure_model import (
-    StructureConnectionPoint,
     StructureModel,
     StructurePlacement,
     StructureRow,
@@ -1112,23 +1106,7 @@ def test_corridor_region_boundary_rows_use_station_context_resolver_for_domain_s
                 schema_version=1,
                 project_id="proj-1",
                 drainage_model_id="drainage:test",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:urban-left",
-                        element_kind="ditch",
-                        side="left",
-                        region_ref="region:urban",
-                        station_start=25.0,
-                        station_end=45.0,
-                    )
-                ],
-                flow_route_rows=[
-                    DrainageFlowRoute(
-                        flow_route_id="flow-route:urban-left",
-                        from_element_ref="drainage:urban-left",
-                        outlet_ref="drainage:outlet-main",
-                    )
-                ],
+                ditch_run_rows=[DitchRun("ditch-run:urban-left", "left", "ditch:left", 25.0, 45.0)],
             ),
         )
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
@@ -1136,8 +1114,7 @@ def test_corridor_region_boundary_rows_use_station_context_resolver_for_domain_s
         rows = corridor_region_boundary_rows(doc)
 
         assert "structure:culvert-01" in rows[1]["structure"]
-        assert "drainage:urban-left" in rows[1]["drainage"]
-        assert "flow-route:urban-left" in rows[1]["drainage"]
+        assert "ditch-run:urban-left" in rows[1]["drainage"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -3054,35 +3031,20 @@ def test_corridor_applied_sections_review_summary_tracks_singular_structure_owne
         App.closeDocument(doc.Name)
 
 
-def test_corridor_drainage_review_rows_track_ditch_surface_points() -> None:
+def test_corridor_drainage_review_summary_counts_ditch_points_without_a_ditch_run() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
 
-        rows = corridor_drainage_review_rows(doc)
         summary = corridor_drainage_review_summary(doc)
+        steps = corridor_build_guided_review_steps(doc)
 
-        assert [row["status"] for row in rows] == ["ready", "ready"]
-        assert rows[0]["context_label"] == "Roadside Drainage"
-        assert rows[0]["station"] == 0.0
-        assert rows[0]["ditch_point_count"] == 4
-        assert rows[0]["left_count"] == 2
-        assert rows[0]["right_count"] == 2
-        assert rows[0]["marker_object"] == "ReviewIssueDrainageStation001"
-        assert rows[0]["x"] == "0.000000"
-        assert rows[0]["y"] == "0.500000"
-        assert rows[0]["z"] == "9.900000"
-        assert summary["status"] == "ready"
+        assert summary["status"] == "warn"
         assert summary["ditch_point_count"] == 8
-        assert summary["missing_count"] == 0
-        marker = focus_corridor_drainage_review_row(doc, 0)
-        assert marker.Name == "ReviewIssueDrainageStation001"
-        assert marker.V1ObjectType == "ReviewIssue"
-        assert marker.IssueKind == "drainage_diagnostic"
-        assert marker.IssueStation == "0.000"
-        assert marker.IssueStatus == "ready"
-        assert marker.DisplayMode == "drainage_highlight"
-        assert int(marker.MarkerCount) == 4
+        assert summary["untagged_count"] == 8
+        assert "Add runs in the Drainage panel" in summary["notes"]
+        drainage_step = next(step for step in steps if step["step_id"] == "drainage")
+        assert drainage_step["status"] == "warn"
     finally:
         App.closeDocument(doc.Name)
 
@@ -3168,157 +3130,19 @@ def test_daylight_contact_marker_visibility_helper_targets_daylight_marker_objec
     assert doc.fallback.ViewObject.Visibility is True
 
 
-def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
+def test_corridor_drainage_review_summary_explains_missing_ditch_points() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
 
-        rows = corridor_drainage_review_rows(doc)
         summary = corridor_drainage_review_summary(doc)
         steps = corridor_build_guided_review_steps(doc)
 
-        assert [row["status"] for row in rows] == ["missing", "missing"]
-        assert "No ditch_surface" in str(rows[0]["notes"])
         assert summary["status"] == "missing"
-        assert summary["missing_count"] == 2
+        assert summary["ditch_point_count"] == 0
         drainage_step = next(step for step in steps if step["step_id"] == "drainage")
         assert drainage_step["status"] == "missing"
-        assert "without ditch_surface" in str(drainage_step["notes"])
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_corridor_drainage_review_rows_report_source_side_subassembly_mismatch() -> None:
-    doc, project = _new_project_doc()
-    try:
-        applied = AppliedSectionSet(
-            schema_version=1,
-            project_id="proj-1",
-            applied_section_set_id="sections:drainage-mismatch",
-            corridor_id="corridor:main",
-            alignment_id="alignment:main",
-            station_rows=[AppliedSectionStationRow("station:0", 0.0, "section:0")],
-            sections=[
-                AppliedSection(
-                    schema_version=1,
-                    project_id="proj-1",
-                    applied_section_id="section:0",
-                    corridor_id="corridor:main",
-                    alignment_id="alignment:main",
-                    station=0.0,
-                    region_id="region:road",
-                    frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0),
-                    point_rows=[
-                        AppliedSectionPoint(
-                            "ditch:left-flow",
-                            0.0,
-                            6.0,
-                            9.8,
-                            "ditch_surface",
-                            6.0,
-                            subassembly_ref="ditch:left",
-                            side="left",
-                            drainage_ref="drainage:left",
-                        ),
-                        AppliedSectionPoint(
-                            "ditch:left-edge",
-                            0.0,
-                            5.0,
-                            10.0,
-                            "ditch_surface",
-                            5.0,
-                            subassembly_ref="ditch:left",
-                            side="left",
-                            drainage_ref="drainage:left",
-                        ),
-                    ],
-                )
-            ],
-        )
-        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
-        create_or_update_v1_region_model_object(
-            doc,
-            project=project,
-            region_model=RegionModel(
-                schema_version=1,
-                project_id="proj-1",
-                region_model_id="regions:main",
-                region_rows=[RegionRow("region:road", 0.0, 20.0)],
-            ),
-        )
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        "drainage:right",
-                        "ditch",
-                        side="right",
-                        region_ref="region:road",
-                        subassembly_ref="ditch:right",
-                        station_start=0.0,
-                        station_end=20.0,
-                    )
-                ],
-            ),
-        )
-
-        rows = corridor_drainage_review_rows(doc)
-        summary = corridor_drainage_review_summary(doc)
-
-        assert rows[0]["status"] == "missing"
-        assert "missing_side=right" in str(rows[0]["notes"])
-        assert "drainage_ref=drainage:right" in str(rows[0]["notes"])
-        assert summary["status"] == "missing"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_corridor_drainage_review_rows_report_source_tag_mismatch() -> None:
-    doc, project = _new_project_doc()
-    try:
-        applied = _sample_sections_with_ditch_points()
-        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
-        create_or_update_v1_region_model_object(
-            doc,
-            project=project,
-            region_model=RegionModel(
-                schema_version=1,
-                project_id="proj-1",
-                region_model_id="regions:main",
-                region_rows=[RegionRow("region:road", 0.0, 20.0)],
-            ),
-        )
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        "drainage:right",
-                        "ditch",
-                        side="right",
-                        region_ref="region:road",
-                        subassembly_ref="ditch:right",
-                        station_start=0.0,
-                        station_end=20.0,
-                    )
-                ],
-            ),
-        )
-
-        rows = corridor_drainage_review_rows(doc)
-
-        assert rows[0]["status"] == "warn"
-        assert "missing_drainage_ref=drainage:right" in str(rows[0]["notes"])
-        assert "subassembly_mismatch=ditch:right" in str(rows[0]["notes"])
+        assert "no ditch points" in str(drainage_step["notes"])
     finally:
         App.closeDocument(doc.Name)
 
@@ -3342,226 +3166,6 @@ def test_apply_v1_corridor_model_records_drainage_surface_diagnostic_without_dit
         assert "ditch_surface" in diagnostic.PreviewDiagnostic
         drainage_row = next(row for row in rows if row["role"] == "drainage")
         assert drainage_row["status"] == "missing"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> None:
-    doc, project = _new_project_doc()
-    try:
-        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
-        create_or_update_v1_structure_model_object(
-            doc,
-            project=project,
-            structure_model=StructureModel(
-                schema_version=1,
-                project_id="proj-1",
-                structure_model_id="structures:test",
-                structure_rows=[
-                    StructureRow(
-                        structure_id="structure:culvert-01",
-                        structure_kind="culvert",
-                        structure_role="crossing",
-                        placement=StructurePlacement(
-                            placement_id="placement:culvert-01",
-                            alignment_id="alignment:main",
-                            station_start=8.0,
-                            station_end=12.0,
-                        ),
-                    )
-                ],
-            ),
-        )
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:test",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:side-ditch-right",
-                        element_kind="ditch",
-                        side="right",
-                        station_start=0.0,
-                        station_end=20.0,
-                    ),
-                    DrainageElementRow(
-                        drainage_element_id="drainage:culvert-01",
-                        element_kind="culvert",
-                        structure_ref="structure:culvert-01",
-                        station_start=8.0,
-                        station_end=12.0,
-                    ),
-                ],
-                flow_route_rows=[
-                    DrainageFlowRoute(
-                        flow_route_id="flow-route:flowId-01",
-                        from_element_ref="drainage:side-ditch-right",
-                        to_element_ref="drainage:culvert-01",
-                        outlet_ref="structure:culvert-01",
-                    )
-                ],
-            ),
-        )
-
-        rows = corridor_drainage_flow_review_rows(doc)
-        summary = corridor_drainage_flow_review_summary(doc)
-        steps = corridor_build_guided_review_steps(doc)
-        focused = focus_corridor_build_guided_review_step(doc, "drainage_flow")
-
-        assert rows[0]["status"] == "ready"
-        assert rows[0]["flow_route_id"] == "flow-route:flowId-01"
-        assert rows[0]["structure_refs"] == "structure:culvert-01"
-        assert rows[0]["highlight_mode"] == "station_span"
-        assert summary["status"] == "ready"
-        assert "culvert-01" in str(summary["notes"])
-        drainage_flow_step = [step for step in steps if step["step_id"] == "drainage_flow"][0]
-        assert drainage_flow_step["focus"] == "flowId-01"
-        assert focused.Name == "ReviewIssueDrainageFlowRoutes"
-        assert focused.DisplayMode == "drainage_flow_station_span"
-        assert focused.FlowRouteRefs == ["flow-route:flowId-01"]
-        assert focused.StructureRefs == ["structure:culvert-01"]
-        assert int(focused.PipeSegmentCount) == 0
-        assert int(focused.StationSpanCount) >= 1
-        assert focus_corridor_drainage_flow_review(doc).Name == "ReviewIssueDrainageFlowRoutes"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_drainage_flow_focus_connects_structure_connection_points_as_pipe_segments() -> None:
-    doc, project = _new_project_doc()
-    try:
-        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
-        create_or_update_v1_structure_model_object(
-            doc,
-            project=project,
-            structure_model=StructureModel(
-                schema_version=1,
-                project_id="proj-1",
-                structure_model_id="structures:main",
-                structure_rows=[
-                    StructureRow(
-                        structure_id="structure:inlet-01",
-                        structure_kind="utility",
-                        structure_role="reference",
-                        placement=StructurePlacement(
-                            "placement:inlet-01",
-                            "alignment:main",
-                            station_start=2.0,
-                            station_end=2.0,
-                        ),
-                    ),
-                    StructureRow(
-                        structure_id="structure:culvert-01",
-                        structure_kind="culvert",
-                        structure_role="clearance_control",
-                        placement=StructurePlacement(
-                            "placement:culvert-01",
-                            "alignment:main",
-                            station_start=10.0,
-                            station_end=12.0,
-                        ),
-                    ),
-                    StructureRow(
-                        structure_id="structure:outlet-01",
-                        structure_kind="utility",
-                        structure_role="reference",
-                        placement=StructurePlacement(
-                            "placement:outlet-01",
-                            "alignment:main",
-                            station_start=18.0,
-                            station_end=18.0,
-                        ),
-                    ),
-                ],
-                connection_point_rows=[
-                    StructureConnectionPoint(
-                        connection_point_id="connection:inlet-01:pipe-out",
-                        structure_ref="structure:inlet-01",
-                        point_role="pipe_out",
-                        station=2.0,
-                        offset=-4.0,
-                        diameter=0.6,
-                    ),
-                    StructureConnectionPoint(
-                        connection_point_id="connection:culvert-01:upstream",
-                        structure_ref="structure:culvert-01",
-                        point_role="upstream",
-                        station=10.0,
-                        offset=-1.0,
-                        width=3.0,
-                        height=2.0,
-                    ),
-                    StructureConnectionPoint(
-                        connection_point_id="connection:outlet-01:pipe-in",
-                        structure_ref="structure:outlet-01",
-                        point_role="pipe_in",
-                        station=18.0,
-                        offset=-5.0,
-                        diameter=0.8,
-                    ),
-                ],
-            ),
-        )
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:test",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:inlet-01",
-                        element_kind="inlet",
-                        structure_ref="structure:inlet-01",
-                        connection_point_ref="connection:inlet-01:pipe-out",
-                    ),
-                    DrainageElementRow(
-                        drainage_element_id="drainage:culvert-01",
-                        element_kind="culvert_reference",
-                        structure_ref="structure:culvert-01",
-                        connection_point_ref="connection:culvert-01:upstream",
-                    ),
-                    DrainageElementRow(
-                        drainage_element_id="drainage:outlet-01",
-                        element_kind="outfall_reference",
-                        structure_ref="structure:outlet-01",
-                        connection_point_ref="connection:outlet-01:pipe-in",
-                    ),
-                ],
-                flow_route_rows=[
-                    DrainageFlowRoute(
-                        flow_route_id="flow-route:pipe-network-01",
-                        from_element_ref="drainage:inlet-01",
-                        to_element_ref="drainage:culvert-01",
-                        outlet_ref="drainage:outlet-01",
-                    )
-                ],
-            ),
-        )
-
-        focused = focus_corridor_drainage_flow_review(doc)
-        rows = corridor_drainage_flow_review_rows(doc)
-
-        assert focused.Name == "ReviewIssueDrainageFlowRoutes"
-        assert focused.DisplayMode == "drainage_flow_pipe_segments"
-        assert int(focused.MarkerCount) == 2
-        assert int(focused.PipeSegmentCount) == 2
-        assert int(focused.StationSpanCount) == 0
-        assert rows[0]["highlight_mode"] == "connection_point_pipe"
-        assert focused.ConnectionPointRefs == [
-            "connection:inlet-01:pipe-out",
-            "connection:culvert-01:upstream",
-            "connection:outlet-01:pipe-in",
-        ]
-        assert focused.StructureRefs == [
-            "structure:inlet-01",
-            "structure:culvert-01",
-            "structure:outlet-01",
-        ]
     finally:
         App.closeDocument(doc.Name)
 
@@ -3719,7 +3323,6 @@ def test_corridor_build_visibility_group_toggles_common_review_layers() -> None:
                 FakeObject("V1CorridorDaylightSurfacePreview"),
                 FakeObject("ReviewSharedBreaklineHighlight"),
                 FakeObject("ReviewIssueSlopeFaceIssue001L"),
-                FakeObject("ReviewIssueDrainageFlowRoutes"),
             ]
 
         def getObject(self, name):
@@ -3749,14 +3352,12 @@ def test_corridor_build_visibility_group_toggles_common_review_layers() -> None:
     assert doc.getObject("V1CorridorIntersectionSlopeFaceSurfacePreview").ViewObject.Visibility is True
     assert build_corridor_command.set_corridor_build_visibility_group(doc, "breaklines", True) == 1
     assert doc.getObject("ReviewSharedBreaklineHighlight").ViewObject.Visibility is True
-    assert build_corridor_command.set_corridor_build_visibility_group(doc, "diagnostics", True) >= 2
+    assert build_corridor_command.set_corridor_build_visibility_group(doc, "diagnostics", True) >= 1
     assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is True
-    assert doc.getObject("ReviewIssueDrainageFlowRoutes").ViewObject.Visibility is True
 
     build_corridor_command.set_corridor_build_visibility_group(doc, "diagnostics", False)
 
     assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is False
-    assert doc.getObject("ReviewIssueDrainageFlowRoutes").ViewObject.Visibility is False
 
 
 def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
@@ -3811,11 +3412,10 @@ def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
 
     steps = corridor_build_guided_review_steps(doc)
     # a document with one road and no Intersection is a General Road document: no intersection step
-    assert [step["step_id"] for step in steps] == ["centerline", "design", "slope_issues", "drainage", "drainage_flow"]
+    assert [step["step_id"] for step in steps] == ["centerline", "design", "slope_issues", "drainage"]
     assert "supplemental_sections" not in {step["step_id"] for step in steps}
     assert steps[2]["title"] == "5. Side Slope"
     assert steps[3]["title"] == "6. Drainage Surface"
-    assert steps[4]["title"] == "7. Drainage Flow"
     assert steps[2]["status"] == "warning"
     assert steps[2]["focus"] == "Intersection and Corridor Slope Face Surfaces"
 

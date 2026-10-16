@@ -590,7 +590,7 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
                 "drainage_status",
                 "drainage_label",
                 "owner_drainage",
-                "Drainage Element context resolved for this section, if any.",
+                "Drainage Ditch Runs covering this section, if any.",
             )
         )
     rows = []
@@ -708,46 +708,16 @@ def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: 
 
 
 def build_drainage_context_rows(preview: dict[str, object]) -> list[list[str]]:
-    """Build readable Drainage context rows for one selected section."""
+    """The Drainage Ditch Runs covering one selected section, as [run id, side] rows."""
 
     viewer_context = dict(preview.get("viewer_context", {}) or {})
     refs_by_side = dict(viewer_context.get("active_drainage_refs_by_side", {}) or {})
-    flow_routes = [
-        str(value or "").strip()
-        for value in list(viewer_context.get("active_flow_route_refs", []) or [])
-        if str(value or "").strip()
+    return [
+        [str(ref).strip(), str(side or "-")]
+        for side in sorted(refs_by_side)
+        for ref in list(refs_by_side.get(side, []) or [])
+        if str(ref or "").strip()
     ]
-    if not flow_routes:
-        summary = str(viewer_context.get("flow_route_summary", "") or "").strip()
-        flow_routes = [value.strip() for value in summary.split(",") if value.strip()]
-    flow_text = ", ".join(flow_routes) if flow_routes else "-"
-
-    rows: list[list[str]] = []
-    for side in sorted(refs_by_side):
-        refs = [
-            str(value or "").strip()
-            for value in list(refs_by_side.get(side, []) or [])
-            if str(value or "").strip()
-        ]
-        for ref in refs:
-            rows.append([ref, side or "-", flow_text, "station_context"])
-
-    if rows:
-        return rows
-
-    drainage_refs = [
-        str(value or "").strip()
-        for value in list(viewer_context.get("active_drainage_refs", []) or [])
-        if str(value or "").strip()
-    ]
-    if not drainage_refs:
-        active_ref = str(viewer_context.get("active_drainage_ref", "") or "").strip()
-        if active_ref:
-            drainage_refs = [active_ref]
-    if not drainage_refs:
-        summary = str(viewer_context.get("drainage_summary", "") or "").strip()
-        drainage_refs = [value.strip() for value in summary.split(",") if value.strip()]
-    return [[ref, "-", flow_text, "station_context"] for ref in drainage_refs]
 
 
 def build_intersection_context_rows(preview: dict[str, object]) -> list[list[str]]:
@@ -1881,7 +1851,7 @@ class CrossSectionViewerTaskPanel:
         if viewer_context.get("structure_summary"):
             lines.append(f"Structure Summary: {viewer_context.get('structure_summary', '')}")
         if viewer_context.get("active_drainage_ref"):
-            lines.append(f"Drainage Element: {viewer_context.get('active_drainage_ref', '')}")
+            lines.append(f"Ditch Run: {viewer_context.get('active_drainage_ref', '')}")
         if viewer_context.get("drainage_summary"):
             lines.append(f"Drainage Summary: {viewer_context.get('drainage_summary', '')}")
         if viewer_context.get("intersection_contract_summary"):
@@ -2170,7 +2140,6 @@ class CrossSectionViewerTaskPanel:
             ("Top Edges", "top_profile_edge_summary"),
             ("Structure Summary", "structure_summary"),
             ("Drainage Summary", "drainage_summary"),
-            ("Flow Route Summary", "flow_route_summary"),
             ("Intersection Contracts", "intersection_contract_summary"),
         ]
         for label, key in mapping:
@@ -2188,14 +2157,7 @@ class CrossSectionViewerTaskPanel:
             if text:
                 rows.append([f"Structure Row {index}", text])
         for index, row in enumerate(build_drainage_context_rows(self.preview)[:6], start=1):
-            if len(row) < 4:
-                continue
-            rows.append(
-                [
-                    f"Drainage Element {index}",
-                    f"{row[0]} | side={row[1]} | routes={row[2]} | source={row[3]}",
-                ]
-            )
+            rows.append([f"Ditch Run {index}", f"{row[0]} | side={row[1]}"])
         return rows
 
     def _handoff_target_rows(self) -> list[list[str]]:

@@ -1353,11 +1353,6 @@ def _apply_station_context_to_viewer_context(
             for side, refs in drainage_refs_by_side.items()
             if str(side or "").strip()
         }
-    flow_route_refs = _unique_text_values(list(getattr(context, "active_flow_route_refs", []) or []))
-    if flow_route_refs:
-        output["active_flow_route_ref"] = flow_route_refs[0]
-        output["flow_route_summary"] = ", ".join(flow_route_refs)
-        output["active_flow_route_refs"] = flow_route_refs
     return output
 
 
@@ -1390,7 +1385,7 @@ def _as_structure_source_model(value):
 def _as_drainage_source_model(value):
     if value is None:
         return None
-    if hasattr(value, "element_rows"):
+    if hasattr(value, "ditch_run_rows"):
         return value
     try:
         from ..objects.obj_drainage import to_drainage_model

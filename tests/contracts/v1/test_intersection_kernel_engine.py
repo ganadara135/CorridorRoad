@@ -173,12 +173,10 @@ def test_the_intersections_tab_reads_the_kernel_result(kernel_doc) -> None:
     assert highlight.ContractRowId == leg_row["row_id"]
 
 
-def test_the_guided_review_and_the_drainage_review_read_the_kernel_result(kernel_doc) -> None:
+def test_the_guided_review_reads_the_kernel_result(kernel_doc) -> None:
+    # the kernel's drainage candidates (its low points) wait for the Drainage rework's review (DR-5)
     doc, result = kernel_doc
     summary = build.corridor_intersection_review_summary(doc)
     assert summary["status"] == "ready", summary
     assert result.intersection_id in summary["notes"]
     assert result.drainage_candidates
-    rows = build.corridor_intersection_drainage_review_rows(doc)
-    assert rows and all(row["review_kind"] == "intersection_drainage" for row in rows)
-    assert rows[0]["intersection_id"] == result.intersection_id

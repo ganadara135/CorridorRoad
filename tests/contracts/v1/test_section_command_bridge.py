@@ -34,7 +34,7 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructurePlacement,
     StructureRow,
 )
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DitchRun, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     build_cross_section_drawing_dimension_table_rows,
@@ -872,23 +872,7 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
                 schema_version=1,
                 project_id="project:test",
                 drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:left-ditch",
-                        element_kind="ditch",
-                        side="left",
-                        region_ref="region:mainline",
-                        station_start=0.0,
-                        station_end=40.0,
-                    )
-                ],
-                flow_route_rows=[
-                    DrainageFlowRoute(
-                        flow_route_id="flow-route:left-ditch",
-                        from_element_ref="drainage:left-ditch",
-                        outlet_ref="drainage:outfall-main",
-                    )
-                ],
+                ditch_run_rows=[DitchRun("drainage:left-ditch", "left", "ditch:left", 0.0, 40.0)],
             ),
             label="Drainage Station Context",
         )
@@ -907,11 +891,7 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
         assert preview["viewer_context"]["active_drainage_ref"] == "drainage:left-ditch"
         assert preview["viewer_context"]["active_drainage_refs"] == ["drainage:left-ditch"]
         assert preview["viewer_context"]["active_drainage_refs_by_side"] == {"left": ["drainage:left-ditch"]}
-        assert preview["viewer_context"]["active_flow_route_ref"] == "flow-route:left-ditch"
-        assert preview["viewer_context"]["active_flow_route_refs"] == ["flow-route:left-ditch"]
-        assert build_drainage_context_rows(preview) == [
-            ["drainage:left-ditch", "left", "flow-route:left-ditch", "station_context"]
-        ]
+        assert build_drainage_context_rows(preview) == [["drainage:left-ditch", "left"]]
         assert any(row["value"] == "structure:culvert-01" for row in preview["structure_rows"])
     finally:
         App.closeDocument(doc.Name)

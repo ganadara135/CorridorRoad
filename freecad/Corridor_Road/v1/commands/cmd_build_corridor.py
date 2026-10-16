@@ -88,9 +88,6 @@ from ..services.builders.intersection_kernel_surface_service import (
     kernel_tin_surface,
 )
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
-from ..services.evaluation.intersection_evaluation_service import (
-    IntersectionPatchPrerequisiteResult,
-)
 from ..services.evaluation.region_boundary_continuity_evaluation_service import (
     region_boundary_diagnostic_summary,
     region_boundary_diagnostics,
@@ -99,7 +96,6 @@ from ..services.evaluation.region_boundary_continuity_evaluation_service import 
     region_sample_coverage_diagnostics,
     region_source_range_diagnostics,
 )
-from ..services.evaluation.station_context_resolver import StationContextResolver
 from ..services.evaluation.shared_breakline_audit_service import SharedBreaklineAuditService  # noqa: F401 - tests build results through this module
 from ..services.builders.shared_breakline_tin_builder_service import (
     tin_surface_with_shared_breakline_constraint_edges,
@@ -126,12 +122,6 @@ from ..ui.viewers.build_corridor_view import (
     configure_build_corridor_task_panel_runtime,
 )
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
-from ..ui.presentation.drainage_flow_review_presentation import (
-    DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE,
-    DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE,
-    drainage_flow_review_placeholder_row,
-    drainage_flow_review_rows,
-)
 from ..ui.presentation.subassembly_guided_review_presentation import subassembly_kind_guided_review_rows
 from ..ui.presentation.build_review_presentation import (
     applied_sections_review_summary,
@@ -139,15 +129,6 @@ from ..ui.presentation.build_review_presentation import (
     _corridor_build_review_row,
     _with_applied_section_review_summary,
     _with_subassembly_surface_role_review_note,
-)
-from ..ui.presentation.drainage_review_presentation import (
-    DRAINAGE_REVIEW_MISSING_APPLIED_SECTIONS_NOTE,
-    DRAINAGE_REVIEW_NO_STATION_ROWS_NOTE,
-    drainage_review_placeholder_row,
-    drainage_review_station_rows,
-    intersection_drainage_review_rows,
-    _drainage_point_side,
-    _drainage_review_marker_name,
 )
 from ..ui.presentation.guided_review_presentation import (  # noqa: F401 - moved; tests import the steps from here
     CORRIDOR_BUILD_GUIDED_REVIEW_STEPS,
@@ -933,7 +914,6 @@ def corridor_build_guided_review_steps(
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     review_by_role = {str(row.get("role", "") or ""): row for row in corridor_build_review_rows(doc)}
     issue_count = len(corridor_slope_face_issue_rows(doc))
-    drainage_flow_summary = corridor_drainage_flow_review_summary(doc)
     intersection_summary = corridor_intersection_review_summary(doc)
     subassembly_kind_rows = corridor_subassembly_kind_guided_review_rows(doc)
     general_road = is_general_road_document(doc)
@@ -941,7 +921,6 @@ def corridor_build_guided_review_steps(
         review_by_role=review_by_role,
         issue_count=issue_count,
         drainage_summary=corridor_drainage_review_summary(doc),
-        drainage_flow_summary=drainage_flow_summary,
         intersection_summary=intersection_summary,
         subassembly_kind_rows=subassembly_kind_rows,
         general_road=general_road,
@@ -1139,175 +1118,31 @@ def _create_intersection_contract_review_highlight(*, document=None, row: dict[s
     return obj
 
 
-def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]:
-    """Return Flow Route review rows for Build Corridor Guided Review."""
+def corridor_drainage_review_summary(document=None) -> dict[str, object]:
+    """How many ditch points of the Applied Sections a Drainage Ditch Run covers.
 
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
-    if drainage_model is None:
-        _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
-        return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE)]
-    structure_model = to_structure_model(find_v1_structure_model(doc))
-    rows = drainage_flow_review_rows(
-        drainage_model,
-        structure_model,
-        highlight_mode_for_route=lambda route_id: _drainage_flow_row_highlight_mode(doc, route_id),
-    )
-    if not rows:
-        _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
-        return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE)]
-    return rows
-
-
-def corridor_drainage_flow_review_summary(document=None) -> dict[str, object]:
-    """Return a compact Flow Route readiness summary for Guided Review."""
-
-    rows = corridor_drainage_flow_review_rows(document)
-    real_rows = [row for row in rows if row.get("flow_route_id")]
-    if not real_rows:
-        return {
-            "status": "missing",
-            "route_count": 0,
-            "structure_count": 0,
-            "focus": "Drainage Flow",
-            "notes": str(rows[0].get("notes", "No Drainage Flow Route rows.") if rows else "No Drainage Flow Route rows."),
-        }
-    ready = sum(1 for row in real_rows if row.get("status") == "ready")
-    warn = sum(1 for row in real_rows if row.get("status") == "warn")
-    missing = sum(1 for row in real_rows if row.get("status") == "missing")
-    structure_refs = sorted(
-        {
-            ref.strip()
-            for row in real_rows
-            for ref in str(row.get("structure_refs", "") or "").split(",")
-            if ref.strip()
-        }
-    )
-    route_labels = [_display_source_ref(row.get("flow_route_id", "")) for row in real_rows]
-    if missing:
-        status = "missing"
-        notes = f"{missing} Flow Route row(s) have broken or empty route refs."
-    elif warn:
-        status = "warn"
-        notes = f"{warn} Flow Route row(s) have no linked Structure ref."
-    else:
-        status = "ready"
-        notes = f"Flow Routes: {len(real_rows)}; structures: {', '.join(_display_source_ref(ref) for ref in structure_refs) or '-'}."
-    return {
-        "status": status,
-        "route_count": len(real_rows),
-        "ready_count": ready,
-        "warn_count": warn,
-        "missing_count": missing,
-        "structure_count": len(structure_refs),
-        "focus": ", ".join(route_labels[:3]) + ("..." if len(route_labels) > 3 else ""),
-        "notes": notes,
-    }
-
-
-def corridor_drainage_review_rows(document=None) -> list[dict[str, object]]:
-    """Return station-level drainage source diagnostics from Applied Sections."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    applied = to_applied_section_set(find_v1_applied_section_set(doc))
-    if applied is None:
-        return [drainage_review_placeholder_row(DRAINAGE_REVIEW_MISSING_APPLIED_SECTIONS_NOTE)]
-    region_model = to_region_model(find_v1_region_model(doc))
-    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
-    output = drainage_review_station_rows(
-        applied,
-        active_ditch_rows_for=lambda station: _active_ditch_drainage_rows(
-            drainage_model,
-            region_model=region_model,
-            station=station,
-        ),
-    )
-    if not output:
-        return [drainage_review_placeholder_row(DRAINAGE_REVIEW_NO_STATION_ROWS_NOTE)]
-    output.extend(corridor_intersection_drainage_review_rows(doc, marker_start_index=len(output)))
-    return output
-
-
-def corridor_intersection_drainage_review_rows(document=None, *, marker_start_index: int = 0) -> list[dict[str, object]]:
-    """Return intersection low-point and Drainage Element coverage diagnostics.
-
-    The low point is the intersection kernel's drainage candidate (K7): the lowest vertex of the
-    intersection surface, with its nearest road and station.
+    The flowline checks come with the Drainage evaluation (DR-2); until then this is the one
+    Drainage line of Guided Review.
     """
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    result = _document_intersection_kernel_result(doc)
-    if result is None or not result.drainage_candidates:
-        return []
-    intersection_model = to_intersection_model(find_v1_intersection_model(doc))
-    row = next(
-        (r for r in list(getattr(intersection_model, "intersection_rows", []) or []) if str(getattr(r, "intersection_id", "") or "") == result.intersection_id),
-        None,
-    )
-    context = IntersectionPatchPrerequisiteResult(
-        status="ready",
-        intersection_id=result.intersection_id,
-        intersection_kind=result.kind,
-        alignment_refs=tuple(ref for ref, _station in result.anchor_station_by_road),
-        control_region_refs=tuple(str(ref) for ref in list(getattr(row, "control_region_refs", []) or [])),
-    )
-    patch_points = [
-        {"alignment_id": candidate.road_ref, "station": candidate.station, "x": candidate.x, "y": candidate.y, "z": candidate.z}
-        for candidate in result.drainage_candidates
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    points = [
+        point
+        for section in list(getattr(applied, "sections", []) or [])
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
     ]
-    low_point = patch_points[0]
-    coverage = _intersection_drainage_coverage(
-        to_drainage_model(find_v1_drainage_model(doc)),
-        context,
-        low_point_station=float(low_point["station"]),
-    )
-    return intersection_drainage_review_rows(
-        context,
-        patch_points=patch_points,
-        low_point=low_point,
-        low_points=patch_points,
-        coverage=coverage,
-        marker_start_index=marker_start_index,
-    )
-
-
-def corridor_drainage_review_summary(document=None) -> dict[str, object]:
-    """Return a compact drainage readiness summary for Build Corridor review."""
-
-    rows = corridor_drainage_review_rows(document)
-    real_rows = [row for row in rows if row.get("station") != ""]
-    ready = sum(1 for row in real_rows if row.get("status") == "ready")
-    warn = sum(1 for row in real_rows if row.get("status") == "warn")
-    missing = sum(1 for row in real_rows if row.get("status") == "missing")
-    point_count = sum(int(row.get("ditch_point_count", 0) or 0) for row in real_rows)
-    if not real_rows:
-        status = "missing"
-        notes = str(rows[0].get("notes", "No drainage rows.") if rows else "No drainage rows.")
-    elif missing:
-        status = "missing"
-        intersection_missing = sum(
-            1 for row in real_rows
-            if row.get("status") == "missing" and row.get("review_kind") == "intersection_drainage"
-        )
-        if intersection_missing:
-            notes = f"{intersection_missing} intersection(s) without Drainage Element coverage."
-        else:
-            notes = f"{missing} station(s) without ditch_surface points."
-    elif warn:
-        status = "warn"
-        notes = f"{warn} station(s) have one-sided ditch points."
+    untagged = sum(1 for point in points if not str(getattr(point, "drainage_ref", "") or ""))
+    if applied is None:
+        status, notes = "missing", "Applied Sections are not built yet."
+    elif not points:
+        status, notes = "missing", "The Applied Sections have no ditch points; the Assembly has no ditch."
+    elif untagged:
+        status, notes = "warn", f"{untagged} of {len(points)} ditch point(s) have no Ditch Run. Add runs in the Drainage panel."
     else:
-        status = "ready"
-        notes = "Drainage source points available at all reviewed stations."
-    return {
-        "status": status,
-        "station_count": len(real_rows),
-        "ready_count": ready,
-        "warn_count": warn,
-        "missing_count": missing,
-        "ditch_point_count": point_count,
-        "notes": notes,
-    }
+        status, notes = "ready", f"All {len(points)} ditch point(s) belong to a Ditch Run."
+    return {"status": status, "ditch_point_count": len(points), "untagged_count": untagged, "notes": notes}
 
 
 def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
@@ -1478,8 +1313,6 @@ def focus_corridor_build_guided_review_step(
         if obj is not None:
             return obj
         raise RuntimeError(_side_slope_review_missing_result_message(doc))
-    if step[0] == "drainage_flow":
-        return focus_corridor_drainage_flow_review(doc)
     focus_role = str(list(step[2])[-1] if step[2] else "")
     obj = _corridor_build_preview_object(doc, focus_role)
     if obj is None:
@@ -2200,43 +2033,6 @@ def focus_adjacent_corridor_slope_face_issue(document=None, current_index: int =
     return target_index, focus_corridor_slope_face_issue(doc, target_index)
 
 
-def focus_corridor_drainage_review_row(document=None, row_index: int = 0):
-    """Create/select a marker for one drainage diagnostic row."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    rows = corridor_drainage_review_rows(doc)
-    if row_index < 0 or row_index >= len(rows):
-        raise IndexError("Drainage diagnostic row index is out of range.")
-    row = rows[row_index]
-    marker_name = str(row.get("marker_object", "") or _drainage_review_marker_name(row_index))
-    obj = _create_drainage_review_marker(document=doc, row=row, object_name=marker_name)
-    if obj is None:
-        raise RuntimeError("Drainage diagnostic marker was not created.")
-    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
-    set_corridor_build_preview_visibility(doc, "drainage", True)
-    _set_object_visibility(obj, True)
-    _select_and_fit_object(obj)
-    return obj
-
-
-def focus_corridor_drainage_flow_review(document=None):
-    """Create/select a 3D highlight for Drainage Flow Route structure context."""
-
-    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    rows = [row for row in corridor_drainage_flow_review_rows(doc) if row.get("flow_route_id")]
-    if not rows:
-        raise RuntimeError("No Drainage Flow Route rows are available.")
-    obj = _create_drainage_flow_review_highlight(document=doc, rows=rows)
-    if obj is None:
-        raise RuntimeError("Drainage Flow highlight was not created.")
-    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
-    set_corridor_build_preview_visibility(doc, "centerline", True)
-    set_corridor_build_preview_visibility(doc, "drainage", True)
-    _set_object_visibility(obj, True)
-    _select_and_fit_object(obj)
-    return obj
-
-
 def set_corridor_build_preview_visibility(document=None, role: str = "", visible: bool = True):
     """Set visibility for one Build Corridor preview object by result role."""
 
@@ -2402,11 +2198,6 @@ def set_corridor_guided_review_step_visibility(document=None, step_id: str = "",
         for marker in _corridor_build_issue_marker_objects(doc):
             _set_object_visibility(marker, bool(visible))
             changed += 1
-    elif step_id_text == "drainage_flow":
-        obj = doc.getObject("ReviewIssueDrainageFlowRoutes")
-        if obj is not None:
-            _set_object_visibility(obj, bool(visible))
-            changed += 1
     return changed
 
 
@@ -2431,9 +2222,6 @@ def corridor_guided_review_step_visibility(document=None, step_id: str = "") -> 
                 return True
     if step_id_text == "slope_issues":
         return any(_object_visibility(marker) for marker in _corridor_build_issue_marker_objects(doc))
-    if step_id_text == "drainage_flow":
-        obj = doc.getObject("ReviewIssueDrainageFlowRoutes")
-        return _object_visibility(obj) if obj is not None else False
     return False
 
 
@@ -2461,8 +2249,6 @@ def corridor_guided_review_step_available(document=None, step_id: str = "") -> b
                 return True
     if step_id_text == "slope_issues":
         return bool(_corridor_build_issue_marker_objects(doc))
-    if step_id_text == "drainage_flow":
-        return doc.getObject("ReviewIssueDrainageFlowRoutes") is not None
     return False
 
 
@@ -2772,7 +2558,6 @@ def _set_watertight_solid_readiness_properties(
                 region_model=to_region_model(find_v1_region_model(doc)) if doc is not None else None,
                 intersection_model=to_intersection_model(find_v1_intersection_model(doc)) if doc is not None else None,
                 structure_model=to_structure_model(find_v1_structure_model(doc)) if doc is not None else None,
-                drainage_model=to_drainage_model(find_v1_drainage_model(doc)) if doc is not None else None,
             )
         )
     except Exception:
@@ -3465,7 +3250,6 @@ CORRIDOR_BUILD_VISIBILITY_GROUPS = (
             "ReviewIssueSlopeFaceIntersectionMarkers",
             "ReviewIssueSlopeFaceSampledEdgeMarkers",
             "ReviewIssueSlopeFaceFallbackMarkers",
-            "ReviewIssueDrainageFlowRoutes",
         ),
     ),
 )
@@ -5233,8 +5017,6 @@ def _region_context_preview_object_names(row: dict[str, object], *, document=Non
     names: list[str] = []
     for ref in _region_summary_refs(row.get("structure", "")):
         names.extend(_structure_preview_object_names_for_ref(document, ref))
-    for ref in _region_summary_refs(row.get("drainage", ""), prefixes=("flow-route:",)):
-        names.append("V1DrainagePipelineSegment_" + _safe_output_object_suffix(f"pipeline-segment:{ref}"))
     return names
 
 
@@ -5303,8 +5085,6 @@ def _region_object_family_labels(names: list[str]) -> list[str]:
                 labels.append("design surface")
         elif text.startswith("V1StructurePreview_"):
             labels.append("structure")
-        elif text.startswith("V1DrainagePipelineSegment_"):
-            labels.append("drainage pipeline")
         else:
             labels.append(text)
     return _unique_text_values(labels)
@@ -5380,683 +5160,11 @@ def _safe_region_token(region_id: str) -> str:
     return safe or "unknown"
 
 
-def _drainage_review_context_label(row: dict[str, object]) -> str:
-    context = str(row.get("context", "") or row.get("review_kind", "") or "").strip().lower()
-    if context == "intersection_drainage":
-        return "Intersection Drainage"
-    return "Roadside Drainage"
-
-
-def _intersection_drainage_coverage(
-    drainage_model,
-    prerequisite: IntersectionPatchPrerequisiteResult,
-    *,
-    low_point_station: float | None = None,
-) -> dict[str, object]:
-    if drainage_model is None:
-        return {"candidate_rows": [], "ready_rows": [], "diagnostics": ["drainage_model_missing"]}
-    intersection_id = str(getattr(prerequisite, "intersection_id", "") or "").strip()
-    control_refs = set(str(value or "") for value in list(getattr(prerequisite, "control_region_refs", ()) or ()) if str(value or ""))
-    candidate_rows: list[object] = []
-    ready_rows: list[object] = []
-    diagnostics: list[str] = []
-    for row in list(getattr(drainage_model, "element_rows", []) or []):
-        row_intersection = str(getattr(row, "intersection_ref", "") or "").strip()
-        row_region = str(getattr(row, "region_ref", "") or "").strip()
-        owns_intersection = bool(intersection_id and row_intersection == intersection_id)
-        owns_control_region = bool(row_region and row_region in control_refs)
-        if not (owns_intersection or owns_control_region):
-            continue
-        candidate_rows.append(row)
-        if low_point_station is None or _drainage_element_covers_station(row, float(low_point_station)):
-            ready_rows.append(row)
-        else:
-            diagnostics.append(
-                "drainage_element_outside_low_point_station_range:"
-                f"{str(getattr(row, 'drainage_element_id', '') or '')}:"
-                f"{float(getattr(row, 'station_start', 0.0) or 0.0):.3f}-"
-                f"{float(getattr(row, 'station_end', 0.0) or 0.0):.3f}"
-            )
-    if candidate_rows and not ready_rows and low_point_station is not None:
-        diagnostics.append(f"intersection_low_point_station_uncovered:{float(low_point_station):.3f}")
-    if not candidate_rows:
-        diagnostics.append("intersection_drainage_element_missing")
-    return {"candidate_rows": candidate_rows, "ready_rows": ready_rows, "diagnostics": diagnostics}
-
-
-def _drainage_element_covers_station(row, station: float, *, tolerance: float = 1.0e-6) -> bool:
-    start = float(getattr(row, "station_start", 0.0) or 0.0)
-    end = float(getattr(row, "station_end", 0.0) or 0.0)
-    return min(start, end) - tolerance <= float(station) <= max(start, end) + tolerance
-
-
-def _active_ditch_drainage_rows(drainage_model, *, region_model, station: float) -> list[object]:
-    if drainage_model is None:
-        return []
-    if region_model is not None:
-        try:
-            context = StationContextResolver().resolve(
-                region_model=region_model,
-                drainage_model=drainage_model,
-                station=float(station),
-            )
-            rows = list(getattr(context, "active_drainage_elements", []) or [])
-            return [row for row in rows if _is_ditch_drainage_element(row)]
-        except Exception:
-            pass
-    output: list[object] = []
-    for row in list(getattr(drainage_model, "element_rows", []) or []):
-        if not _is_ditch_drainage_element(row):
-            continue
-        try:
-            start = float(getattr(row, "station_start", 0.0) or 0.0)
-            end = float(getattr(row, "station_end", 0.0) or 0.0)
-        except Exception:
-            continue
-        if min(start, end) <= float(station) <= max(start, end):
-            output.append(row)
-    return output
-
-
-def _is_ditch_drainage_element(row) -> bool:
-    kind = str(getattr(row, "element_kind", "") or "").strip().lower()
-    return kind in {"ditch", "lined_ditch", "lined-ditch", "gutter", "swale", "channel"}
-
-
-def _drainage_flow_row_highlight_mode(document, route_ref: str) -> str:
-    if document is None or not str(route_ref or ""):
-        return "missing"
-    applied = to_applied_section_set(find_v1_applied_section_set(document))
-    sections = _station_ordered_applied_sections(applied)
-    segments = _drainage_flow_connection_point_segments(
-        document,
-        sections,
-        {"flow_route_id": str(route_ref or "")},
-    )
-    return "connection_point_pipe" if segments else "station_span"
-
-
 def _display_source_ref(value: object) -> str:
     text = str(value or "").strip()
     if ":" not in text:
         return text
     return text.split(":", 1)[1]
-
-
-def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str, object]] | None = None):
-    if document is None:
-        return None
-    try:
-        import FreeCAD as AppModule
-        import Part
-    except Exception:
-        return None
-    applied = to_applied_section_set(find_v1_applied_section_set(document))
-    sections = sorted(list(getattr(applied, "sections", []) or []), key=lambda section: section_station(section)) if applied is not None else []
-    shapes: list[object] = []
-    route_refs: list[str] = []
-    structure_refs: list[str] = []
-    connection_point_refs: list[str] = []
-    pipe_segment_count = 0
-    station_span_count = 0
-    skipped_segment_count = 0
-    for row in list(rows or []):
-        route_ref = str(row.get("flow_route_id", "") or "")
-        if route_ref:
-            route_refs.append(route_ref)
-        for ref in str(row.get("structure_refs", "") or "").split(","):
-            if ref.strip():
-                structure_refs.append(ref.strip())
-        point_segments = _drainage_flow_connection_point_segments(document, sections, row)
-        if point_segments:
-            for segment in point_segments:
-                first, second, first_ref, second_ref, radius = segment
-                connection_point_refs.extend([first_ref, second_ref])
-                try:
-                    shapes.append(_make_drainage_pipe_segment_shape(Part, AppModule, first, second, radius))
-                    pipe_segment_count += 1
-                except Exception:
-                    try:
-                        shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
-                        pipe_segment_count += 1
-                    except Exception:
-                        skipped_segment_count += 1
-            continue
-        start, end = _drainage_flow_row_station_range(row)
-        if start is None or end is None:
-            continue
-        points = _drainage_flow_highlight_points(sections, start, end)
-        for first, second in zip(points[:-1], points[1:]):
-            try:
-                shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
-                station_span_count += 1
-            except Exception:
-                skipped_segment_count += 1
-    if not shapes:
-        return None
-    obj = document.getObject("ReviewIssueDrainageFlowRoutes")
-    if obj is None:
-        obj = document.addObject("Part::Feature", "ReviewIssueDrainageFlowRoutes")
-    try:
-        obj.Shape = Part.makeCompound(shapes)
-        obj.Label = "Drainage Flow Highlight"
-    except Exception as error:
-        return _mark_preview_shape_failure(obj, preview_kind="create_drainage_flow_review_highlight", error=error)
-    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
-    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
-    _set_preview_property(obj, "IssueKind", "drainage_flow")
-    display_mode = "drainage_flow_pipe_segments" if pipe_segment_count else "drainage_flow_station_span"
-    _set_preview_property(obj, "DisplayMode", display_mode)
-    _set_preview_string_list_property(obj, "FlowRouteRefs", _unique_text_values(route_refs))
-    _set_preview_string_list_property(obj, "StructureRefs", _unique_text_values(structure_refs))
-    _set_preview_string_list_property(obj, "ConnectionPointRefs", _unique_text_values(connection_point_refs))
-    _set_preview_integer_property(obj, "MarkerCount", len(shapes))
-    _set_preview_integer_property(obj, "PipeSegmentCount", pipe_segment_count)
-    _set_preview_integer_property(obj, "StationSpanCount", station_span_count)
-    _set_preview_integer_property(obj, "SkippedSegmentCount", skipped_segment_count)
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is not None:
-            vobj.Visibility = True
-            vobj.ShapeColor = (1.00, 0.68, 0.10)
-            vobj.PointColor = (1.00, 0.68, 0.10)
-            vobj.LineColor = (1.00, 0.68, 0.10)
-            vobj.LineWidth = 7.0
-            vobj.PointSize = 9.0
-            vobj.Transparency = 0
-    except Exception:
-        pass
-    try:
-        route_object_to_project_tree(find_project(document), obj)
-    except Exception:
-        pass
-    return obj
-
-
-def _drainage_flow_row_station_range(row: dict[str, object]) -> tuple[float | None, float | None]:
-    try:
-        start = float(row.get("station_start", "") if row.get("station_start", "") != "" else "")
-        end = float(row.get("station_end", "") if row.get("station_end", "") != "" else "")
-        return min(start, end), max(start, end)
-    except Exception:
-        return None, None
-
-
-def _drainage_flow_connection_point_segments(
-    document,
-    sections: list[object],
-    row: dict[str, object],
-) -> list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, float]]:
-    drainage_model = to_drainage_model(find_v1_drainage_model(document))
-    structure_model = to_structure_model(find_v1_structure_model(document))
-    if drainage_model is None or structure_model is None:
-        return []
-    route_ref = str(row.get("flow_route_id", "") or "")
-    flow_row = next(
-        (
-            candidate
-            for candidate in list(getattr(drainage_model, "flow_route_rows", []) or [])
-            if str(getattr(candidate, "flow_route_id", "") or "") == route_ref
-        ),
-        None,
-    )
-    if flow_row is None:
-        return []
-    element_by_id = {
-        str(getattr(element, "drainage_element_id", "") or ""): element
-        for element in list(getattr(drainage_model, "element_rows", []) or [])
-    }
-    point_by_id = {
-        str(getattr(point, "connection_point_id", "") or ""): point
-        for point in list(getattr(structure_model, "connection_point_rows", []) or [])
-    }
-    points_by_structure: dict[str, list[object]] = {}
-    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
-        structure_ref = str(getattr(point, "structure_ref", "") or "")
-        if structure_ref:
-            points_by_structure.setdefault(structure_ref, []).append(point)
-    chain_refs = [
-        str(getattr(flow_row, "from_element_ref", "") or ""),
-        str(getattr(flow_row, "to_element_ref", "") or ""),
-        str(getattr(flow_row, "outlet_ref", "") or ""),
-    ]
-    chain_refs = [ref for ref in chain_refs if ref]
-    if len(chain_refs) < 2:
-        return []
-    resolved: list[tuple[object, str]] = []
-    for index, ref in enumerate(chain_refs):
-        direction = "out" if index == 0 else "in"
-        point = _drainage_flow_chain_connection_point(
-            ref,
-            element_by_id=element_by_id,
-            point_by_id=point_by_id,
-            points_by_structure=points_by_structure,
-            direction=direction,
-        )
-        if point is None:
-            return []
-        resolved.append((point, str(getattr(point, "connection_point_id", "") or "")))
-    segments: list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, float]] = []
-    for (first_point, first_ref), (second_point, second_ref) in zip(resolved[:-1], resolved[1:]):
-        first_xyz = _drainage_connection_point_xyz(sections, first_point)
-        second_xyz = _drainage_connection_point_xyz(sections, second_point)
-        if first_xyz is None or second_xyz is None:
-            continue
-        radius = _drainage_pipe_segment_radius(first_point, second_point)
-        segments.append((first_xyz, second_xyz, first_ref, second_ref, radius))
-    return segments
-
-
-def _drainage_flow_chain_connection_point(
-    ref: str,
-    *,
-    element_by_id: dict[str, object],
-    point_by_id: dict[str, object],
-    points_by_structure: dict[str, list[object]],
-    direction: str,
-):
-    text = str(ref or "").strip()
-    if not text:
-        return None
-    if text.startswith("connection:"):
-        return point_by_id.get(text)
-    if text.startswith("structure:"):
-        return _preferred_structure_connection_point(text, points_by_structure, direction=direction)
-    element = element_by_id.get(text)
-    if element is None:
-        return None
-    point_ref = str(getattr(element, "connection_point_ref", "") or "").strip()
-    if point_ref:
-        point = point_by_id.get(point_ref)
-        if point is not None:
-            return point
-    structure_ref = str(getattr(element, "structure_ref", "") or "").strip()
-    if structure_ref:
-        return _preferred_structure_connection_point(structure_ref, points_by_structure, direction=direction)
-    return None
-
-
-def _preferred_structure_connection_point(
-    structure_ref: str,
-    points_by_structure: dict[str, list[object]],
-    *,
-    direction: str,
-):
-    points = list(points_by_structure.get(str(structure_ref or ""), []) or [])
-    if not points:
-        return None
-    role_priority = (
-        ["pipe_out", "downstream", "discharge", "outlet", "inlet", "pipe_in", "upstream"]
-        if direction == "out"
-        else ["pipe_in", "upstream", "inlet", "pipe_out", "downstream", "discharge", "outlet"]
-    )
-    by_role = {str(getattr(point, "point_role", "") or "").strip().lower(): point for point in points}
-    for role in role_priority:
-        if role in by_role:
-            return by_role[role]
-    return sorted(points, key=lambda point: int(getattr(point, "connection_order", 0) or 0))[0]
-
-
-def _drainage_connection_point_xyz(
-    sections: list[object],
-    point,
-    *,
-    z_offset: float = 1.15,
-) -> tuple[float, float, float] | None:
-    station = float(getattr(point, "station", 0.0) or 0.0)
-    frame = _drainage_flow_station_frame(sections, station)
-    if frame is None:
-        return None
-    try:
-        import math as _math
-
-        offset = float(getattr(point, "offset", 0.0) or 0.0)
-        angle_rad = _math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
-        x = float(getattr(frame, "x", 0.0) or 0.0) - _math.sin(angle_rad) * offset
-        y = float(getattr(frame, "y", 0.0) or 0.0) + _math.cos(angle_rad) * offset
-        z = float(getattr(frame, "z", 0.0) or 0.0) + float(z_offset or 0.0)
-        return x, y, z
-    except Exception:
-        return (
-            float(getattr(frame, "x", 0.0) or 0.0),
-            float(getattr(frame, "y", 0.0) or 0.0),
-            float(getattr(frame, "z", 0.0) or 0.0) + float(z_offset or 0.0),
-        )
-
-
-def _drainage_flow_station_frame(sections: list[object], station: float):
-    if not sections:
-        return None
-    ordered = sorted(list(sections or []), key=lambda section: section_station(section))
-    for index in range(len(ordered) - 1):
-        first = ordered[index]
-        second = ordered[index + 1]
-        first_station = section_station(first)
-        second_station = section_station(second)
-        if min(first_station, second_station) - 1.0e-9 <= float(station) <= max(first_station, second_station) + 1.0e-9:
-            first_frame = getattr(first, "frame", None)
-            second_frame = getattr(second, "frame", None)
-            if first_frame is None:
-                return second_frame
-            if second_frame is None:
-                return first_frame
-            ratio = 0.0 if abs(second_station - first_station) <= 1.0e-9 else (float(station) - first_station) / (second_station - first_station)
-            return replace(
-                first_frame,
-                station=float(station),
-                x=_lerp_value(getattr(first_frame, "x", 0.0), getattr(second_frame, "x", 0.0), ratio),
-                y=_lerp_value(getattr(first_frame, "y", 0.0), getattr(second_frame, "y", 0.0), ratio),
-                z=_lerp_value(getattr(first_frame, "z", 0.0), getattr(second_frame, "z", 0.0), ratio),
-                tangent_direction_deg=_lerp_value(
-                    getattr(first_frame, "tangent_direction_deg", 0.0),
-                    getattr(second_frame, "tangent_direction_deg", 0.0),
-                    ratio,
-                ),
-            )
-    nearest = min(ordered, key=lambda section: abs(section_station(section) - float(station)))
-    return getattr(nearest, "frame", None)
-
-
-def _drainage_pipe_segment_radius(first_point, second_point) -> float:
-    diameters = [
-        float(getattr(point, "diameter", 0.0) or 0.0)
-        for point in (first_point, second_point)
-        if float(getattr(point, "diameter", 0.0) or 0.0) > 0.0
-    ]
-    if diameters:
-        return max(0.08, min(sum(diameters) / len(diameters) * 0.5, 1.5))
-    sizes = [
-        max(float(getattr(point, "width", 0.0) or 0.0), float(getattr(point, "height", 0.0) or 0.0))
-        for point in (first_point, second_point)
-    ]
-    size = max(sizes or [0.0])
-    return max(0.12, min(float(size or 0.6) * 0.18, 1.0))
-
-
-def _make_drainage_pipe_segment_shape(part_module, app_module, first: tuple[float, float, float], second: tuple[float, float, float], radius: float):
-    start = app_module.Vector(*first)
-    end = app_module.Vector(*second)
-    vector = end.sub(start)
-    length = float(getattr(vector, "Length", 0.0) or 0.0)
-    if length <= 1.0e-6:
-        return part_module.makeSphere(float(radius or 0.2), start)
-    return part_module.makeCylinder(float(radius or 0.2), length, start, vector)
-
-
-def _drainage_flow_highlight_points(sections: list[object], station_start: float, station_end: float) -> list[tuple[float, float, float]]:
-    stations = [float(station_start)]
-    for section in list(sections or []):
-        station = section_station(section)
-        if min(station_start, station_end) < station < max(station_start, station_end):
-            stations.append(station)
-    stations.append(float(station_end))
-    points = [
-        point
-        for point in (_drainage_flow_station_point(sections, station) for station in stations)
-        if point is not None
-    ]
-    output: list[tuple[float, float, float]] = []
-    for point in points:
-        if not output or point != output[-1]:
-            output.append(point)
-    return output
-
-
-def _drainage_flow_station_point(sections: list[object], station: float, *, z_offset: float = 1.05) -> tuple[float, float, float] | None:
-    return _surface_transition_span_marker_point(sections, float(station), z_offset=z_offset)
-
-
-def _create_drainage_review_marker(*, document=None, row: dict[str, object] | None = None, object_name: str = ""):
-    if document is None or row is None:
-        return None
-    try:
-        point = (
-            float(row.get("x", 0.0) or 0.0),
-            float(row.get("y", 0.0) or 0.0),
-            float(row.get("z", 0.0) or 0.0),
-        )
-    except Exception:
-        point = (0.0, 0.0, 0.0)
-    name = object_name or str(row.get("marker_object", "") or "ReviewIssueDrainageStation001")
-    status = str(row.get("status", "") or "")
-    color = {
-        "ready": (0.05, 0.65, 1.00),
-        "warn": (1.00, 0.72, 0.10),
-        "missing": (1.00, 0.16, 0.12),
-    }.get(status, (0.05, 0.65, 1.00))
-    ditch_points = _drainage_review_row_ditch_points(document, row)
-    if ditch_points:
-        obj = _create_drainage_review_highlight_compound(
-            document=document,
-            object_name=name,
-            label=f"Drainage Highlight - STA {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Drainage Highlight",
-            ditch_points=ditch_points,
-            color=color,
-        )
-    else:
-        is_suggested_inlet = str(row.get("marker_kind", "") or "") == "suggested_inlet"
-        marker_label = str(row.get("marker_label", "") or "").strip()
-        obj = _create_drainage_review_point_marker(
-            document=document,
-            object_name=name,
-            label=marker_label or (f"Drainage Diagnostic - STA {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Drainage Diagnostic"),
-            point=point,
-            color=color,
-            suggested_inlet=is_suggested_inlet,
-        )
-    if obj is None:
-        return None
-    issue_kind = "intersection_suggested_inlet" if str(row.get("marker_kind", "") or "") == "suggested_inlet" else "drainage_diagnostic"
-    _set_preview_property(obj, "IssueKind", issue_kind)
-    _set_preview_property(obj, "IssueStation", "" if row.get("station", "") == "" else f"{float(row.get('station', 0.0) or 0.0):.3f}")
-    _set_preview_property(obj, "IssueStatus", status)
-    _set_preview_property(obj, "IssueReason", str(row.get("notes", "") or ""))
-    if issue_kind == "intersection_suggested_inlet":
-        _set_preview_property(obj, "SuggestedInletReviewOnly", "Yes")
-        _set_preview_property(obj, "IntersectionId", str(row.get("intersection_id", "") or ""))
-        _set_preview_property(obj, "ControlRegionRefs", str(row.get("control_region_refs", "") or ""))
-        _set_preview_float_property(obj, "SuggestedInletX", point[0])
-        _set_preview_float_property(obj, "SuggestedInletY", point[1])
-        _set_preview_float_property(obj, "SuggestedInletZ", point[2])
-    try:
-        route_object_to_project_tree(find_project(document), obj)
-    except Exception:
-        pass
-    return obj
-
-
-def _drainage_review_row_ditch_points(document, row: dict[str, object]) -> list[object]:
-    applied = to_applied_section_set(find_v1_applied_section_set(document))
-    if applied is None:
-        return []
-    section_id = str(row.get("section_id", "") or "")
-    sections = {
-        str(getattr(section, "applied_section_id", "") or ""): section
-        for section in list(getattr(applied, "sections", []) or [])
-    }
-    section = sections.get(section_id)
-    if section is None:
-        return []
-    return [
-        point
-        for point in list(getattr(section, "point_rows", []) or [])
-        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
-    ]
-
-
-def _create_drainage_review_highlight_compound(
-    *,
-    document,
-    object_name: str,
-    label: str,
-    ditch_points: list[object],
-    color: tuple[float, float, float],
-):
-    try:
-        import Part
-        import FreeCAD as AppModule
-    except Exception:
-        return None
-    obj = document.getObject(object_name)
-    shapes = []
-    for side in ("L", "R", ""):
-        points = [
-            point
-            for point in list(ditch_points or [])
-            if _drainage_point_side(point) == side
-        ]
-        points.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
-        if len(points) >= 2:
-            vectors = [
-                AppModule.Vector(
-                    float(getattr(point, "x", 0.0) or 0.0),
-                    float(getattr(point, "y", 0.0) or 0.0),
-                    float(getattr(point, "z", 0.0) or 0.0),
-                )
-                for point in points
-            ]
-            for start, end in zip(vectors[:-1], vectors[1:]):
-                shapes.append(Part.makeLine(start, end))
-        elif len(points) == 1:
-            shapes.extend(_drainage_point_cross_shapes(Part, AppModule, points[0], radius=0.25))
-    if not shapes:
-        return None
-    if obj is None:
-        obj = document.addObject("Part::Feature", object_name)
-    try:
-        obj.Shape = Part.makeCompound(shapes)
-        obj.Label = label
-    except Exception as error:
-        return _mark_preview_shape_failure(obj, preview_kind="create_drainage_review_highlight_compound", error=error)
-    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
-    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
-    _set_preview_property(obj, "IssueKind", "drainage_diagnostic")
-    _set_preview_property(obj, "DisplayMode", "drainage_highlight")
-    _set_preview_integer_property(obj, "MarkerCount", len(list(ditch_points or [])))
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is not None:
-            vobj.Visibility = True
-            vobj.ShapeColor = color
-            vobj.PointColor = color
-            vobj.LineColor = color
-            vobj.LineWidth = 8.0
-            vobj.PointSize = 8.0
-            vobj.Transparency = 0
-    except Exception:
-        pass
-    return obj
-
-
-def _create_drainage_review_point_marker(
-    *,
-    document,
-    object_name: str,
-    label: str,
-    point: tuple[float, float, float],
-    color: tuple[float, float, float],
-    suggested_inlet: bool = False,
-):
-    try:
-        import Part
-        import FreeCAD as AppModule
-    except Exception:
-        return None
-    obj = document.getObject(object_name)
-    if suggested_inlet:
-        shapes = _point_sphere_marker_shapes(Part, AppModule, point, radius=0.45)
-    else:
-        shapes = _point_cross_shapes(Part, AppModule, point, radius=0.35)
-    if not shapes:
-        return None
-    if obj is None:
-        obj = document.addObject("Part::Feature", object_name)
-    try:
-        obj.Shape = Part.makeCompound(shapes)
-        obj.Label = label
-    except Exception as error:
-        return _mark_preview_shape_failure(obj, preview_kind="create_drainage_review_point_marker", error=error)
-    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
-    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
-    _set_preview_property(obj, "IssueKind", "intersection_suggested_inlet" if suggested_inlet else "drainage_diagnostic")
-    _set_preview_property(obj, "DisplayMode", "suggested_inlet_marker" if suggested_inlet else "drainage_point_marker")
-    _set_preview_integer_property(obj, "MarkerCount", 1)
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is not None:
-            vobj.Visibility = True
-            vobj.ShapeColor = color
-            vobj.PointColor = color
-            vobj.LineColor = color
-            vobj.LineWidth = 5.0
-            vobj.PointSize = 7.0
-            vobj.Transparency = 5 if suggested_inlet else 0
-    except Exception:
-        pass
-    return obj
-
-
-def _point_sphere_marker_shapes(Part, AppModule, point: tuple[float, float, float], *, radius: float) -> list[object]:
-    x, y, z = point
-    r = max(float(radius or 0.0), 0.05)
-    center = AppModule.Vector(float(x), float(y), float(z) + r)
-    shapes = []
-    # Silence is the fallback mechanism here, not a hidden failure. A marker is
-    # built as sphere plus stem, and degrades to a cross and then to a single
-    # vertex below. The caller always receives at least one shape, so a skipped
-    # primitive changes marker style only and loses no review information.
-    try:
-        shapes.append(Part.makeSphere(r, center))
-    except Exception:
-        pass
-    try:
-        base = AppModule.Vector(float(x), float(y), float(z))
-        top = AppModule.Vector(float(x), float(y), float(z) + (r * 1.8))
-        shapes.append(Part.makeLine(base, top))
-    except Exception:
-        pass
-    if not shapes:
-        return _point_cross_shapes(Part, AppModule, point, radius=r)
-    return shapes
-
-
-def _drainage_point_cross_shapes(Part, AppModule, point, *, radius: float) -> list[object]:
-    return _point_cross_shapes(
-        Part,
-        AppModule,
-        (
-            float(getattr(point, "x", 0.0) or 0.0),
-            float(getattr(point, "y", 0.0) or 0.0),
-            float(getattr(point, "z", 0.0) or 0.0),
-        ),
-        radius=radius,
-    )
-
-
-def _point_cross_shapes(Part, AppModule, point: tuple[float, float, float], *, radius: float) -> list[object]:
-    x, y, z = point
-    r = max(float(radius or 0.0), 0.05)
-    center = AppModule.Vector(float(x), float(y), float(z))
-    vectors = [
-        (AppModule.Vector(float(x) - r, float(y), float(z)), AppModule.Vector(float(x) + r, float(y), float(z))),
-        (AppModule.Vector(float(x), float(y) - r, float(z)), AppModule.Vector(float(x), float(y) + r, float(z))),
-        (AppModule.Vector(float(x), float(y), float(z) - r), AppModule.Vector(float(x), float(y), float(z) + r)),
-    ]
-    shapes = []
-    # Last stage of the marker fallback chain described in
-    # _point_sphere_marker_shapes. A dropped axis line degrades the cross, and
-    # the vertex below is the final fallback, so silence is intended here.
-    for start, end in vectors:
-        try:
-            shapes.append(Part.makeLine(start, end))
-        except Exception:
-            pass
-    if not shapes:
-        try:
-            shapes.append(Part.Vertex(center))
-        except Exception:
-            pass
-    return shapes
 
 
 def _surface_id(surface_model, surface_kind: str) -> str:

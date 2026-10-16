@@ -21,7 +21,7 @@ The typed model payload is authoritative for newly written objects. Readable Fre
 | Family | Layer | Typed model | Counted nested rows | Required refs |
 | --- | --- | --- | --- | --- |
 | Structures | source | `StructureModel` | structures, geometry specs, kind specs, connection points, interaction rules, influence zones | `project_id`, `structure_model_id` |
-| Drainage | source | `DrainageModel` | elements, policies, flow routes | `project_id`, `drainage_model_id` |
+| Drainage | source | `DrainageModel` | policy, ditch runs, points, links | `project_id`, `drainage_model_id` |
 | SubAssembly Library | source | `SubassemblyLibrary` | definitions | `project_id`, `library_id` |
 | Assembly/Subassembly | source | `AssemblySubassemblyModel` | templates and their nested placed rows | `project_id`, `assembly_id` |
 | Regions | source | `RegionModel` | regions, policies, transitions, constraints | `project_id`, `region_model_id` |
@@ -147,6 +147,7 @@ Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packa
 
 ## Excluded Scope
 
+- Drainage was rewritten on 2026-10-16 (DR-1) without migration. The model keeps its type name and lives only in its payload; a payload from before restores as an empty model, and the old row properties (`DrainageElementIds`, `ElementKinds`, `Policy*`, `FlowRoute*` and the rest) are removed when the object is next written.
 - Ramp and Override were removed on 2026-10-16 without migration. A Region object drops `RampRefs` and `OverrideRefRows`, and a Drainage object drops `ElementRampRefs`, when it is next updated. In Applied Section subassembly rows, slot 16 held override ids and is now written empty so the later slots keep their positions.
 - Watertight Solid development is paused. Existing rows remain compatibility surfaces; no target, topology, simulation, UI, or exchange expansion is included.
 - CI remains unchanged. No CI development is allowed by this plan.

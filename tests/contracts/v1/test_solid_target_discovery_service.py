@@ -11,7 +11,6 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import (
     AppliedSectionStationRow,
 )
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructureConnectionPoint,
@@ -126,84 +125,6 @@ def _structure_model() -> StructureModel:
     )
 
 
-def _pipeline_structure_model() -> StructureModel:
-    return StructureModel(
-        schema_version=1,
-        project_id="proj-1",
-        structure_model_id="structures:pipeline",
-        structure_rows=[
-            StructureRow(
-                "structure:inlet-01",
-                "utility",
-                "reference",
-                StructurePlacement("placement:inlet-01", "alignment:main", 30.0, 32.0),
-            ),
-            StructureRow(
-                "structure:outlet-01",
-                "utility",
-                "reference",
-                StructurePlacement("placement:outlet-01", "alignment:main", 90.0, 92.0),
-            ),
-        ],
-        connection_point_rows=[
-            StructureConnectionPoint(
-                "connection:inlet-01:pipe-out",
-                "structure:inlet-01",
-                "pipe_out",
-                station=32.0,
-                offset=-4.5,
-                invert_elevation=44.2,
-                diameter=0.6,
-                shape_kind="circular",
-            ),
-            StructureConnectionPoint(
-                "connection:outlet-01:pipe-in",
-                "structure:outlet-01",
-                "pipe_in",
-                station=90.0,
-                offset=-6.0,
-                invert_elevation=43.6,
-                diameter=0.6,
-                shape_kind="circular",
-            ),
-        ],
-    )
-
-
-def _pipeline_drainage_model() -> DrainageModel:
-    return DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:pipeline",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:inlet-01",
-                element_kind="inlet_reference",
-                structure_ref="structure:inlet-01",
-                connection_point_ref="connection:inlet-01:pipe-out",
-                station_start=30.0,
-                station_end=32.0,
-            ),
-            DrainageElementRow(
-                drainage_element_id="drainage:outlet-01",
-                element_kind="outfall_reference",
-                structure_ref="structure:outlet-01",
-                connection_point_ref="connection:outlet-01:pipe-in",
-                station_start=90.0,
-                station_end=92.0,
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:pipe-01",
-                from_element_ref="drainage:inlet-01",
-                to_element_ref="drainage:outlet-01",
-                outlet_ref="drainage:outlet-01",
-            )
-        ],
-    )
-
-
 def test_solid_target_discovery_blocks_without_applied_sections_and_corridor() -> None:
     model = SolidTargetDiscoveryService().discover(SolidTargetDiscoveryRequest())
 
@@ -287,29 +208,6 @@ def test_solid_target_discovery_adds_station_context_summary_to_region_body_note
             )
         ],
     )
-    drainage_model = DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:main",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:main-left",
-                element_kind="ditch",
-                side="left",
-                region_ref="region:main",
-                station_start=0.0,
-                station_end=100.0,
-            )
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:main-left",
-                from_element_ref="drainage:main-left",
-                outlet_ref="drainage:outlet",
-            )
-        ],
-    )
-
     model = SolidTargetDiscoveryService().discover(
         SolidTargetDiscoveryRequest(
             project_id="proj-1",
@@ -318,7 +216,6 @@ def test_solid_target_discovery_adds_station_context_summary_to_region_body_note
             corridor_model=_corridor_model(),
             region_model=region_model,
             structure_model=structure_model,
-            drainage_model=drainage_model,
         )
     )
 
@@ -327,8 +224,6 @@ def test_solid_target_discovery_adds_station_context_summary_to_region_body_note
     assert target.drainage_ref == ""
     assert "StationContext:" in target.notes
     assert "structures=structure:culvert" in target.notes
-    assert "drainage=drainage:main-left" in target.notes
-    assert "flow_routes=flow-route:main-left" in target.notes
 
 
 def test_solid_target_discovery_creates_pavement_layer_subassembly_candidates() -> None:
@@ -743,7 +638,7 @@ def test_solid_target_discovery_marks_lined_ditch_body_available_when_lining_pol
     assert model.target_diagnostic_rows == []
 
 
-def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body() -> None:
+def test_solid_target_discovery_takes_the_lined_ditch_drainage_ref_from_its_ditch_points() -> None:
     applied = AppliedSectionSet(
         schema_version=1,
         project_id="proj-1",
@@ -757,8 +652,8 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                 station=0.0,
                 frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0),
                 point_rows=[
-                    AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0),
-                    AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2),
+                    AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0, "ditch:right", "right", "ditch-run:right"),
+                    AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2, "ditch:right", "right", "ditch-run:right"),
                 ],
                 subassembly_rows=[
                     AppliedSectionSubassemblyRow(
@@ -778,8 +673,8 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                 station=100.0,
                 frame=AppliedSectionFrame(100.0, 100.0, 0.0, 10.0),
                 point_rows=[
-                    AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0),
-                    AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2),
+                    AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0, "ditch:right", "right", "ditch-run:right"),
+                    AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2, "ditch:right", "right", "ditch-run:right"),
                 ],
                 subassembly_rows=[
                     AppliedSectionSubassemblyRow(
@@ -794,30 +689,6 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
             ),
         ],
     )
-    drainage_model = DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:main",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:primary-lined-ditch",
-                element_kind="ditch",
-                side="right",
-                station_start=0.0,
-                station_end=100.0,
-                subassembly_ref="ditch:right",
-                policy_set_ref="drainage-policy:lined-concrete",
-            )
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:right",
-                from_element_ref="drainage:primary-lined-ditch",
-                to_element_ref="drainage:outfall-right",
-                outlet_ref="drainage:outfall-right",
-            )
-        ],
-    )
 
     model = SolidTargetDiscoveryService().discover(
         SolidTargetDiscoveryRequest(
@@ -825,135 +696,17 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
             corridor_ref="corridor:main",
             applied_section_set=applied,
             corridor_model=_corridor_model(),
-            drainage_model=drainage_model,
         )
     )
 
     targets = {row.target_id: row for row in model.target_rows}
     target = targets["solid-target:lined-ditch:right"]
     assert target.readiness_status == "available"
-    assert target.drainage_ref == "drainage:primary-lined-ditch"
-    assert target.flow_route_ref == "flow-route:right"
-    assert "drainage:main" in target.source_refs
-    assert "drainage:primary-lined-ditch" in target.source_refs
-    assert "flow-route:right" in target.source_refs
-    assert "drainage-policy:lined-concrete" in target.source_refs
-    assert "DrainageModel owner=drainage:primary-lined-ditch" in target.notes
-    assert "flow_route=flow-route:right" in target.notes
-
-
-def test_solid_target_discovery_uses_station_context_for_lined_ditch_drainage_owner() -> None:
-    applied = AppliedSectionSet(
-        schema_version=1,
-        project_id="proj-1",
-        applied_section_set_id="applied:main",
-        corridor_id="corridor:main",
-        sections=[
-            AppliedSection(
-                schema_version=1,
-                project_id="proj-1",
-                applied_section_id="section:0",
-                station=0.0,
-                region_id="region:main",
-                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0),
-                point_rows=[
-                    AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0),
-                    AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2),
-                ],
-                subassembly_rows=[
-                    AppliedSectionSubassemblyRow(
-                        "ditch:right",
-                        "ditch",
-                        side="right",
-                        region_id="region:main",
-                        width=1.2,
-                        material="concrete",
-                        parameters={"lining_thickness": "0.15"},
-                    ),
-                ],
-            ),
-            AppliedSection(
-                schema_version=1,
-                project_id="proj-1",
-                applied_section_id="section:100",
-                station=100.0,
-                region_id="region:main",
-                frame=AppliedSectionFrame(100.0, 100.0, 0.0, 10.0),
-                point_rows=[
-                    AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0),
-                    AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2),
-                ],
-                subassembly_rows=[
-                    AppliedSectionSubassemblyRow(
-                        "ditch:right",
-                        "ditch",
-                        side="right",
-                        region_id="region:main",
-                        width=1.2,
-                        material="concrete",
-                        parameters={"lining_thickness": "0.15"},
-                    ),
-                ],
-            ),
-        ],
-    )
-    region_model = RegionModel(
-        schema_version=1,
-        project_id="proj-1",
-        region_model_id="regions:main",
-        region_rows=[
-            RegionRow("region:main", 0.0, 100.0, assembly_ref="assembly:basic"),
-        ],
-    )
-    drainage_model = DrainageModel(
-        schema_version=1,
-        project_id="proj-1",
-        drainage_model_id="drainage:main",
-        element_rows=[
-            DrainageElementRow(
-                drainage_element_id="drainage:wrong-region",
-                element_kind="ditch",
-                side="right",
-                region_ref="region:other",
-                station_start=0.0,
-                station_end=100.0,
-            ),
-            DrainageElementRow(
-                drainage_element_id="drainage:main-right",
-                element_kind="ditch",
-                side="right",
-                region_ref="region:main",
-                station_start=0.0,
-                station_end=100.0,
-                subassembly_ref="ditch:right",
-                policy_set_ref="drainage-policy:lined-concrete",
-            ),
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id="flow-route:main-right",
-                from_element_ref="drainage:main-right",
-                outlet_ref="drainage:outlet",
-            )
-        ],
-    )
-
-    model = SolidTargetDiscoveryService().discover(
-        SolidTargetDiscoveryRequest(
-            project_id="proj-1",
-            corridor_ref="corridor:main",
-            applied_section_set=applied,
-            corridor_model=_corridor_model(),
-            region_model=region_model,
-            drainage_model=drainage_model,
-        )
-    )
-
-    target = {row.target_id: row for row in model.target_rows}["solid-target:lined-ditch:right"]
-    assert target.drainage_ref == "drainage:main-right"
-    assert target.flow_route_ref == "flow-route:main-right"
-    assert "drainage:wrong-region" not in target.source_refs
-    assert "StationContext region=region:main" in target.notes
+    assert target.drainage_ref == "ditch-run:right"
+    assert target.flow_route_ref == ""
+    assert "ditch-run:right" in target.source_refs
+    assert "Ditch Runs=ditch-run:right" in target.notes
+    assert not any(row.target_family.startswith("drainage_pipeline") for row in model.target_rows)
 
 
 def test_solid_target_discovery_creates_structure_body_candidates() -> None:
@@ -1060,36 +813,3 @@ def test_solid_target_discovery_blocks_external_drainage_structure_without_conne
     assert {row.kind for row in model.target_diagnostic_rows} == {"missing_external_structure_connection_points"}
 
 
-def test_solid_target_discovery_creates_drainage_pipeline_body_candidates() -> None:
-    model = SolidTargetDiscoveryService().discover(
-        SolidTargetDiscoveryRequest(
-            project_id="proj-1",
-            corridor_ref="corridor:main",
-            applied_section_set=_applied_set(),
-            corridor_model=_corridor_model(),
-            structure_model=_pipeline_structure_model(),
-            drainage_model=_pipeline_drainage_model(),
-        )
-    )
-
-    targets = {row.target_id: row for row in model.target_rows}
-    target = targets["solid-target:drainage-pipeline:pipeline-segment-flow-route-pipe-01"]
-    network = targets["solid-target:drainage-pipeline-network:main"]
-    assert target.target_family == "drainage_pipeline_body"
-    assert target.scope_kind == "drainage"
-    assert target.drainage_ref == "pipeline-segment:flow-route-pipe-01"
-    assert target.flow_route_ref == "flow-route:pipe-01"
-    assert target.station_start == 32.0
-    assert target.station_end == 90.0
-    assert target.material_ref == "drainage-pipe"
-    assert target.readiness_status == "available"
-    assert "connection:inlet-01:pipe-out" in target.source_refs
-    assert "connection:outlet-01:pipe-in" in target.source_refs
-    assert network.target_family == "drainage_pipeline_network_body"
-    assert network.scope_kind == "drainage"
-    assert network.drainage_ref == "drainage-pipeline-network:main"
-    assert network.flow_route_ref == "flow-route:pipe-01"
-    assert network.station_start == 32.0
-    assert network.station_end == 90.0
-    assert network.readiness_status == "available"
-    assert "pipeline-segment:flow-route-pipe-01" in network.source_refs
