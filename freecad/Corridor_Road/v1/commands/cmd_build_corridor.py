@@ -79,6 +79,7 @@ from ..services.builders.corridor_surface_geometry_service import (
 )
 from ..ui.presentation.intersection_kernel_review_presentation import (
     intersection_kernel_review_rows,
+    intersection_kernel_review_summary,
     intersection_kernel_row_polylines,
 )
 from ..services.builders.intersection_kernel_surface_service import (
@@ -1052,23 +1053,8 @@ def corridor_intersection_review_summary(document=None) -> dict[str, object]:
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if not _document_has_intersection(doc):
-        return {"status": "missing", "notes": "No Intersection source in this document.", "focus": "Intersections"}
-    result = _document_intersection_kernel_result(doc)
-    if result is None:
-        return {"status": "missing", "notes": "Run Applied Sections: the intersection is built on them.", "focus": "Intersections"}
-    quality = dict(result.quality_rows)
-    legs = sum(1 for leg in result.legs if leg.enabled)
-    skinny = int(quality.get("patch_triangle_skinny_count", 0)) + int(quality.get("slope_triangle_skinny_count", 0))
-    notes = (
-        f"Intersection kernel {result.status} for {result.intersection_id} ({result.kind}); {legs} legs; "
-        f"intersection surface {int(quality.get('patch_triangle_count', 0))} triangles, "
-        f"side slope {int(quality.get('slope_triangle_count', 0))} triangles, {skinny} skinny; "
-        f"{len(result.diagnostics)} diagnostic(s)."
-    )
-    status = {"ready": "ready", "partial": "warning"}.get(result.status, "error")
-    if status == "ready" and skinny:
-        status = "warning"
-    return {"status": status, "notes": notes, "focus": "Intersections"}
+        return intersection_kernel_review_summary(None, has_intersection=False)
+    return intersection_kernel_review_summary(_document_intersection_kernel_result(doc), has_intersection=True)
 
 
 def corridor_intersection_contract_review_rows(document=None, *, include_internal: bool = False) -> list[dict[str, object]]:

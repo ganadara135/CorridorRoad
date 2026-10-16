@@ -120,6 +120,33 @@ def intersection_kernel_review_rows(result) -> list[dict[str, object]]:
     return rows
 
 
+def intersection_kernel_review_summary(result, *, has_intersection: bool) -> dict[str, object]:
+    """The Guided Review summary of the intersection kernel's result.
+
+    Without an Intersection source there is nothing to review; with one but no result, the
+    Applied Sections the kernel is built on are missing. Skinny triangles turn a ready result
+    into a warning.
+    """
+
+    if not has_intersection:
+        return {"status": "missing", "notes": "No Intersection source in this document.", "focus": "Intersections"}
+    if result is None:
+        return {"status": "missing", "notes": "Run Applied Sections: the intersection is built on them.", "focus": "Intersections"}
+    quality = dict(result.quality_rows)
+    legs = sum(1 for leg in result.legs if leg.enabled)
+    skinny = int(quality.get("patch_triangle_skinny_count", 0)) + int(quality.get("slope_triangle_skinny_count", 0))
+    notes = (
+        f"Intersection kernel {result.status} for {result.intersection_id} ({result.kind}); {legs} legs; "
+        f"intersection surface {int(quality.get('patch_triangle_count', 0))} triangles, "
+        f"side slope {int(quality.get('slope_triangle_count', 0))} triangles, {skinny} skinny; "
+        f"{len(result.diagnostics)} diagnostic(s)."
+    )
+    status = {"ready": "ready", "partial": "warning"}.get(result.status, "error")
+    if status == "ready" and skinny:
+        status = "warning"
+    return {"status": status, "notes": notes, "focus": "Intersections"}
+
+
 def intersection_kernel_row_polylines(result, row: dict[str, object]) -> list[list[tuple[float, float, float]]]:
     """The linework that shows one review row in 3D, or nothing (the row then focuses its object)."""
 
