@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1 to GR-7 done and D1-D3 decided on 2026-10-16; GR-8 next
+Status: GR-1 to GR-8 done and D1-D3 decided on 2026-10-16; the Drainage rework is next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -390,6 +390,33 @@ Drainage rework, as planned.
 
 - Extend `smoke_v1_workflow.py` with a TIN existing ground, the 3D Centerline stage and a
   Superelevation source, and with the GR-3 stale and rebuild check.
+
+Done on 2026-10-16:
+
+- The smoke builds a curve the way the Alignment editor does (R 120 m, 20 m transitions), a flat
+  existing ground linked as the project Terrain, an Auto Calculate Superelevation and the
+  "Full Set Road" Assembly, whose side slopes daylight on the terrain. It checks terrain hits on
+  every side, no daylight fallback, superelevated lanes in the curve, current results after the
+  build, after reopening and after a rebuild, and a Profile edit that makes 3D Centerline, Applied
+  Sections and Build Parametric stale until Rebuild Downstream makes them current again.
+- It found two frame defects, fixed in `AlignmentEvaluationService`:
+  - inside a sampled element (a curve with transitions is one), the frame took each chord's
+    heading, so it turned by a whole chord step at every vertex; on the inside of the curve the
+    section lines of neighbouring sections crossed, overlap clipping cut them and the Daylight
+    surface folded (vertical and downward facets, non-manifold). The heading now runs from the
+    bisector at one vertex to the next, and keeps the end chord's heading at the element's ends;
+  - the last station, stored rounded to 9 decimals, lay up to a nanometre past the last element,
+    so it fell back to a coarse 3D Centerline interpolation with a wrong heading. A station within
+    1e-6 m of an element now belongs to it.
+- Tests: `tests/contracts/v1/test_alignment_station_frames.py` (new); the sampled-polyline tangent
+  test follows the new heading rule.
+- Left for later:
+  - overlap clipping moves the points beyond the cap onto it at their own elevations, which makes
+    a vertical face wherever sections still cross; with continuous frames the smoke no longer
+    reaches it, and the Daylight strip join is the place to fix it;
+  - the sample Alignment's three-point "curve" is fitted as an arc that is not tangent to its
+    straights, so its frames jump at both ends; it is demo data, and the smoke no longer uses it;
+  - a station past the Profile's end falls back to the coarse 3D Centerline interpolation too.
 
 ## 6. Order and relation to Drainage
 
