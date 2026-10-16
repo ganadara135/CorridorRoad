@@ -124,7 +124,6 @@ from freecad.Corridor_Road.v1.objects.project_document_adapter import route_obje
 from ..ui.presentation.drainage_flow_review_presentation import (
     DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE,
     DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE,
-    DRAINAGE_FLOW_REVIEW_PRESET_MODEL_NOTE,
     drainage_flow_review_placeholder_row,
     drainage_flow_review_rows,
 )
@@ -1215,9 +1214,6 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
     if drainage_model is None:
         _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
         return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_MISSING_MODEL_NOTE)]
-    if _is_intersection_preset_drainage_model(drainage_model):
-        _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
-        return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_PRESET_MODEL_NOTE)]
     structure_model = to_structure_model(find_v1_structure_model(doc))
     rows = drainage_flow_review_rows(
         drainage_model,
@@ -1228,20 +1224,6 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
         _remove_preview_object(doc, "ReviewIssueDrainageFlowRoutes")
         return [drainage_flow_review_placeholder_row(DRAINAGE_FLOW_REVIEW_NO_ROUTES_NOTE)]
     return rows
-
-
-def _is_intersection_preset_drainage_model(drainage_model) -> bool:
-    drainage_model_id = str(getattr(drainage_model, "drainage_model_id", "") or "")
-    if drainage_model_id.startswith("drainage:intersection-preset-"):
-        return True
-    source_refs = [str(value or "") for value in list(getattr(drainage_model, "source_refs", []) or [])]
-    if any(value.startswith("intersection:") for value in source_refs):
-        flow_rows = list(getattr(drainage_model, "flow_route_rows", []) or [])
-        return all(
-            str(getattr(row, "flow_route_id", "") or "").startswith("flow-route:intersection-")
-            for row in flow_rows
-        )
-    return False
 
 
 def corridor_drainage_flow_review_summary(document=None) -> dict[str, object]:

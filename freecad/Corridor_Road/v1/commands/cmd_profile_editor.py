@@ -1094,8 +1094,15 @@ def run_v1_profile_editor_command():
         raise RuntimeError("No active document.")
     document = App.ActiveDocument
     preferred_alignment, preferred_profile = selected_alignment_profile_target(Gui, document)
-    profile = find_v1_profile(document, preferred_profile=preferred_profile)
-    preferred_alignment = find_v1_alignment(document, preferred_alignment=preferred_alignment)
+    # the editor works on one Alignment and its own Profile
+    if preferred_profile is not None:
+        profile = find_v1_profile(document, preferred_profile=preferred_profile)
+        preferred_alignment = find_v1_alignment(
+            document, alignment_id=str(getattr(profile, "AlignmentId", "") or "")
+        ) or find_v1_alignment(document, preferred_alignment=preferred_alignment)
+    else:
+        preferred_alignment = find_v1_alignment(document, preferred_alignment=preferred_alignment)
+        profile = find_v1_profile(document, alignment_id=str(getattr(preferred_alignment, "AlignmentId", "") or ""))
     if Gui is not None and hasattr(Gui, "Control"):
         if profile is not None:
             try:

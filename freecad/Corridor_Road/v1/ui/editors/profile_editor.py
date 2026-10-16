@@ -771,10 +771,14 @@ class V1ProfileEditorTaskPanel:
         layout.addWidget(self._station_check_table, 1)
         return tab
 
+    def _alignment_stationing(self):
+        alignment = self.preferred_alignment or find_v1_alignment(self.document)
+        return find_v1_stationing(self.document, alignment_id=str(getattr(alignment, "AlignmentId", "") or ""))
+
     def _load_rows(self) -> None:
         rows = profile_control_rows(self.profile)
         if not rows:
-            rows = profile_rows_from_stationing(find_v1_stationing(self.document))
+            rows = profile_rows_from_stationing(self._alignment_stationing())
             self._stationing_loaded_rows = len(rows)
         else:
             self._stationing_loaded_rows = 0
@@ -925,7 +929,7 @@ class V1ProfileEditorTaskPanel:
         if not hasattr(self, "_station_check_table"):
             return
         alignment = self.preferred_alignment or find_v1_alignment(self.document)
-        stationing = find_v1_stationing(self.document)
+        stationing = self._alignment_stationing()
         rows = profile_station_check_rows(
             self._profile_rows_for_reference(),
             alignment,

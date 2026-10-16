@@ -105,7 +105,11 @@ def create_or_update_v1_region_model_object(
     object_name: str = "V1RegionModel",
     label: str = "Regions",
 ):
-    """Create or update the durable v1 RegionModel source object."""
+    """Create or update the durable v1 RegionModel source object.
+
+    An Alignment has one Region source. The rows are written into the object that already
+    belongs to `region_model.alignment_id`; `object_name` only names a new object.
+    """
 
     doc = document
     if doc is None and App is not None:
@@ -115,7 +119,7 @@ def create_or_update_v1_region_model_object(
     if region_model is None:
         region_model = RegionModel(schema_version=1, project_id=_project_id(project), region_model_id="regions:v1")
 
-    obj = doc.getObject(object_name)
+    obj = find_v1_region_model(doc, alignment_id=str(getattr(region_model, "alignment_id", "") or ""))
     if obj is None:
         obj = doc.addObject("App::FeaturePython", object_name)
         V1RegionModelObject(obj)
@@ -225,17 +229,25 @@ def to_region_model(obj) -> RegionModel | None:
     )
 
 
-def find_v1_region_model(document, preferred_region_model=None):
-    """Find a v1 RegionModel object in a document."""
+def find_v1_region_model(document, preferred_region_model=None, *, alignment_id: str | None = None):
+    """Find a v1 RegionModel object in a document.
+
+    With `alignment_id`, return the Region source of that Alignment, or None.
+    """
 
     if _is_v1_region_model(preferred_region_model):
         return preferred_region_model
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if _is_v1_region_model(obj):
-            return obj
-    return None
+    rows = list_v1_region_models(document)
+    if alignment_id is not None:
+        target = str(alignment_id or "").strip()
+        rows = [obj for obj in rows if str(getattr(obj, "AlignmentId", "") or "").strip() == target]
+    return rows[0] if rows else None
+
+
+def list_v1_region_models(document) -> list:
+    """Return every v1 RegionModel object in document order."""
+
+    return [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_region_model(obj)]
 
 
 def _is_v1_region_model(obj) -> bool:

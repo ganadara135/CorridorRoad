@@ -3486,60 +3486,6 @@ def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> No
         App.closeDocument(doc.Name)
 
 
-def test_intersection_preset_drainage_does_not_create_drainage_flow_highlight() -> None:
-    doc, project = _new_project_doc()
-    try:
-        stale = doc.addObject("Part::Feature", "ReviewIssueDrainageFlowRoutes")
-        stale.Label = "Drainage Flow Highlight"
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-1",
-                drainage_model_id="drainage:intersection-preset-t-intersection",
-                element_rows=[
-                    DrainageElementRow(
-                        drainage_element_id="drainage:intersection-low-point-t-intersection",
-                        element_kind="low_point_hint",
-                    ),
-                    DrainageElementRow(
-                        drainage_element_id="drainage:intersection-outlet-hint-t-intersection",
-                        element_kind="outlet_hint",
-                    ),
-                ],
-                flow_route_rows=[
-                    DrainageFlowRoute(
-                        flow_route_id="flow-route:intersection-t-intersection-01",
-                        from_element_ref="drainage:intersection-low-point-t-intersection",
-                        to_element_ref="drainage:intersection-outlet-hint-t-intersection",
-                        outlet_ref="drainage:intersection-outlet-hint-t-intersection",
-                    )
-                ],
-                source_refs=["intersection:t-01"],
-            ),
-            object_name="V1IntersectionPresetDrainage",
-            label="Intersection Preset Drainage",
-        )
-
-        rows = corridor_drainage_flow_review_rows(doc)
-        summary = corridor_drainage_flow_review_summary(doc)
-
-        assert doc.getObject("ReviewIssueDrainageFlowRoutes") is None
-        assert rows[0]["status"] == "missing"
-        assert rows[0]["flow_route_id"] == ""
-        assert "Intersection preset drainage" in rows[0]["notes"]
-        assert summary["status"] == "missing"
-        try:
-            focus_corridor_drainage_flow_review(doc)
-        except RuntimeError as exc:
-            assert "No Drainage Flow Route rows" in str(exc)
-        else:
-            raise AssertionError("Intersection preset drainage should not create a Drainage Flow highlight.")
-    finally:
-        App.closeDocument(doc.Name)
-
-
 def test_drainage_flow_focus_connects_structure_connection_points_as_pipe_segments() -> None:
     doc, project = _new_project_doc()
     try:

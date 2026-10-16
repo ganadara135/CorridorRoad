@@ -18,7 +18,6 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_tree, ensure_project_viewprovider, find_project
-from ..models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel, DrainagePolicySet
 from ..models.source.superelevation_model import SuperelevationConstraint, SuperelevationModel
 from .cmd_intersection_editor import (
     AlignmentIntersectionDetectionService,
@@ -30,7 +29,6 @@ from .cmd_intersection_editor import (
     list_intersection_control_region_choices,
     validate_existing_alignment_selection,
 )
-from ..objects.obj_drainage import create_or_update_v1_drainage_model_object
 from ..services.editing import build_control_region_overlay
 from ..objects.obj_intersection import (
     INTERSECTION_SOURCE_LABEL,
@@ -901,8 +899,8 @@ def create_intersection_from_existing_alignments(
 
     The same source set the preset writes is created around the Alignments the user
     selected: intersection control Regions as overlay rows on their existing Region
-    models, one Superelevation handoff source for each road that has none, and the
-    Drainage handoff source. `details`, when given, receives one line for each.
+    models and one Superelevation handoff source for each road that has none. `details`,
+    when given, receives one line for each.
     """
 
     if document is None:
@@ -954,17 +952,6 @@ def create_intersection_from_existing_alignments(
                 document,
                 (primary_alignment_ref, secondary_alignment_ref),
             ),
-        )
-    )
-    detail_lines.extend(
-        _create_preset_drainage_source(
-            document,
-            intersection_kind=kind,
-            primary_alignment_ref=primary_alignment_ref,
-            secondary_alignment_ref=secondary_alignment_ref,
-            control_region_choices=control_regions,
-            drainage_mode=drainage_mode or str(intersection_preset_row_from_label(preset_label).get("drainage", "") or ""),
-            project=project,
         )
     )
     try:
@@ -1156,17 +1143,7 @@ def _create_preset_intersection_model(
             control_region_choices=control_regions,
             grading_policy=grading_policy,
             project=project,
-        )
-    )
-    details.extend(
-        _create_preset_drainage_source(
-            document,
-            intersection_kind=intersection_kind,
-            primary_alignment_ref=primary_ref,
-            secondary_alignment_ref=secondary_ref,
-            control_region_choices=control_regions,
-            drainage_mode=drainage_mode,
-            project=project,
+            skip_alignment_refs=_alignments_with_superelevation_source(document, (primary_ref, secondary_ref)),
         )
     )
     return details
@@ -1495,94 +1472,6 @@ def _create_preset_superelevation_source(
     return details
 
 
-def _create_preset_drainage_source(
-    document,
-    *,
-    intersection_kind: str,
-    primary_alignment_ref: str,
-    secondary_alignment_ref: str,
-    control_region_choices: list[dict[str, object]],
-    drainage_mode: str = "",
-    project=None,
-) -> list[str]:
-    """Store a preset-owned Drainage low-point handoff source."""
-
-    intersection_ref = intersection_ref_for_kind(intersection_kind)
-    capture_mode = str(drainage_mode or "review_low_points")
-    low_point_id = f"drainage:intersection-low-point-{_safe_id(intersection_kind)}"
-    outlet_hint_id = f"drainage:intersection-outlet-hint-{_safe_id(intersection_kind)}"
-    policy_id = f"drainage-policy:intersection-low-point-{_safe_id(intersection_kind)}"
-    start, end = _control_region_station_range(control_region_choices)
-    element_rows = [
-        DrainageElementRow(
-            drainage_element_id=low_point_id,
-            element_kind="inlet_reference",
-            alignment_ref=str(primary_alignment_ref or ""),
-            intersection_ref=intersection_ref,
-            side="both",
-            station_start=start,
-            station_end=end,
-            policy_set_ref=policy_id,
-        ),
-        DrainageElementRow(
-            drainage_element_id=outlet_hint_id,
-            element_kind="outfall_reference",
-            alignment_ref=str(secondary_alignment_ref or primary_alignment_ref or ""),
-            intersection_ref=intersection_ref,
-            side="outside",
-            station_start=start,
-            station_end=end,
-            policy_set_ref=policy_id,
-        ),
-    ]
-    model = DrainageModel(
-        schema_version=1,
-        project_id=_project_id(project),
-        label="Intersection Preset Drainage",
-        drainage_model_id=f"drainage:intersection-preset-{_safe_id(intersection_kind)}",
-        element_rows=element_rows,
-        policy_rows=[
-            DrainagePolicySet(
-                policy_set_id=policy_id,
-                flow_intent="edge_runoff_capture",
-                min_grade_rule="review",
-                low_point_rule=capture_mode,
-                collection_rule="intersection_control_area",
-                discharge_rule="requires_drainage_design",
-                earthwork_priority="preserve_intersection_surface",
-            )
-        ],
-        flow_route_rows=[
-            DrainageFlowRoute(
-                flow_route_id=f"flow-route:intersection-{_safe_id(intersection_kind)}-01",
-                from_element_ref=low_point_id,
-                to_element_ref=outlet_hint_id,
-                outlet_ref=outlet_hint_id,
-                direction="review",
-                risk_level="high",
-                notes="Preset handoff only; replace with real inlet/outfall Structures during drainage design.",
-            )
-        ],
-        source_refs=[
-            intersection_ref,
-            str(primary_alignment_ref or ""),
-            str(secondary_alignment_ref or ""),
-            *[str(row.get("control_region_ref", "") or "") for row in control_region_choices],
-        ],
-    )
-    obj = create_or_update_v1_drainage_model_object(
-        document=document,
-        project=project,
-        drainage_model=model,
-        object_name="V1IntersectionPresetDrainage",
-        label="Intersection Preset Drainage",
-    )
-    return [
-        f"Drainage: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {getattr(obj, 'DrainageModelId', '')}",
-        f"Drainage rows: elements={len(element_rows)}; policies=1; flow_routes=1",
-    ]
-
-
 def _primary_secondary_refs_from_control_regions(control_regions: list[dict[str, object]]) -> tuple[str, str]:
     primary = ""
     secondary = ""
@@ -1688,8 +1577,6 @@ def _is_intersection_preset_tree_object(obj) -> bool:
     if str(getattr(obj, "SuperelevationKind", "") or "") == "intersection_superelevation_handoff":
         return True
     if str(getattr(obj, "SuperelevationId", "") or "").startswith("superelevation:intersection-preset-"):
-        return True
-    if str(getattr(obj, "DrainageModelId", "") or "").startswith("drainage:intersection-preset-"):
         return True
     return label.startswith("Intersection ") and (
         label.endswith(" FG Profile")

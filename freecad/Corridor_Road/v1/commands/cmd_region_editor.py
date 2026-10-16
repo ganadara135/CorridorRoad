@@ -21,6 +21,7 @@ from ...objects.obj_project import (
 )
 from ..models.source.region_model import RegionModel, RegionRow
 from ..objects.obj_alignment import find_v1_alignment
+from .selection_context import selected_alignment_profile_target
 from ..objects.obj_subassembly_assembly import list_v1_assembly_subassembly_models, to_assembly_subassembly_model
 from ..objects.obj_region import (
     create_or_update_v1_region_model_object,
@@ -228,10 +229,12 @@ def apply_v1_region_model(
         prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
+    existing = find_v1_region_model(doc, alignment_id=str(getattr(region_model, "alignment_id", "") or ""))
     obj = create_or_update_v1_region_model_object(
         document=doc,
         project=prj,
         region_model=region_model,
+        label=str(getattr(existing, "Label", "") or "Regions"),
     )
     try:
         doc.recompute()
@@ -241,26 +244,29 @@ def apply_v1_region_model(
 
 
 def run_v1_region_editor_command():
-    """Open the v1 Region editor panel."""
+    """Open the v1 Region editor panel for the selected Alignment, or the first one."""
 
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
     document = App.ActiveDocument
-    panel = V1RegionEditorTaskPanel(document=document)
+    preferred_alignment, _preferred_profile = selected_alignment_profile_target(Gui, document)
+    panel = V1RegionEditorTaskPanel(document=document, alignment=preferred_alignment)
     if Gui is not None and hasattr(Gui, "Control"):
         Gui.Control.showDialog(panel)
-    return find_v1_region_model(document)
+    return panel.region_obj
 
 
 class V1RegionEditorTaskPanel:
     """Table-based v1 Region source editor."""
 
-    def __init__(self, *, document=None):
+    def __init__(self, *, document=None, alignment=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-        self.region_obj = find_v1_region_model(self.document)
+        # the panel edits the Region source of one Alignment
+        self.alignment = find_v1_alignment(self.document, preferred_alignment=alignment)
+        self.region_obj = find_v1_region_model(self.document, alignment_id=_alignment_id(self.alignment))
         self._assembly_refs = _assembly_source_ids(self.document)
-        self._station_values = _document_station_values(self.document)
-        self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
+        self._station_values = _document_station_values(self.document, self.alignment)
+        self._station_range = _document_station_range(self.document, self.alignment)
         self.form = fit_task_panel_width(self._build_ui())
         self._load_existing_rows()
 
@@ -374,7 +380,7 @@ class V1RegionEditorTaskPanel:
     def _load_selected_preset(self) -> None:
         try:
             preset_name = str(self._preset_combo.currentText() or "Basic Road")
-            model = region_preset_model_from_document(preset_name, document=self.document)
+            model = region_preset_model_from_document(preset_name, document=self.document, alignment=self.alignment)
             self._replace_rows(model.region_rows)
             self._set_status(f"Region preset loaded: {preset_name}. Apply when ready.")
         except Exception as exc:
@@ -536,12 +542,11 @@ class V1RegionEditorTaskPanel:
 
     def _model_from_table(self) -> RegionModel:
         existing = to_region_model(self.region_obj)
-        alignment = find_v1_alignment(self.document)
         return RegionModel(
             schema_version=1,
             project_id=_project_id(find_project(self.document)),
             region_model_id=str(getattr(existing, "region_model_id", "") or "regions:main"),
-            alignment_id=str(getattr(existing, "alignment_id", "") or getattr(alignment, "AlignmentId", "") or ""),
+            alignment_id=_alignment_id(self.alignment),
             label="Regions",
             region_rows=self._table_rows(),
         )
@@ -636,7 +641,7 @@ class CmdV1RegionEditor:
 
 
 def _document_station_range(document, alignment_obj=None) -> tuple[float, float]:
-    values = _document_station_values(document)
+    values = _document_station_values(document, alignment_obj)
     if values:
         return min(values), max(values)
     try:
@@ -648,8 +653,15 @@ def _document_station_range(document, alignment_obj=None) -> tuple[float, float]
     return 0.0, 100.0
 
 
-def _document_station_values(document) -> list[float]:
-    stationing = find_v1_stationing(document)
+def _alignment_id(alignment) -> str:
+    return str(getattr(alignment, "AlignmentId", "") or "")
+
+
+def _document_station_values(document, alignment=None) -> list[float]:
+    if alignment is not None:
+        stationing = find_v1_stationing(document, alignment_id=_alignment_id(alignment))
+    else:
+        stationing = find_v1_stationing(document)
     stations = list(getattr(stationing, "StationValues", []) or []) if stationing is not None else []
     values: dict[float, float] = {}
     for station in stations:

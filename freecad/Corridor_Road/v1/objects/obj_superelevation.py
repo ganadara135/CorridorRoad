@@ -104,7 +104,12 @@ def create_or_update_v1_superelevation_source_object(
     object_name: str = "V1SuperelevationSource",
     label: str = "Superelevation",
 ):
-    """Create or update the durable v1 SuperelevationModel source object."""
+    """Create or update the durable v1 SuperelevationModel source object.
+
+    An Alignment has one Superelevation source. The rows are written into the object that
+    already belongs to `superelevation_model.alignment_id`; `object_name` only names a new
+    object.
+    """
 
     doc = document
     if doc is None and App is not None:
@@ -118,7 +123,7 @@ def create_or_update_v1_superelevation_source_object(
             superelevation_id="superelevation:main",
         )
 
-    obj = doc.getObject(object_name)
+    obj = find_v1_superelevation_source(doc, alignment_id=str(getattr(superelevation_model, "alignment_id", "") or ""))
     if obj is None:
         obj = doc.addObject("App::FeaturePython", object_name)
         V1SuperelevationSourceObject(obj)
@@ -225,17 +230,25 @@ def to_superelevation_model(obj) -> SuperelevationModel | None:
     )
 
 
-def find_v1_superelevation_source(document, preferred_superelevation=None):
-    """Find a v1 Superelevation source object in a document."""
+def find_v1_superelevation_source(document, preferred_superelevation=None, *, alignment_id: str | None = None):
+    """Find a v1 Superelevation source object in a document.
+
+    With `alignment_id`, return the Superelevation source of that Alignment, or None.
+    """
 
     if _is_v1_superelevation_source(preferred_superelevation):
         return preferred_superelevation
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if _is_v1_superelevation_source(obj):
-            return obj
-    return None
+    rows = list_v1_superelevation_sources(document)
+    if alignment_id is not None:
+        target = str(alignment_id or "").strip()
+        rows = [obj for obj in rows if str(getattr(obj, "AlignmentId", "") or "").strip() == target]
+    return rows[0] if rows else None
+
+
+def list_v1_superelevation_sources(document) -> list:
+    """Return every v1 Superelevation source object in document order."""
+
+    return [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_superelevation_source(obj)]
 
 
 def _is_v1_superelevation_source(obj) -> bool:

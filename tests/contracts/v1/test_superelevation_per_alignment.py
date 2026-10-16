@@ -1,10 +1,9 @@
 """Item 5.5: superelevation belongs to one Alignment, like Profile and Region.
 
 One source was resolved first-found and handed to every road, so a side road
-consumed the main road's crossfall at its own stations. Two sources can also claim
-the same Alignment, since the Intersection preset writes its own objects while the
-Superelevation editor writes `V1SuperelevationSource`, and the first in document
-order won silently.
+consumed the main road's crossfall at its own stations. Each Alignment now has one
+source object, and a write for that Alignment lands in it whatever object name the
+writer passes, so an edit can no longer hide behind the preset's source.
 """
 
 import FreeCAD as App
@@ -12,7 +11,6 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_project import find_project
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     build_document_applied_section_set,
-    superelevation_source_rows,
 )
 from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import (
     create_intersection_preset_sources,
@@ -157,12 +155,11 @@ def test_a_road_without_a_source_reports_no_superelevation_contribution() -> Non
         App.closeDocument(doc.Name)
 
 
-def test_an_authored_source_wins_over_the_preset_handoff_placeholder() -> None:
-    doc = App.newDocument("CRV1SuperelevationAuthoredWins")
+def test_an_edit_for_a_road_is_written_into_that_road_source() -> None:
+    doc = App.newDocument("CRV1SuperelevationEditInPlace")
     try:
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
-        # the preset's source for the main road carries no crossfall rows; this one does,
-        # and it is created after it, so document order alone would lose
+        # written after the preset, under another object name, as the editor once did
         _write_source(
             doc,
             alignment_id=PRIMARY,
@@ -172,65 +169,16 @@ def test_an_authored_source_wins_over_the_preset_handoff_placeholder() -> None:
         )
         doc.recompute()
 
+        primary_sources = [
+            obj for obj in doc.Objects
+            if to_superelevation_model(obj) is not None and to_superelevation_model(obj).alignment_id == PRIMARY
+        ]
+        assert len(primary_sources) == 1
+        assert to_superelevation_model(primary_sources[0]).superelevation_id == "superelevation:authored"
+
         applied = build_document_applied_section_set(doc, project=find_project(doc))
         at_sixty = _crossfall_by_alignment(applied, 60.0)
-
         assert at_sixty[PRIMARY][2] == "superelevation:authored"
         assert at_sixty[PRIMARY][:2] == (-7.0, 7.0)
-
-        by_id = {str(row["superelevation_id"]): row for row in superelevation_source_rows(doc)}
-        assert by_id["superelevation:authored"]["status"] == "ok"
-        placeholder = next(
-            row for superelevation_id, row in by_id.items()
-            if row["alignment_id"] == PRIMARY and superelevation_id != "superelevation:authored"
-        )
-        assert placeholder["status"] == "warn"
-        assert "carries crossfall rows" in str(placeholder["notes"])
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_superelevation_source_rows_flag_a_source_nothing_reads() -> None:
-    doc = App.newDocument("CRV1SuperelevationShadowed")
-    try:
-        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
-        _write_source(
-            doc,
-            alignment_id=PRIMARY,
-            superelevation_id="superelevation:editor-edit",
-            object_name="V1SuperelevationSource",
-        )
-        doc.recompute()
-
-        rows = superelevation_source_rows(doc)
-        by_id = {str(row["superelevation_id"]): row for row in rows}
-
-        shadowed = by_id["superelevation:editor-edit"]
-        assert shadowed["status"] == "warn"
-        assert "already claims this Alignment" in str(shadowed["notes"])
-        assert all(
-            row["status"] == "ok"
-            for superelevation_id, row in by_id.items()
-            if superelevation_id != "superelevation:editor-edit"
-        )
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_superelevation_source_rows_flag_a_source_with_no_alignment() -> None:
-    doc = App.newDocument("CRV1SuperelevationNoAlignment")
-    try:
-        _write_source(
-            doc,
-            alignment_id="",
-            superelevation_id="superelevation:unattached",
-            object_name="V1SuperelevationSource",
-        )
-        doc.recompute()
-
-        row = superelevation_source_rows(doc)[0]
-
-        assert row["status"] == "warn"
-        assert "No alignment_id" in str(row["notes"])
     finally:
         App.closeDocument(doc.Name)

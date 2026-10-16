@@ -5,7 +5,6 @@ from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups,
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
-    V1_TREE_DRAINAGE,
     V1_TREE_INTERSECTIONS,
     V1_TREE_PROFILES,
     V1_TREE_REGIONS,
@@ -269,7 +268,6 @@ _INTERSECTION_PRESET_TREE_PLACEMENT = {
     "Intersection Side Road Regions": V1_TREE_REGIONS,
     "Intersection Preset Superelevation (primary)": V1_TREE_SUPERELEVATION,
     "Intersection Preset Superelevation (secondary)": V1_TREE_SUPERELEVATION,
-    "Intersection Preset Drainage": V1_TREE_DRAINAGE,
 }
 
 
@@ -328,15 +326,6 @@ def test_intersection_preset_tree_cleanup_routes_existing_root_leftovers() -> No
                 (
                     ("CRRecordKind", "v1_superelevation_source"),
                     ("SuperelevationKind", "intersection_superelevation_handoff"),
-                ),
-            ),
-            (
-                "V1IntersectionPresetDrainage",
-                "Intersection Preset Drainage",
-                V1_TREE_DRAINAGE,
-                (
-                    ("CRRecordKind", "v1_drainage_model"),
-                    ("DrainageModelId", "drainage:intersection-preset-t-intersection"),
                 ),
             ),
         ]

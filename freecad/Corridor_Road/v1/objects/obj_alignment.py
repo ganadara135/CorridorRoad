@@ -204,17 +204,19 @@ def create_sample_v1_alignment(document=None, *, project=None, label: str = "Mai
     return obj
 
 
-def find_v1_alignment(document, preferred_alignment=None):
-    """Find a v1 alignment object in a document, honoring an explicit preferred object."""
+def find_v1_alignment(document, preferred_alignment=None, *, alignment_id: str | None = None):
+    """Find a v1 alignment object in a document, honoring an explicit preferred object.
+
+    With `alignment_id`, return the Alignment with that id, or None.
+    """
 
     if _is_v1_alignment(preferred_alignment):
         return preferred_alignment
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if _is_v1_alignment(obj):
-            return obj
-    return None
+    rows = [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_alignment(obj)]
+    if alignment_id is not None:
+        target = str(alignment_id or "").strip()
+        rows = [obj for obj in rows if str(getattr(obj, "AlignmentId", "") or "").strip() == target]
+    return rows[0] if rows else None
 
 
 def build_v1_alignment_shape(obj):

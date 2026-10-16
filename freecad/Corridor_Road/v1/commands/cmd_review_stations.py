@@ -87,8 +87,18 @@ class V1StationingReviewTaskPanel:
 
     def __init__(self, *, stationing=None, document=None, preferred_alignment=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-        self.stationing = stationing or find_v1_stationing(self.document)
-        self.preferred_alignment = preferred_alignment
+        # the panel edits the Stationing of one Alignment: a given Stationing names its
+        # Alignment, otherwise the preferred (or first) Alignment names its Stationing
+        if stationing is not None:
+            alignment_id = str(getattr(stationing, "AlignmentId", "") or "")
+            self.preferred_alignment = find_v1_alignment(self.document, alignment_id=alignment_id) or preferred_alignment
+            self.stationing = stationing
+        else:
+            self.preferred_alignment = find_v1_alignment(self.document, preferred_alignment=preferred_alignment)
+            self.stationing = find_v1_stationing(
+                self.document,
+                alignment_id=str(getattr(self.preferred_alignment, "AlignmentId", "") or ""),
+            )
         self.form = fit_task_panel_width(self._build_ui())
 
     def getStandardButtons(self):
@@ -296,23 +306,22 @@ def run_v1_stationing_review_command():
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
     document = App.ActiveDocument
-    stationing = _selected_stationing(Gui, document) or find_v1_stationing(document)
+    stationing = _selected_stationing(Gui, document)
     preferred_alignment, _preferred_profile = selected_alignment_profile_target(Gui, document)
+    panel = V1StationingReviewTaskPanel(
+        stationing=stationing,
+        document=document,
+        preferred_alignment=preferred_alignment,
+    )
     if Gui is not None:
-        if stationing is not None:
+        if panel.stationing is not None:
             try:
                 Gui.Selection.clearSelection()
-                Gui.Selection.addSelection(stationing)
+                Gui.Selection.addSelection(panel.stationing)
             except Exception:
                 pass
-        Gui.Control.showDialog(
-            V1StationingReviewTaskPanel(
-                stationing=stationing,
-                document=document,
-                preferred_alignment=preferred_alignment,
-            )
-        )
-    return stationing
+        Gui.Control.showDialog(panel)
+    return panel.stationing
 
 
 def _selected_stationing(gui, document):
@@ -323,9 +332,9 @@ def _selected_stationing(gui, document):
     except Exception:
         selection = []
     for obj in selection:
-        candidate = find_v1_stationing(document, preferred_stationing=obj)
-        if candidate is not None:
-            return candidate
+        # only a selected Stationing counts; find_v1_stationing would fall back to the first one
+        if find_v1_stationing(document, preferred_stationing=obj) is obj:
+            return obj
     return None
 
 

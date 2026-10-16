@@ -51,6 +51,7 @@ from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_superelevation import to_superelevation_model
+from ..objects.source_identity import duplicate_source_rows, duplicate_source_text
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 from ..services.builders.corridor_surface_geometry_service import (
     SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
@@ -102,6 +103,13 @@ def build_document_applied_section_set(
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    duplicates = duplicate_source_rows(doc)
+    if duplicates:
+        raise RuntimeError(
+            "Each source must exist once, but these have more than one object; "
+            "delete the extra objects and build again: "
+            + "; ".join(duplicate_source_text(row) for row in duplicates)
+        )
     options = dict(
         project=project,
         corridor_id=corridor_id,
@@ -174,7 +182,7 @@ def _build_applied_section_set_pass(
     region_model = to_region_model(region_obj)
     structure_model = to_structure_model(structure_obj)
     drainage_model = to_drainage_model(drainage_obj)
-    superelevation_model = _superelevation_for_alignment(
+    superelevation_model = _model_for_alignment(
         [(obj, to_superelevation_model(obj)) for obj in list(getattr(doc, "Objects", []) or [])
          if to_superelevation_model(obj) is not None],
         str(getattr(alignment, "alignment_id", "") or "") if alignment is not None else "",
@@ -405,7 +413,7 @@ def _applied_section_alignment_bundles(document) -> list[dict[str, object]]:
         # Superelevation is optional, so it never makes a bundle incomplete, but it is
         # paired the same way: a model that belongs to another Alignment must not be
         # read at this road's stations.
-        superelevation_model = _superelevation_for_alignment(superelevations, alignment_id)
+        superelevation_model = _model_for_alignment(superelevations, alignment_id)
         missing = [
             name
             for name, present in (
@@ -458,82 +466,15 @@ def incomplete_alignment_bundle_rows(document) -> list[dict[str, object]]:
     ]
 
 
-def superelevation_source_rows(document) -> list[dict[str, object]]:
-    """Report every Superelevation source and which Alignment will read it.
+def _duplicate_source_summary_lines(document) -> list[str]:
+    """Return panel lines for sources held by more than one object, or none."""
 
-    Superelevation is paired by `alignment_id`, and the pairing takes the first
-    match in document order. Two sources can claim the same Alignment: the
-    Intersection preset writes its own objects and the Superelevation editor writes
-    `V1SuperelevationSource`, so on a preset document an edit could land in a source
-    that nothing reads. The shadowed one is named here rather than left silent.
-    """
-
-    candidates: list[tuple[object, object]] = []
-    for obj in list(getattr(document, "Objects", []) or []):
-        model = to_superelevation_model(obj)
-        if model is not None:
-            candidates.append((obj, model))
-
-    # the winner per Alignment is resolved by the same rule the build uses
-    winners: dict[str, object] = {}
-    for alignment_id in {
-        str(getattr(model, "alignment_id", "") or "").strip()
-        for _obj, model in candidates
-        if str(getattr(model, "alignment_id", "") or "").strip()
-    }:
-        chosen = _superelevation_for_alignment(candidates, alignment_id)
-        if chosen is not None:
-            winners[alignment_id] = chosen
-
-    rows: list[dict[str, object]] = []
-    for obj, model in candidates:
-        alignment_id = str(getattr(model, "alignment_id", "") or "").strip()
-        control_row_count = len(list(getattr(model, "control_rows", []) or []))
-        if not alignment_id:
-            status, notes = "warn", "No alignment_id, so no Alignment reads this source."
-        elif winners.get(alignment_id) is model:
-            status, notes = "ok", "Read by the Alignment it names."
-        else:
-            status = "warn"
-            winner = winners.get(alignment_id)
-            winner_rows = len(list(getattr(winner, "control_rows", []) or [])) if winner is not None else 0
-            notes = (
-                "Another Superelevation source for this Alignment carries crossfall rows, "
-                "so this one is not read."
-                if winner_rows and not control_row_count
-                else "Another Superelevation source already claims this Alignment, so this one is not read."
-            )
-        rows.append(
-            {
-                "object_name": str(getattr(obj, "Name", "") or ""),
-                "label": str(getattr(obj, "Label", "") or getattr(obj, "Name", "") or ""),
-                "superelevation_id": str(getattr(model, "superelevation_id", "") or ""),
-                "alignment_id": alignment_id,
-                "control_row_count": control_row_count,
-                "status": status,
-                "notes": notes,
-            }
-        )
-    return rows
-
-
-def _superelevation_summary_lines(document) -> list[str]:
-    """Return panel lines for Superelevation sources, flagging the ones nothing reads."""
-
-    rows = superelevation_source_rows(document)
+    rows = duplicate_source_rows(document)
     if not rows:
         return []
-    lines = ["", "Superelevation sources:"]
+    lines = ["", "Duplicate sources (Build Sections refuses them):"]
     for row in rows:
-        lines.append(
-            "- %s: alignment=%s, %d control row(s)%s"
-            % (
-                row["label"],
-                row["alignment_id"] or "(none)",
-                row["control_row_count"],
-                "  <- not read" if row["status"] == "warn" else "",
-            )
-        )
+        lines.append("- " + duplicate_source_text(row))
     return lines
 
 
@@ -559,35 +500,6 @@ def _model_for_alignment(rows: list[tuple[object, object]], alignment_id: str):
         if model_alignment_id == target:
             return model
     return fallback if len(rows) == 1 else None
-
-
-def _superelevation_for_alignment(rows: list[tuple[object, object]], alignment_id: str):
-    """Return the Superelevation model an Alignment should read.
-
-    Pairing is by `alignment_id`, like Profile and Region. Where two sources claim the
-    same Alignment, one carrying crossfall control rows wins over one without: the
-    Intersection preset writes a handoff placeholder with no rows, and it must not
-    shadow a source somebody authored. If both carry rows the document order stands
-    and `superelevation_source_rows` reports the one that is not read.
-    """
-
-    target = str(alignment_id or "").strip()
-    matching = []
-    unattached = []
-    for _obj, model in list(rows or []):
-        model_alignment_id = str(getattr(model, "alignment_id", "") or "").strip()
-        if model_alignment_id == target and target:
-            matching.append(model)
-        elif not model_alignment_id:
-            unattached.append(model)
-    for candidate in matching:
-        if list(getattr(candidate, "control_rows", []) or []):
-            return candidate
-    if matching:
-        return matching[0]
-    if unattached and len(rows) == 1:
-        return unattached[0]
-    return None
 
 
 def _stationing_for_alignment(rows: list[object], alignment_id: str):
@@ -1164,7 +1076,7 @@ class V1AppliedSectionsTaskPanel:
                 f"Structures: {_source_status(find_v1_structure_model(self.document))}",
                 f"Stations: {station_count} row(s)",
                 *_incomplete_alignment_summary_lines(self.document),
-                *_superelevation_summary_lines(self.document),
+                *_duplicate_source_summary_lines(self.document),
                 "",
                 "Click Build Sections to validate sources and create or update the v1 AppliedSectionSet result.",
             ]

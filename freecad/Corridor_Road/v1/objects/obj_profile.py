@@ -223,17 +223,25 @@ def build_v1_profile_shape(obj):
     return shape
 
 
-def find_v1_profile(document, preferred_profile=None):
-    """Find a v1 profile object in a document, honoring an explicit preferred object."""
+def find_v1_profile(document, preferred_profile=None, *, alignment_id: str | None = None):
+    """Find a v1 profile object in a document, honoring an explicit preferred object.
+
+    With `alignment_id`, return the Profile of that Alignment, or None.
+    """
 
     if _is_v1_profile(preferred_profile):
         return preferred_profile
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if _is_v1_profile(obj):
-            return obj
-    return None
+    rows = list_v1_profiles(document)
+    if alignment_id is not None:
+        target = str(alignment_id or "").strip()
+        rows = [obj for obj in rows if str(getattr(obj, "AlignmentId", "") or "").strip() == target]
+    return rows[0] if rows else None
+
+
+def list_v1_profiles(document) -> list:
+    """Return every v1 profile object in document order."""
+
+    return [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_profile(obj)]
 
 
 def _find_linked_alignment(document, alignment_id: str):

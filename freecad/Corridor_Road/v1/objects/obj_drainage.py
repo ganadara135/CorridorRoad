@@ -140,7 +140,11 @@ def create_or_update_v1_drainage_model_object(
     object_name: str = "V1DrainageModel",
     label: str = "Drainage",
 ):
-    """Create or update the durable v1 DrainageModel source object."""
+    """Create or update the durable v1 DrainageModel source object.
+
+    A project has one Drainage source. The rows are written into the existing object;
+    `object_name` only names a new object.
+    """
 
     doc = document
     if doc is None and App is not None:
@@ -150,7 +154,7 @@ def create_or_update_v1_drainage_model_object(
     if drainage_model is None:
         drainage_model = DrainageModel(schema_version=1, project_id=_project_id(project), drainage_model_id="drainage:main")
 
-    obj = doc.getObject(object_name)
+    obj = find_v1_drainage_model(doc)
     if obj is None:
         obj = doc.addObject("App::FeaturePython", object_name)
         V1DrainageModelObject(obj)
@@ -310,12 +314,14 @@ def find_v1_drainage_model(document, preferred_drainage_model=None):
 
     if _is_v1_drainage_model(preferred_drainage_model):
         return preferred_drainage_model
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if _is_v1_drainage_model(obj):
-            return obj
-    return None
+    rows = list_v1_drainage_models(document)
+    return rows[0] if rows else None
+
+
+def list_v1_drainage_models(document) -> list:
+    """Return every v1 DrainageModel object in document order."""
+
+    return [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_drainage_model(obj)]
 
 
 def _is_v1_drainage_model(obj) -> bool:

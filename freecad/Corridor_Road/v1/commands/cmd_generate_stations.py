@@ -54,7 +54,7 @@ def generate_v1_stations(
         alignment_obj = alignment or find_v1_alignment(doc)
         if alignment_obj is None:
             alignment_obj = create_v1_sample_alignment(document=doc, project=prj)
-        previous_stationing = find_v1_stationing(doc)
+        previous_stationing = find_v1_stationing(doc, alignment_id=str(getattr(alignment_obj, "AlignmentId", "") or ""))
         stale_note = _previous_stationing_stale_note(previous_stationing, alignment_obj)
 
         stationing = create_v1_stationing(

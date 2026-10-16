@@ -40,6 +40,7 @@ from ..objects.obj_superelevation import (
     to_superelevation_model,
 )
 from .cmd_centerline3d import build_document_centerline3d_result
+from .selection_context import selected_alignment_profile_target
 from .cmd_alignment_editor import alignment_ip_rows, alignment_pi_review_rows
 from ..services.evaluation.centerline3d_frame_service import Centerline3DFrameService
 from ..services.evaluation.superelevation_auto_calculation_service import (
@@ -60,7 +61,7 @@ def starter_superelevation_model_from_document(document=None, *, project=None, a
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     prj = project or find_project(doc)
     alignment_obj = alignment or find_v1_alignment(doc)
-    profile_obj = profile or find_v1_profile(doc)
+    profile_obj = profile or find_v1_profile(doc, alignment_id=_alignment_id(alignment_obj))
     return SuperelevationModel(
         schema_version=1,
         project_id=_project_id(prj),
@@ -88,12 +89,15 @@ def apply_v1_superelevation_model(*, document=None, project=None, superelevation
         prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
+    existing = find_v1_superelevation_source(doc, alignment_id=str(getattr(superelevation_model, "alignment_id", "") or ""))
     obj = create_or_update_v1_superelevation_source_object(
         document=doc,
         project=prj,
         superelevation_model=superelevation_model,
+        label=str(getattr(existing, "Label", "") or "Superelevation"),
     )
-    validation = SuperelevationService().validate(superelevation_model, station_range=_document_station_range(doc, find_v1_alignment(doc)))
+    alignment = find_v1_alignment(doc, alignment_id=str(getattr(superelevation_model, "alignment_id", "") or ""))
+    validation = SuperelevationService().validate(superelevation_model, station_range=_document_station_range(doc, alignment))
     obj.LastValidationStatus = validation.status
     try:
         doc.recompute()
@@ -103,15 +107,16 @@ def apply_v1_superelevation_model(*, document=None, project=None, superelevation
 
 
 def run_v1_superelevation_editor_command():
-    """Open the v1 Superelevation editor panel."""
+    """Open the v1 Superelevation editor panel for the selected Alignment, or the first one."""
 
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
     document = App.ActiveDocument
-    panel = V1SuperelevationEditorTaskPanel(document=document)
+    preferred_alignment, _preferred_profile = selected_alignment_profile_target(Gui, document)
+    panel = V1SuperelevationEditorTaskPanel(document=document, alignment=preferred_alignment)
     if Gui is not None and hasattr(Gui, "Control"):
         Gui.Control.showDialog(panel)
-    return find_v1_superelevation_source(document)
+    return panel.superelevation_obj
 
 
 def show_v1_superelevation_review_object(
@@ -184,10 +189,12 @@ def show_v1_superelevation_review_object(
 class V1SuperelevationEditorTaskPanel:
     """Table-based v1 Superelevation source editor."""
 
-    def __init__(self, *, document=None):
+    def __init__(self, *, document=None, alignment=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-        self.superelevation_obj = find_v1_superelevation_source(self.document)
-        self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
+        # the panel edits the Superelevation source of one Alignment
+        self.alignment = find_v1_alignment(self.document, preferred_alignment=alignment)
+        self.superelevation_obj = find_v1_superelevation_source(self.document, alignment_id=_alignment_id(self.alignment))
+        self._station_range = _document_station_range(self.document, self.alignment)
         self.form = fit_task_panel_width(self._build_ui())
         self._load_existing_rows()
 
@@ -287,7 +294,7 @@ class V1SuperelevationEditorTaskPanel:
         return widget
 
     def _load_existing_rows(self):
-        model = to_superelevation_model(self.superelevation_obj) if self.superelevation_obj is not None else starter_superelevation_model_from_document(self.document)
+        model = to_superelevation_model(self.superelevation_obj) if self.superelevation_obj is not None else self._starter_model()
         self._set_model(model)
         if self.superelevation_obj is None:
             self._set_status("No Superelevation source object is available. Use Auto Calculate or add rows, then Apply.", ok=True)
@@ -366,7 +373,7 @@ class V1SuperelevationEditorTaskPanel:
             table.removeRow(row)
 
     def _auto_calculate(self):
-        alignment = find_v1_alignment(self.document)
+        alignment = self.alignment
         if alignment is None:
             self._set_status("Auto Calculate requires a V1Alignment source object.", ok=False)
             return None
@@ -388,8 +395,15 @@ class V1SuperelevationEditorTaskPanel:
             self._set_status(f"Auto Calculate failed. {exc}", ok=False)
             return None
 
+    def _starter_model(self) -> SuperelevationModel:
+        return starter_superelevation_model_from_document(self.document, alignment=self.alignment)
+
     def _model_from_table(self) -> SuperelevationModel:
-        base = starter_superelevation_model_from_document(self.document)
+        # an existing source keeps its id; a new one starts from the Alignment's starter
+        base = to_superelevation_model(self.superelevation_obj) if self.superelevation_obj is not None else None
+        starter = self._starter_model()
+        if base is None or not str(getattr(base, "alignment_id", "") or ""):
+            base = starter
         return SuperelevationModel(
             schema_version=1,
             project_id=base.project_id,
@@ -471,8 +485,8 @@ class V1SuperelevationEditorTaskPanel:
             return False
 
     def _show_samples(self):
-        model = self._model_from_table() if hasattr(self, "_control_table") else starter_superelevation_model_from_document(self.document)
-        stations = _document_station_values(self.document)
+        model = self._model_from_table() if hasattr(self, "_control_table") else self._starter_model()
+        stations = _document_station_values(self.document, self.alignment)
         if not stations:
             start, end = self._station_range
             stations = [start, (start + end) * 0.5, end] if end > start else [start]
@@ -677,8 +691,15 @@ def _format_validation_result(result) -> str:
     return "\n".join(lines)
 
 
-def _document_station_values(document=None) -> list[float]:
-    stationing = find_v1_stationing(document)
+def _alignment_id(alignment) -> str:
+    return str(getattr(alignment, "AlignmentId", "") or "")
+
+
+def _document_station_values(document=None, alignment=None) -> list[float]:
+    if alignment is not None:
+        stationing = find_v1_stationing(document, alignment_id=_alignment_id(alignment))
+    else:
+        stationing = find_v1_stationing(document)
     values = [float(value) for value in list(getattr(stationing, "StationValues", []) or [])]
     output: list[float] = []
     seen: set[float] = set()
@@ -691,7 +712,7 @@ def _document_station_values(document=None) -> list[float]:
 
 
 def _document_station_range(document=None, alignment=None) -> tuple[float, float]:
-    stations = _document_station_values(document)
+    stations = _document_station_values(document, alignment)
     if stations:
         return min(stations), max(stations)
     alignment_obj = alignment or find_v1_alignment(document)
@@ -706,7 +727,7 @@ def _document_station_range(document=None, alignment=None) -> tuple[float, float
 
 def _auto_calculation_request_from_document(document, alignment) -> SuperelevationAutoCalculationRequest:
     station_start, station_end = _document_station_range(document, alignment)
-    profile = find_v1_profile(document)
+    profile = find_v1_profile(document, alignment_id=_alignment_id(alignment))
     return SuperelevationAutoCalculationRequest(
         project_id=_project_id(find_project(document)),
         alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),

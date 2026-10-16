@@ -124,16 +124,16 @@ def test_a_real_route_gets_overlay_control_regions_and_the_rest_of_the_preset_so
             assert service.resolve_station(model, middle).active_region_id == overlay.region_id
             assert service.resolve_station(model, middle).resolved_intersection_ref == overlay.intersection_ref
             assert service.resolve_station(model, overlay.station_start - 1.0).active_region_id == original.region_id
-        # one handoff source per road, and the drainage source the preset also writes
+        # one handoff source per road, and no Drainage source: the project owns one
         handoffs = [
             to_superelevation_model(item)
             for item in doc.Objects
             if to_superelevation_model(item) is not None
         ]
         assert sorted(model.alignment_id for model in handoffs) == sorted([primary, secondary])
-        assert doc.getObject("V1IntersectionPresetDrainage") is not None
+        assert doc.getObject("V1IntersectionPresetDrainage") is None
         assert any(line.startswith("Control Region:") for line in details)
-        assert any(line.startswith("Drainage:") for line in details)
+        assert not any(line.startswith("Drainage:") for line in details)
         # the Region overlay is what Applied Sections reads, so it must still build
         assert len(build_document_applied_section_set(doc).sections) > 0
     finally:
@@ -320,7 +320,7 @@ def test_the_panel_reports_what_applying_existing_alignments_created(monkeypatch
         assert len(messages) == 1
         assert "Control Regions: 2" in messages[0]
         assert "Control Region:" in messages[0]
-        assert "Drainage:" in messages[0]
+        assert "Drainage:" not in messages[0]
         assert "not applied" not in messages[0]
     finally:
         App.closeDocument(doc.Name)

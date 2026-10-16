@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: Proposed, not started
+Status: In progress. GR-1 done on 2026-10-16; GR-1B next; D1-D3 open
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -30,6 +30,8 @@ are current, reads one source per concern, and keeps authoring out of viewers.
   removes; no fallback or conversion code is written for them.
 - Features that are not needed are removed, not hidden behind flags.
 - Ramp stays out of scope and Watertight stays paused until decided otherwise (section 4).
+- A document is a General Road document with one Alignment or an Intersection document, never both;
+  Drainage and Structure work happens in both kinds (GR-1B).
 - CI stays frozen.
 
 ## 3. Findings
@@ -79,6 +81,69 @@ Acceptance:
 - A document made from an intersection preset and then edited in the Superelevation and Drainage
   editors builds Applied Sections from the edited rows.
 - Contract tests cover the canonical lookup and the duplicate error.
+
+Done on 2026-10-16:
+
+- Identity: Profile, Region, Stationing and Superelevation by `AlignmentId`; Drainage per project.
+  `find_v1_*` of these types and `find_v1_alignment` take `alignment_id=`; `list_v1_*` lists them.
+- Writers resolve the object by identity: `create_or_update_v1_region_model_object`,
+  `create_or_update_v1_superelevation_source_object`, `create_or_update_v1_drainage_model_object`
+  and `create_v1_stationing`. `object_name` only names a new object.
+- Editors work on one road: Regions and Superelevation open the source of the Alignment selected in
+  the tree (the first otherwise); the Stations panel pairs a Stationing with its own Alignment and no
+  longer takes the first Stationing when something else is selected; the Profile command opens the
+  selected road's Profile; editor Apply keeps the object's label.
+- Intersection presets write no Drainage source and keep a road's existing Superelevation source.
+  The Build Parametric branch for the preset Drainage object is removed.
+- `v1/objects/source_identity.py` reports duplicates; Applied Sections refuses to build and lists them
+  in its panel. `superelevation_source_rows` and the "authored source wins" pairing rule are removed.
+- Tests: `tests/contracts/v1/test_source_identity.py` (new), and updated preset, superelevation and
+  Build Parametric tests.
+- Left for later: Structure and Intersection keep fixed object names (Structure will be rebuilt);
+  the Superelevation and Region panels show no road selector, so another road is chosen by selecting
+  it in the tree before opening the panel.
+
+### GR-1B. Document kind: General Road or Intersection
+
+Decided by the user on 2026-10-16: a document is either a general road or an intersection, never
+both. A General Road document holds exactly one Alignment. An Intersection document holds the roads of
+one intersection, and Drainage and Structure work is done in it too.
+
+Today nothing in the code knows the kind: the toolbar offers Intersection Presets in every document,
+Build Parametric shows its Intersections tab and intersection drainage rows everywhere, and Applied
+Sections always runs the intersection pass and the multi-Alignment bundle path.
+
+- Project property `DocumentKind`: `general_road`, `intersection`, or empty.
+  - Project Setup offers the choice. It can change only while the document has no Alignment.
+  - Intersection Presets (both Create From Preset and Use Existing Alignments) sets `intersection` on a
+    project whose kind is empty, and refuses on a `general_road` document.
+  - An empty kind restricts nothing. The kind is never inferred from the document content.
+- Commands, through `IsActive`:
+
+  | Command | General Road | Intersection |
+  | --- | --- | --- |
+  | Intersection Presets | inactive | active |
+  | every other workflow command, Drainage and Structures included | active | active |
+
+- General Road rules:
+  - One Alignment. The Alignment editor edits it; creating a second one, or importing one from LandXML
+    when one exists, is refused with a message.
+  - Applied Sections builds one road: no intersection kernel pass, and an Intersection source in the
+    document is an error.
+  - Intersection content is not shown: the Build Parametric Intersections tab and intersection
+    drainage rows, the Cross Section viewer's intersection rows, and the `Intersections:` line of the
+    Applied Sections summary.
+  - Editors need no road selection; the GR-1 selection rule simply finds the one road.
+- Intersection rules:
+  - Several Alignments; the editors follow the Alignment selected in the tree (GR-1).
+  - Drainage and Structure stay available; their sources are project wide (GR-1).
+
+Acceptance:
+
+- On a General Road document Intersection Presets is inactive, a second Alignment cannot be created
+  or imported, and Build Parametric shows no Intersections tab.
+- A preset document is `intersection` and offers every command.
+- A document with an empty kind behaves as today.
 
 ### GR-2. Remove dead paths
 
@@ -159,7 +224,8 @@ Acceptance: Build Parametric writes no source object; the Region editor round-tr
 
 ### GR-6. One Applied Sections build path
 
-- Build every document through source bundles; a single Alignment is a list of one bundle (F4).
+- Build every document through source bundles (F4): a General Road document is one bundle, an
+  Intersection document one bundle per road plus the intersection kernel passes (GR-1B).
 - Remove the single-Alignment `find_v1_alignment` / `find_v1_profile` path from the build.
 
 Acceptance: section results of the workflow smoke and the intersection kernel smokes are unchanged.
@@ -181,11 +247,12 @@ Acceptance: the command module keeps only document, service and UI coordination.
 ## 6. Order and relation to Drainage
 
 ```text
-D1-D3 -> GR-1 -> GR-2 -> GR-3 -> GR-4 -> GR-5 -> GR-6 -> GR-8 -> Drainage rework -> Structure rebuild
+GR-1 -> GR-1B -> D1-D3 -> GR-2 -> GR-3 -> GR-4 -> GR-5 -> GR-6 -> GR-8 -> Drainage rework -> Structure rebuild
                                                          GR-7 (with or after Drainage)
 ```
 
-GR-1 removes the cause of the Drainage object ambiguity. GR-3 gives the new Drainage results a
+GR-1 removes the cause of the Drainage object ambiguity. GR-1B fixes the scope every later phase
+works in: one road for General Road documents, and intersection content only where it belongs. GR-3 gives the new Drainage results a
 freshness state from the start. GR-7 can wait: the Drainage rework rewrites the largest part of the
 review code it would move.
 

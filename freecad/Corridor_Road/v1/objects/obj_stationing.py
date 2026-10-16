@@ -145,7 +145,10 @@ def create_v1_stationing(
     label: str = "Stations",
     document_adapter: ProjectDocumentAdapter | None = None,
 ):
-    """Create one v1 stationing object by sampling a v1 alignment."""
+    """Create or update the v1 stationing object of a v1 alignment.
+
+    An Alignment has one Stationing; generating again resamples that object.
+    """
 
     doc = document
     if doc is None and App is not None:
@@ -160,21 +163,23 @@ def create_v1_stationing(
 
     adapter = document_adapter or ProjectDocumentAdapter(doc)
     with adapter.transaction("Create v1 stationing"):
-        obj = adapter.create_object(
-            "Part::FeaturePython",
-            "V1Stationing",
-            fallback_type_id="App::FeaturePython",
-        )
-        V1StationingObject(obj)
-        try:
-            ViewProviderV1Stationing(obj.ViewObject)
-        except Exception:
-            pass
-        adapter.set_value(obj, "Label", label)
+        obj = find_v1_stationing(doc, alignment_id=str(alignment_model.alignment_id or ""))
+        if obj is None:
+            obj = adapter.create_object(
+                "Part::FeaturePython",
+                "V1Stationing",
+                fallback_type_id="App::FeaturePython",
+            )
+            V1StationingObject(obj)
+            try:
+                ViewProviderV1Stationing(obj.ViewObject)
+            except Exception:
+                pass
+            adapter.set_value(obj, "Label", label)
+            adapter.set_value(obj, "StationingId", f"stationing:{str(getattr(obj, 'Name', '') or 'stations')}")
+            adapter.set_value(obj, "ShowTicks", True)
         adapter.set_value(obj, "ProjectId", _project_id(project or adapter.project()))
-        adapter.set_value(obj, "StationingId", f"stationing:{str(getattr(obj, 'Name', '') or 'stations')}")
         adapter.set_value(obj, "AlignmentId", alignment_model.alignment_id)
-        adapter.set_value(obj, "ShowTicks", True)
         update_v1_stationing_from_alignment(obj, alignment_model, interval=interval)
         adapter.route_to_project_tree(obj, project=project)
     return obj
@@ -264,17 +269,25 @@ def station_review_rows(obj) -> list[str]:
     return rows
 
 
-def find_v1_stationing(document, preferred_stationing=None):
-    """Find a v1 stationing object in a document, honoring an explicit preferred object."""
+def find_v1_stationing(document, preferred_stationing=None, *, alignment_id: str | None = None):
+    """Find a v1 stationing object in a document, honoring an explicit preferred object.
+
+    With `alignment_id`, return the Stationing of that Alignment, or None.
+    """
 
     if _is_v1_stationing(preferred_stationing):
         return preferred_stationing
-    if document is None:
-        return None
-    for obj in list(getattr(document, "Objects", []) or []):
-        if _is_v1_stationing(obj):
-            return obj
-    return None
+    rows = list_v1_stationings(document)
+    if alignment_id is not None:
+        target = str(alignment_id or "").strip()
+        rows = [obj for obj in rows if str(getattr(obj, "AlignmentId", "") or "").strip() == target]
+    return rows[0] if rows else None
+
+
+def list_v1_stationings(document) -> list:
+    """Return every v1 stationing object in document order."""
+
+    return [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_stationing(obj)]
 
 
 def station_value_rows(obj) -> list[tuple[float, str]]:
