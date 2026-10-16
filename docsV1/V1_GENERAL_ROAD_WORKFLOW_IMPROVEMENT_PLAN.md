@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1 to GR-5 done and D1-D3 decided on 2026-10-16; GR-6 next
+Status: In progress. GR-1 to GR-6 done and D1-D3 decided on 2026-10-16; GR-7 next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -342,6 +342,20 @@ Done on 2026-10-16:
 - Remove the single-Alignment `find_v1_alignment` / `find_v1_profile` path from the build.
 
 Acceptance: section results of the workflow smoke and the intersection kernel smokes are unchanged.
+
+Done on 2026-10-16:
+
+- `_build_applied_section_set_pass` builds every road from its bundle (`_bundle_build_request`) and
+  reads the project-wide sources once. One road returns its set as `applied-sections:main`, as the
+  single-road path did; several are merged (`_merged_applied_section_set`) as before.
+- The `find_v1_alignment` / `find_v1_profile` / `find_v1_region_model` / `find_v1_stationing` path
+  and its unused Assembly fallback are gone. A missing source is reported from the bundles in the
+  same words ("Required v1 sources are missing: ...").
+- Checked: the Applied Sections of the workflow document and of the T, Cross and Roundabout presets
+  have the same section count, set id and content fingerprint before and after.
+- Behaviour change: a Profile, Region, Stationing or Superelevation source of another Alignment is
+  no longer read for a road; the single-road path took the first object of each kind.
+- Tests: `tests/contracts/v1/test_applied_sections_one_build_path.py` (new).
 
 ### GR-7. Split `cmd_build_corridor.py`
 

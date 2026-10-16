@@ -33,7 +33,6 @@ from ..objects.obj_applied_section import (
     to_applied_section_set,
 )
 from ..objects.obj_subassembly_assembly import (
-    find_v1_assembly_subassembly_model,
     list_v1_assembly_subassembly_models,
     to_assembly_subassembly_model,
 )
@@ -164,199 +163,135 @@ def _build_applied_section_set_pass(
     supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
     kernel_stations: dict[str, list[float]] | None = None,
 ):
-    source_bundles = _applied_section_source_bundles(doc)
-    alignment_obj = find_v1_alignment(doc)
-    profile_obj = find_v1_profile(doc)
-    subassembly_objs = list_v1_assembly_subassembly_models(doc)
-    subassembly_obj = subassembly_objs[0] if subassembly_objs else find_v1_assembly_subassembly_model(doc)
-    region_obj = find_v1_region_model(doc)
-    stationing_obj = find_v1_stationing(doc)
-    structure_obj = find_v1_structure_model(doc)
-    drainage_obj = find_v1_drainage_model(doc)
-    intersection_obj = find_v1_intersection_model(doc)
+    """Build one pass over every road: one source bundle per Alignment, paired by AlignmentId.
 
-    alignment = to_alignment_model(alignment_obj)
-    profile = to_profile_model(profile_obj)
+    A General Road document is one bundle; an Intersection document is one bundle per road. Each
+    road is built on its own Profile, Regions, Stations and Superelevation, and the sources shared
+    by the project (Assembly, Structure, Drainage, Intersection, terrain) are read once.
+    """
+
+    bundles = _applied_section_alignment_bundles(doc)
+    complete = [bundle for bundle in bundles if bundle["complete"]]
+    subassembly_objs = list_v1_assembly_subassembly_models(doc)
     assembly_subassembly_models = [
         model for model in (to_assembly_subassembly_model(obj) for obj in subassembly_objs) if model is not None
     ]
-    subassembly_libraries = [
-        model for model in (to_subassembly_library(obj) for obj in list_v1_subassembly_libraries(doc)) if model is not None
-    ]
-    subassembly_preset_libraries = [
-        model
-        for model in (to_subassembly_preset_library(obj) for obj in list_v1_subassembly_preset_libraries(doc))
-        if model is not None
-    ]
-    if not assembly_subassembly_models:
-        single_subassembly_model = to_assembly_subassembly_model(subassembly_obj)
-        if single_subassembly_model is not None:
-            assembly_subassembly_models = [single_subassembly_model]
     assembly_models = _request_assembly_identity_models(assembly_subassembly_models)
     assembly = assembly_models[0] if assembly_models else None
-    region_model = to_region_model(region_obj)
-    structure_model = to_structure_model(structure_obj)
-    drainage_model = to_drainage_model(drainage_obj)
-    superelevation_model = _model_for_alignment(
-        [(obj, to_superelevation_model(obj)) for obj in list(getattr(doc, "Objects", []) or [])
-         if to_superelevation_model(obj) is not None],
-        str(getattr(alignment, "alignment_id", "") or "") if alignment is not None else "",
-    )
-    intersection_model = to_intersection_model(intersection_obj)
-    source_stations = _station_values(stationing_obj)
-    stations = _with_intersection_supplemental_stations(
-        source_stations,
-        intersection_model,
-        str(getattr(alignment, "alignment_id", "") or ""),
-        kernel_stations=kernel_stations,
-    )
-    station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
 
-    missing = []
-    if alignment is None:
-        missing.append("Alignment")
-    if profile is None:
-        missing.append("Profile")
-    if assembly is None:
-        missing.append("Assembly / Subassembly")
-    if region_model is None:
-        missing.append("Regions")
-    if not stations:
-        missing.append("Stations")
+    missing = _missing_required_sources(bundles, complete, assembly)
     if missing:
         raise RuntimeError("Required v1 sources are missing: " + ", ".join(missing))
 
-    project_id = _project_id(project or find_project(doc))
+    shared = dict(
+        project_id=_project_id(project or find_project(doc)),
+        corridor_id=corridor_id,
+        assembly=assembly,
+        assembly_models=assembly_models,
+        assembly_subassembly_models=assembly_subassembly_models,
+        subassembly_libraries=[
+            model for model in (to_subassembly_library(obj) for obj in list_v1_subassembly_libraries(doc)) if model is not None
+        ],
+        subassembly_preset_libraries=[
+            model
+            for model in (to_subassembly_preset_library(obj) for obj in list_v1_subassembly_preset_libraries(doc))
+            if model is not None
+        ],
+        structure_model=to_structure_model(find_v1_structure_model(doc)),
+        drainage_model=to_drainage_model(find_v1_drainage_model(doc)),
+        intersection_model=to_intersection_model(find_v1_intersection_model(doc)),
+        existing_ground_surface=_resolve_applied_sections_existing_ground_tin_surface(doc),
+        supplemental_sections_enabled=supplemental_sections_enabled,
+        supplemental_sections_max_spacing=supplemental_sections_max_spacing,
+        supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
+        supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
+        supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
+        supplemental_sections_grade_delta=supplemental_sections_grade_delta,
+    )
     centerline3d_result = stored_centerline3d_result(doc)
-    if len(source_bundles) > 1:
-        return _build_multi_alignment_applied_section_set(
-            source_bundles,
-            project_id=project_id,
-            corridor_id=corridor_id,
-            assembly=assembly,
-            assembly_models=assembly_models,
-            assembly_subassembly_models=assembly_subassembly_models,
-            subassembly_libraries=subassembly_libraries,
-            subassembly_preset_libraries=subassembly_preset_libraries,
-            structure_model=structure_model,
-            drainage_model=drainage_model,
-            superelevation_model=superelevation_model,
-            intersection_model=intersection_model,
-            existing_ground_surface=_resolve_applied_sections_existing_ground_tin_surface(doc),
-            centerline3d_result=centerline3d_result,
-            supplemental_sections_enabled=supplemental_sections_enabled,
-            supplemental_sections_max_spacing=supplemental_sections_max_spacing,
-            supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
-            supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
-            supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
-            supplemental_sections_grade_delta=supplemental_sections_grade_delta,
-            kernel_stations=kernel_stations,
+    service = AppliedSectionSetService()
+    if len(complete) == 1:
+        # One road: its set is the result.
+        return service.build(
+            _bundle_build_request(
+                complete[0],
+                shared,
+                centerline3d_result=centerline3d_result,
+                kernel_stations=kernel_stations,
+                applied_section_set_id="applied-sections:main",
+            )
         )
-    existing_ground_surface = _resolve_applied_sections_existing_ground_tin_surface(doc)
-    return AppliedSectionSetService().build(
-        AppliedSectionSetBuildRequest(
-            project_id=project_id,
-            corridor_id=corridor_id,
-            alignment=alignment,
-            profile=profile,
-            assembly=assembly,
-            assembly_models=assembly_models,
-            assembly_subassembly_models=assembly_subassembly_models,
-            subassembly_libraries=subassembly_libraries,
-            subassembly_preset_libraries=subassembly_preset_libraries,
-            region_model=region_model,
-            structure_model=structure_model,
-            drainage_model=drainage_model,
-            superelevation_model=superelevation_model,
-            intersection_model=intersection_model,
-            stations=stations,
-            station_kinds=station_kinds,
-            supplemental_sections_enabled=supplemental_sections_enabled,
-            supplemental_sections_max_spacing=supplemental_sections_max_spacing,
-            supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
-            supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
-            supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
-            supplemental_sections_grade_delta=supplemental_sections_grade_delta,
-            applied_section_set_id="applied-sections:main",
-            existing_ground_surface=existing_ground_surface,
-            centerline3d_result=centerline3d_result,
-        )
+    return _merged_applied_section_set(
+        [
+            service.build(
+                _bundle_build_request(
+                    bundle,
+                    shared,
+                    centerline3d_result=centerline3d_result,
+                    kernel_stations=kernel_stations,
+                    applied_section_set_id=f"applied-sections:{_safe_source_token(bundle['alignment_id'])}",
+                )
+            )
+            for bundle in complete
+        ],
+        project_id=shared["project_id"],
+        corridor_id=corridor_id,
     )
 
 
-def _build_multi_alignment_applied_section_set(
-    source_bundles: list[dict[str, object]],
+def _missing_required_sources(bundles: list[dict[str, object]], complete: list[dict[str, object]], assembly) -> list[str]:
+    """The required sources no road has, in workflow order; empty when at least one road builds."""
+
+    missing: set[str] = set()
+    if not bundles:
+        missing.add("Alignment")
+    elif not complete:
+        for bundle in bundles:
+            missing.update(bundle["missing"])
+    if assembly is None:
+        missing.add("Assembly / Subassembly")
+    return [name for name in ("Alignment", "Profile", "Assembly / Subassembly", "Regions", "Stations") if name in missing]
+
+
+def _bundle_build_request(
+    bundle: dict[str, object],
+    shared: dict[str, object],
     *,
-    project_id: str,
-    corridor_id: str,
-    assembly,
-    assembly_models: list[object],
-    assembly_subassembly_models: list[object] | None = None,
-    subassembly_libraries: list[object] | None = None,
-    subassembly_preset_libraries: list[object] | None = None,
-    structure_model=None,
-    drainage_model=None,
-    superelevation_model=None,
-    intersection_model=None,
-    existing_ground_surface=None,
-    centerline3d_result=None,
-    supplemental_sections_enabled: bool = True,
-    supplemental_sections_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING,
-    supplemental_sections_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
-    supplemental_sections_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
-    supplemental_sections_vertical_chord_deviation: float = APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT,
-    supplemental_sections_grade_delta: float = APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT,
-    kernel_stations: dict[str, list[float]] | None = None,
-) -> AppliedSectionSet:
-    """Build one AppliedSectionSet from multiple alignment-scoped source bundles."""
+    centerline3d_result,
+    kernel_stations: dict[str, list[float]] | None,
+    applied_section_set_id: str,
+) -> AppliedSectionSetBuildRequest:
+    """The build request of one road: its own sources and stations, and the shared ones."""
+
+    alignment_id = str(bundle["alignment_id"])
+    source_stations = list(bundle["stations"])
+    stations = _with_intersection_supplemental_stations(
+        source_stations,
+        shared["intersection_model"],
+        alignment_id,
+        kernel_stations=kernel_stations,
+    )
+    return AppliedSectionSetBuildRequest(
+        alignment=bundle["alignment"],
+        profile=bundle["profile"],
+        region_model=bundle["region_model"],
+        superelevation_model=bundle.get("superelevation_model"),
+        stations=stations,
+        station_kinds=_intersection_supplemental_station_kind_map(source_stations, stations),
+        applied_section_set_id=applied_section_set_id,
+        centerline3d_result=_centerline3d_result_for_alignment(centerline3d_result, alignment_id),
+        **shared,
+    )
+
+
+def _merged_applied_section_set(partials: list[AppliedSectionSet], *, project_id: str, corridor_id: str) -> AppliedSectionSet:
+    """One AppliedSectionSet holding the sections of several roads, road by road."""
 
     sections = []
     station_rows = []
     source_refs: list[str] = []
-    service = AppliedSectionSetService()
-    for bundle_index, bundle in enumerate(source_bundles, start=1):
-        alignment = bundle["alignment"]
-        profile = bundle["profile"]
-        region_model = bundle["region_model"]
-        source_stations = list(bundle["stations"])
-        stations = _with_intersection_supplemental_stations(
-            source_stations,
-            intersection_model,
-            str(getattr(bundle["alignment"], "alignment_id", "") or ""),
-            kernel_stations=kernel_stations,
-        )
-        station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
-        alignment_id = str(getattr(alignment, "alignment_id", "") or f"alignment:{bundle_index}")
-        set_id = f"applied-sections:{_safe_source_token(alignment_id)}"
-        partial = service.build(
-            AppliedSectionSetBuildRequest(
-                project_id=project_id,
-                corridor_id=corridor_id,
-                alignment=alignment,
-                profile=profile,
-                assembly=assembly,
-                assembly_models=assembly_models,
-                assembly_subassembly_models=list(assembly_subassembly_models or []),
-                subassembly_libraries=list(subassembly_libraries or []),
-                subassembly_preset_libraries=list(subassembly_preset_libraries or []),
-                region_model=region_model,
-                structure_model=structure_model,
-                drainage_model=drainage_model,
-                superelevation_model=bundle.get("superelevation_model"),
-                intersection_model=intersection_model,
-                stations=stations,
-                station_kinds=station_kinds,
-                supplemental_sections_enabled=supplemental_sections_enabled,
-                supplemental_sections_max_spacing=supplemental_sections_max_spacing,
-                supplemental_sections_tangent_delta_deg=supplemental_sections_tangent_delta_deg,
-                supplemental_sections_chord_deviation=supplemental_sections_chord_deviation,
-                supplemental_sections_vertical_chord_deviation=supplemental_sections_vertical_chord_deviation,
-                supplemental_sections_grade_delta=supplemental_sections_grade_delta,
-                applied_section_set_id=set_id,
-                existing_ground_surface=existing_ground_surface,
-                centerline3d_result=_centerline3d_result_for_alignment(centerline3d_result, alignment_id),
-            )
-        )
+    for partial in partials:
+        set_id = str(getattr(partial, "applied_section_set_id", "") or "")
         for row in list(getattr(partial, "station_rows", []) or []):
             station_rows.append(
                 AppliedSectionStationRow(
