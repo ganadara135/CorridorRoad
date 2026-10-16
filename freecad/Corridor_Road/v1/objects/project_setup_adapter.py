@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from ...objects.obj_project import ensure_project_properties
 from ...objects.unit_policy import resolve_project_unit_settings
+from .document_kind import document_kind
 from ..services.editing.project_setup_service import (
     COORDINATE_WORKFLOWS,
     DEFAULT_TIN_MAX_TRIANGLES,
     MIN_TIN_MAX_TRIANGLES,
     ProjectSetupDraft,
-    normalize_document_kind,
     recommended_coordinate_workflow,
 )
 
@@ -58,7 +58,7 @@ def project_setup_draft_from_project(project) -> ProjectSetupDraft:
     if workflow not in COORDINATE_WORKFLOWS:
         workflow = recommended_coordinate_workflow(crs_epsg)
     return ProjectSetupDraft(
-        document_kind=normalize_document_kind(getattr(project, "DocumentKind", "")),
+        document_kind=document_kind(getattr(project, "Document", None)),
         design_standard=str(getattr(project, "DesignStandard", "") or ""),
         linear_unit_display=str(units.get("display", "m")),
         linear_unit_import=str(units.get("import", "m")),

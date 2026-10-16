@@ -10,6 +10,7 @@ from ...services.editing.project_setup_service import (
     CRS_PRESETS,
     DOCUMENT_KIND_LABELS,
     DOCUMENT_KINDS,
+    GENERAL_ROAD,
     MIN_TIN_MAX_TRIANGLES,
     SETUP_STATUS_CHOICES,
     ProjectSetupDraft,
@@ -89,7 +90,8 @@ class V1ProjectSetupTaskPanel:
         self.cmb_document_kind.setToolTip(
             "General Road: one Alignment, no Intersection Presets. "
             "Intersection: the roads of one intersection. "
-            "The kind can change only before the first Alignment exists."
+            "A new project is a General Road. The kind can change only before the first Alignment exists; "
+            "Intersection Presets switch it to Intersection then."
         )
         self.cmb_design_standard = QtWidgets.QComboBox()
         self.cmb_design_standard.addItems(list(_standards.SUPPORTED_STANDARDS))
@@ -221,7 +223,7 @@ class V1ProjectSetupTaskPanel:
 
     def _draft_from_widgets(self) -> ProjectSetupDraft:
         return ProjectSetupDraft(
-            document_kind=str(self.cmb_document_kind.currentData() or ""),
+            document_kind=str(self.cmb_document_kind.currentData() or GENERAL_ROAD),
             design_standard=self.cmb_design_standard.currentText(),
             linear_unit_display=self.cmb_linear_display.currentText(),
             linear_unit_import=self.cmb_linear_import.currentText(),

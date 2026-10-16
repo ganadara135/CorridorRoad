@@ -32,7 +32,7 @@ from .cmd_intersection_editor import (
 from ..services.editing import build_control_region_overlay
 from ..objects.document_kind import (
     GENERAL_ROAD_INTERSECTION_REFUSAL,
-    is_general_road_document,
+    intersection_presets_available,
     mark_intersection_document,
 )
 from ..objects.obj_intersection import (
@@ -131,7 +131,7 @@ def run_v1_intersection_presets_command():
 
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
-    if is_general_road_document(App.ActiveDocument):
+    if not intersection_presets_available(App.ActiveDocument):
         raise RuntimeError(GENERAL_ROAD_INTERSECTION_REFUSAL)
     panel = V1IntersectionPresetsTaskPanel(document=App.ActiveDocument)
     if Gui is not None and hasattr(Gui, "Control"):
@@ -1703,7 +1703,7 @@ class CmdV1IntersectionPresets:
 
     def IsActive(self):
         document = getattr(App, "ActiveDocument", None) if App is not None else None
-        return document is not None and not is_general_road_document(document)
+        return intersection_presets_available(document)
 
     def Activated(self):
         run_v1_intersection_presets_command()

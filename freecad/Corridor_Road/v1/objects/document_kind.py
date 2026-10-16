@@ -2,7 +2,8 @@
 
 The Project's `DocumentKind` decides which commands a document offers. A General Road document
 holds exactly one Alignment and no Intersection; an Intersection document holds the roads of one
-intersection. An empty kind restricts nothing, and the kind is never inferred from the content.
+intersection. A project that stores no kind, made before the kind existed, is judged by its
+content when read (`inferred_document_kind`); reading never writes the kind.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from ...objects.obj_project import find_project
 from ..services.editing.project_setup_service import (
     GENERAL_ROAD,
     INTERSECTION,
+    inferred_document_kind,
     normalize_document_kind,
 )
 from .obj_alignment import list_v1_alignments
@@ -21,16 +23,27 @@ GENERAL_ROAD_ALIGNMENT_REFUSAL = (
     "Edit that Alignment, or start a new document for another road."
 )
 GENERAL_ROAD_INTERSECTION_REFUSAL = (
-    "Intersection Presets are not available in a General Road document. "
-    "Start a new document and set its Document Kind to Intersection in Project Setup."
+    "Intersection Presets are not available in a General Road document that already has its road. "
+    "Start a new document for the intersection."
 )
 
 
 def document_kind(document) -> str:
-    """The stored kind of the document's project: general_road, intersection, or ""."""
+    """The document's kind: the stored one, or the one its content gives."""
 
     project = find_project(document) if document is not None else None
-    return normalize_document_kind(getattr(project, "DocumentKind", "")) if project is not None else ""
+    stored = normalize_document_kind(getattr(project, "DocumentKind", "")) if project is not None else ""
+    if stored:
+        return stored
+    if document is None:
+        return GENERAL_ROAD
+    # Imported here: obj_intersection imports adapters that import this module.
+    from .obj_intersection import find_v1_intersection_model
+
+    return inferred_document_kind(
+        has_intersection=find_v1_intersection_model(document) is not None,
+        alignment_count=len(list_v1_alignments(document)),
+    )
 
 
 def is_general_road_document(document) -> bool:
@@ -41,13 +54,20 @@ def is_intersection_document(document) -> bool:
     return document_kind(document) == INTERSECTION
 
 
-def mark_intersection_document(document) -> None:
-    """Make an unset document an Intersection document; refuse a General Road document."""
+def intersection_presets_available(document) -> bool:
+    """Intersection Presets work in an Intersection document, and in a General Road document that
+    has no road yet: its kind can still change."""
 
-    if is_general_road_document(document):
+    return document is not None and (not is_general_road_document(document) or not list_v1_alignments(document))
+
+
+def mark_intersection_document(document) -> None:
+    """Make the document an Intersection document; refuse a General Road document with its road."""
+
+    if not intersection_presets_available(document):
         raise RuntimeError(GENERAL_ROAD_INTERSECTION_REFUSAL)
     project = find_project(document)
-    if project is None or normalize_document_kind(getattr(project, "DocumentKind", "")):
+    if project is None or normalize_document_kind(getattr(project, "DocumentKind", "")) == INTERSECTION:
         return
     if not hasattr(project, "DocumentKind"):
         project.addProperty("App::PropertyString", "DocumentKind", "CorridorRoad", "General Road or Intersection document")
@@ -73,6 +93,7 @@ __all__ = [
     "GENERAL_ROAD_ALIGNMENT_REFUSAL",
     "GENERAL_ROAD_INTERSECTION_REFUSAL",
     "document_kind",
+    "intersection_presets_available",
     "is_general_road_document",
     "is_intersection_document",
     "mark_intersection_document",

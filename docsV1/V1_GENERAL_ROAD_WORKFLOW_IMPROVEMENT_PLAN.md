@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1 to GR-4 done and D1-D3 decided on 2026-10-16; GR-5 next
+Status: In progress. GR-1 to GR-5 done and D1-D3 decided on 2026-10-16; GR-6 next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -163,8 +163,14 @@ Done on 2026-10-16:
   Intersections tab and guided step. The Cross Section source owner table drops the Intersection
   row. The intersection drainage rows need an Intersection source, so they were already absent.
 - Tests: `tests/contracts/v1/test_document_kind.py` (new).
-- Left for later: no existing document gets a kind; Project Setup refuses a kind change on Apply
-  rather than disabling the field.
+- Left for later: Project Setup refuses a kind change on Apply rather than disabling the field.
+- Changed on 2026-10-16 after review (user decision): "Not set" is removed. A new project stores
+  `general_road`. A project that stores no kind (made before the kind existed) is judged by its
+  content when read, without writing it: an Intersection source or two or more Alignments make it
+  an Intersection document (`inferred_document_kind`). Intersection Presets are available in an
+  Intersection document and in a General Road document without an Alignment, and switch the
+  latter to `intersection`. This replaces "an empty kind restricts nothing" and "the kind is never
+  inferred" above.
 
 ### GR-2. Remove dead paths
 
@@ -311,6 +317,23 @@ separate Alignment/Profile fallback frame is removed.
 - The Build Parametric Transitions tab becomes read-only review (boundary list, highlight).
 
 Acceptance: Build Parametric writes no source object; the Region editor round-trips transition rows.
+
+Done on 2026-10-16:
+
+- `v1/services/editing/surface_transition_editing_service.py`: editor rows (station, half length,
+  spacing, enabled) become `SurfaceTransitionRange`s. From and To follow from the Region rows at
+  Apply, so a transition keeps its station when the editor renumbers Regions; a row on an existing
+  range's station keeps that range's mode, targets and approval. Ranges are owned per road
+  (`source_ref` `region-editor:<alignment id>`); in a one-road document every range is the road's.
+- Regions panel: a Surface Transitions table with Add at Region Boundaries, Add Transition and
+  Delete Transition, validated with the Regions and stored on the same Apply
+  (`apply_v1_surface_transition_rows`).
+- Build Parametric: the transition list is review only. The boundary combo, spacing controls,
+  Update and Toggle Enabled and the five command functions behind them are removed. Build
+  Parametric's transition options also allowed a station inside a Region (from = to); the Regions
+  panel keeps that through Add Transition and an edited STA.
+- Tests: `tests/contracts/v1/test_region_surface_transitions.py` (new); Build Parametric tests store
+  transitions through a helper instead of the removed functions.
 
 ### GR-6. One Applied Sections build path
 

@@ -15,11 +15,12 @@ from ....objects import unit_policy as _units
 
 
 COORDINATE_WORKFLOWS = ("World-first", "Local-first", "Custom")
-# A document is a general road or an intersection, never both. Empty means not chosen yet.
+# A document is a general road or an intersection, never both. A new project is a General Road;
+# a project that stores no kind (made before the kind existed) is judged by its content.
 GENERAL_ROAD = "general_road"
 INTERSECTION = "intersection"
-DOCUMENT_KINDS = ("", GENERAL_ROAD, INTERSECTION)
-DOCUMENT_KIND_LABELS = {"": "Not set", GENERAL_ROAD: "General Road", INTERSECTION: "Intersection"}
+DOCUMENT_KINDS = (GENERAL_ROAD, INTERSECTION)
+DOCUMENT_KIND_LABELS = {GENERAL_ROAD: "General Road", INTERSECTION: "Intersection"}
 SETUP_STATUS_CHOICES = ("Uninitialized", "Initialized", "Validated")
 DEFAULT_TIN_MAX_TRIANGLES = 250000
 MIN_TIN_MAX_TRIANGLES = 1000
@@ -46,7 +47,7 @@ _COORDINATE_TOLERANCE = 1.0e-9
 class ProjectSetupDraft:
     """One Project Setup edit. Lengths are meters; the rotation is degrees."""
 
-    document_kind: str = ""
+    document_kind: str = GENERAL_ROAD
     design_standard: str = _standards.DEFAULT_STANDARD
     linear_unit_display: str = _units.DEFAULT_LINEAR_UNIT
     linear_unit_import: str = _units.DEFAULT_LINEAR_UNIT
@@ -105,7 +106,7 @@ def normalize_project_setup_draft(draft: ProjectSetupDraft) -> ProjectSetupDraft
         custom_scale = _units.DEFAULT_CUSTOM_LINEAR_SCALE
     return replace(
         draft,
-        document_kind=normalize_document_kind(draft.document_kind),
+        document_kind=normalize_document_kind(draft.document_kind) or GENERAL_ROAD,
         design_standard=_standards.normalize_standard(draft.design_standard, default=_standards.DEFAULT_STANDARD),
         linear_unit_display=_linear_unit(draft.linear_unit_display, _units.DISPLAY_LINEAR_UNITS),
         linear_unit_import=_linear_unit(draft.linear_unit_import, _units.LINEAR_UNITS),
@@ -123,10 +124,17 @@ def normalize_project_setup_draft(draft: ProjectSetupDraft) -> ProjectSetupDraft
 
 
 def normalize_document_kind(value) -> str:
-    """Return a stored document kind; anything unknown reads as not set."""
+    """Return a stored document kind, or "" when none is stored."""
 
     text = str(value or "").strip()
     return text if text in DOCUMENT_KINDS else ""
+
+
+def inferred_document_kind(*, has_intersection: bool, alignment_count: int) -> str:
+    """The kind of a project that stores none: an Intersection source or two roads make it an
+    Intersection document, anything else a General Road document."""
+
+    return INTERSECTION if has_intersection or int(alignment_count) >= 2 else GENERAL_ROAD
 
 
 def document_kind_change_refusal(current_kind: str, new_kind: str, *, alignment_count: int) -> str:
@@ -136,8 +144,8 @@ def document_kind_change_refusal(current_kind: str, new_kind: str, *, alignment_
     exists: a General Road document then holds its one road, an Intersection document its roads.
     """
 
-    current = normalize_document_kind(current_kind)
-    new = normalize_document_kind(new_kind)
+    current = normalize_document_kind(current_kind) or GENERAL_ROAD
+    new = normalize_document_kind(new_kind) or GENERAL_ROAD
     if current == new or int(alignment_count) <= 0:
         return ""
     return (
@@ -265,6 +273,7 @@ __all__ = [
     "coordinate_workflow_note",
     "crs_preset_note",
     "document_kind_change_refusal",
+    "inferred_document_kind",
     "locked_coordinate_changes",
     "locked_field_labels",
     "normalize_document_kind",

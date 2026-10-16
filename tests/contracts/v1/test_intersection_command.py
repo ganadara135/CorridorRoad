@@ -2,6 +2,7 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
+from freecad.Corridor_Road.v1.commands.cmd_project_setup import create_corridorroad_project
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
@@ -528,6 +529,8 @@ def test_intersection_existing_alignment_validation_requires_two_different_refs(
 def test_intersection_alignment_choices_list_v1_alignments() -> None:
     doc = App.newDocument("CRV1IntersectionAlignmentChoices")
     try:
+        # two roads belong in an Intersection document
+        create_corridorroad_project(doc).DocumentKind = "intersection"
         main = create_sample_v1_alignment(doc, label="Main Road")
         side = create_sample_v1_alignment(doc, label="Side Road")
         side.AlignmentId = "alignment:side-road"

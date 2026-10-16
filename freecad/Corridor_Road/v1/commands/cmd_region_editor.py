@@ -29,6 +29,23 @@ from ..objects.obj_region import (
     to_region_model,
 )
 from ..objects.obj_stationing import find_v1_stationing
+from ..objects.obj_alignment import list_v1_alignments
+from ..objects.obj_surface_transition import (
+    create_or_update_v1_surface_transition_model_object,
+    find_v1_surface_transition_model,
+    to_surface_transition_model,
+)
+from ..services.editing.surface_transition_editing_service import (
+    DEFAULT_HALF_LENGTH,
+    DEFAULT_SAMPLE_INTERVAL,
+    TransitionRowDraft,
+    drafts_from_ranges,
+    merged_transition_model,
+    owned_ranges,
+    region_boundary_stations,
+    region_refs_at_station,
+    transition_draft_problems,
+)
 from ..services.evaluation.region_resolution_service import RegionValidationService
 
 
@@ -214,6 +231,47 @@ def apply_v1_region_model(
     return obj
 
 
+def apply_v1_surface_transition_rows(
+    *,
+    document=None,
+    project=None,
+    alignment_id: str,
+    region_rows: list[RegionRow],
+    drafts: list[TransitionRowDraft],
+):
+    """Store one road's Surface Transition rows; the other roads' ranges are kept.
+
+    Returns the transition object, or None when the road has no rows and none are stored.
+    """
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    existing_obj = find_v1_surface_transition_model(doc)
+    existing = to_surface_transition_model(existing_obj)
+    single_road = len(list_v1_alignments(doc)) <= 1
+    if not drafts and not owned_ranges(existing, alignment_id=alignment_id, single_road=single_road):
+        return existing_obj
+    prj = project or find_project(doc)
+    model = merged_transition_model(
+        existing,
+        drafts,
+        region_rows,
+        alignment_id=alignment_id,
+        single_road=single_road,
+        project_id=_project_id(prj),
+    )
+    return create_or_update_v1_surface_transition_model_object(document=doc, project=prj, transition_model=model)
+
+
+def stored_surface_transition_drafts(document, alignment_id: str) -> list[TransitionRowDraft]:
+    """The Surface Transition rows the Region editor of one road shows."""
+
+    model = to_surface_transition_model(find_v1_surface_transition_model(document))
+    single_road = len(list_v1_alignments(document)) <= 1
+    return drafts_from_ranges(owned_ranges(model, alignment_id=alignment_id, single_road=single_road))
+
+
 def run_v1_region_editor_command():
     """Open the v1 Region editor panel for the selected Alignment, or the first one."""
 
@@ -320,6 +378,36 @@ class V1RegionEditorTaskPanel:
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
 
+        transitions_label = QtWidgets.QLabel("Surface Transitions")
+        transitions_label.setToolTip(
+            "Station ranges where the corridor surfaces blend from one Region's sections to the next. "
+            "A range is centred on STA and extends Half Length to each side; From and To follow from the Regions above."
+        )
+        layout.addWidget(transitions_label)
+        self._transition_table = QtWidgets.QTableWidget(0, 5)
+        self._transition_table.setHorizontalHeaderLabels(["STA", "Half Length (m)", "Spacing (m)", "Enabled", "From -> To"])
+        self._transition_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._transition_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        try:
+            self._transition_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        layout.addWidget(self._transition_table)
+        transition_row = QtWidgets.QHBoxLayout()
+        add_boundaries_button = QtWidgets.QPushButton("Add at Region Boundaries")
+        add_boundaries_button.setToolTip("Add a transition at every boundary between two Regions that has none.")
+        add_boundaries_button.clicked.connect(self._add_boundary_transitions)
+        transition_row.addWidget(add_boundaries_button)
+        add_transition_button = QtWidgets.QPushButton("Add Transition")
+        add_transition_button.setToolTip("Add a transition at the start of the selected Region; edit STA to move it.")
+        add_transition_button.clicked.connect(self._add_transition_row)
+        transition_row.addWidget(add_transition_button)
+        delete_transition_button = QtWidgets.QPushButton("Delete Transition")
+        delete_transition_button.clicked.connect(self._delete_selected_transition)
+        transition_row.addWidget(delete_transition_button)
+        transition_row.addStretch(1)
+        layout.addLayout(transition_row)
+
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
         self._status.setFixedHeight(90)
@@ -342,6 +430,8 @@ class V1RegionEditorTaskPanel:
         return widget
 
     def _load_existing_rows(self) -> None:
+        for draft in stored_surface_transition_drafts(self.document, _alignment_id(self.alignment)):
+            self._append_transition_row(draft)
         model = to_region_model(self.region_obj)
         if model is None:
             return
@@ -368,6 +458,7 @@ class V1RegionEditorTaskPanel:
         for row in rows:
             self._append_row(row)
         self._refresh_derived_end_sta()
+        self._refresh_transition_regions()
 
     def _append_row(self, row: RegionRow | None = None) -> None:
         row = row or RegionRow(
@@ -462,12 +553,13 @@ class V1RegionEditorTaskPanel:
                 model,
                 known_assembly_refs=self._assembly_refs,
             )
+            transition_problems = transition_draft_problems(self._transition_drafts(), model.region_rows)
             self._set_status(
                 _format_validation_result(
                     result,
                     model,
                     self._assembly_refs,
-                    station_errors=station_errors,
+                    station_errors=station_errors + transition_problems,
                 )
             )
         except Exception as exc:
@@ -476,7 +568,9 @@ class V1RegionEditorTaskPanel:
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
             model = self._model_from_table()
+            drafts = self._transition_drafts()
             station_errors = _region_station_membership_errors(model, self._station_values)
+            station_errors += transition_draft_problems(drafts, model.region_rows)
             result = RegionValidationService().validate(
                 model,
                 known_assembly_refs=self._assembly_refs,
@@ -493,6 +587,12 @@ class V1RegionEditorTaskPanel:
                 _show_message(self.form, "Regions", "Regions were not applied because validation has errors.")
                 return False
             self.region_obj = apply_v1_region_model(document=self.document, region_model=model)
+            apply_v1_surface_transition_rows(
+                document=self.document,
+                alignment_id=model.alignment_id,
+                region_rows=model.region_rows,
+                drafts=drafts,
+            )
             self._set_status(
                 _format_validation_result(
                     result,
@@ -502,7 +602,11 @@ class V1RegionEditorTaskPanel:
                 )
                 + f"\n\nApplied to: {self.region_obj.Label}"
             )
-            _show_message(self.form, "Regions", f"Regions have been applied.\nRows: {len(model.region_rows)}")
+            _show_message(
+                self.form,
+                "Regions",
+                f"Regions have been applied.\nRows: {len(model.region_rows)}\nSurface Transitions: {len(drafts)}",
+            )
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
             return True
@@ -590,6 +694,99 @@ class V1RegionEditorTaskPanel:
                 item = self._table.item(row_index, 1)
                 if item is not None:
                     item.setText("")
+
+    # Surface Transitions
+
+    def _append_transition_row(self, draft: TransitionRowDraft) -> None:
+        index = self._transition_table.rowCount()
+        self._transition_table.insertRow(index)
+        combo = self._station_combo(draft.station)
+        try:
+            combo.currentTextChanged.connect(lambda _text: self._refresh_transition_regions())
+        except Exception:
+            pass
+        self._transition_table.setCellWidget(index, 0, combo)
+        self._transition_table.setItem(index, 1, QtWidgets.QTableWidgetItem(_format_float(draft.half_length)))
+        self._transition_table.setItem(index, 2, QtWidgets.QTableWidgetItem(_format_float(draft.sample_interval)))
+        enabled = QtWidgets.QTableWidgetItem("")
+        enabled.setFlags(enabled.flags() | QtCore.Qt.ItemIsUserCheckable)
+        enabled.setCheckState(QtCore.Qt.Checked if draft.enabled else QtCore.Qt.Unchecked)
+        self._transition_table.setItem(index, 3, enabled)
+        regions = QtWidgets.QTableWidgetItem("")
+        regions.setFlags(regions.flags() & ~QtCore.Qt.ItemIsEditable)
+        self._transition_table.setItem(index, 4, regions)
+        self._refresh_transition_regions()
+
+    def _transition_drafts(self) -> list[TransitionRowDraft]:
+        drafts = []
+        for row in range(self._transition_table.rowCount()):
+            enabled_item = self._transition_table.item(row, 3)
+            drafts.append(
+                TransitionRowDraft(
+                    station=_required_float(_item_text(self._transition_table, row, 0), f"Transition row {row + 1} STA"),
+                    half_length=_required_float(_item_text(self._transition_table, row, 1), f"Transition row {row + 1} half length"),
+                    sample_interval=_required_float(_item_text(self._transition_table, row, 2), f"Transition row {row + 1} spacing"),
+                    enabled=enabled_item is None or enabled_item.checkState() == QtCore.Qt.Checked,
+                )
+            )
+        return drafts
+
+    def _transition_stations(self) -> set[float]:
+        stations = set()
+        for row in range(self._transition_table.rowCount()):
+            try:
+                stations.add(round(_required_float(_item_text(self._transition_table, row, 0), "STA"), 3))
+            except ValueError:
+                continue
+        return stations
+
+    def _add_boundary_transitions(self) -> None:
+        try:
+            boundaries = region_boundary_stations(self._table_rows())
+        except ValueError as exc:
+            self._set_status(f"Region rows are not complete:\n{exc}")
+            return
+        present = self._transition_stations()
+        added = [station for station in boundaries if round(station, 3) not in present]
+        for station in added:
+            self._append_transition_row(TransitionRowDraft(station=station))
+        self._set_status(f"Added {len(added)} Surface Transition row(s) at Region boundaries. Apply to store them.")
+
+    def _add_transition_row(self) -> None:
+        row = self._table.currentRow()
+        try:
+            station = _required_float(_item_text(self._table, row, 0), "Start STA") if row >= 0 else float(self._station_range[0])
+        except ValueError:
+            station = float(self._station_range[0])
+        self._append_transition_row(
+            TransitionRowDraft(station=station, half_length=DEFAULT_HALF_LENGTH, sample_interval=DEFAULT_SAMPLE_INTERVAL)
+        )
+        self._set_status("Added a Surface Transition row. Edit STA, Half Length and Spacing, then Apply.")
+
+    def _delete_selected_transition(self) -> None:
+        row = self._transition_table.currentRow()
+        if row < 0:
+            self._set_status("Select a Surface Transition row first.")
+            return
+        self._transition_table.removeRow(row)
+        self._set_status("Deleted a Surface Transition row. Apply to store the change.")
+
+    def _refresh_transition_regions(self) -> None:
+        if not hasattr(self, "_transition_table"):
+            return
+        try:
+            region_rows = self._table_rows()
+        except ValueError:
+            region_rows = []
+        for row in range(self._transition_table.rowCount()):
+            item = self._transition_table.item(row, 4)
+            if item is None:
+                continue
+            try:
+                from_ref, to_ref = region_refs_at_station(region_rows, _required_float(_item_text(self._transition_table, row, 0), "STA"))
+            except ValueError:
+                from_ref, to_ref = "", ""
+            item.setText(f"{from_ref} -> {to_ref}" if from_ref or to_ref else "outside every Region")
 
     def _set_status(self, text: str) -> None:
             self._status.setPlainText(str(text or ""))

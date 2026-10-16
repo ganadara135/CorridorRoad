@@ -15,6 +15,7 @@ from ...objects.obj_project import CorridorRoadProject, ensure_project_propertie
 from ..objects.obj_alignment import list_v1_alignments
 from ..objects.project_setup_adapter import project_setup_draft_from_project, write_project_setup
 from ..services.editing.project_setup_service import (
+    GENERAL_ROAD,
     ProjectSetupDraft,
     document_kind_change_refusal,
     locked_coordinate_changes,
@@ -56,6 +57,8 @@ def create_corridorroad_project(document):
         project = document.addObject("App::FeaturePython", "CorridorRoadProject")
     CorridorRoadProject(project)
     ensure_project_properties(project)
+    # A new project is a General Road document until Project Setup or Intersection Presets change it.
+    project.DocumentKind = GENERAL_ROAD
     ensure_project_tree(project, include_references=False)
     project.Label = "Parametric Road Project"
     CorridorRoadProject.auto_link(document, project)

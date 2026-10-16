@@ -130,8 +130,6 @@ Gui = None
 SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD = None
 SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG = None
 SUPPLEMENTAL_SAMPLING_MAX_SPACING = None
-SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL = None
-SURFACE_TRANSITION_SPACING_PRESETS = None
 _applied_section_supplemental_consumption_summary = None
 _breakline_audit_surface_row_focuses_source_only = None
 _build_parametric_compatibility_supplemental_sampling_enabled = None
@@ -177,10 +175,7 @@ corridor_region_boundary_rows = None
 corridor_shared_breakline_audit_rows = None
 corridor_shared_breakline_audit_summary = None
 corridor_slope_face_issue_rows = None
-corridor_surface_transition_boundary_options = None
 corridor_surface_transition_rows = None
-create_corridor_surface_transition_from_region_boundary = None
-create_or_update_corridor_surface_transition_for_boundary = None
 find_v1_applied_section_set = None
 find_v1_surface_model = None
 focus_adjacent_corridor_slope_face_issue = None
@@ -200,7 +195,6 @@ shared_breakline_audit_display_rows = None
 show_corridor_build_review_object = None
 show_shared_breakline_highlight = None
 to_applied_section_set = None
-toggle_corridor_surface_transition_enabled = None
 
 
 class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
@@ -516,7 +510,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         except Exception:
             pass
         self._region_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_region_boundary_row(row_index))
-        self._region_table.itemSelectionChanged.connect(self._sync_surface_transition_station_options_from_selected_region)
         regions_layout.addWidget(self._region_table)
         region_button_row = QtWidgets.QHBoxLayout()
         highlight_region_button = QtWidgets.QPushButton("Highlight Region")
@@ -528,7 +521,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         region_button_row.addStretch(1)
         regions_layout.addLayout(region_button_row)
         transitions_label = QtWidgets.QLabel("Surface Transitions")
-        transitions_label.setToolTip("User-selected station ranges where Transition Surface treatment should be applied.")
+        transitions_label.setToolTip("Station ranges where Transition Surface treatment is applied, authored in the Regions panel.")
         regions_layout.addWidget(transitions_label)
         self._surface_transition_table = QtWidgets.QTableWidget(0, 13)
         self._surface_transition_table.setHorizontalHeaderLabels(
@@ -560,35 +553,11 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             self._surface_transition_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
             pass
-        self._surface_transition_table.itemSelectionChanged.connect(self._sync_selected_surface_transition_row_controls)
         regions_layout.addWidget(self._surface_transition_table)
-        transition_range_row = QtWidgets.QHBoxLayout()
-        transition_range_row.addWidget(QtWidgets.QLabel("Region STA"))
-        self._surface_transition_boundary_combo = QtWidgets.QComboBox()
-        self._surface_transition_boundary_combo.currentIndexChanged.connect(lambda _index: self._sync_selected_surface_transition_boundary_spacing())
-        transition_range_row.addWidget(self._surface_transition_boundary_combo, 2)
-        transition_range_row.addWidget(QtWidgets.QLabel("Spacing"))
-        self._surface_transition_spacing_combo = QtWidgets.QComboBox()
-        for label, value in SURFACE_TRANSITION_SPACING_PRESETS:
-            self._surface_transition_spacing_combo.addItem(label, value)
-        self._surface_transition_spacing_combo.currentIndexChanged.connect(lambda _index: self._sync_surface_transition_custom_spacing_state())
-        transition_range_row.addWidget(self._surface_transition_spacing_combo)
-        self._surface_transition_spacing_spin = QtWidgets.QDoubleSpinBox()
-        self._surface_transition_spacing_spin.setRange(0.1, 10000.0)
-        self._surface_transition_spacing_spin.setDecimals(3)
-        self._surface_transition_spacing_spin.setSingleStep(0.5)
-        self._surface_transition_spacing_spin.setSuffix(" m")
-        self._surface_transition_spacing_spin.setValue(SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL)
-        transition_range_row.addWidget(self._surface_transition_spacing_spin)
-        create_update_transition_button = QtWidgets.QPushButton("Update")
-        create_update_transition_button.clicked.connect(self._create_transition_from_selected_boundary_option)
-        transition_range_row.addWidget(create_update_transition_button)
-        transition_range_row.addStretch(1)
-        regions_layout.addLayout(transition_range_row)
+        transition_note = QtWidgets.QLabel("Surface Transitions are edited in the Regions panel; this list reviews them.")
+        transition_note.setWordWrap(True)
+        regions_layout.addWidget(transition_note)
         transition_button_row = QtWidgets.QHBoxLayout()
-        toggle_transition_button = QtWidgets.QPushButton("Toggle Enabled")
-        toggle_transition_button.clicked.connect(self._toggle_selected_surface_transition)
-        transition_button_row.addWidget(toggle_transition_button)
         refresh_transitions_button = QtWidgets.QPushButton("Refresh Transitions")
         refresh_transitions_button.clicked.connect(lambda: self._set_surface_transition_rows(corridor_surface_transition_rows(self.document)))
         transition_button_row.addWidget(refresh_transitions_button)
@@ -879,7 +848,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
             self._refresh_shared_breakline_audit()
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
-            self._sync_surface_transition_station_options_from_selected_region()
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
             self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
             self._sync_supplemental_sampling_frame_count_label()
@@ -1394,78 +1362,9 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             except Exception:
                 pass
         _fit_build_corridor_table_to_rows(self._region_table)
-        self._sync_surface_transition_station_options_from_selected_region()
 
     def _refresh_region_boundary_rows(self) -> None:
         self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
-        self._sync_surface_transition_station_options_from_selected_region()
-
-    def _selected_region_id(self) -> str:
-        table = getattr(self, "_region_table", None)
-        if table is None:
-            return ""
-        row_index = -1
-        try:
-            rows = table.selectionModel().selectedRows()
-            if rows:
-                row_index = int(rows[0].row())
-        except Exception:
-            row_index = -1
-        if row_index < 0:
-            try:
-                row_index = int(table.currentRow())
-            except Exception:
-                row_index = -1
-        if row_index < 0:
-            return ""
-        # the region id is in the second column, behind Alignment, and carries the
-        # unabbreviated id as user data
-        item = table.item(row_index, 1)
-        if item is None:
-            return ""
-        try:
-            value = item.data(32)
-            if value:
-                return str(value)
-        except Exception:
-            pass
-        return str(item.text() or "")
-
-    def _sync_surface_transition_station_options_from_selected_region(self) -> None:
-        self._set_surface_transition_boundary_options(
-            corridor_surface_transition_boundary_options(self.document, region_id=self._selected_region_id())
-        )
-
-    def _set_surface_transition_boundary_options(self, options: list[dict[str, object]]) -> None:
-        combo = getattr(self, "_surface_transition_boundary_combo", None)
-        if combo is None:
-            return
-        current_transition_id = ""
-        try:
-            current_transition_id = str(combo.itemData(combo.currentIndex()) or "")
-        except Exception:
-            current_transition_id = ""
-        try:
-            combo.blockSignals(True)
-            combo.clear()
-            for option in list(options or []):
-                label = str(option.get("label", "") or "")
-                transition_id = str(option.get("transition_id", "") or "")
-                combo.addItem(label, transition_id)
-            if combo.count() > 0:
-                selected_index = 0
-                if current_transition_id:
-                    for index in range(combo.count()):
-                        if str(combo.itemData(index) or "") == current_transition_id:
-                            selected_index = index
-                            break
-                combo.setCurrentIndex(selected_index)
-        finally:
-            try:
-                combo.blockSignals(False)
-            except Exception:
-                pass
-        self._sync_selected_surface_transition_boundary_spacing()
 
     def _set_surface_transition_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_surface_transition_table"):
@@ -1502,109 +1401,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                 self._surface_transition_table.selectRow(0)
             except Exception:
                 pass
-            self._sync_selected_surface_transition_row_controls()
         _fit_build_corridor_table_to_rows(self._surface_transition_table)
-
-    def _sync_selected_surface_transition_row_controls(self) -> None:
-        if not hasattr(self, "_surface_transition_table"):
-            return
-        rows = self._surface_transition_table.selectionModel().selectedRows()
-        if not rows:
-            return
-        row_index = int(rows[0].row())
-        transition_item = self._surface_transition_table.item(row_index, 0)
-        spacing_item = self._surface_transition_table.item(row_index, 3)
-        transition_id = str(transition_item.text() if transition_item is not None else "")
-        if transition_id:
-            self._set_surface_transition_boundary_combo_transition(transition_id)
-        try:
-            spacing = float(spacing_item.text()) if spacing_item is not None and spacing_item.text() else SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL
-            self._set_surface_transition_spacing_controls(spacing)
-        except Exception:
-            pass
-
-    def _set_surface_transition_boundary_combo_transition(self, transition_id: str) -> None:
-        combo = getattr(self, "_surface_transition_boundary_combo", None)
-        if combo is None:
-            return
-        target = str(transition_id or "")
-        if not target:
-            return
-        for index in range(combo.count()):
-            if str(combo.itemData(index) or "") == target:
-                try:
-                    combo.blockSignals(True)
-                    combo.setCurrentIndex(index)
-                finally:
-                    try:
-                        combo.blockSignals(False)
-                    except Exception:
-                        pass
-                return
-
-    def _sync_selected_surface_transition_boundary_spacing(self) -> None:
-        combo = getattr(self, "_surface_transition_boundary_combo", None)
-        if combo is None or combo.count() <= 0:
-            return
-        transition_id = str(combo.itemData(combo.currentIndex()) or "")
-        for option in corridor_surface_transition_boundary_options(self.document, region_id=self._selected_region_id()):
-            if str(option.get("transition_id", "") or "") == transition_id:
-                self._set_surface_transition_spacing_controls(float(option.get("sample_interval", SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL) or SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL))
-                return
-
-    def _set_surface_transition_spacing_controls(self, sample_interval: float) -> None:
-        combo = getattr(self, "_surface_transition_spacing_combo", None)
-        spin = getattr(self, "_surface_transition_spacing_spin", None)
-        value = max(0.1, float(sample_interval or SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL))
-        if spin is not None:
-            try:
-                spin.blockSignals(True)
-                spin.setValue(value)
-            finally:
-                try:
-                    spin.blockSignals(False)
-                except Exception:
-                    pass
-        if combo is not None:
-            selected_index = combo.count() - 1
-            for index in range(combo.count()):
-                data = combo.itemData(index)
-                if data is not None and abs(float(data) - value) <= 1.0e-9:
-                    selected_index = index
-                    break
-            try:
-                combo.blockSignals(True)
-                combo.setCurrentIndex(max(0, selected_index))
-            finally:
-                try:
-                    combo.blockSignals(False)
-                except Exception:
-                    pass
-        self._sync_surface_transition_custom_spacing_state()
-
-    def _sync_surface_transition_custom_spacing_state(self) -> None:
-        combo = getattr(self, "_surface_transition_spacing_combo", None)
-        spin = getattr(self, "_surface_transition_spacing_spin", None)
-        if combo is None or spin is None:
-            return
-        try:
-            spin.setEnabled(combo.itemData(combo.currentIndex()) is None)
-        except Exception:
-            pass
-
-    def _surface_transition_spacing_value(self) -> float:
-        combo = getattr(self, "_surface_transition_spacing_combo", None)
-        spin = getattr(self, "_surface_transition_spacing_spin", None)
-        if combo is not None:
-            try:
-                data = combo.itemData(combo.currentIndex())
-                if data is not None:
-                    return max(0.1, float(data))
-            except Exception:
-                pass
-        if spin is not None:
-            return max(0.1, float(spin.value()))
-        return SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL
 
     def _show_selected_region_boundary_row(self) -> None:
         rows = self._region_table.selectionModel().selectedRows() if hasattr(self, "_region_table") else []
@@ -1636,87 +1433,6 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             )
         except Exception as exc:
             _show_message(self.form, "Build Parametric", f"Region surface object was not selected.\n{exc}")
-
-    def _create_transition_from_selected_region_boundary(self) -> None:
-        rows = self._region_table.selectionModel().selectedRows() if hasattr(self, "_region_table") else []
-        if not rows:
-            _show_message(self.form, "Build Parametric", "Select one Region row first.")
-            return
-        try:
-            row_index = int(rows[0].row())
-            obj = create_corridor_surface_transition_from_region_boundary(
-                self.document,
-                row_index,
-                sample_interval=self._surface_transition_spacing_value(),
-            )
-            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-            self._sync_surface_transition_station_options_from_selected_region()
-            transition_rows = corridor_surface_transition_rows(self.document)
-            if transition_rows:
-                self._surface_transition_table.selectRow(max(0, len(transition_rows) - 1))
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Surface Transition range stored.",
-                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                        "Source: Build Corridor Region boundary review.",
-                    ]
-                )
-            )
-        except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Surface Transition range was not created.\n{exc}")
-
-    def _create_transition_from_selected_boundary_option(self) -> None:
-        combo = getattr(self, "_surface_transition_boundary_combo", None)
-        if combo is None or combo.count() <= 0:
-            _show_message(self.form, "Build Parametric", "No Region boundary station is available.")
-            return
-        try:
-            boundary_index = int(combo.currentIndex())
-            spacing = self._surface_transition_spacing_value()
-            obj = create_or_update_corridor_surface_transition_for_boundary(
-                self.document,
-                boundary_index,
-                sample_interval=spacing,
-                region_id=self._selected_region_id(),
-            )
-            self._sync_surface_transition_station_options_from_selected_region()
-            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-            transition_id = str(combo.itemData(combo.currentIndex()) or "")
-            self._set_surface_transition_boundary_combo_transition(transition_id)
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Surface Transition spacing stored.",
-                        f"Boundary: {combo.currentText()}",
-                        f"Spacing: {spacing:.3f} m",
-                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                    ]
-                )
-            )
-        except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Surface Transition spacing was not stored.\n{exc}")
-
-    def _toggle_selected_surface_transition(self) -> None:
-        rows = self._surface_transition_table.selectionModel().selectedRows() if hasattr(self, "_surface_transition_table") else []
-        if not rows:
-            _show_message(self.form, "Build Parametric", "Select one Surface Transition row first.")
-            return
-        try:
-            obj = toggle_corridor_surface_transition_enabled(self.document, int(rows[0].row()))
-            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
-            self._sync_surface_transition_station_options_from_selected_region()
-            self._surface_transition_table.selectRow(int(rows[0].row()))
-            self._summary.setPlainText(
-                "\n".join(
-                    [
-                        "Surface Transition enabled state updated.",
-                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
-                    ]
-                )
-            )
-        except Exception as exc:
-            _show_message(self.form, "Build Parametric", f"Surface Transition range was not updated.\n{exc}")
 
     def _show_drainage_review_row(self, row_index: int) -> None:
         try:

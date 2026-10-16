@@ -1438,7 +1438,8 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
         obj.Version = "0.5"
     if not hasattr(obj, "DocumentKind"):
-        # general_road, intersection, or empty (not chosen); see v1 project_setup_service.
+        # general_road or intersection. Empty in a project made before the kind existed; v1
+        # document_kind then judges the document by its content.
         obj.addProperty("App::PropertyString", "DocumentKind", "CorridorRoad", "General Road or Intersection document")
         obj.DocumentKind = ""
     if not hasattr(obj, "LinearUnitDisplay"):

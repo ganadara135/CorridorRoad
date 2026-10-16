@@ -1,8 +1,9 @@
 """GR-1B: a document is a General Road document or an Intersection document.
 
-A General Road document holds one Alignment and no Intersection, so Intersection Presets are
-inactive there and intersection review content is not shown. Intersection Presets make an unset
-document an Intersection document. An unset kind restricts nothing.
+A General Road document holds one Alignment and no Intersection, so intersection review content
+is not shown and Intersection Presets work only before its road exists, switching it to an
+Intersection document. A new project is a General Road document; a project that stores no kind is
+judged by its content.
 """
 
 import gc
@@ -32,7 +33,11 @@ from freecad.Corridor_Road.v1.objects.document_kind import (
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment, list_v1_alignments
 from freecad.Corridor_Road.v1.objects.project_setup_adapter import project_setup_draft_from_project
-from freecad.Corridor_Road.v1.services.editing.project_setup_service import document_kind_change_refusal
+from freecad.Corridor_Road.v1.services.editing.project_setup_service import (
+    DOCUMENT_KIND_LABELS,
+    document_kind_change_refusal,
+    inferred_document_kind,
+)
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import build_source_inspector_owner_rows
 
 _QAPP = None
@@ -62,15 +67,17 @@ def _set_kind(project, kind: str):
     return apply_v1_project_setup(project, draft)
 
 
-def test_a_new_project_has_no_kind_and_project_setup_stores_one() -> None:
-    doc, project = _project_doc("CRV1DocumentKindSetup", "")
+def test_a_new_project_is_a_general_road_and_project_setup_can_change_it_before_a_road_exists() -> None:
+    doc = App.newDocument("CRV1DocumentKindSetup")
     try:
-        assert document_kind(doc) == ""
+        project = create_corridorroad_project(doc)
+        assert project.DocumentKind == "general_road"
+        assert list(DOCUMENT_KIND_LABELS.values()) == ["General Road", "Intersection"]
 
-        result = _set_kind(project, "general_road")
+        result = _set_kind(project, "intersection")
 
         assert result.applied is True
-        assert project.DocumentKind == "general_road"
+        assert project.DocumentKind == "intersection"
     finally:
         App.closeDocument(doc.Name)
 
@@ -89,11 +96,13 @@ def test_the_kind_is_fixed_once_an_alignment_exists() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_the_kind_change_rule() -> None:
-    assert document_kind_change_refusal("", "general_road", alignment_count=0) == ""
+def test_the_kind_rules() -> None:
+    assert document_kind_change_refusal("general_road", "intersection", alignment_count=0) == ""
     assert document_kind_change_refusal("general_road", "general_road", alignment_count=3) == ""
-    assert document_kind_change_refusal("", "intersection", alignment_count=1)
-    assert document_kind_change_refusal("unknown", "", alignment_count=1) == ""
+    assert document_kind_change_refusal("general_road", "intersection", alignment_count=1)
+    assert inferred_document_kind(has_intersection=False, alignment_count=1) == "general_road"
+    assert inferred_document_kind(has_intersection=False, alignment_count=2) == "intersection"
+    assert inferred_document_kind(has_intersection=True, alignment_count=0) == "intersection"
 
 
 def test_a_general_road_document_refuses_a_second_alignment() -> None:
@@ -125,21 +134,26 @@ def test_a_general_road_document_refuses_two_alignments_from_one_import() -> Non
         App.closeDocument(doc.Name)
 
 
-def test_an_unset_document_keeps_several_alignments() -> None:
-    doc, project = _project_doc("CRV1DocumentKindUnset", "")
+def test_a_project_that_stores_no_kind_is_judged_by_its_content() -> None:
+    doc, project = _project_doc("CRV1DocumentKindStoredNone", "")
     try:
-        create_sample_v1_alignment(doc, project=project)
-        create_sample_v1_alignment(doc, project=project)
+        assert document_kind(doc) == "general_road"
 
-        assert len(list_v1_alignments(doc)) == 2
+        create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
+        project.DocumentKind = ""
+        assert document_kind(doc) == "intersection"
+        # reading the kind does not store it
+        assert project.DocumentKind == ""
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_intersection_presets_are_refused_in_a_general_road_document() -> None:
+def test_intersection_presets_are_refused_once_a_general_road_has_its_road() -> None:
     doc, project = _project_doc("CRV1DocumentKindNoPresets", "general_road")
     try:
         App.setActiveDocument(doc.Name)
+        assert CmdV1IntersectionPresets().IsActive() is True
+        create_sample_v1_alignment(doc, project=project)
         assert CmdV1IntersectionPresets().IsActive() is False
 
         with pytest.raises(RuntimeError, match="not available in a General Road document"):
@@ -151,17 +165,17 @@ def test_intersection_presets_are_refused_in_a_general_road_document() -> None:
                 primary_alignment_ref="alignment:a",
                 secondary_alignment_ref="alignment:b",
             )
-        assert list_v1_alignments(doc) == []
+        assert len(list_v1_alignments(doc)) == 1
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_a_preset_makes_an_unset_document_an_intersection_document() -> None:
-    doc = App.newDocument("CRV1DocumentKindPreset")
+def test_a_preset_makes_a_new_general_road_document_an_intersection_document() -> None:
+    doc, project = _project_doc("CRV1DocumentKindPreset", "general_road")
     try:
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
 
-        assert document_kind(doc) == "intersection"
+        assert project.DocumentKind == "intersection"
         App.setActiveDocument(doc.Name)
         assert CmdV1IntersectionPresets().IsActive() is True
     finally:
@@ -184,7 +198,7 @@ def test_a_general_road_document_with_an_intersection_source_does_not_build() ->
 def test_build_parametric_offers_no_intersection_review_in_a_general_road_document() -> None:
     _ensure_qapp()
     road_doc, _road_project = _project_doc("CRV1DocumentKindBuildRoad", "general_road")
-    unset_doc, _unset_project = _project_doc("CRV1DocumentKindBuildUnset", "")
+    unset_doc, _unset_project = _project_doc("CRV1DocumentKindBuildIntersection", "intersection")
     try:
         road_panel = V1BuildCorridorTaskPanel(document=road_doc)
         unset_panel = V1BuildCorridorTaskPanel(document=unset_doc)
@@ -206,4 +220,4 @@ def test_the_cross_section_owner_rows_omit_the_intersection_in_a_general_road_do
         return [row[0] for row in build_source_inspector_owner_rows({"source_inspector": {"document_kind": kind}})]
 
     assert "Intersection" not in owners("general_road")
-    assert "Intersection" in owners("")
+    assert "Intersection" in owners("intersection")
