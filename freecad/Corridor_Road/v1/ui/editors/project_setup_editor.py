@@ -8,6 +8,8 @@ from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from ...services.editing.project_setup_service import (
     COORDINATE_WORKFLOWS,
     CRS_PRESETS,
+    DOCUMENT_KIND_LABELS,
+    DOCUMENT_KINDS,
     MIN_TIN_MAX_TRIANGLES,
     SETUP_STATUS_CHOICES,
     ProjectSetupDraft,
@@ -81,6 +83,14 @@ class V1ProjectSetupTaskPanel:
         gb_src = QtWidgets.QGroupBox("Project")
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_project = QtWidgets.QComboBox()
+        self.cmb_document_kind = QtWidgets.QComboBox()
+        for kind in DOCUMENT_KINDS:
+            self.cmb_document_kind.addItem(DOCUMENT_KIND_LABELS[kind], kind)
+        self.cmb_document_kind.setToolTip(
+            "General Road: one Alignment, no Intersection Presets. "
+            "Intersection: the roads of one intersection. "
+            "The kind can change only before the first Alignment exists."
+        )
         self.cmb_design_standard = QtWidgets.QComboBox()
         self.cmb_design_standard.addItems(list(_standards.SUPPORTED_STANDARDS))
         self.cmb_linear_display = QtWidgets.QComboBox()
@@ -102,6 +112,7 @@ class V1ProjectSetupTaskPanel:
         self.lbl_unit_policy_info.setWordWrap(True)
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Target Project:", self.cmb_project)
+        fs.addRow("Document Kind:", self.cmb_document_kind)
         fs.addRow("Design Standard:", self.cmb_design_standard)
         fs.addRow("Display Unit:", self.cmb_linear_display)
         fs.addRow("Default Import Unit:", self.cmb_linear_import)
@@ -210,6 +221,7 @@ class V1ProjectSetupTaskPanel:
 
     def _draft_from_widgets(self) -> ProjectSetupDraft:
         return ProjectSetupDraft(
+            document_kind=str(self.cmb_document_kind.currentData() or ""),
             design_standard=self.cmb_design_standard.currentText(),
             linear_unit_display=self.cmb_linear_display.currentText(),
             linear_unit_import=self.cmb_linear_import.currentText(),
@@ -236,6 +248,8 @@ class V1ProjectSetupTaskPanel:
         self._loading = True
         try:
             self._set_epsg_value(draft.crs_epsg)
+            kind_index = self.cmb_document_kind.findData(draft.document_kind)
+            self.cmb_document_kind.setCurrentIndex(kind_index if kind_index >= 0 else 0)
             self.cmb_design_standard.setCurrentText(
                 _standards.normalize_standard(draft.design_standard, default=_standards.DEFAULT_STANDARD)
             )
@@ -386,6 +400,10 @@ class V1ProjectSetupTaskPanel:
             result = apply_v1_project_setup(project, self._draft_from_widgets())
         except Exception as exc:
             self.lbl_result.setText(f"ERROR: {exc}")
+            return
+        if result.refusal:
+            QtWidgets.QMessageBox.warning(None, "Project Setup", result.refusal)
+            self.lbl_result.setText(f"Blocked: {result.refusal}")
             return
         if not result.applied:
             fields = ", ".join(locked_field_labels(result.blocked_fields))

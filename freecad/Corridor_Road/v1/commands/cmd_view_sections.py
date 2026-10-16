@@ -163,6 +163,7 @@ def _build_source_inspector(
     superelevation_model=None,
     intersection_model=None,
     viewer_context: dict[str, object] | None = None,
+    document_kind: str = "",
 ) -> dict[str, object]:
     """Build a compact source-inspector payload for the v1 section viewer."""
 
@@ -313,6 +314,7 @@ def _build_source_inspector(
         "owner_superelevation": owner_superelevation,
         "owner_intersection": owner_intersection,
         "ownership_status": ownership_status,
+        "document_kind": str(document_kind or ""),
         "unresolved_fields": list(unresolved_fields),
         "subassembly_count": int(len(list(getattr(section_output, "subassembly_rows", []) or []))),
         "quantity_count": int(len(list(getattr(section_output, "quantity_rows", []) or []))),
@@ -1612,6 +1614,7 @@ def _build_v1_applied_section_set_preview(
         from ..objects.obj_intersection import find_v1_intersection_model
     except Exception:
         find_v1_intersection_model = None
+    from ..objects.document_kind import document_kind
 
     applied_obj = find_v1_applied_section_set(document, preferred_applied_section_set)
     applied_section_set = to_applied_section_set(applied_obj)
@@ -1733,6 +1736,7 @@ def _build_v1_applied_section_set_preview(
             superelevation_model=superelevation_model,
             intersection_model=intersection_model,
             viewer_context=viewer_context,
+            document_kind=document_kind(document),
         ),
         "terrain_rows": _build_terrain_review_rows(
             applied_section=applied_section,

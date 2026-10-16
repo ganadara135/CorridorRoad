@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1 done on 2026-10-16; GR-1B next; D1-D3 open
+Status: In progress. GR-1 and GR-1B done on 2026-10-16; D1-D3 open and next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -144,6 +144,24 @@ Acceptance:
   or imported, and Build Parametric shows no Intersections tab.
 - A preset document is `intersection` and offers every command.
 - A document with an empty kind behaves as today.
+
+Done on 2026-10-16:
+
+- `DocumentKind` on the Project (`objects/obj_project.py`), read and written by Project Setup, which
+  has a Document Kind field. `document_kind_change_refusal` (Project Setup service) fixes the kind
+  once an Alignment exists.
+- `v1/objects/document_kind.py`: `document_kind`, `mark_intersection_document` and
+  `require_alignment_slot`. The sample, blank and LandXML Alignment creators call
+  `require_alignment_slot`; LandXML checks every Alignment id before it writes anything.
+- Intersection Presets: `IsActive` is false on a General Road document, both source modes refuse
+  one, and both mark an unset document `intersection`.
+- Applied Sections refuses an Intersection source in a General Road document and drops the
+  `Intersections:` and `Intersection supplemental:` summary lines there. Build Parametric drops the
+  Intersections tab and guided step. The Cross Section source owner table drops the Intersection
+  row. The intersection drainage rows need an Intersection source, so they were already absent.
+- Tests: `tests/contracts/v1/test_document_kind.py` (new).
+- Left for later: no existing document gets a kind; Project Setup refuses a kind change on Apply
+  rather than disabling the field.
 
 ### GR-2. Remove dead paths
 

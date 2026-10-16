@@ -30,6 +30,11 @@ from .cmd_intersection_editor import (
     validate_existing_alignment_selection,
 )
 from ..services.editing import build_control_region_overlay
+from ..objects.document_kind import (
+    GENERAL_ROAD_INTERSECTION_REFUSAL,
+    is_general_road_document,
+    mark_intersection_document,
+)
 from ..objects.obj_intersection import (
     INTERSECTION_SOURCE_LABEL,
     create_or_update_v1_intersection_model_object,
@@ -126,6 +131,8 @@ def run_v1_intersection_presets_command():
 
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
+    if is_general_road_document(App.ActiveDocument):
+        raise RuntimeError(GENERAL_ROAD_INTERSECTION_REFUSAL)
     panel = V1IntersectionPresetsTaskPanel(document=App.ActiveDocument)
     if Gui is not None and hasattr(Gui, "Control"):
         Gui.Control.showDialog(panel)
@@ -762,6 +769,7 @@ def create_intersection_preset_sources(
     if doc is None:
         raise RuntimeError("No active document is available.")
     project = _ensure_intersection_preset_project(doc)
+    mark_intersection_document(doc)
     created = create_starter_intersection_sources(doc, kind, project=project)
     row = intersection_preset_row_from_label(preset_label)
     created.extend(
@@ -906,6 +914,7 @@ def create_intersection_from_existing_alignments(
     if document is None:
         raise RuntimeError("No active document is available.")
     project = find_project(document)
+    mark_intersection_document(document)
     detail_lines = details if details is not None else []
     detail_lines.extend(
         ensure_existing_alignment_control_regions(
@@ -1693,7 +1702,8 @@ class CmdV1IntersectionPresets:
         }
 
     def IsActive(self):
-        return App is not None and getattr(App, "ActiveDocument", None) is not None
+        document = getattr(App, "ActiveDocument", None) if App is not None else None
+        return document is not None and not is_general_road_document(document)
 
     def Activated(self):
         run_v1_intersection_presets_command()

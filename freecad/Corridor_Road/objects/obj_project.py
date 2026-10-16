@@ -1447,6 +1447,10 @@ def ensure_project_properties(obj):
     if not hasattr(obj, "Version"):
         obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
         obj.Version = "0.5"
+    if not hasattr(obj, "DocumentKind"):
+        # general_road, intersection, or empty (not chosen); see v1 project_setup_service.
+        obj.addProperty("App::PropertyString", "DocumentKind", "CorridorRoad", "General Road or Intersection document")
+        obj.DocumentKind = ""
     if not hasattr(obj, "LinearUnitDisplay"):
         obj.addProperty("App::PropertyString", "LinearUnitDisplay", "Units", "Preferred display unit for linear values")
         obj.LinearUnitDisplay = "m"

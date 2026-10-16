@@ -15,6 +15,11 @@ from ....objects import unit_policy as _units
 
 
 COORDINATE_WORKFLOWS = ("World-first", "Local-first", "Custom")
+# A document is a general road or an intersection, never both. Empty means not chosen yet.
+GENERAL_ROAD = "general_road"
+INTERSECTION = "intersection"
+DOCUMENT_KINDS = ("", GENERAL_ROAD, INTERSECTION)
+DOCUMENT_KIND_LABELS = {"": "Not set", GENERAL_ROAD: "General Road", INTERSECTION: "Intersection"}
 SETUP_STATUS_CHOICES = ("Uninitialized", "Initialized", "Validated")
 DEFAULT_TIN_MAX_TRIANGLES = 250000
 MIN_TIN_MAX_TRIANGLES = 1000
@@ -41,6 +46,7 @@ _COORDINATE_TOLERANCE = 1.0e-9
 class ProjectSetupDraft:
     """One Project Setup edit. Lengths are meters; the rotation is degrees."""
 
+    document_kind: str = ""
     design_standard: str = _standards.DEFAULT_STANDARD
     linear_unit_display: str = _units.DEFAULT_LINEAR_UNIT
     linear_unit_import: str = _units.DEFAULT_LINEAR_UNIT
@@ -99,6 +105,7 @@ def normalize_project_setup_draft(draft: ProjectSetupDraft) -> ProjectSetupDraft
         custom_scale = _units.DEFAULT_CUSTOM_LINEAR_SCALE
     return replace(
         draft,
+        document_kind=normalize_document_kind(draft.document_kind),
         design_standard=_standards.normalize_standard(draft.design_standard, default=_standards.DEFAULT_STANDARD),
         linear_unit_display=_linear_unit(draft.linear_unit_display, _units.DISPLAY_LINEAR_UNITS),
         linear_unit_import=_linear_unit(draft.linear_unit_import, _units.LINEAR_UNITS),
@@ -112,6 +119,30 @@ def normalize_project_setup_draft(draft: ProjectSetupDraft) -> ProjectSetupDraft
         vertical_datum=str(draft.vertical_datum or "").strip(),
         coord_setup_locked=bool(draft.coord_setup_locked),
         coord_setup_status=status,
+    )
+
+
+def normalize_document_kind(value) -> str:
+    """Return a stored document kind; anything unknown reads as not set."""
+
+    text = str(value or "").strip()
+    return text if text in DOCUMENT_KINDS else ""
+
+
+def document_kind_change_refusal(current_kind: str, new_kind: str, *, alignment_count: int) -> str:
+    """Why the document kind cannot change, or "" when it can.
+
+    The kind decides which commands a document offers, so it is fixed once the first Alignment
+    exists: a General Road document then holds its one road, an Intersection document its roads.
+    """
+
+    current = normalize_document_kind(current_kind)
+    new = normalize_document_kind(new_kind)
+    if current == new or int(alignment_count) <= 0:
+        return ""
+    return (
+        f"Document Kind stays '{DOCUMENT_KIND_LABELS[current]}': the document already has "
+        f"{int(alignment_count)} Alignment(s). The kind can change only before the first Alignment exists."
     )
 
 
@@ -187,7 +218,8 @@ def project_setup_summary(draft: ProjectSetupDraft) -> str:
         f"Export='{draft.linear_unit_export}', CustomScale={float(draft.custom_linear_unit_scale):.9f}, "
         f"Standard='{draft.design_standard}', EPSG='{draft.crs_epsg}', Workflow='{draft.coordinate_workflow}', "
         f"TINLimit={int(draft.tin_max_triangles)}, NorthRot={float(draft.north_rotation_deg):.6f}, "
-        f"Locked={bool(draft.coord_setup_locked)}"
+        f"Locked={bool(draft.coord_setup_locked)}, "
+        f"Kind='{DOCUMENT_KIND_LABELS.get(draft.document_kind, draft.document_kind)}'"
     )
 
 
@@ -222,14 +254,20 @@ __all__ = [
     "COORDINATE_WORKFLOWS",
     "CRS_PRESETS",
     "DEFAULT_TIN_MAX_TRIANGLES",
+    "DOCUMENT_KINDS",
+    "DOCUMENT_KIND_LABELS",
+    "GENERAL_ROAD",
+    "INTERSECTION",
     "LOCKED_COORDINATE_FIELDS",
     "MIN_TIN_MAX_TRIANGLES",
     "ProjectSetupDraft",
     "SETUP_STATUS_CHOICES",
     "coordinate_workflow_note",
     "crs_preset_note",
+    "document_kind_change_refusal",
     "locked_coordinate_changes",
     "locked_field_labels",
+    "normalize_document_kind",
     "normalize_project_setup_draft",
     "project_setup_summary",
     "recommended_coordinate_workflow",

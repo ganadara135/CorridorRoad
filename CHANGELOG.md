@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Intersection presets no longer create their own Drainage source. Its two placeholder rows (a low point and an outlet hint) were not drainage design, and a second Drainage object hid the project's one; the intersection low point is still reported by the Build Parametric drainage review. Presets also keep a road's existing Superelevation source instead of adding a second one.
 
 ### Added
+- Project Setup has a Document Kind: General Road or Intersection. A General Road document holds one Alignment, so a second Alignment or a LandXML import of another one is refused. Intersection Presets are inactive there, and Applied Sections, Build Parametric and the Cross Section viewer show no intersection content. Intersection Presets make a document without a kind an Intersection document. The kind can change only before the first Alignment exists, and a document without a kind behaves as before.
 - The short-term regression runner runs `smoke_v1_workflow.py`: one document through Project, Alignment, Stations, Profile, Assembly, Region, Applied Sections and Build Parametric, checking each result's project tree folder and the corridor surfaces, then a save, reopen and rebuild that must reproduce the same surfaces.
 
 ### Removed

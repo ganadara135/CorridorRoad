@@ -138,6 +138,10 @@ def create_sample_v1_alignment(document=None, *, project=None, label: str = "Mai
         doc = getattr(App, "ActiveDocument", None)
     if doc is None:
         raise RuntimeError("No active document is available for v1 alignment creation.")
+    # document_kind imports this module, so it is imported here.
+    from .document_kind import require_alignment_slot
+
+    require_alignment_slot(doc)
 
     try:
         obj = doc.addObject("Part::FeaturePython", "V1Alignment")
@@ -217,6 +221,12 @@ def find_v1_alignment(document, preferred_alignment=None, *, alignment_id: str |
         target = str(alignment_id or "").strip()
         rows = [obj for obj in rows if str(getattr(obj, "AlignmentId", "") or "").strip() == target]
     return rows[0] if rows else None
+
+
+def list_v1_alignments(document) -> list[object]:
+    """Return the v1 Alignment objects of a document, in document order."""
+
+    return [obj for obj in list(getattr(document, "Objects", []) or []) if _is_v1_alignment(obj)]
 
 
 def build_v1_alignment_shape(obj):

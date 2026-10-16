@@ -51,6 +51,7 @@ from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_superelevation import to_superelevation_model
+from ..objects.document_kind import is_general_road_document
 from ..objects.source_identity import duplicate_source_rows, duplicate_source_text
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 from ..services.builders.corridor_surface_geometry_service import (
@@ -121,6 +122,11 @@ def build_document_applied_section_set(
         supplemental_sections_grade_delta=supplemental_sections_grade_delta,
     )
     intersection_obj = find_v1_intersection_model(doc)
+    if intersection_obj is not None and is_general_road_document(doc):
+        raise RuntimeError(
+            f"A General Road document builds one road without an intersection, but it holds the Intersection "
+            f"source '{intersection_obj.Label}'. Delete it, or build the intersection in an Intersection document."
+        )
     if intersection_obj is None:
         return _build_applied_section_set_pass(doc, kernel_stations=None, **options)
     first = _build_applied_section_set_pass(doc, kernel_stations={}, **options)
@@ -1067,12 +1073,13 @@ class V1AppliedSectionsTaskPanel:
     def _refresh_summary(self) -> None:
         try:
             station_count = len(_station_values(find_v1_stationing(self.document)))
+            general_road = is_general_road_document(self.document)
             lines = [
                 f"Alignment: {_source_status(find_v1_alignment(self.document))}",
                 f"Profile: {_source_status(find_v1_profile(self.document))}",
                 f"Assembly / Subassembly: {_assembly_source_status(self.document)}",
                 f"Regions: {_source_status(find_v1_region_model(self.document))}",
-                f"Intersections: {_source_status(find_v1_intersection_model(self.document))}",
+                *([] if general_road else [f"Intersections: {_source_status(find_v1_intersection_model(self.document))}"]),
                 f"Structures: {_source_status(find_v1_structure_model(self.document))}",
                 f"Stations: {station_count} row(s)",
                 *_incomplete_alignment_summary_lines(self.document),
@@ -1087,7 +1094,9 @@ class V1AppliedSectionsTaskPanel:
                     [
                         "",
                         f"Existing Applied Sections: {len(review_rows)} row(s)",
-                        f"Intersection supplemental: {sum(1 for row in review_rows if str(row.get('station_kind', '') or '') == 'intersection_supplemental')}",
+                        *([] if general_road else [
+                            f"Intersection supplemental: {sum(1 for row in review_rows if str(row.get('station_kind', '') or '') == 'intersection_supplemental')}"
+                        ]),
                         f"Existing diagnostics: {sum(int(row.get('diagnostic_count', 0) or 0) for row in review_rows)}",
                     ]
                 )

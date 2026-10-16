@@ -16,11 +16,15 @@ except Exception:  # pragma: no cover - FreeCADGui is unavailable in plain Pytho
 from freecad.Corridor_Road.misc.resources import icon_path, resource_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
-from ..exchange.landxml_alignment_mapper import create_or_update_alignment_from_landxml_candidate
+from ..exchange.landxml_alignment_mapper import (
+    create_or_update_alignment_from_landxml_candidate,
+    landxml_candidate_alignment_id,
+)
 from ..exchange.landxml_import import scan_landxml_file
 from ..exchange.landxml_import_contracts import LandXMLImportResult
 from ..exchange.landxml_profile_mapper import create_or_update_profile_from_landxml_candidate
 from ..exchange.landxml_surface_mapper import create_or_update_surface_from_landxml_candidate
+from ..objects.document_kind import require_alignment_slot
 from ..objects.obj_landxml_import import create_or_update_v1_landxml_import_object
 
 
@@ -236,6 +240,8 @@ def import_landxml_result_into_document(
     if document is None:
         raise RuntimeError("No active FreeCAD document is available.")
 
+    # Checked before anything is written, so a refused import leaves the document as it was.
+    require_alignment_slot(document, [landxml_candidate_alignment_id(alignment) for alignment in result.alignments])
     created: list[str] = []
     for alignment in result.alignments:
         obj = create_or_update_alignment_from_landxml_candidate(document, alignment, project=project)

@@ -169,6 +169,7 @@ corridor_drainage_review_rows = None
 corridor_guided_review_step_available = None
 corridor_guided_review_step_visibility = None
 corridor_intersection_contract_review_rows = None
+is_general_road_document = None
 corridor_region_boundary_rows = None
 corridor_shared_breakline_audit_rows = None
 corridor_shared_breakline_audit_summary = None
@@ -317,16 +318,20 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         visibility_layout = QtWidgets.QVBoxLayout(visibility_tab)
         visibility_layout.setContentsMargins(8, 8, 8, 8)
         visibility_layout.setAlignment(QtCore.Qt.AlignTop)
-        self._review_tab_ids = {
-            tabs.addTab(guided_tab, "Guided Review"): "guided",
-            tabs.addTab(results_tab, "Results"): "results",
-            tabs.addTab(issues_tab, "Side Slope Diagnostics"): "slope_issues",
-            tabs.addTab(intersections_tab, "Intersections"): "intersections",
-            tabs.addTab(breakline_tab, "Breakline Audit"): "breakline_audit",
-            tabs.addTab(regions_tab, "Regions"): "regions",
-            tabs.addTab(drainage_tab, "Drainage"): "drainage",
-            tabs.addTab(visibility_tab, "Visibility"): "visibility",
-        }
+        review_tabs = [
+            (guided_tab, "Guided Review", "guided"),
+            (results_tab, "Results", "results"),
+            (issues_tab, "Side Slope Diagnostics", "slope_issues"),
+            (intersections_tab, "Intersections", "intersections"),
+            (breakline_tab, "Breakline Audit", "breakline_audit"),
+            (regions_tab, "Regions", "regions"),
+            (drainage_tab, "Drainage", "drainage"),
+            (visibility_tab, "Visibility", "visibility"),
+        ]
+        if is_general_road_document(self.document):
+            # A General Road document holds no intersection; its table is built but not offered.
+            review_tabs = [row for row in review_tabs if row[2] != "intersections"]
+        self._review_tab_ids = {tabs.addTab(tab, title): tab_id for tab, title, tab_id in review_tabs}
         try:
             tabs.currentChanged.connect(self._on_review_tab_changed)
         except Exception:

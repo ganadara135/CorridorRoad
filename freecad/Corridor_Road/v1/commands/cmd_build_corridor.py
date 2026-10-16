@@ -26,6 +26,7 @@ from ..common.model_fields import (
     unique_refs,
 )
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
+from ..objects.document_kind import is_general_road_document
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model, to_corridor_model
@@ -912,8 +913,11 @@ def corridor_build_guided_review_steps(
     drainage_flow_summary = corridor_drainage_flow_review_summary(doc)
     intersection_summary = corridor_intersection_review_summary(doc)
     subassembly_kind_rows = corridor_subassembly_kind_guided_review_rows(doc)
+    general_road = is_general_road_document(doc)
     rows: list[dict[str, object]] = []
     for step_id, title, roles, default_notes in CORRIDOR_BUILD_GUIDED_REVIEW_STEPS:
+        if step_id == "intersections" and general_road:
+            continue
         if step_id == "slope_issues":
             daylight = review_by_role.get("daylight", {})
             intersection_slope = review_by_role.get("intersection_slope", {})

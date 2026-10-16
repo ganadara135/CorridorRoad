@@ -149,6 +149,12 @@ def _find_alignment_object_by_id(document, alignment_id: str):
     return None
 
 
+def landxml_candidate_alignment_id(candidate: LandXMLAlignmentCandidate) -> str:
+    """The AlignmentId a LandXML alignment candidate is stored under."""
+
+    return _alignment_id(candidate)
+
+
 def _alignment_id(candidate: LandXMLAlignmentCandidate) -> str:
     raw = candidate.alignment_id or candidate.name or "landxml-alignment"
     return f"alignment:{_slug(raw)}"

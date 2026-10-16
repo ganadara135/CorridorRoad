@@ -12,9 +12,11 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     Gui = None
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
+from ..objects.obj_alignment import list_v1_alignments
 from ..objects.project_setup_adapter import project_setup_draft_from_project, write_project_setup
 from ..services.editing.project_setup_service import (
     ProjectSetupDraft,
+    document_kind_change_refusal,
     locked_coordinate_changes,
     normalize_project_setup_draft,
     project_setup_summary,
@@ -30,12 +32,17 @@ PROJECT_SETUP_COMMAND_ID = "CorridorRoad_ProjectSetup"
 
 @dataclass(frozen=True)
 class ProjectSetupApplyResult:
-    """What Apply did: stored the draft, or refused because it edits a locked coordinate setup."""
+    """What Apply did: stored the draft, or refused it.
+
+    Apply refuses a draft that edits a locked coordinate setup (`blocked_fields`) or changes the
+    Document Kind once the document has an Alignment (`refusal`).
+    """
 
     applied: bool
     draft: ProjectSetupDraft
     blocked_fields: tuple[str, ...] = ()
     summary: str = ""
+    refusal: str = ""
 
 
 def create_corridorroad_project(document):
@@ -82,7 +89,15 @@ def apply_v1_project_setup(project, draft: ProjectSetupDraft) -> ProjectSetupApp
     if project is None:
         raise RuntimeError("No CorridorRoadProject selected.")
     normalized = normalize_project_setup_draft(draft)
-    blocked = locked_coordinate_changes(project_setup_draft_from_project(project), normalized)
+    current = project_setup_draft_from_project(project)
+    refusal = document_kind_change_refusal(
+        current.document_kind,
+        normalized.document_kind,
+        alignment_count=len(list_v1_alignments(getattr(project, "Document", None))),
+    )
+    if refusal:
+        return ProjectSetupApplyResult(applied=False, draft=normalized, refusal=refusal)
+    blocked = locked_coordinate_changes(current, normalized)
     if blocked:
         return ProjectSetupApplyResult(applied=False, draft=normalized, blocked_fields=blocked)
     write_project_setup(project, normalized)

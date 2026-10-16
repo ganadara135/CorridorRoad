@@ -580,6 +580,9 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
             "Structure context applied to this section, if any.",
         ),
     ]
+    if str(inspector.get("document_kind", "") or "") == "general_road":
+        # A General Road document holds no intersection, so there is no owner to resolve.
+        specs = [spec for spec in specs if spec[0] != "Intersection"]
     if str(inspector.get("owner_drainage", "") or inspector.get("drainage_label", "") or "").strip():
         specs.append(
             (

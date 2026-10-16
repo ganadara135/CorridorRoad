@@ -14,12 +14,14 @@ from ..services.editing.project_setup_service import (
     DEFAULT_TIN_MAX_TRIANGLES,
     MIN_TIN_MAX_TRIANGLES,
     ProjectSetupDraft,
+    normalize_document_kind,
     recommended_coordinate_workflow,
 )
 
 # Draft field -> Project property. Units come from the unit policy resolver instead, so a stored
 # value the policy does not know reads back as its default.
 _PROPERTY_BY_FIELD = {
+    "document_kind": "DocumentKind",
     "design_standard": "DesignStandard",
     "linear_unit_display": "LinearUnitDisplay",
     "linear_unit_import": "LinearUnitImportDefault",
@@ -56,6 +58,7 @@ def project_setup_draft_from_project(project) -> ProjectSetupDraft:
     if workflow not in COORDINATE_WORKFLOWS:
         workflow = recommended_coordinate_workflow(crs_epsg)
     return ProjectSetupDraft(
+        document_kind=normalize_document_kind(getattr(project, "DocumentKind", "")),
         design_standard=str(getattr(project, "DesignStandard", "") or ""),
         linear_unit_display=str(units.get("display", "m")),
         linear_unit_import=str(units.get("import", "m")),

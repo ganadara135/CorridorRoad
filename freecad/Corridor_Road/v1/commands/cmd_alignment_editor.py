@@ -33,6 +33,7 @@ from ...objects import design_standards as _ds
 from ...objects.csv_alignment_import import read_alignment_csv, write_alignment_csv  # noqa: F401 - runtime-injected UI collaborator
 from ...objects.sketch_alignment_import import find_sketch_objects, sketch_to_alignment_rows  # noqa: F401 - runtime-injected UI collaborator
 from ..services.coordinates import alignment_rows_from_local, alignment_rows_to_local  # noqa: F401 - runtime-injected UI collaborator
+from ..objects.document_kind import require_alignment_slot
 from ..objects.obj_alignment import (  # noqa: F401 - runtime-injected UI collaborator
     V1AlignmentObject,
     ViewProviderV1Alignment,
@@ -472,6 +473,7 @@ def create_blank_v1_alignment(*, document=None, project=None, label: str = "Main
 
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
+    require_alignment_slot(doc)
     try:
         obj = doc.addObject("Part::FeaturePython", "V1Alignment")
     except Exception:
