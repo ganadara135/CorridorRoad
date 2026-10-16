@@ -28,6 +28,7 @@ _OBSOLETE_FLOW_ROUTE_PROPERTIES = (
     "CollectionStationEnds",
     "CollectionAlignmentRefs",
     "CollectionRampRefs",
+    "ElementRampRefs",
     "CollectionIntersectionRefs",
     "FlowRouteReceiverRefs",
     "CollectionRegionIds",
@@ -86,7 +87,6 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "DrainageElementIds", "Drainage Elements", "drainage element ids")
     _add_property(obj, "App::PropertyStringList", "ElementKinds", "Drainage Elements", "drainage element kinds")
     _add_property(obj, "App::PropertyStringList", "ElementAlignmentRefs", "Drainage Elements", "alignment refs")
-    _add_property(obj, "App::PropertyStringList", "ElementRampRefs", "Drainage Elements", "ramp refs")
     _add_property(obj, "App::PropertyStringList", "ElementIntersectionRefs", "Drainage Elements", "intersection refs")
     _add_property(obj, "App::PropertyStringList", "ElementStructureRefs", "Drainage Elements", "structure refs")
     _add_property(obj, "App::PropertyStringList", "ElementConnectionPointRefs", "Drainage Elements", "structure connection point refs")
@@ -192,7 +192,6 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
     obj.DrainageElementIds = [str(row.drainage_element_id) for row in element_rows]
     obj.ElementKinds = [str(row.element_kind) for row in element_rows]
     obj.ElementAlignmentRefs = [str(row.alignment_ref) for row in element_rows]
-    obj.ElementRampRefs = [str(row.ramp_ref) for row in element_rows]
     obj.ElementIntersectionRefs = [str(row.intersection_ref) for row in element_rows]
     obj.ElementStructureRefs = [str(row.structure_ref) for row in element_rows]
     obj.ElementConnectionPointRefs = [str(getattr(row, "connection_point_ref", "") or "") for row in element_rows]
@@ -266,7 +265,6 @@ def to_drainage_model(obj) -> DrainageModel | None:
             drainage_element_id=_list_value(element_ids, index, f"drainage:element:{index + 1}"),
             element_kind=_list_value(getattr(obj, "ElementKinds", []), index, "ditch"),
             alignment_ref=_list_value(getattr(obj, "ElementAlignmentRefs", []), index, ""),
-            ramp_ref=_list_value(getattr(obj, "ElementRampRefs", []), index, ""),
             intersection_ref=_list_value(getattr(obj, "ElementIntersectionRefs", []), index, ""),
             structure_ref=_list_value(getattr(obj, "ElementStructureRefs", []), index, ""),
             connection_point_ref=_list_value(getattr(obj, "ElementConnectionPointRefs", []), index, ""),

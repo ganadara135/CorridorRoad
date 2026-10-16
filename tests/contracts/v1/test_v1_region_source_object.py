@@ -44,7 +44,6 @@ def _sample_region_model() -> RegionModel:
                 station_end=180.0,
                 assembly_ref="assembly:bridge-deck",
                 template_ref="template:bridge",
-                override_refs=["override:bridge-shoulder"],
                 priority=80,
                 notes="Bridge region. Structure and Drainage are assigned in their own panels.",
             ),
@@ -89,7 +88,6 @@ def test_v1_region_model_object_roundtrips_to_region_model() -> None:
 
         assert model is not None
         assert model.region_model_id == "regions:main"
-        assert model.region_rows[1].override_refs == ["override:bridge-shoulder"]
         assert not hasattr(model.region_rows[1], "structure_ref")
         assert not hasattr(model.region_rows[1], "drainage_refs")
     finally:

@@ -43,8 +43,9 @@ The compatibility floor is package metadata, not a claim that the complete Phase
 | Quantity/Earthwork | Supported review/output | none | quantity, balance, and mass-haul results | normalized reports and navigation | no measurement inference from viewer geometry |
 | Exchange | Supported current paths | none | consumes normalized source/result/output contracts | JSON and current IFC/LandXML/DXF paths | complete format coverage remains future work |
 | AI Assist | Review/proposal only | none | consumes accepted contracts | explainable suggestions | no silent source rewriting |
-| Ramp | Removed | historical compatibility only | none in active scope | none in active workflow | no authoring, evaluation, result, output, review, command, or UI expansion |
-| Watertight Solid | Paused compatibility | output configuration only | existing accepted solid results | existing compatibility UI and packages | only critical repair, data-loss prevention, compatibility, and test preservation |
+| Ramp | Removed | none; the model and its reference fields were removed on 2026-10-16 | none | none | no authoring, evaluation, result, output, review, command, or UI |
+| Override | Removed | none; `OverrideModel` was removed on 2026-10-16 | none | none | it had no editor and was always empty |
+| Watertight Solid | Paused compatibility | output configuration only | existing accepted solid results | existing compatibility UI and packages, not on the toolbar or menu | only critical repair, data-loss prevention, compatibility, and test preservation |
 
 ## Output Traceability Rule
 
@@ -83,7 +84,7 @@ Current operational release status:
 
 Special classifications:
 
-- `V1_RAMP_MODEL.md` and Ramp-related plan content are historical compatibility references only.
+- `V1_RAMP_MODEL.md`, `V1_OVERRIDE_MODEL.md` and Ramp- or Override-related plan content are historical; neither model exists in code since 2026-10-16.
 - every other `V1_INTERSECTION_*_PLAN.md`, `V1_CROSS_INTERSECTION_*_PLAN.md` and `V1_ROUNDABOUT_*_PLAN.md` is a historical proposal since 2026-10-08; `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md` supersedes them where they disagree.
 - `V1_WATERTIGHT_SOLID_*.md` documents preserve existing compatibility behavior but are not active development plans while the pause is in effect.
 - the v0 documents were removed on 2026-09-24 and are reachable only through git history.

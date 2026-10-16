@@ -55,7 +55,6 @@ class RegionPolicySet:
     daylight_policy: dict[str, Any] = field(default_factory=dict)
     drainage_policy: dict[str, Any] = field(default_factory=dict)
     structure_policy: dict[str, Any] = field(default_factory=dict)
-    ramp_policy: dict[str, Any] = field(default_factory=dict)
     intersection_policy: dict[str, Any] = field(default_factory=dict)
     earthwork_policy: dict[str, Any] = field(default_factory=dict)
     notes: str = ""
@@ -70,19 +69,14 @@ class RegionRow:
     station_end: float
     region_index: int = 0
     assembly_ref: str = ""
-    ramp_ref: str = ""
     intersection_ref: str = ""
     policy_set_ref: str = ""
     template_ref: str = ""
     superelevation_ref: str = ""
-    override_refs: list[str] = field(default_factory=list)
     priority: int = 0
     source_ref: str = ""
     notes: str = ""
     policy_rows: list[RegionPolicyRow] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "override_refs", normalize_region_refs(self.override_refs))
 
 
 @dataclass
@@ -96,21 +90,3 @@ class RegionModel(SourceModelBase):
     transition_rows: list[RegionTransition] = field(default_factory=list)
     constraint_rows: list[dict[str, Any]] = field(default_factory=list)
     diagnostic_rows: list[RegionDiagnosticRow] = field(default_factory=list)
-
-
-def normalize_region_refs(values: list[object] | tuple[object, ...] | str) -> list[str]:
-    """Normalize a list-like region reference field."""
-
-    if isinstance(values, str):
-        raw_values = values.replace(";", ",").split(",")
-    else:
-        raw_values = list(values or [])
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in raw_values:
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output

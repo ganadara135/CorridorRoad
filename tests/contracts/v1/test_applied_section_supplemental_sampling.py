@@ -1,5 +1,5 @@
 from freecad.Corridor_Road.v1.models.result.centerline3d import Centerline3DPointRow, Centerline3DResult
-from freecad.Corridor_Road.v1.models.source import AlignmentModel, AssemblySubassemblyModel, OverrideModel, ProfileModel, RegionModel
+from freecad.Corridor_Road.v1.models.source import AlignmentModel, AssemblySubassemblyModel, ProfileModel, RegionModel
 from freecad.Corridor_Road.v1.models.source.alignment_model import AlignmentElement
 from freecad.Corridor_Road.v1.models.source.assembly_model import SubassemblySectionTemplate, TemplateSubassembly
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint, VerticalCurveRow
@@ -95,12 +95,6 @@ def _request(
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="project:test",
-        override_model_id="overrides:test",
-        alignment_id="alignment:test",
-    )
     return AppliedSectionSetBuildRequest(
         project_id="project:test",
         corridor_id="corridor:test",
@@ -110,7 +104,6 @@ def _request(
         assembly_models=[assembly],
         assembly_subassembly_models=[assembly],
         region_model=region_model,
-        override_model=override_model,
         stations=[0.0, 100.0],
         applied_section_set_id="applied-sections:test",
         centerline3d_result=centerline3d_result,

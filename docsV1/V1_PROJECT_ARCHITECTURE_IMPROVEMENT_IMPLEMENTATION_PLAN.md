@@ -32,7 +32,7 @@ This plan records two explicit deviations from older v1 planning documents.
 - Do not add a Ramp command, toolbar stage, source editor, result builder, or new Ramp contract.
 - Existing Ramp code and documents may remain for compatibility or historical reference.
 - Existing Ramp code should receive only changes required to prevent regressions in supported workflows.
-- Deleting or migrating existing Ramp data is a separate compatibility decision and is not authorized by this plan.
+- Deleting or migrating existing Ramp data is a separate compatibility decision and is not authorized by this plan. That decision was taken on 2026-10-16 (`V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md`, D1): the Ramp code was removed without migration.
 - Ordinary Region widening must not be relabeled as Ramp topology.
 
 ### 2.2 Watertight Solid development is paused

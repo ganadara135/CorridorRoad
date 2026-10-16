@@ -1,7 +1,6 @@
 from freecad.Corridor_Road.v1.models.source import (
     AlignmentModel,
     AssemblySubassemblyModel,
-    OverrideModel,
     ProfileModel,
     ProjectModel,
     BridgeGeometrySpec,
@@ -113,12 +112,6 @@ def test_source_models_can_be_instantiated() -> None:
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-1",
-        alignment_id="align-1",
-    )
     structure_model = StructureModel(
         schema_version=1,
         project_id="proj-1",
@@ -157,7 +150,6 @@ def test_source_models_can_be_instantiated() -> None:
     assert region.region_rows[0].template_ref == "tmpl-1"
     assert not hasattr(region.region_rows[0], "structure_ref")
     assert not hasattr(region.region_rows[0], "structure_refs")
-    assert override_model.override_model_id == "ovr-1"
     assert structure_model.structure_model_id == "str-1"
     assert structure_model.geometry_spec_rows[0].shape_kind == "deck_slab"
     assert structure_model.bridge_geometry_spec_rows[0].deck_width == 10.0

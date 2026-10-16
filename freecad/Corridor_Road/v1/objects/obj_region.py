@@ -67,10 +67,8 @@ def ensure_v1_region_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "AssemblyRefs", "References", "assembly refs")
     _add_property(obj, "App::PropertyStringList", "TemplateRefs", "References", "template refs")
     _add_property(obj, "App::PropertyStringList", "PolicySetRefs", "References", "policy set refs")
-    _add_property(obj, "App::PropertyStringList", "RampRefs", "References", "ramp refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionRefs", "References", "intersection refs")
     _add_property(obj, "App::PropertyStringList", "SuperelevationRefs", "References", "superelevation refs")
-    _add_property(obj, "App::PropertyStringList", "OverrideRefRows", "References", "comma-separated override refs")
     _add_property(obj, "App::PropertyIntegerList", "Priorities", "Regions", "region priorities")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "region source refs")
     _add_property(obj, "App::PropertyStringList", "NotesRows", "Source", "region notes")
@@ -82,6 +80,8 @@ def ensure_v1_region_properties(obj) -> None:
     _remove_property(obj, "StructureRefs")
     _remove_property(obj, "StructureRefRows")
     _remove_property(obj, "DrainageRefRows")
+    _remove_property(obj, "RampRefs")
+    _remove_property(obj, "OverrideRefRows")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1RegionModel"
@@ -160,10 +160,8 @@ def update_v1_region_model_object(obj, region_model: RegionModel, *, label: str 
     obj.AssemblyRefs = [str(row.assembly_ref) for row in rows]
     obj.TemplateRefs = [str(row.template_ref) for row in rows]
     obj.PolicySetRefs = [str(row.policy_set_ref) for row in rows]
-    obj.RampRefs = [str(row.ramp_ref) for row in rows]
     obj.IntersectionRefs = [str(row.intersection_ref) for row in rows]
     obj.SuperelevationRefs = [str(row.superelevation_ref) for row in rows]
-    obj.OverrideRefRows = [_join_refs(row.override_refs) for row in rows]
     obj.Priorities = [int(row.priority) for row in rows]
     obj.SourceRefs = [str(row.source_ref) for row in rows]
     obj.NotesRows = [str(row.notes) for row in rows]
@@ -210,10 +208,8 @@ def to_region_model(obj) -> RegionModel | None:
                 assembly_ref=_list_value(getattr(obj, "AssemblyRefs", []), index, ""),
                 template_ref=_list_value(getattr(obj, "TemplateRefs", []), index, ""),
                 policy_set_ref=_list_value(getattr(obj, "PolicySetRefs", []), index, ""),
-                ramp_ref=_list_value(getattr(obj, "RampRefs", []), index, ""),
                 intersection_ref=_list_value(getattr(obj, "IntersectionRefs", []), index, ""),
                 superelevation_ref=_list_value(getattr(obj, "SuperelevationRefs", []), index, ""),
-                override_refs=_split_refs(_list_value(getattr(obj, "OverrideRefRows", []), index, "")),
                 priority=_int_list_value(getattr(obj, "Priorities", []), index, 0),
                 source_ref=_list_value(getattr(obj, "SourceRefs", []), index, ""),
                 notes=_list_value(getattr(obj, "NotesRows", []), index, ""),
@@ -285,14 +281,6 @@ def _remove_property(obj, name: str) -> None:
 
 def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
-
-
-def _join_refs(values) -> str:
-    return ",".join(str(value).strip() for value in list(values or []) if str(value).strip())
-
-
-def _split_refs(value: object) -> list[str]:
-    return [token.strip() for token in str(value or "").replace(";", ",").split(",") if token.strip()]
 
 
 def _list_value(values, index: int, default: str = "") -> str:

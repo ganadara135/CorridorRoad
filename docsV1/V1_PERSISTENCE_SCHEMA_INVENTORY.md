@@ -139,7 +139,7 @@ Exchange packages already persist readable `SourceRefs`, `ResultRefs`, and packa
 
 ## Excluded Scope
 
-- Ramp is removed. Historical Ramp properties are compatibility-only and are not migrated or expanded here.
+- Ramp and Override were removed on 2026-10-16 without migration. A Region object drops `RampRefs` and `OverrideRefRows`, and a Drainage object drops `ElementRampRefs`, when it is next updated. In Applied Section subassembly rows, slot 16 held override ids and is now written empty so the later slots keep their positions.
 - Watertight Solid development is paused. Existing rows remain compatibility surfaces; no target, topology, simulation, UI, or exchange expansion is included.
 - CI remains unchanged. No CI development is allowed by this plan.
 

@@ -754,10 +754,11 @@ def test_watertight_solids_panel_routes_existing_output_objects_to_tree() -> Non
         App.closeDocument(doc.Name)
 
 
-def test_watertight_solids_toolbar_is_after_ai_assist() -> None:
+def test_watertight_solids_is_not_on_the_toolbar() -> None:
     commands = corridorroad_workflow_toolbar_commands()
 
-    assert commands[-2:] == ["CorridorRoad_AIAssist", WATERTIGHT_SOLIDS_COMMAND_ID]
+    assert WATERTIGHT_SOLIDS_COMMAND_ID not in commands
+    assert commands[-1] == "CorridorRoad_AIAssist"
 
 
 def test_watertight_solids_prerequisites_block_without_build_corridor() -> None:

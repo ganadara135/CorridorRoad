@@ -1,6 +1,5 @@
 """Normalized output contracts for CorridorRoad v1."""
 
-from .context_review_output import ContextReviewOutput
 from .cross_section_drawing import (
     CrossSectionDrawingDimensionRow,
     CrossSectionDrawingGeometryRow,
@@ -48,7 +47,6 @@ from .watertight_solid_output import (
 )
 
 __all__ = [
-    "ContextReviewOutput",
     "CrossSectionDrawingDimensionRow",
     "CrossSectionDrawingGeometryRow",
     "CrossSectionDrawingLabelRow",

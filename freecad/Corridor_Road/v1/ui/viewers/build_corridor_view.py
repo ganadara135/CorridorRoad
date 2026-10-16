@@ -328,10 +328,14 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
             (drainage_tab, "Drainage", "drainage"),
             (visibility_tab, "Visibility", "visibility"),
         ]
-        if is_general_road_document(self.document):
-            # A General Road document holds no intersection; its table is built but not offered.
-            review_tabs = [row for row in review_tabs if row[2] != "intersections"]
         self._review_tab_ids = {tabs.addTab(tab, title): tab_id for tab, title, tab_id in review_tabs}
+        if is_general_road_document(self.document):
+            # A General Road document holds no intersection, so its tab is hidden. It stays in the
+            # tab widget: a tab left out has no Qt parent, and PySide deletes its table while the
+            # refresh after a build still writes to it.
+            for index, tab_id in self._review_tab_ids.items():
+                if tab_id == "intersections":
+                    tabs.setTabVisible(index, False)
         try:
             tabs.currentChanged.connect(self._on_review_tab_changed)
         except Exception:

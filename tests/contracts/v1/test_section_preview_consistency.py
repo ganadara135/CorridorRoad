@@ -9,7 +9,6 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
     SubassemblySectionTemplate,
     TemplateSubassembly,
 )
-from freecad.Corridor_Road.v1.models.source.override_model import OverrideModel
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint, ProfileModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
@@ -198,12 +197,6 @@ def _section(rows: list[TemplateSubassembly], *, station: float = 50.0, applied_
                         template_ref="template:test",
                     )
                 ],
-            ),
-            override_model=OverrideModel(
-                schema_version=1,
-                project_id="project:test",
-                override_model_id="overrides:test",
-                alignment_id="alignment:test",
             ),
             station=station,
             applied_section_id=applied_section_id,

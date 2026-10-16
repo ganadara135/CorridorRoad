@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: In progress. GR-1 and GR-1B done on 2026-10-16; D1-D3 open and next
+Status: In progress. GR-1, GR-1B and GR-2 done and D1-D3 decided on 2026-10-16; GR-3 next
 Scope: the ordinary road workflow from Project to Build Parametric, before the Drainage rework
 Related:
 
@@ -50,6 +50,9 @@ are current, reads one source per concern, and keeps authoring out of viewers.
 | F10 | The end-to-end smoke skips TIN, 3D Centerline and Superelevation, so terrain daylight and crossfall are never exercised end to end. | `tests/regression/smoke_v1_workflow.py` `_build` |
 
 ## 4. Decisions to take before starting
+
+All three were decided by the user on 2026-10-16, each as recommended: remove Ramp (D1), take
+Watertight off the toolbar and menu (D2), and store 3D Centerline as a result stage (D3).
 
 | Id | Question | Recommendation |
 | --- | --- | --- |
@@ -167,12 +170,26 @@ Done on 2026-10-16:
 
 - Override: remove `OverrideModel`, `OverrideResolutionService`, the request field and the two
   `overrides:empty` constructions (F7).
-- Ramp (if D1 is yes): remove the model, the evaluation service, their exports, the tree routing
+- Ramp (D1): remove the model, the evaluation service, their exports, the tree routing
   entries and the Region preset text that mentions ramps (F8).
 - Watertight (per D2): remove the command from the workbench toolbar and menu.
 
 Acceptance: architecture and contract suites pass; `rg -i "override_model|ramp_model"` finds nothing
 in `freecad/`.
+
+Done on 2026-10-16:
+
+- Override: `OverrideModel`, `OverrideResolutionService`, both request fields, the two empty
+  constructions, the result rows' `override_ids` and the Region `override_refs` (`OverrideRefRows`)
+  were removed. Applied Section subassembly rows keep slot 16 empty so the stored layout is unchanged.
+- Ramp: `RampModel`, `RampEvaluationService`, the Ramps tree folder and routing, the "Ramp Tie-In"
+  Region preset and the `ramp_ref` / `ramp_policy` fields of Region, Region context and Drainage were
+  removed. The unused `ContextReviewOutput` (with its `ramp_rows`) went with them. The Overrides tree
+  folder was removed too.
+- Region and Drainage objects drop the retired properties when they are next written; no migration.
+- Watertight: off the toolbar and menu; the command stays registered.
+- `AGENTS.md`, `V1_SUPPORTED_DOMAIN_STATUS.md`, `V1_PERSISTENCE_SCHEMA_INVENTORY.md` and the two model
+  documents say so; other historical documents that mention Ramp were left as they are.
 
 ### GR-3. Result freshness
 

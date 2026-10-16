@@ -104,35 +104,6 @@ REGION_PRESETS = {
             },
         ],
     },
-    "Ramp Tie-In": {
-        "note": "Normal road with ramp influence, retaining/drainage references, and transition zones.",
-        "rows": [
-            {
-                "id": "region:transition-in",
-                "kind": "transition",
-                "start": 0.0,
-                "end": 0.25,
-                "priority": 30,
-                "notes": "Ramp approach transition.",
-            },
-            {
-                "id": "region:ramp-01",
-                "kind": "ramp",
-                "start": 0.25,
-                "end": 0.75,
-                "priority": 75,
-                "notes": "Ramp merge/diverge work zone. Assign Structure and Drainage from their own panels.",
-            },
-            {
-                "id": "region:transition-out",
-                "kind": "transition",
-                "start": 0.75,
-                "end": 1.0,
-                "priority": 30,
-                "notes": "Ramp departure transition.",
-            },
-        ],
-    },
     "Drainage Control": {
         "note": "Normal road split by a drainage-control zone with ditch and culvert references.",
         "rows": [

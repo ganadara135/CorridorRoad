@@ -2,7 +2,7 @@
 
 Date: 2026-04-24
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Historical. `RampModel`, `RampEvaluationService` and the Ramp reference fields were removed from the code on 2026-10-16.
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`

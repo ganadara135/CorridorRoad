@@ -26,7 +26,6 @@ from ...objects.obj_project import (
 from ..models.result.centerline3d import Centerline3DResult
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ..models.source.assembly_model import AssemblySourceIdentity
-from ..models.source.override_model import OverrideModel
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_applied_section import (
     create_or_update_v1_applied_section_set_object,
@@ -243,12 +242,6 @@ def _build_applied_section_set_pass(
             supplemental_sections_grade_delta=supplemental_sections_grade_delta,
             kernel_stations=kernel_stations,
         )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id=project_id,
-        override_model_id="overrides:empty",
-        alignment_id=alignment.alignment_id,
-    )
     existing_ground_surface = _resolve_applied_sections_existing_ground_tin_surface(doc)
     return AppliedSectionSetService().build(
         AppliedSectionSetBuildRequest(
@@ -266,7 +259,6 @@ def _build_applied_section_set_pass(
             drainage_model=drainage_model,
             superelevation_model=superelevation_model,
             intersection_model=intersection_model,
-            override_model=override_model,
             stations=stations,
             station_kinds=station_kinds,
             supplemental_sections_enabled=supplemental_sections_enabled,
@@ -326,12 +318,6 @@ def _build_multi_alignment_applied_section_set(
         station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
         alignment_id = str(getattr(alignment, "alignment_id", "") or f"alignment:{bundle_index}")
         set_id = f"applied-sections:{_safe_source_token(alignment_id)}"
-        override_model = OverrideModel(
-            schema_version=1,
-            project_id=project_id,
-            override_model_id=f"overrides:empty:{_safe_source_token(alignment_id)}",
-            alignment_id=alignment_id,
-        )
         partial = service.build(
             AppliedSectionSetBuildRequest(
                 project_id=project_id,
@@ -348,7 +334,6 @@ def _build_multi_alignment_applied_section_set(
                 drainage_model=drainage_model,
                 superelevation_model=bundle.get("superelevation_model"),
                 intersection_model=intersection_model,
-                override_model=override_model,
                 stations=stations,
                 station_kinds=station_kinds,
                 supplemental_sections_enabled=supplemental_sections_enabled,

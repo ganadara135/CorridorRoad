@@ -27,7 +27,6 @@ from freecad.Corridor_Road.v1.models.result.earthwork_balance_model import (
 from freecad.Corridor_Road.v1.models.source import (
     AlignmentModel,
     AssemblySubassemblyModel,
-    OverrideModel,
     ProfileModel,
     RegionModel,
     SubassemblyDefinition,
@@ -175,12 +174,6 @@ def test_applied_section_service_builds_subassembly_rows_from_template() -> None
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-1",
-        alignment_id="align-1",
-    )
 
     request = AppliedSectionBuildRequest(
         project_id="proj-1",
@@ -189,7 +182,6 @@ def test_applied_section_service_builds_subassembly_rows_from_template() -> None
         profile=profile,
         assembly=assembly,
         region_model=region_model,
-        override_model=override_model,
         station=10.0,
         applied_section_id="sec-1",
     )
@@ -275,12 +267,6 @@ def test_applied_section_service_evaluates_designer_subassembly_definitions() ->
         alignment_id="align-designer",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-designer")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-designer",
-        alignment_id="align-designer",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -292,7 +278,6 @@ def test_applied_section_service_evaluates_designer_subassembly_definitions() ->
             assembly_subassembly_models=[assembly],
             subassembly_libraries=[library],
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-designer",
         )
@@ -348,12 +333,6 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
         alignment_id="align-1",
         region_rows=[RegionRow("region-intersection", 40.0, 60.0, template_ref="tmpl-1", intersection_ref="intersection:t-01")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-1",
-        alignment_id="align-1",
-    )
     intersection_model = IntersectionModel(
         schema_version=1,
         project_id="proj-1",
@@ -404,7 +383,6 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             intersection_model=intersection_model,
             station=50.0,
             applied_section_id="sec-1",
@@ -462,7 +440,6 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
         alignment_id="align-1",
         region_rows=[RegionRow("region-1", station_start=0.0, station_end=100.0, template_ref="tmpl-1")],
     )
-    override_model = OverrideModel(schema_version=1, project_id="proj-1", override_model_id="ovr-1", alignment_id="align-1")
     superelevation_model = SuperelevationModel(
         schema_version=1,
         project_id="proj-1",
@@ -483,7 +460,6 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=60.0,
             applied_section_id="sec-1",
             superelevation_model=superelevation_model,
@@ -578,7 +554,6 @@ def test_applied_section_service_falls_back_to_centerline3d_result_for_section_f
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="overrides-1"),
             station=10.0,
             applied_section_id="sec-1",
             centerline3d_result=centerline,
@@ -659,7 +634,6 @@ def test_applied_section_service_prefers_source_geometry_for_section_frame() -> 
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="overrides-1"),
             station=10.0,
             applied_section_id="sec-1",
             centerline3d_result=centerline,
@@ -740,12 +714,6 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
         alignment_id="align-bench",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-bench",
-        alignment_id="align-bench",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -755,7 +723,6 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-bench",
         )
@@ -847,12 +814,6 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
         alignment_id="align-bench-terrain",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-terrain")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-bench-terrain",
-        alignment_id="align-bench-terrain",
-    )
     existing_ground = TINSurface(
         schema_version=1,
         project_id="proj-1",
@@ -877,7 +838,6 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-bench-terrain",
             existing_ground_surface=existing_ground,
@@ -955,12 +915,6 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
         alignment_id="align-bench-cut",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-cut")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-bench-cut",
-        alignment_id="align-bench-cut",
-    )
     existing_ground = TINSurface(
         schema_version=1,
         project_id="proj-1",
@@ -985,7 +939,6 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-bench-cut",
             existing_ground_surface=existing_ground,
@@ -1054,12 +1007,6 @@ def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_bef
         alignment_id="align-bench-max-daylight",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-max-daylight")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-bench-max-daylight",
-        alignment_id="align-bench-max-daylight",
-    )
     existing_ground = TINSurface(
         schema_version=1,
         project_id="proj-1",
@@ -1084,7 +1031,6 @@ def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_bef
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-bench-max-daylight",
             existing_ground_surface=existing_ground,
@@ -1189,12 +1135,6 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
             ),
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-ditch",
-        alignment_id="align-ditch",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -1204,7 +1144,6 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-ditch",
             drainage_model=drainage_model,
@@ -1267,12 +1206,6 @@ def test_applied_section_service_starts_ditch_from_sloped_fg_edge() -> None:
         alignment_id="align-ditch-edge",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch-edge")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-ditch-edge",
-        alignment_id="align-ditch-edge",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -1282,7 +1215,6 @@ def test_applied_section_service_starts_ditch_from_sloped_fg_edge() -> None:
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-ditch-edge",
         )
@@ -1358,12 +1290,6 @@ def test_applied_section_service_connects_definition_shoulder_to_ditch() -> None
         alignment_id="align-shoulder-ditch",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-shoulder-ditch")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-shoulder-ditch",
-        alignment_id="align-shoulder-ditch",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -1373,7 +1299,6 @@ def test_applied_section_service_connects_definition_shoulder_to_ditch() -> None
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-shoulder-ditch",
             subassembly_libraries=[
@@ -1458,12 +1383,6 @@ def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -
         alignment_id="align-bench-ditch",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-ditch")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-bench-ditch",
-        alignment_id="align-bench-ditch",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -1473,7 +1392,6 @@ def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-bench-ditch",
         )
@@ -1520,12 +1438,6 @@ def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> No
         region_model_id="reg-ditch-shapes",
         alignment_id="align-ditch-shapes",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch-shapes")],
-    )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-ditch-shapes",
-        alignment_id="align-ditch-shapes",
     )
     cases = [
         (
@@ -1580,7 +1492,6 @@ def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> No
                 profile=profile,
                 assembly=assembly,
                 region_model=region_model,
-                override_model=override_model,
                 station=10.0,
                 applied_section_id=f"sec-{shape_name}",
             )
@@ -1647,12 +1558,6 @@ def test_applied_section_service_reports_invalid_ditch_shape_parameters() -> Non
         alignment_id="align-ditch-validation",
         region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch-validation")],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-ditch-validation",
-        alignment_id="align-ditch-validation",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -1662,7 +1567,6 @@ def test_applied_section_service_reports_invalid_ditch_shape_parameters() -> Non
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-ditch-validation",
         )
@@ -1724,12 +1628,6 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-assembly-ref",
-        alignment_id="align-assembly-ref",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -1739,7 +1637,6 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-assembly-ref",
         )
@@ -1789,12 +1686,6 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
         alignment_id="align-structure-context",
         region_rows=[RegionRow("region:main", station_start=0.0, station_end=100.0)],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="overrides:empty",
-        alignment_id="align-structure-context",
-    )
     structure_model = StructureModel(
         schema_version=1,
         project_id="proj-1",
@@ -1830,7 +1721,6 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=30.0,
             applied_section_id="sec-structure-context",
             structure_model=structure_model,
@@ -1946,7 +1836,6 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="overrides:empty"),
             station=30.0,
             applied_section_id="sec-structure-filter",
             structure_model=structure_model,
@@ -2448,12 +2337,6 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch_and_uses_
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-assembly-mismatch",
-        alignment_id="align-assembly-mismatch",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -2463,7 +2346,6 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch_and_uses_
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=10.0,
             applied_section_id="sec-assembly-mismatch",
         )
@@ -2522,12 +2404,6 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-section-set",
-        alignment_id="align-section-set",
-    )
 
     result = AppliedSectionSetService().build(
         AppliedSectionSetBuildRequest(
@@ -2537,7 +2413,6 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             stations=[20.0, 0.0, 20.0],
             applied_section_set_id="sections:main",
         )
@@ -2611,12 +2486,6 @@ def test_applied_section_set_service_selects_region_specific_assembly_model() ->
             RegionRow("region:bridge", 50.0, 100.0, assembly_ref="assembly:bridge"),
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="overrides:none",
-        alignment_id="align-multi-assembly",
-    )
 
     result = AppliedSectionSetService().build(
         AppliedSectionSetBuildRequest(
@@ -2627,7 +2496,6 @@ def test_applied_section_set_service_selects_region_specific_assembly_model() ->
             assembly=road,
             assembly_models=[road, bridge],
             region_model=region_model,
-            override_model=override_model,
             stations=[25.0, 75.0],
             applied_section_set_id="sections:multi-assembly",
         )
@@ -2696,12 +2564,6 @@ def test_applied_section_service_attaches_alignment_profile_frame() -> None:
             )
         ],
     )
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-1",
-        alignment_id="align-frame",
-    )
 
     result = AppliedSectionService().build(
         AppliedSectionBuildRequest(
@@ -2711,7 +2573,6 @@ def test_applied_section_service_attaches_alignment_profile_frame() -> None:
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=override_model,
             station=50.0,
             applied_section_id="sec-frame",
         )
@@ -3669,7 +3530,6 @@ def test_corridor_surface_geometry_service_uses_superelevation_resolved_section_
             profile=profile,
             assembly=assembly,
             region_model=region_model,
-            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="ovr-1", alignment_id="align-1"),
             stations=[0.0, 80.0],
             applied_section_set_id="set-1",
             superelevation_model=superelevation_model,

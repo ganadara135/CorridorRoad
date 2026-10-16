@@ -77,7 +77,6 @@ def test_region_context_summary_preserves_region_and_assembly_review_rows() -> N
                 station_end=180.0,
                 assembly_ref="assembly:bridge-deck",
                 template_ref="template:bridge",
-                override_refs=["override:bridge-shoulder"],
                 priority=80,
             ),
         ],
@@ -89,7 +88,6 @@ def test_region_context_summary_preserves_region_and_assembly_review_rows() -> N
     assert summary.region_id == "region:bridge"
     assert summary.assembly_ref == "assembly:bridge-deck"
     assert summary.template_ref == "template:bridge"
-    assert summary.override_refs == ["override:bridge-shoulder"]
     assert summary.overlap_region_ids == ["region:normal"]
     assert "region:bridge" in summary.summary_text
     assert "region:primary_kind" not in review_items

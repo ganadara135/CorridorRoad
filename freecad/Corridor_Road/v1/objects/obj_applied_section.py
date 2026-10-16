@@ -752,11 +752,8 @@ def _subassembly_rows(station_rows, section_by_id: dict[str, AppliedSection]) ->
                         ";".join(_escape_row_value(value) for value in tuple(getattr(subassembly, "point_code_rules", ()) or ())),
                         ";".join(_escape_row_value(value) for value in tuple(getattr(subassembly, "link_code_rules", ()) or ())),
                         ";".join(_escape_row_value(value) for value in tuple(getattr(subassembly, "shape_code_rules", ()) or ())),
-                        ",".join(
-                            _escape_row_value(value)
-                            for value in list(getattr(subassembly, "override_ids", []) or [])
-                            if str(value or "")
-                        ),
+                        # slot 16 held override ids; kept empty so the later slots keep their place
+                        "",
                         ";".join(_escape_row_value(value) for value in list(getattr(subassembly, "diagnostics", []) or [])),
                         _escape_row_value(getattr(subassembly, "definition_ref", "")),
                         _escape_row_value(getattr(subassembly, "preset_ref", "")),
@@ -1098,11 +1095,6 @@ def _parse_subassembly_rows(values) -> dict[str, list[AppliedSectionSubassemblyR
         point_code_rules = _parse_semicolon_tuple(parts[13] if len(parts) > 13 else "")
         link_code_rules = _parse_semicolon_tuple(parts[14] if len(parts) > 14 else "")
         shape_code_rules = _parse_semicolon_tuple(parts[15] if len(parts) > 15 else "")
-        override_ids = [
-            _unescape_row_value(value)
-            for value in str(parts[16] if len(parts) > 16 else "" or "").split(",")
-            if str(value or "")
-        ]
         diagnostics = list(_parse_semicolon_tuple(parts[17] if len(parts) > 17 else ""))
         definition_ref = _unescape_row_value(parts[18]) if len(parts) > 18 else ""
         preset_ref = _unescape_row_value(parts[19]) if len(parts) > 19 else ""
@@ -1131,7 +1123,6 @@ def _parse_subassembly_rows(values) -> dict[str, list[AppliedSectionSubassemblyR
                 point_code_rules=point_code_rules,
                 link_code_rules=link_code_rules,
                 shape_code_rules=shape_code_rules,
-                override_ids=override_ids,
                 diagnostics=diagnostics,
             )
         )

@@ -6,8 +6,8 @@
 Run with:
     FreeCADCmd -c "exec(open(r'tests/regression/smoke_tree_schema.py', 'r', encoding='utf-8').read())"
 
-Ramp is outside the active product scope and Watertight Solid development is
-paused, so this baseline smoke intentionally does not require either subtree.
+Ramp was removed, and Watertight Solid development is paused, so this baseline
+smoke does not require a subtree for either.
 Compatibility coverage for persisted legacy objects belongs in focused tests.
 """
 

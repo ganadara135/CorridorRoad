@@ -32,7 +32,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXCHANGE_PACKAGES,
     V1_TREE_PROJECT_SETUP,
     V1_TREE_QUANTITIES_EARTHWORK,
-    V1_TREE_RAMPS,
     V1_TREE_REGIONS,
     V1_TREE_REVIEW,
     V1_TREE_REPORTS,
@@ -259,7 +258,6 @@ def test_ensure_project_tree_creates_corridor_network_first_class_groups() -> No
     try:
         tree = ensure_project_tree(project, include_references=False)
 
-        assert tree[V1_TREE_RAMPS].Label == "Ramps"
         assert tree[V1_TREE_INTERSECTIONS].Label == "Intersections"
         assert tree[V1_TREE_DRAINAGE].Label == "05_Drainage"
         assert tree[V1_TREE_APPLIED_SECTIONS].Label == "Applied Sections"
@@ -273,7 +271,6 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
     try:
         tree = ensure_project_tree(project, include_references=False)
         cases = [
-            ("RampModel", V1_TREE_RAMPS),
             ("IntersectionModel", V1_TREE_INTERSECTIONS),
             ("V1AssemblySubassemblyModel", V1_TREE_ASSEMBLIES),
             ("V1RegionModel", V1_TREE_REGIONS),
@@ -353,12 +350,12 @@ def test_route_to_v1_tree_adds_object_to_preferred_folder() -> None:
     doc, project = _new_project_doc()
     try:
         tree = ensure_project_tree(project, include_references=False)
-        ramp = doc.addObject("App::FeaturePython", "RampModel")
+        intersection = doc.addObject("App::FeaturePython", "IntersectionModel")
 
-        folder = route_to_v1_tree(project, ramp)
+        folder = route_to_v1_tree(project, intersection)
 
-        assert folder == tree[V1_TREE_RAMPS]
-        assert ramp.Name in _group_names(tree[V1_TREE_RAMPS])
+        assert folder == tree[V1_TREE_INTERSECTIONS]
+        assert intersection.Name in _group_names(tree[V1_TREE_INTERSECTIONS])
     finally:
         App.closeDocument(doc.Name)
 

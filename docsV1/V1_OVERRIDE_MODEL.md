@@ -2,7 +2,7 @@
 
 Date: 2026-04-23
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Historical. `OverrideModel` and `OverrideResolutionService` were removed from the code on 2026-10-16; the model had no editor and Applied Sections always built it empty.
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`

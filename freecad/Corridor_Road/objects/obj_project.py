@@ -46,9 +46,7 @@ V1_TREE_ASSEMBLIES = "v1_assemblies"
 V1_TREE_REGIONS = "v1_regions"
 V1_TREE_APPLIED_SECTIONS = "v1_applied_sections"
 V1_TREE_BUILD_PARAMETRIC_OUTPUTS = "v1_build_parametric_outputs"
-V1_TREE_RAMPS = "v1_ramps"
 V1_TREE_INTERSECTIONS = "v1_intersections"
-V1_TREE_OVERRIDES = "v1_overrides"
 V1_TREE_DRAINAGE_DIAGNOSTICS = "v1_drainage_diagnostics"
 V1_TREE_RETAINING_WALLS = "v1_retaining_walls"
 V1_TREE_BRIDGES = "v1_bridges"
@@ -116,9 +114,7 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_REGIONS, "Regions", "CRV1_Regions"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_APPLIED_SECTIONS, "Applied Sections", "CRV1_Applied_Sections"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_BUILD_PARAMETRIC_OUTPUTS, "Build Parametric Outputs", "CRV1_Build_Parametric_Outputs"),
-    (V1_TREE_CORRIDOR_MODEL, V1_TREE_RAMPS, "Ramps", "CRV1_Ramps"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_INTERSECTIONS, "Intersections", "CRV1_Intersections"),
-    (V1_TREE_CORRIDOR_MODEL, V1_TREE_OVERRIDES, "Overrides", "CRV1_Overrides"),
     (V1_TREE_DRAINAGE, V1_TREE_DRAINAGE_DIAGNOSTICS, "Drainage Diagnostics", "CRV1_Drainage_Diagnostics"),
     (V1_TREE_STRUCTURES, V1_TREE_RETAINING_WALLS, "Retaining Walls", "CRV1_Retaining_Walls"),
     (V1_TREE_STRUCTURES, V1_TREE_BRIDGES, "Bridges", "CRV1_Bridges"),
@@ -734,10 +730,6 @@ def _is_surface(child):
     )
 
 
-def _is_v1_ramp(child):
-    return _is_type(child, proxy_types=("RampModel", "Ramp"), name_prefixes=("RampModel", "Ramp"))
-
-
 def _is_v1_intersection(child):
     return _is_type(
         child,
@@ -1056,8 +1048,6 @@ def resolve_v1_target_container(prj, child):
         name_prefixes=("V1SuperelevationSource", "Superelevation", "SuperelevationModel"),
     ):
         return tree.get(V1_TREE_SUPERELEVATION, None)
-    if _is_v1_ramp(child):
-        return tree.get(V1_TREE_RAMPS, None)
     if _is_v1_intersection(child):
         return tree.get(V1_TREE_INTERSECTIONS, None)
     if _is_v1_drainage(child):

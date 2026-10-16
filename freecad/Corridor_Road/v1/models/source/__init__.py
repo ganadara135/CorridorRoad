@@ -20,10 +20,8 @@ from .intersection_model import (
     IntersectionModel,
     IntersectionRow,
 )
-from .override_model import OverrideModel
 from .profile_model import ProfileModel
 from .project_model import ProjectModel
-from .ramp_model import RampModel
 from .region_model import RegionDiagnosticRow, RegionModel, RegionPolicySet, RegionRow
 from .structure_model import (
     BridgeGeometrySpec,
@@ -81,10 +79,8 @@ __all__ = [
     "IntersectionSlopeFacePolicyRow",
     "IntersectionDrainagePolicyRow",
     "INTERSECTION_KIND_PRESETS",
-    "OverrideModel",
     "ProfileModel",
     "ProjectModel",
-    "RampModel",
     "RegionModel",
     "RegionRow",
     "RegionPolicySet",

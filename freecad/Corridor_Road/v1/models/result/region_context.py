@@ -27,9 +27,7 @@ class RegionContextSummary:
     template_ref: str = ""
     policy_set_ref: str = ""
     superelevation_ref: str = ""
-    ramp_ref: str = ""
     intersection_ref: str = ""
-    override_refs: list[str] = field(default_factory=list)
     overlap_region_ids: list[str] = field(default_factory=list)
     diagnostic_kinds: list[str] = field(default_factory=list)
     notes: str = ""

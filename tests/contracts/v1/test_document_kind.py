@@ -5,6 +5,7 @@ inactive there and intersection review content is not shown. Intersection Preset
 document an Intersection document. An unset kind restricts nothing.
 """
 
+import gc
 from dataclasses import replace
 
 import FreeCAD as App
@@ -41,6 +42,12 @@ def _ensure_qapp():
     global _QAPP
     _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     return _QAPP
+
+
+def _visible_review_tabs(panel) -> list[str]:
+    tabs = panel.form.findChildren(QtWidgets.QTabWidget)
+    tab_widget = next(widget for widget in tabs if widget.count() == len(panel._review_tab_ids))
+    return [panel._review_tab_ids[index] for index in range(tab_widget.count()) if tab_widget.isTabVisible(index)]
 
 
 def _project_doc(name: str, kind: str):
@@ -182,8 +189,11 @@ def test_build_parametric_offers_no_intersection_review_in_a_general_road_docume
         road_panel = V1BuildCorridorTaskPanel(document=road_doc)
         unset_panel = V1BuildCorridorTaskPanel(document=unset_doc)
 
-        assert "intersections" not in road_panel._review_tab_ids.values()
-        assert "intersections" in unset_panel._review_tab_ids.values()
+        assert _visible_review_tabs(road_panel) == [tab for tab in _visible_review_tabs(unset_panel) if tab != "intersections"]
+        assert "intersections" in _visible_review_tabs(unset_panel)
+        # the refresh after a build writes every table, the hidden tab's too
+        gc.collect()
+        road_panel._set_intersection_contract_review_rows([])
         assert "intersections" not in [row["step_id"] for row in corridor_build_guided_review_steps(road_doc)]
         assert "intersections" in [row["step_id"] for row in corridor_build_guided_review_steps(unset_doc)]
     finally:

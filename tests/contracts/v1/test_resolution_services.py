@@ -1,9 +1,3 @@
-from freecad.Corridor_Road.v1.models.source.override_model import (
-    OverrideModel,
-    OverrideRow,
-    OverrideScope,
-    OverrideTarget,
-)
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DrainageElementRow,
@@ -18,9 +12,6 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 )
 from freecad.Corridor_Road.v1.services.evaluation.drainage_resolution_service import (
     DrainageValidationService,
-)
-from freecad.Corridor_Road.v1.services.evaluation.override_resolution_service import (
-    OverrideResolutionService,
 )
 from freecad.Corridor_Road.v1.services.evaluation.region_resolution_service import (
     RegionResolutionService,
@@ -115,7 +106,6 @@ def test_region_handoff_rows_are_station_ordered_context_contracts() -> None:
                 station_start=100.0,
                 station_end=180.0,
                 assembly_ref="assembly:ramp",
-                ramp_ref="ramp:entry-01",
                 priority=70,
             ),
         ],
@@ -124,7 +114,6 @@ def test_region_handoff_rows_are_station_ordered_context_contracts() -> None:
     rows = RegionResolutionService().resolve_handoff_rows(region_model, [50.0, 120.0])
 
     assert [row.region_id for row in rows] == ["region-road", "region-ramp"]
-    assert rows[1].ramp_ref == "ramp:entry-01"
 
 
 def test_station_context_resolver_combines_region_structure_and_drainage_by_region() -> None:
@@ -409,58 +398,3 @@ def test_region_validation_reports_invalid_range_and_equal_priority_overlap() ->
     assert result.status == "error"
     assert any(row.kind == "invalid_station_range" for row in result.diagnostic_rows)
     assert any(row.kind == "equal_priority_overlap" for row in result.diagnostic_rows)
-
-
-def test_override_resolution_filters_by_station_and_region() -> None:
-    override_model = OverrideModel(
-        schema_version=1,
-        project_id="proj-1",
-        override_model_id="ovr-1",
-        alignment_id="align-1",
-        override_rows=[
-            OverrideRow(
-                override_id="ovr-a",
-                override_kind="parameter_override",
-                target=OverrideTarget(
-                    target_id="target-a",
-                    target_kind="section_parameter",
-                    target_ref="lane-width",
-                ),
-                scope=OverrideScope(
-                    scope_id="scope-a",
-                    scope_kind="station_range",
-                    station_start=0.0,
-                    station_end=20.0,
-                    region_ref="region-a",
-                ),
-                parameter="width",
-                value=3.5,
-            ),
-            OverrideRow(
-                override_id="ovr-b",
-                override_kind="parameter_override",
-                target=OverrideTarget(
-                    target_id="target-b",
-                    target_kind="section_parameter",
-                    target_ref="lane-width",
-                ),
-                scope=OverrideScope(
-                    scope_id="scope-b",
-                    scope_kind="station_range",
-                    station_start=21.0,
-                    station_end=40.0,
-                    region_ref="region-b",
-                ),
-                parameter="width",
-                value=4.0,
-            ),
-        ],
-    )
-
-    result = OverrideResolutionService().resolve_station(
-        override_model,
-        10.0,
-        region_id="region-a",
-    )
-
-    assert result.active_override_ids == ["ovr-a"]

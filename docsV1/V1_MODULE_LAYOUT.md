@@ -110,7 +110,6 @@ Typical modules:
 - `assembly_model.py`
 - `region_model.py`
 - `drainage_model.py`
-- `override_model.py`
 - `structure_model.py`
 
 ### 6.3 `models/result/`

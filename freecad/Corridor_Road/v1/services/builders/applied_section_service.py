@@ -29,7 +29,6 @@ from ...models.source.subassembly_definition_model import SubassemblyDefinition,
 from ...models.source.subassembly_preset_model import SubassemblyPreset, SubassemblyPresetLibrary
 from ...models.source.drainage_model import DrainageModel
 from ...models.source.intersection_model import IntersectionModel
-from ...models.source.override_model import OverrideModel
 from ...models.source.profile_model import ProfileModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
@@ -40,9 +39,6 @@ from ...services.evaluation.alignment_evaluation_service import (
 from ...services.evaluation.centerline3d_frame_service import (
     Centerline3DFrame,
     Centerline3DFrameService,
-)
-from ...services.evaluation.override_resolution_service import (
-    OverrideResolutionService,
 )
 from ...services.evaluation.intersection_evaluation_service import (
     IntersectionEvaluationResult,
@@ -77,7 +73,6 @@ class AppliedSectionBuildRequest:
     profile: ProfileModel
     assembly: AssemblySourceIdentity
     region_model: RegionModel
-    override_model: OverrideModel
     station: float
     applied_section_id: str
     assembly_models: list[AssemblySourceIdentity] = field(default_factory=list)
@@ -102,7 +97,6 @@ class AppliedSectionSetBuildRequest:
     profile: ProfileModel
     assembly: AssemblySourceIdentity
     region_model: RegionModel
-    override_model: OverrideModel
     stations: list[float]
     applied_section_set_id: str
     station_kinds: dict[float, str] = field(default_factory=dict)
@@ -156,7 +150,6 @@ class AppliedSectionService:
         alignment_service: AlignmentEvaluationService | None = None,
         profile_service: ProfileEvaluationService | None = None,
         region_service: RegionResolutionService | None = None,
-        override_service: OverrideResolutionService | None = None,
         structure_service: StructureInteractionService | None = None,
         station_context_resolver: StationContextResolver | None = None,
         tin_sampling_service: TinSamplingService | None = None,
@@ -168,7 +161,6 @@ class AppliedSectionService:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
         self.region_service = region_service or RegionResolutionService()
-        self.override_service = override_service or OverrideResolutionService()
         self.structure_service = structure_service or StructureInteractionService()
         self.station_context_resolver = station_context_resolver or StationContextResolver(
             region_service=self.region_service,
@@ -202,11 +194,6 @@ class AppliedSectionService:
             request.assembly,
             request.assembly_models,
             assembly_ref=region_context.assembly_ref,
-        )
-        override_result = self.override_service.resolve_station(
-            request.override_model,
-            request.station,
-            region_id=region_context.region_id,
         )
         structure_result = station_context.structure_result
         active_drainage_refs = list(station_context.active_drainage_refs or [])
@@ -307,7 +294,6 @@ class AppliedSectionService:
         subassembly_rows = self._build_subassembly_rows(
             effective_subassembly_template,
             region_id=region_context.region_id,
-            override_ids=override_result.active_override_ids,
             structure_ids=_unique_refs(
                 structure_result.active_structure_ids
                 if structure_result is not None
@@ -421,7 +407,6 @@ class AppliedSectionService:
                         for library in list(request.subassembly_libraries or [])
                     ],
                     request.region_model.region_model_id,
-                    request.override_model.override_model_id,
                     request.structure_model.structure_model_id
                     if request.structure_model is not None
                     else "",
@@ -740,7 +725,6 @@ class AppliedSectionService:
         template: SubassemblySectionTemplate | None,
         *,
         region_id: str,
-        override_ids: list[str],
         structure_ids: list[str],
         drainage_refs: list[str],
         drainage_refs_by_side: dict[str, list[str]] | None = None,
@@ -769,7 +753,6 @@ class AppliedSectionService:
                     slope=float(getattr(subassembly, "slope", 0.0) or 0.0),
                     thickness=max(float(getattr(subassembly, "thickness", 0.0) or 0.0), 0.0),
                     material=str(getattr(subassembly, "material", "") or ""),
-                    override_ids=list(override_ids or []),
                     structure_ids=list(structure_ids or []),
                     drainage_refs=_section_row_drainage_refs(subassembly, drainage_refs, drainage_refs_by_side),
                     parameters=dict(getattr(subassembly, "parameters", {}) or {}),
@@ -1020,7 +1003,6 @@ class AppliedSectionSetService:
                     subassembly_libraries=list(request.subassembly_libraries or []),
                     subassembly_preset_libraries=list(request.subassembly_preset_libraries or []),
                     region_model=request.region_model,
-                    override_model=request.override_model,
                     station=station,
                     applied_section_id=section_id,
                     structure_model=request.structure_model,
@@ -1087,7 +1069,6 @@ class AppliedSectionSetService:
                         for library in list(request.subassembly_libraries or [])
                     ],
                     request.region_model.region_model_id,
-                    request.override_model.override_model_id,
                     request.structure_model.structure_model_id
                     if request.structure_model is not None
                     else "",
@@ -3133,7 +3114,6 @@ def _rows_with_derived_bench_rows(
                     width=max(float(segment.get("width", 0.0) or 0.0), 0.0),
                     slope=float(segment.get("slope", 0.0) or 0.0),
                     material=str(getattr(row, "material", "") or ""),
-                    override_ids=list(getattr(row, "override_ids", []) or []),
                     structure_ids=list(getattr(row, "structure_ids", []) or []),
                     drainage_refs=list(getattr(row, "drainage_refs", []) or []),
                     parameters={

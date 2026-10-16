@@ -40,7 +40,6 @@ class DrainageElementRow:
     drainage_element_id: str
     element_kind: str
     alignment_ref: str = ""
-    ramp_ref: str = ""
     intersection_ref: str = ""
     structure_ref: str = ""
     connection_point_ref: str = ""

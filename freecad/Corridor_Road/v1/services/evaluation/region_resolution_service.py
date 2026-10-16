@@ -31,7 +31,6 @@ class RegionResolutionResult:
     active_assembly_ref: str = ""
     active_superelevation_ref: str = ""
     active_transition_ref: str = ""
-    resolved_ramp_ref: str = ""
     resolved_intersection_ref: str = ""
     overlap_region_ids: list[str] = field(default_factory=list)
     diagnostic_rows: list[RegionDiagnosticRow] = field(default_factory=list)
@@ -170,7 +169,6 @@ class RegionResolutionService:
             active_template_ref=active.template_ref,
             active_assembly_ref=active.assembly_ref,
             active_superelevation_ref=active.superelevation_ref,
-            resolved_ramp_ref=active.ramp_ref,
             resolved_intersection_ref=active.intersection_ref,
             overlap_region_ids=overlap_ids,
             diagnostic_rows=diagnostics,
@@ -215,8 +213,6 @@ class RegionResolutionService:
         """Return the normalized Region context consumed by downstream services."""
 
         result = self.resolve_station(region_model, station)
-        active_row = self._find_row(region_model.region_rows, result.active_region_id)
-        override_refs = list(getattr(active_row, "override_refs", []) or []) if active_row is not None else []
         return RegionContextSummary(
             station=result.station,
             region_id=result.active_region_id,
@@ -224,9 +220,7 @@ class RegionResolutionService:
             template_ref=result.active_template_ref,
             policy_set_ref=result.active_policy_set_id,
             superelevation_ref=result.active_superelevation_ref,
-            ramp_ref=result.resolved_ramp_ref,
             intersection_ref=result.resolved_intersection_ref,
-            override_refs=override_refs,
             overlap_region_ids=list(result.overlap_region_ids or []),
             diagnostic_kinds=[row.kind for row in list(result.diagnostic_rows or []) if row.kind],
             notes=result.notes,

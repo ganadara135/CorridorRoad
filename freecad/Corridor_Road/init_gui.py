@@ -64,9 +64,6 @@ def corridorroad_workflow_command_groups():
         "ai": [
             "CorridorRoad_AIAssist",
         ],
-        "watertight_solid": [
-            "CorridorRoad_V1WatertightSolids",
-        ],
     }
 
 
@@ -85,7 +82,6 @@ def corridorroad_workflow_toolbar_commands():
         + groups["review"]
         + groups["output"]
         + groups["ai"]
-        + groups["watertight_solid"]
     )
 
 
@@ -122,6 +118,8 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_outputs_exchange  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_ai_assist  # noqa: F401
+        # Watertight Solid development is paused: the command stays registered for documents and
+        # scripts that use it, but the toolbar and menu do not offer it.
         import freecad.Corridor_Road.v1.commands.cmd_watertight_solids  # noqa: F401
 
         groups = corridorroad_workflow_command_groups()
@@ -135,7 +133,6 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         review_commands = groups["review"]
         output_commands = groups["output"]
         ai_commands = groups["ai"]
-        watertight_solid_commands = groups["watertight_solid"]
 
         workflow_toolbar_commands = corridorroad_workflow_toolbar_commands()
 
@@ -151,7 +148,6 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         self.appendMenu(["Parametric Road", "Review"], list(review_commands))
         self.appendMenu(["Parametric Road", "Outputs & Exchange"], list(output_commands))
         self.appendMenu(["Parametric Road", "AI Assist"], list(ai_commands))
-        self.appendMenu(["Parametric Road", "Watertight Solids"], list(watertight_solid_commands))
 
     def ContextMenu(self, recipient):
         try:

@@ -66,8 +66,8 @@ Do not edit generated geometry as source intent, reverse-author source data from
 
 ## Current Scope Decisions
 
-- Ramp is outside active scope. Preserve compatibility but add no new Ramp behavior unless explicitly requested.
-- Watertight Solid development is paused. Only critical repairs, data-loss prevention, compatibility, and existing test preservation are in scope unless explicitly expanded.
+- Ramp was removed on 2026-10-16: its model, evaluation service, tree folder, Region preset and reference fields are gone. Add no Ramp behavior unless explicitly requested.
+- Watertight Solid development is paused. Only critical repairs, data-loss prevention, compatibility, and existing test preservation are in scope unless explicitly expanded. Its command stays registered but is not on the toolbar or menu.
 - Drainage source editing and current review/output handoffs are supported; advanced hydraulics and automatic pipe sizing are future work.
 - Corridor surfaces are the primary terrain-like Build Parametric outputs. Solids are for physical bodies with thickness, material, volume, or export identity.
 - Applied Sections and supplemental station rows are generated results, never durable source rows.
