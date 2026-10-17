@@ -1,393 +1,118 @@
 # Parametric Road V1 Drainage Model
 
-Date: 2026-04-24
-Branch: `v1-dev`
-Status: Draft baseline
-Depends on:
-
-- `docsV1/V1_MASTER_PLAN.md`
-- `docsV1/V1_ARCHITECTURE.md`
-- `docsV1/V1_SECTION_MODEL.md`
-- `docsV1/V1_PROFILE_MODEL.md`
-- `docsV1/V1_SURFACE_MODEL.md`
-- `docsV1/V1_EARTHWORK_BALANCE_PLAN.md`
-
-## 1. Purpose
-
-This document defines the v1 internal source contract for corridor drainage intent and review policy.
-
-It exists to make clear:
-
-- what `DrainageModel` owns
-- how drainage differs from section template detail alone
-- how drainage policy interacts with profile, terrain, section, and structure context
-- how drainage review feeds outputs, diagnostics, and AI comparison
-
-## 2. Scope
-
-This model covers:
-
-- drainage identity and source intent
-- open and closed drainage element references
-- minimum-grade and low-point policy
-- flow-route, conveyance, and outlet references
-- diagnostics and review traceability
-- corridor interaction references to sections, ramps, and intersections
-
-This model does not cover:
-
-- a full hydraulic solver
-- detailed pipe network analysis beyond practical source references
-- municipal utility asset management
-- direct editing of generated drainage geometry as the main source workflow
-
-## 3. Core Rule
-
-`DrainageModel` is a durable source-of-truth model for drainage intent and review constraints.
-
-This means:
-
-- profile, section, and surface evaluation may read from it
-- review workflows may expose its effect through derived outputs
-- drainage viability must not remain an implied side effect of grading alone
-- generated ditch or gutter geometry does not replace drainage source policy
-
-## 4. Why Drainage Modeling Matters
-
-Corridor design that ignores drainage intent becomes fragile even when the geometry looks acceptable.
-
-Drainage-aware modeling affects:
-
-- ditch, gutter, swale, and channel treatment
-- low-point and sag review
-- culvert and crossing coordination
-- intersection and ramp tie-in behavior
-- earthwork comparison
-- AI recommendations and risk scoring
-
-`DrainageModel` exists so drainage is visible, traceable, and reviewable early.
-
-## 5. Relationship to Section, Profile, and Structure Models
-
-The architectural distinction is:
-
-- `SectionModel` defines section composition and applied section results
-- `ProfileModel` defines vertical intent and grade transitions
-- `StructureModel` defines culvert and crossing references
-- `DrainageModel` defines drainage intent, constraints, and interaction references
-
-Drainage may influence section and profile decisions, but it should remain an explicit model instead of hidden metadata.
-
-Ditch cross-section shape parameters used by Assembly and Applied Section evaluation are defined in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
-
-Drainage intent such as flow routing, outlet requirements, and low-point policy remains owned by `DrainageModel`.
-
-## 6. Design Goals
-
-The v1 drainage subsystem should:
-
-- make drainage intent explicit
-- support both open-channel and practical structure-backed references
-- support minimum-grade and low-point diagnostics
-- preserve traceability into review and output payloads
-- support scenario comparison without pretending to replace hydraulic software
-- feed AI and earthwork systems with meaningful drainage constraints
-
-## 7. Drainage Scope in v1
-
-Recommended early v1 support:
-
-- ditch, gutter, swale, and channel policy
-- culvert, inlet, manhole, and outfall references where practical
-- flow-route and discharge references
-- low-point and ponding-risk review
-- drainage-aware grading diagnostics
-- drainage quantity references
-
-Deferred or later refinements may include:
-
-- richer stormwater-network import/export
-- advanced hydraulic capacity checks
-- automated drainage sizing assistance
-
-## 8. Drainage Object Families
-
-Recommended primary object families:
-
-- `DrainageModel`
-- `DrainageElementRow`
-- `DrainagePolicySet`
-- `DrainageFlowRoute`
-- `DrainageConstraintSet`
-- `DrainageReviewResult`
-
-## 9. DrainageModel Root
-
-### 9.1 Purpose
-
-`DrainageModel` is the durable container for one project-level drainage policy set.
-
-### 9.2 Recommended root fields
-
-- `schema_version`
-- `drainage_model_id`
-- `project_id`
-- `label`
-- `element_rows`
-- `policy_rows`
-- `flow_route_rows`
-- `constraint_rows`
-- `unit_context`
-- `source_refs`
-- `diagnostic_rows`
-
-### 9.3 Rule
-
-`DrainageModel` should preserve stable identity for drainage intent even when geometry or grading alternatives are compared.
-
-## 10. DrainageElementRow
-
-### 10.1 Purpose
-
-Each `DrainageElementRow` represents one drainage node.
-
-Elements answer "what drainage target exists here?".
-
-Assembly-generated drainage geometry is limited to ditch Subassemblies in the current implementation. Other drainage needs such as culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references; they are not Assembly-generated ditch geometry.
-
-### 10.2 Recommended fields
-
-- `drainage_element_id`
-- `element_index`
-- `element_kind`
-- `alignment_ref`
-- optional `ramp_ref`
-- optional `intersection_ref`
-- optional `structure_ref`
-- `station_start`
-- `station_end`
-- `policy_set_ref`
-- `source_ref`
-- `notes`
-
-### 10.3 Recommended kinds
-
-- `ditch`
-- `gutter`
-- `swale`
-- `channel`
-- `culvert_reference`
-- `inlet_reference`
-- `manhole_reference`
-- `outfall_reference`
-
-### 10.4 Rule
-
-Drainage elements should preserve engineering role and context, not become unlabeled linework.
-
-Element rows are graph nodes. They do not encode the whole water path by themselves.
-
-## 11. DrainagePolicySet
-
-### 11.1 Purpose
-
-`DrainagePolicySet` defines how a drainage element or route should behave.
-
-### 11.2 Recommended fields
-
-- `policy_set_id`
-- `flow_intent`
-- `min_grade_rule`
-- `low_point_rule`
-- `route_rule`
-- `discharge_rule`
-- `maintenance_access_hint`
-- `earthwork_priority`
-- `notes`
-
-### 11.3 Recommended flow intents
-
-- `collect_and_convey`
-- `edge_runoff_capture`
-- `ditch_outfall`
-- `cross_drainage_transfer`
-- `temporary_construction_drainage`
-
-## 12. DrainageFlowRoute
-
-### 12.1 Purpose
-
-Flow routes preserve how Drainage elements connect to downstream elements, Structures, or outfalls.
-
-Flow routes answer "how does water move from one drainage node to the next?".
-
-In the source contract, each Flow Route row is one graph edge. A complete drainage path is represented by one or more ordered edges.
-
-### 12.2 Recommended fields
-
-- `flow_route_id`
-- `from_element_ref`
-- `to_element_ref`
-- optional `outlet_ref`
-- `direction`
-- `risk_level`
-- `notes`
-
-### 12.3 Recommended kinds
-
-- `ditch_to_ditch`
-- `ditch_to_structure`
-- `ditch_to_outfall`
-- `structure_to_outfall`
-- `review_route`
-
-### 12.4 Outlet Rule
-
-Use `to_element_ref` for the next immediate drainage node.
-
-Use `outlet_ref` only on the route row whose `to_element_ref` is an outlet/outfall Element.
-
-Intermediate route rows should leave `outlet_ref` empty. The final outlet is discovered by following the graph edges instead of repeating the same outlet on every row.
-
-Example:
+Date: 2026-10-16
+Status: Current; the model built by the Drainage rework (DR-1 to DR-5)
+Related:
+
+- [V1_DRAINAGE_REWORK_PLAN.md](./V1_DRAINAGE_REWORK_PLAN.md) (how it was built, phase by phase)
+- [V1_DITCH_SHAPE_CONTRACT.md](./V1_DITCH_SHAPE_CONTRACT.md) (the Assembly ditch shapes)
+- [wiki/Drainage.md](./wiki/Drainage.md) (user guide)
+
+## 1. Ownership
+
+Drainage owns where road water is collected and where it goes. It does not own the ditch shape:
+the Assembly's `ditch` Subassembly does, and Applied Sections build its points. Drainage never
+edits section geometry, and flow direction, grades, low points and elevations are always
+evaluated, never authored.
 
 ```text
-ditch:right-r2 -> culvert:01 -> outfall:right-01
+Assembly ditch -> Applied Sections (ditch points tagged with their Ditch Run)
+Drainage source ----------------------^          |
+        |                                        v
+        +------------------------------> Drainage evaluation -> DrainageResult -> DrainageOutput
+                                                                     |              |
+                                                     Build Parametric line     Drainage Review
 ```
 
-Elements:
+## 2. Source: `DrainageModel` (`models/source/drainage_model.py`)
 
-```text
-ditch:right-r2      kind=ditch
-culvert:01          kind=culvert_reference
-outfall:right-01    kind=outfall_reference
-```
+One per project, on `V1DrainageModel` in the `05_Drainage` folder, stored as its typed payload.
+Units: stations and offsets in meters, grades in percent.
 
-Flow route edges:
+| Row | Fields | Meaning |
+|---|---|---|
+| `DrainagePolicy` | `min_grade_percent`, `max_inlet_spacing_m`, `low_point_rule` (`require_inlet`, `allow_ponding`) | the check values |
+| `DitchRun` | `ditch_run_id`, `side` (`left`/`right`), `subassembly_ref`, `station_start`, `station_end`, `alignment_ref`, `enabled` | one Assembly ditch on one side of one road over a span |
+| `DrainagePoint` | `point_id`, `kind` (`inlet`/`outfall`/`culvert`), `station`, `side`, `offset_m`, `ditch_run_ref`, `alignment_ref` | an inlet or outfall on a run, or a culvert crossing the road (no run) |
+| `DrainageLink` | `link_id`, `from_ref`, `to_ref` | water from one point drains into another |
 
-```text
-edge:r2-01    from=ditch:right-r2    to=culvert:01
-edge:r2-02    from=culvert:01        to=outfall:right-01
-```
+Kinds are a closed list; nothing is inferred from an id or a label. Ids are generated by the
+editor: `ditch-run:ditch:left` (the road is named only in a document of several), `inlet:1`,
+`link:1`.
 
-### 12.5 Ditch-to-Inlet Rule
+Apply refuses (`services/editing/drainage_editing_service.py`): a run on a ditch the Assembly does
+not have or on a side the ditch does not have, Start ≥ End, two enabled runs overlapping on the
+same ditch and side, repeated ids, an unknown point kind, an inlet or outfall without a run, a
+point or link naming something that does not exist, a link from a point to itself and a repeated
+link pair.
 
-A Flow Route from a `ditch` Element to an `inlet_reference` Element records open-channel capture into the inlet.
+## 3. Applied Sections
 
-It is not a pipe body by itself.
+`StationContext.active_ditch_runs` holds the runs covering a station on its road. A ditch point
+(`ditch_surface`, `ditch_flowline`) and a ditch Subassembly row carry the id of the run of the
+same Subassembly and side, and nothing else. Applied Sections record only the Ditch Runs as their
+Drainage input, so a Policy, point or link edit leaves them current.
 
-Example:
+## 4. Evaluation and result
 
-```text
-side-ditch-right -> inlet-01      capture / intake relationship
-inlet-01 -> culvert-01            pipe connection
-culvert-01 -> outlet-01           pipe connection
-```
+`services/evaluation/drainage_evaluation_service.py` reads the source and the Applied Sections:
 
-The 3D pipe network should start from Structure-owned connection points, for example inlet `pipe_out`, culvert upstream/downstream, and outlet `pipe_in`.
+- **Flowline:** the run's tagged `ditch_flowline` point at each section in its span. Segment
+  grade is the rise over the plan length along the flowline.
+- **Low and high points:** where the flowline turns from falling to rising and back (the lowest or
+  highest station of a flat turn), and the ends it falls toward.
+- **Collectors:** a run's own inlets and outfalls, and culverts crossing its road. A point sits on
+  its run's flowline at its station; a culvert on the lowest flowline of its road there.
 
-If a real short pipe is needed between the ditch and inlet, model it as a separate Structure-backed drainage element or connector rather than treating the open ditch row as a pipe.
+| Check | Severity | When |
+|---|---|---|
+| `flowline_missing` | error | fewer than two flowline stations |
+| `flat_grade` | warning | a stretch flatter than the minimum grade |
+| `low_point_uncollected` | warning | a low point with no collector within one section spacing (under `require_inlet`) |
+| `low_point` | info | a collected low point, or one allowed to pond |
+| `inlet_spacing` | warning | a stretch between collectors, high points and ends longer than the spacing |
+| `point_off_run` | warning | a run's point outside its flowline |
+| `reverse_flow` | warning | an inlet or outfall the flowline falls away from on every side |
+| `link_uphill` / `link_flat` | warning | a link that rises, or falls less than the minimum grade |
+| `link_loop` | error | links forming a loop |
+| `link_unplaced` | warning | a link end on no flowline |
+| `drains_nowhere` / `drains_twice` | warning | an inlet without an outgoing link, or a point with two |
 
-## 13. Constraint Policy
+Suggestions: an outfall at a run end the flowline falls toward and an inlet at another
+uncollected low point; inlets at equal spacing along a stretch that is too long. They are rows of
+the result; only the panel adds them to the source, on request.
 
-### 13.1 Purpose
+`DrainageResult` (`models/result/drainage_result.py`) holds the flowlines, checks, suggestions and
+measured links, on `V1DrainageResult` in the Drainage folder. It is the `drainage` freshness stage
+after Applied Sections: stale when the Applied Sections or the Drainage source change, rebuilt by
+Rebuild Downstream (which also makes the first one when a Drainage with runs meets existing
+Applied Sections), and by the Drainage panel's Apply when the Applied Sections are current.
 
-Drainage constraints make grading and comparison rules explicit.
+## 5. Output
 
-### 13.2 Recommended constraint fields
+`DrainageOutput` (`models/output/drainage_output.py`, mapped by
+`services/mapping/drainage_output_mapper.py`) is the normalized handoff: per run the flowline
+span, length, grade range, profile and low and high points; the points with their places on the
+flowlines; the links with their length and grade; the checks. Its source ref is the Drainage
+model and its result refs the Drainage result and the Applied Sections
+(`source_and_result` traceability).
 
-- `constraint_id`
-- `constraint_kind`
-- `target_ref`
-- `threshold_value`
-- `unit`
-- `severity`
-- `notes`
+## 6. User surfaces
 
-### 13.3 Recommended kinds
+- **Drainage panel** (`CorridorRoad_V1EditDrainage`): Policy, and Ditch Runs, Points and Links
+  tabs. Fill from Assembly prefills the runs, Add Selected / Add All take suggestions, Link
+  Downhill links every inlet that drains nowhere to the nearest lower point. Nothing is written
+  until Apply.
+- **Drainage Review** (`CorridorRoad_V1DrainageReview`): read-only. Per run the flowline profile
+  with points, low and high points and flagged stretches; the checks table, whose double-click
+  highlights a check on the flowline in the 3D view; whether the result is current.
+- **Build Parametric:** the Drainage line in the summary and Guided Review "6. Drainage Surface"
+  (ditch points without a run, and the result's status and counts), and a Drainage Review button.
 
-- `minimum_longitudinal_grade`
-- `maximum_ponding_risk`
-- `must_connect_to_outfall`
-- `culvert_clearance_requirement`
-- `intersection_capture_requirement`
+## 7. Not in this model
 
-## 14. Relationship to Applied Sections
-
-`DrainageModel` may influence:
-
-- daylight edge treatment
-- ditch and gutter interpretation
-- drainage-sensitive Subassembly selection
-- low-point warnings attached to section review
-- output rows describing flow-route and discharge context
-
-It should not directly become the editable generated section geometry.
-
-Applied Section `ditch_surface` rows may carry `drainage_ref`, `subassembly_ref`, and `side` as result context. Corridor surface generation consumes those source-tagged rows to create the separate drainage surface and carries the source ids into TIN provenance and diagnostics.
-
-Drainage quantity generation uses the same source-tagged Applied Section rows. First-slice quantity outputs report `drainage_ditch_length` by `drainage_ref` and report `drainage_flowline_length` when paired flowline or invert point ids exist.
-
-## 15. Relationship to Earthwork and AI
-
-Drainage-aware comparisons should be able to consider:
-
-- whether grading preserves minimum drainage viability
-- whether a candidate introduces ponding risk
-- whether drainage-related structures become more complex
-- whether earthwork improvements create drainage regressions
-
-AI outputs should be required to explain drainage tradeoffs when they matter.
-
-## 16. Review and Viewer Expectations
-
-Drainage-aware review should be able to show:
-
-- active drainage element identity
-- low-point and sag warnings
-- flow-route and discharge context
-- related culvert or structure references
-- affected ramp or intersection context where relevant
-
-Review UI should consume normalized payloads rather than recompute drainage logic ad hoc.
-
-## 17. Exchange Expectations
-
-Drainage-related exchange should support, where practical:
-
-- feature-line or mapped reference import
-- culvert and outfall reference exchange
-- degraded diagnostics when exact hydraulic semantics are unavailable
-- export rows that preserve drainage identity and corridor context
-
-## 18. Diagnostics
-
-Recommended early diagnostics include:
-
-- unresolved outfall reference
-- low-point with no collection policy
-- minimum-grade violation
-- drainage element overlapping incompatible policy rows
-- culvert reference with missing structure context
-- imported drainage reference with ambiguous ownership
-- ditch Subassembly shape parameters that cannot produce a reliable drainage surface
-
-## 19. Non-goals
-
-`DrainageModel` should not become:
-
-- a full storm sewer design suite
-- an unbounded notes bucket for every grading issue
-- a replacement for dedicated hydraulic software
-- a manual patch layer for generated ditch geometry
-
-## 20. Next Documents
-
-This model should be followed by:
-
-1. `docsV1/V1_SECTION_MODEL.md`
-2. `docsV1/V1_SURFACE_MODEL.md`
-3. `docsV1/V1_EARTHWORK_BALANCE_PLAN.md`
-4. `docsV1/V1_AI_ASSIST_PLAN.md`
-
-In v1, drainage should be treated as explicit corridor intent with stable identity, reviewable constraints, and traceable downstream effects on grading, sections, and comparison workflows.
+- Hydraulics: catchments, runoff, capacity and pipe sizing.
+- Pipe bodies, manholes and Structure ports; links are checked lines until the Structure rebuild.
+- Watertight Solids and the Simulation package read no Drainage source; lined ditch bodies are
+  Assembly ditch solids and carry their Ditch Run id.
+- Intersection drainage beyond the low point the intersection kernel reports.

@@ -2,14 +2,14 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: DR-1 to DR-4 done on 2026-10-16; DR-5 is next
+Status: Done on 2026-10-16 (DR-1 to DR-5); the current model is in V1_DRAINAGE_MODEL.md
 Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
 culverts, flowline checks against a policy, and their review
 Related:
 
 - [V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md](./V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md) (done; this plan builds on GR-1 and GR-3)
-- [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md), [V1_DRAINAGE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_IMPLEMENTATION_PLAN.md),
-  [V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md) (the current design; replaced by this plan)
+- [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md) (the model this plan built; the earlier
+  implementation and Flow Route plans were removed in DR-5 and live in git history)
 - [V1_STRUCTURE_CONNECTION_NODE_PLAN.md](./V1_STRUCTURE_CONNECTION_NODE_PLAN.md) (pipe ports; revisited in the Structure rebuild)
 
 ## 1. Purpose
@@ -288,6 +288,47 @@ Done on 2026-10-16:
   result; docs and wiki rewritten.
 - `smoke_v1_workflow.py` adds a ditch run, an accepted inlet suggestion and a link, and checks the
   Drainage stage goes stale and current with the others.
+
+Done on 2026-10-16:
+
+- `models/output/drainage_output.py` and `services/mapping/drainage_output_mapper.py`: the Drainage
+  output from the source and result (flowlines with profile and grade range, points with their
+  places, links, checks), `source_and_result` in the output traceability rules again.
+- `ui/presentation/drainage_review_presentation.py`: run rows, the flowline profile (points, low and
+  high points, stretches flagged by `flat_grade` and `inlet_spacing`), the checks table (errors
+  first) and the summary line.
+- Drainage Review (`ui/viewers/drainage_review_view.py`, `commands/cmd_drainage_review.py`): a run
+  picker, a painted flowline profile, the checks table and the freshness line. Double-clicking a
+  check draws `ReviewDrainageCheckHighlight` on the flowline (the flagged stretch and a sphere at its
+  station) and selects it.
+- Build Parametric: the summary has a Drainage line, Guided Review "6. Drainage Surface" takes the
+  result's status and counts, and a Drainage Review button closes Build Parametric and opens it.
+- The workflow smoke accepts every suggestion, links the inlets downhill, and checks that no low
+  point, spacing, link or drains-nowhere check is left and every link falls.
+- Docs: `V1_DRAINAGE_MODEL.md` and `wiki/Drainage.md` are rewritten for this model;
+  `V1_DRAINAGE_IMPLEMENTATION_PLAN.md` and `V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md` are
+  removed (git history keeps them). The 1.0.0 release plan and record still name the old plan; they
+  are records of that release.
+- Tests: `test_drainage_review_presentation.py` (new); the Review panel, highlight and Build
+  Parametric line in `test_drainage_source_and_editor.py`; `DrainageOutput` back in
+  `test_supported_output_traceability.py`.
+- Left for later: the intersection kernel's low points are not in the Drainage Review; pipes and
+  their Structure ports come with the Structure rebuild.
+
+GUI review fixes, 2026-10-17:
+
+- The panel tables kept only the 3 decimals they show, so Apply moved run ends and suggested end
+  outfalls (a Policy-only Apply made the Applied Sections stale; an end outfall stayed suggested).
+  The cells now keep the exact station (`_station_item`, `_station` in `drainage_editor.py`), and
+  a point within 0.5 mm of a flowline end (`STATION_ENTRY_TOLERANCE_M`) lies on it.
+- `reverse_flow` measures the flowline length draining to the point and warns below one section
+  step, so a point beside a crest between sections is caught.
+- The check highlight stands 1.5 m above the flowline on a stem, its stretch 0.05 m above, so it no
+  longer shares the ditch surface's faces.
+- Drainage panel and Drainage Review buttons open each other; the panel's message box is 160 px.
+- Rebuild Downstream on the toolbar opens a window (`ui/viewers/rebuild_downstream_view.py`) with
+  the stage freshness, a per-stage progress bar (`rebuild_downstream(progress=...)`) and the report.
+- Cross Section viewer columns are user-resizable.
 
 Each phase ends with the gate and a GUI check, then a commit.
 

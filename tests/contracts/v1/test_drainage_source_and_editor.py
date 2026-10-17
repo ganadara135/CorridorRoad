@@ -1,4 +1,4 @@
-"""The Drainage source object, the Drainage editor (DR-1) and the Drainage result stage (DR-2)."""
+"""The Drainage source object, the Drainage editor (DR-1), the Drainage result stage (DR-2) and Drainage Review (DR-5)."""
 
 import os
 import tempfile
@@ -9,7 +9,9 @@ import pytest
 
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.commands.cmd_build_corridor import corridor_drainage_review_summary
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
+from freecad.Corridor_Road.v1.commands.cmd_drainage_review import V1DrainageReviewTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
     V1DrainageEditorTaskPanel,
     apply_v1_drainage_model,
@@ -274,3 +276,104 @@ def test_the_panel_adds_the_suggested_points_and_apply_settles_the_checks() -> N
         assert all(row.grade_percent < 0.0 for row in result.link_rows)
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_drainage_review_shows_the_result_and_highlights_a_check() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageReview")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+
+        panel = V1DrainageReviewTaskPanel(document=doc)
+
+        assert panel._run_combo.count() == 2
+        assert "The Drainage result is current." == panel._freshness.text()
+        assert panel._checks.rowCount() > 0
+        assert panel._profile._profile is not None and len(panel._profile._profile.points) >= 10
+        panel._focus_check(0)
+        highlight = doc.getObject("ReviewDrainageCheckHighlight")
+        assert highlight is not None and not highlight.Shape.isNull()
+
+        summary = corridor_drainage_review_summary(doc)
+        assert "Drainage checks: warning" in summary["notes"]
+        assert summary["status"] == "warn"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_panel_keeps_exact_stations_behind_its_three_decimals() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageExactStations")
+    try:
+        # a run ending at a station with more decimals than the table shows
+        end = 174.917228527
+        runs = [DitchRun("ditch-run:ditch:left", "left", "ditch:left", 0.0, end)]
+        apply_v1_drainage_model(document=doc, drainage_model=DrainageModel(schema_version=1, project_id="p", ditch_run_rows=runs))
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        assert panel._table.item(0, 5).text() == "174.917"
+
+        # untouched cells give the exact station back, so a Policy-only Apply changes no run
+        assert panel._run(0).station_end == end
+        apply_v1_drainage_model(document=doc, drainage_model=panel._model_from_panel())
+        assert [run.station_end for run in to_drainage_model(find_v1_drainage_model(doc)).ditch_run_rows] == [end]
+
+        # a typed station is taken as typed
+        panel._table.item(0, 5).setText("120.500")
+        assert panel._run(0).station_end == 120.5
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_and_drainage_review_open_each_other() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageOpenEachOther")
+    try:
+        from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import open_drainage_review
+        from freecad.Corridor_Road.v1.commands.cmd_drainage_review import open_drainage_editor
+
+        assert isinstance(open_drainage_review(doc), V1DrainageReviewTaskPanel)
+        assert isinstance(open_drainage_editor(doc), V1DrainageEditorTaskPanel)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_rebuild_downstream_window_rebuilds_with_a_progress_bar() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1RebuildDownstreamWindow")
+    try:
+        from freecad.Corridor_Road.v1.commands.cmd_rebuild_downstream import open_rebuild_downstream_dialog
+
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        calls = []
+        assert rebuild_downstream(doc, progress=lambda done, total, stage: calls.append((done, total, stage))).rebuilt_stages == (
+            "applied_sections",
+            "drainage",
+        )
+        assert calls[0] == (0, 5, "stationing") and calls[-1][:2] == (5, 5)
+
+        # switching the runs off retags the ditch points: Applied Sections and Drainage go stale
+        apply_v1_drainage_model(document=doc, drainage_model=_with_runs(doc, enabled=False))
+        dialog = open_rebuild_downstream_dialog(doc)
+        assert "stale" in dialog._stage_text.text()
+        dialog._rebuild()
+        assert dialog._progress.value() == dialog._progress.maximum() == 5
+        assert "Applied Sections: rebuilt" in dialog._report.toPlainText()
+        assert dialog._stage_text.text() == "Every built result is current."
+        dialog.close()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def _with_runs(doc, *, enabled: bool) -> DrainageModel:
+    model = to_drainage_model(find_v1_drainage_model(doc))
+    runs = [DitchRun(run.ditch_run_id, run.side, run.subassembly_ref, run.station_start, run.station_end, run.alignment_ref, enabled) for run in model.ditch_run_rows]
+    return DrainageModel(schema_version=1, project_id=model.project_id, policy=model.policy, ditch_run_rows=runs)

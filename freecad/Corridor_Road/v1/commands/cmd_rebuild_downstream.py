@@ -103,15 +103,22 @@ class RebuildDownstreamReport:
         return "\n".join(row.text for row in self.outcomes)
 
 
-def rebuild_downstream(document, *, through: str = BUILD_PARAMETRIC) -> RebuildDownstreamReport:
-    """Rebuild the stale stages up to and including `through`."""
+def rebuild_downstream(document, *, through: str = BUILD_PARAMETRIC, progress=None) -> RebuildDownstreamReport:
+    """Rebuild the stale stages up to and including `through`.
+
+    `progress(done, total, stage)` is called before each stage and once more at the end with
+    `done == total` and the last stage, so a panel can show how far the run is.
+    """
 
     if document is None:
         raise RuntimeError("No active document.")
     freshness = {row.stage: row for row in document_result_freshness(document)}
     outcomes: list[RebuildStageOutcome] = []
     rebuilt: set[str] = set()
-    for stage in RESULT_STAGES[: RESULT_STAGES.index(through) + 1]:
+    stages = RESULT_STAGES[: RESULT_STAGES.index(through) + 1]
+    for done, stage in enumerate(stages):
+        if progress is not None:
+            progress(done, len(stages), stage)
         row = freshness[stage]
         upstream_rebuilt = UPSTREAM_STAGE.get(stage) in rebuilt
         if row.status == MISSING and not (
@@ -130,6 +137,8 @@ def rebuild_downstream(document, *, through: str = BUILD_PARAMETRIC) -> RebuildD
             break
         rebuilt.add(stage)
         outcomes.append(RebuildStageOutcome(stage, REBUILT, names))
+    if progress is not None:
+        progress(len(stages), len(stages), outcomes[-1].stage if outcomes else through)
     return RebuildDownstreamReport(tuple(outcomes))
 
 
@@ -243,9 +252,9 @@ def document_has_stale_results(document) -> bool:
     return value
 
 
-def run_v1_rebuild_downstream_command(document=None, *, through: str = BUILD_PARAMETRIC) -> RebuildDownstreamReport:
+def run_v1_rebuild_downstream_command(document=None, *, through: str = BUILD_PARAMETRIC, progress=None) -> RebuildDownstreamReport:
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    report = rebuild_downstream(doc, through=through)
+    report = rebuild_downstream(doc, through=through, progress=progress)
     _is_active_cache.pop(str(getattr(doc, "Name", "") or ""), None)
     if App is not None:
         App.Console.PrintMessage("Rebuild Downstream\n" + report.text + "\n")
@@ -266,14 +275,42 @@ class CmdV1RebuildDownstream:
         return document_has_stale_results(getattr(App, "ActiveDocument", None) if App is not None else None)
 
     def Activated(self):
-        report = run_v1_rebuild_downstream_command()
-        try:
-            from ...qt_compat import QtWidgets
+        open_rebuild_downstream_dialog()
 
-            show = QtWidgets.QMessageBox.warning if report.failed else QtWidgets.QMessageBox.information
-            show(None, "Rebuild Downstream", report.text)
-        except ImportError:
-            pass
+
+def freshness_table_rows(document) -> list[dict[str, str]]:
+    """One row per result stage for the Rebuild Downstream window."""
+
+    return [
+        {"stage": row.label, "status": row.status, "changed": ", ".join(row.changed_inputs)}
+        for row in document_result_freshness(document)
+    ]
+
+
+_open_dialogs: dict[str, object] = {}
+
+
+def open_rebuild_downstream_dialog(document=None):
+    """Show the Rebuild Downstream window: the stages, their freshness and a progress bar.
+
+    It is a separate window, not a task panel, so a task panel already open stays open.
+    """
+
+    from ..ui.viewers.rebuild_downstream_view import V1RebuildDownstreamDialog
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    parent = Gui.getMainWindow() if Gui is not None and getattr(App, "GuiUp", False) else None
+    dialog = V1RebuildDownstreamDialog(
+        doc,
+        parent=parent,
+        freshness_rows=freshness_table_rows,
+        run_rebuild=lambda document, progress: run_v1_rebuild_downstream_command(document, progress=progress),
+        stage_label=lambda stage: STAGE_LABELS.get(stage, stage),
+    )
+    # keep a reference: a parentless Qt window is closed when Python drops it
+    _open_dialogs[str(getattr(doc, "Name", "") or "")] = dialog
+    dialog.show()
+    return dialog
 
 
 if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
@@ -286,6 +323,8 @@ __all__ = [
     "RebuildDownstreamReport",
     "RebuildStageOutcome",
     "document_has_stale_results",
+    "freshness_table_rows",
+    "open_rebuild_downstream_dialog",
     "rebuild_downstream",
     "run_v1_rebuild_downstream_command",
 ]

@@ -2400,11 +2400,12 @@ class CrossSectionViewerTaskPanel:
             for col_index, value in enumerate(row_values):
                 table.setItem(row_index, col_index, QtWidgets.QTableWidgetItem(str(value)))
 
+        # Columns start at their contents' width and the user drags them wider or narrower; the last
+        # one takes the rest of the panel, so long values such as Ditch Run ids can be read.
         header = table.horizontalHeader()
-        try:
-            header.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        except Exception:
-            pass
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        table.resizeColumnsToContents()
+        header.setStretchLastSection(True)
         table.setMinimumHeight(140)
         return table
 

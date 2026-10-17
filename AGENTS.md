@@ -68,7 +68,7 @@ Do not edit generated geometry as source intent, reverse-author source data from
 
 - Ramp was removed on 2026-10-16: its model, evaluation service, tree folder, Region preset and reference fields are gone. Add no Ramp behavior unless explicitly requested.
 - Watertight Solid development is paused. Only critical repairs, data-loss prevention, compatibility, and existing test preservation are in scope unless explicitly expanded. Its command stays registered but is not on the toolbar or menu.
-- Drainage is being rebuilt per `docsV1/V1_DRAINAGE_REWORK_PLAN.md` (DR-1 to DR-4 done: Policy, Ditch Runs, flowline checks, points, links). Pipes stop at checked links until the Structure rebuild; advanced hydraulics and automatic pipe sizing are future work.
+- Drainage follows `docsV1/V1_DRAINAGE_MODEL.md` (rebuilt on 2026-10-16): Policy, Ditch Runs, points and links as source; flowline checks as a result stage after Applied Sections; Drainage Review as its read-only review. Pipes stop at checked links until the Structure rebuild; advanced hydraulics and automatic pipe sizing are future work.
 - Corridor surfaces are the primary terrain-like Build Parametric outputs. Solids are for physical bodies with thickness, material, volume, or export identity.
 - Applied Sections and supplemental station rows are generated results, never durable source rows.
 - Cross Section, Plan/Profile, Drainage, and Earthwork viewers are review surfaces, not geometry editors.

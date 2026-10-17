@@ -8,7 +8,8 @@ Project -> existing ground terrain -> Alignment -> Profile -> Superelevation -> 
 3D Centerline -> Assembly -> Region -> Drainage -> Applied Sections -> Drainage result -> Build
 Parametric, then save, reopen and rebuild. It checks that every stage leaves its result in its
 project tree folder, that the side slopes daylight on the terrain and the lanes take the
-superelevation in the curve, that each Ditch Run has a flowline, that the
+superelevation in the curve, that each Ditch Run has a flowline and that the suggested inlets and
+outfalls, linked downhill, settle the Drainage checks, that the
 corridor surfaces have geometry and are manifold meshes without zero-area or downward-facing
 facets, that a saved document reopens with the same objects, folders, surfaces and current
 results, that rebuilding the reopened document reproduces the same surfaces, and that a Profile
@@ -44,6 +45,9 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import apply_v1_corrid
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import apply_v1_drainage_model, drainage_editor_inputs
 from freecad.Corridor_Road.v1.commands.cmd_drainage_result import apply_v1_drainage_result
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageModel, DrainagePoint
+from freecad.Corridor_Road.v1.objects.obj_drainage import find_v1_drainage_model, to_drainage_model
+from freecad.Corridor_Road.v1.services.editing.drainage_editing_service import downhill_links, next_point_id
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
@@ -192,6 +196,7 @@ def _build(doc, project):
     _assert(len(applied.sections) >= 10, f"Applied Sections built only {len(applied.sections)} sections")
     apply_v1_applied_section_set(document=doc, project=project, applied_section_set=applied)
     apply_v1_drainage_result(doc)
+    _accept_drainage_suggestions_and_link_downhill(doc)
     apply_v1_corridor_model(document=doc, project=project)
 
 
@@ -204,6 +209,43 @@ def _check_terrain_and_superelevation(doc, stage):
     _assert(fallbacks == 0, f"{stage}: {fallbacks} side slopes fell back instead of reaching the terrain")
     lane_slopes = [abs(float(row.slope)) for section in sections for row in section.subassembly_rows if row.kind == "lane"]
     _assert(max(lane_slopes) > 0.05, f"{stage}: the lanes never take the superelevation, steepest {max(lane_slopes):.3f}")
+
+
+def _with_drainage(model: DrainageModel, **changes) -> DrainageModel:
+    rows = {"point_rows": model.point_rows, "link_rows": model.link_rows, **changes}
+    return DrainageModel(
+        schema_version=model.schema_version,
+        project_id=model.project_id,
+        drainage_model_id=model.drainage_model_id,
+        policy=model.policy,
+        ditch_run_rows=model.ditch_run_rows,
+        **rows,
+    )
+
+
+def _accept_drainage_suggestions_and_link_downhill(doc):
+    """What the Drainage panel's Add All, Apply, Link Downhill and Apply do."""
+
+    model = to_drainage_model(find_v1_drainage_model(doc))
+    result = to_drainage_result(find_v1_drainage_result_object(doc))
+    _assert(result.suggestion_rows, "the sample road's Drainage suggests no inlet or outfall")
+    runs = {run.ditch_run_id: run for run in model.ditch_run_rows}
+    points = list(model.point_rows)
+    for row in result.suggestion_rows:
+        run = runs[row.ditch_run_ref]
+        point_id = next_point_id(row.kind, {point.point_id for point in points})
+        points.append(DrainagePoint(point_id, row.kind, row.station, side=run.side, ditch_run_ref=run.ditch_run_id, alignment_ref=run.alignment_ref))
+    apply_v1_drainage_model(document=doc, drainage_model=_with_drainage(model, point_rows=points))
+    apply_v1_drainage_result(doc)
+    result = to_drainage_result(find_v1_drainage_result_object(doc))
+    model = to_drainage_model(find_v1_drainage_model(doc))
+    links = list(model.link_rows) + downhill_links(model.point_rows, model.link_rows, result.flowline_rows)
+    apply_v1_drainage_model(document=doc, drainage_model=_with_drainage(model, link_rows=links))
+    apply_v1_drainage_result(doc)
+    result = to_drainage_result(find_v1_drainage_result_object(doc))
+    unsettled = [row.message for row in result.check_rows if row.kind in {"low_point_uncollected", "inlet_spacing", "drains_nowhere", "link_uphill", "link_loop"}]
+    _assert(not unsettled, f"Drainage checks left after accepting the suggestions: {unsettled}")
+    _assert(result.link_rows and all(row.grade_percent < 0.0 for row in result.link_rows), f"Drainage links do not all fall: {result.link_rows}")
 
 
 def _check_drainage(doc, stage):

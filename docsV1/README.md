@@ -28,7 +28,7 @@ Baseline document:
 - [V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md](./V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md) - final FreeCAD 1.1.1 supported-domain acceptance checklist
 - [V1_UNRELEASED_CHANGES_MANUAL_QA.md](./V1_UNRELEASED_CHANGES_MANUAL_QA.md) - FreeCAD GUI checks for the unreleased changelog block, including the one change that touches saved documents
 - [V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md](./V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md) - the ordinary road workflow fixes done before the Drainage rework (GR-1 to GR-8, 2026-10-16): one source object per concern, dead-path removal, result freshness, 3D Centerline ownership, Surface Transition authoring in Regions
-- [V1_DRAINAGE_REWORK_PLAN.md](./V1_DRAINAGE_REWORK_PLAN.md) - proposed rewrite of Drainage: Ditch Runs prefilled from the Assembly, inlets suggested at low points, links, flowline checks against a Policy, phases DR-1 to DR-5
+- [V1_DRAINAGE_REWORK_PLAN.md](./V1_DRAINAGE_REWORK_PLAN.md) - the Drainage rewrite, done on 2026-10-16 (DR-1 to DR-5): Ditch Runs prefilled from the Assembly, flowline checks against a Policy, suggested inlets and outfalls, links, Drainage Review
 - [SESSION_HANDOFF_1014.md](./SESSION_HANDOFF_1014.md) - current handoff for continuing `ganada_0902` on another PC: setup, branch state including the surface orientation and task panel width fixes, what is left, traps, the validation gate and the plan
 - [SESSION_HANDOFF_1011.md](./SESSION_HANDOFF_1011.md) - previous handoff, the record of the branch up to `06fe861`
 - [SESSION_HANDOFF_1009.md](./SESSION_HANDOFF_1009.md) - working state of the `ganada_0902` branch: the decisions taken, what is left, the validation gate, and the traps that cost time
@@ -93,8 +93,6 @@ Baseline document:
 - [V1_REGION_DOMAIN_OWNERSHIP_REDESIGN_PLAN.md](./V1_REGION_DOMAIN_OWNERSHIP_REDESIGN_PLAN.md)
 - [V1_ROUTE_SEPARATION_AND_REGION_CRITERIA.md](./V1_ROUTE_SEPARATION_AND_REGION_CRITERIA.md) - when a road needs its own document and when a station span needs a Region row
 - [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md)
-- [V1_DRAINAGE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_IMPLEMENTATION_PLAN.md)
-- [V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md)
 - [V1_DITCH_SHAPE_CONTRACT.md](./V1_DITCH_SHAPE_CONTRACT.md)
 - [V1_OVERRIDE_MODEL.md](./V1_OVERRIDE_MODEL.md) - historical; removed from code on 2026-10-16
 - [V1_STRUCTURE_MODEL.md](./V1_STRUCTURE_MODEL.md)

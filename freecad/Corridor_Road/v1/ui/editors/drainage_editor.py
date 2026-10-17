@@ -38,6 +38,7 @@ drainage_downhill_links = None
 drainage_editor_inputs = None
 drainage_status_text = None
 drainage_suggestions = None
+open_drainage_review = None
 refresh_drainage_result = None
 
 COLUMNS = ("ID", "Road", "Side", "Ditch", "Start STA", "End STA", "On")
@@ -150,13 +151,17 @@ class V1DrainageEditorTaskPanel:
 
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
-        self._status.setFixedHeight(80)
+        self._status.setFixedHeight(160)
         layout.addWidget(self._status)
 
         action_row = QtWidgets.QHBoxLayout()
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(apply_button)
+        review_button = QtWidgets.QPushButton("Drainage Review")
+        review_button.setToolTip("Close this panel and open Drainage Review. Apply first to keep your edits.")
+        review_button.clicked.connect(lambda: open_drainage_review(self.document))
+        action_row.addWidget(review_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -299,7 +304,7 @@ class V1DrainageEditorTaskPanel:
         self._point_table.setItem(row, POINT_ID_COLUMN, id_item)
         self._point_table.setCellWidget(row, POINT_KIND_COLUMN, _combo(list(DRAINAGE_POINT_KINDS), point.kind))
         self._point_table.setCellWidget(row, POINT_RUN_COLUMN, _combo([CROSSES_ROAD, *self._run_ids()], point.ditch_run_ref))
-        self._point_table.setItem(row, POINT_STATION_COLUMN, QtWidgets.QTableWidgetItem(f"{float(point.station):.3f}"))
+        self._point_table.setItem(row, POINT_STATION_COLUMN, _station_item(point.station))
 
     def _delete_selected_points(self) -> None:
         for row in sorted({index.row() for index in self._point_table.selectionModel().selectedRows()}, reverse=True):
@@ -346,11 +351,7 @@ class V1DrainageEditorTaskPanel:
         for row in range(self._point_table.rowCount()):
             run_ref = self._point_text(row, POINT_RUN_COLUMN, combo=True)
             run = runs.get(run_ref)
-            text = self._point_text(row, POINT_STATION_COLUMN)
-            try:
-                station = float(text)
-            except ValueError:
-                raise ValueError(f"Point row {row + 1}: STA '{text}' is not a number.") from None
+            station = _station(self._point_table.item(row, POINT_STATION_COLUMN), f"Point row {row + 1}: STA")
             points.append(
                 DrainagePoint(
                     point_id=self._point_text(row, POINT_ID_COLUMN),
@@ -401,8 +402,8 @@ class V1DrainageEditorTaskPanel:
         self._table.setCellWidget(row, ROAD_COLUMN, _combo(self._alignment_ids, run.alignment_ref))
         self._table.setCellWidget(row, SIDE_COLUMN, _combo(list(DITCH_RUN_SIDES), run.side))
         self._table.setCellWidget(row, DITCH_COLUMN, _combo([choice.subassembly_ref for choice in self._choices], run.subassembly_ref))
-        self._table.setItem(row, START_COLUMN, QtWidgets.QTableWidgetItem(f"{float(run.station_start):.3f}"))
-        self._table.setItem(row, END_COLUMN, QtWidgets.QTableWidgetItem(f"{float(run.station_end):.3f}"))
+        self._table.setItem(row, START_COLUMN, _station_item(run.station_start))
+        self._table.setItem(row, END_COLUMN, _station_item(run.station_end))
         on_item = QtWidgets.QTableWidgetItem("")
         on_item.setFlags((on_item.flags() | QtCore.Qt.ItemIsUserCheckable) & ~QtCore.Qt.ItemIsEditable)
         on_item.setCheckState(QtCore.Qt.Checked if run.enabled else QtCore.Qt.Unchecked)
@@ -482,8 +483,8 @@ class V1DrainageEditorTaskPanel:
             ditch_run_id=self._text(row, ID_COLUMN),
             side=self._combo_text(row, SIDE_COLUMN),
             subassembly_ref=self._combo_text(row, DITCH_COLUMN),
-            station_start=_station(self._text(row, START_COLUMN), row, "Start STA"),
-            station_end=_station(self._text(row, END_COLUMN), row, "End STA"),
+            station_start=_station(self._table.item(row, START_COLUMN), f"Ditch Run row {row + 1}: Start STA"),
+            station_end=_station(self._table.item(row, END_COLUMN), f"Ditch Run row {row + 1}: End STA"),
             alignment_ref=self._combo_text(row, ROAD_COLUMN),
             enabled=on_item is None or on_item.checkState() == QtCore.Qt.Checked,
         )
@@ -512,11 +513,29 @@ def _combo(values: list[str], current: str):
     return combo
 
 
-def _station(text: str, row: int, column_name: str) -> float:
+# A station cell shows 3 decimals but keeps the exact value behind them: stations come from the
+# Stations and Regions with more decimals, and writing the rounded text back would move a run's end
+# off the last section or an outfall past the flowline's end.
+_EXACT_STATION_ROLE = QtCore.Qt.UserRole
+
+
+def _station_item(value: float):
+    item = QtWidgets.QTableWidgetItem(f"{float(value):.3f}")
+    item.setData(_EXACT_STATION_ROLE, float(value))
+    return item
+
+
+def _station(item, label: str) -> float:
+    """The cell's exact station while its text is unchanged, else the number typed into it."""
+
+    text = str(item.text() if item is not None else "").strip()
+    exact = item.data(_EXACT_STATION_ROLE) if item is not None else None
+    if exact is not None and text == f"{float(exact):.3f}":
+        return float(exact)
     try:
         return float(text)
     except ValueError:
-        raise ValueError(f"Ditch Run row {row + 1}: {column_name} '{text}' is not a number.") from None
+        raise ValueError(f"{label} '{text}' is not a number.") from None
 
 
 def _gui_available() -> bool:

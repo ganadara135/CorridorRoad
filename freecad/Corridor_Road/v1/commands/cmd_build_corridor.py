@@ -1119,11 +1119,8 @@ def _create_intersection_contract_review_highlight(*, document=None, row: dict[s
 
 
 def corridor_drainage_review_summary(document=None) -> dict[str, object]:
-    """How many ditch points of the Applied Sections a Drainage Ditch Run covers.
-
-    The flowline checks come with the Drainage evaluation (DR-2); until then this is the one
-    Drainage line of Guided Review.
-    """
+    """The Drainage line of Build Parametric: the ditch points no Ditch Run covers, and the stored
+    Drainage result's status and checks. Drainage Review shows the details."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     applied = to_applied_section_set(find_v1_applied_section_set(doc))
@@ -1142,7 +1139,29 @@ def corridor_drainage_review_summary(document=None) -> dict[str, object]:
         status, notes = "warn", f"{untagged} of {len(points)} ditch point(s) have no Ditch Run. Add runs in the Drainage panel."
     else:
         status, notes = "ready", f"All {len(points)} ditch point(s) belong to a Ditch Run."
+    from ..objects.obj_drainage_result import find_v1_drainage_result_object, to_drainage_result
+
+    result = to_drainage_result(find_v1_drainage_result_object(doc))
+    if result is not None and points:
+        errors = sum(1 for row in result.check_rows if row.severity == "error")
+        warnings = sum(1 for row in result.check_rows if row.severity == "warning")
+        notes = f"{notes} Drainage checks: {result.status}, {errors} error(s), {warnings} warning(s); see Drainage Review."
+        if errors:
+            status = "error"
+        elif warnings and status == "ready":
+            status = "warn"
     return {"status": status, "ditch_point_count": len(points), "untagged_count": untagged, "notes": notes}
+
+
+def open_drainage_review_panel(document=None):
+    """Close Build Parametric and open Drainage Review: FreeCAD shows one task panel at a time."""
+
+    if not (Gui is not None and getattr(App, "GuiUp", False)):
+        return None
+    from .cmd_drainage_review import run_v1_drainage_review_command
+
+    Gui.Control.closeDialog()
+    return run_v1_drainage_review_command(document)
 
 
 def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:

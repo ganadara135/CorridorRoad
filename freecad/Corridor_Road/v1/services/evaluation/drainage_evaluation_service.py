@@ -38,6 +38,9 @@ from ...models.source.drainage_model import DitchRun, DrainageModel, DrainagePoi
 # Two sections closer than this are the same station (stations are stored rounded, and a
 # supplemental section can land on a source station).
 STATION_TOLERANCE_M = 1.0e-6
+# Stations are shown and typed with 3 decimals (1 mm), so a point typed at a flowline's displayed
+# end station still lies on it, half a millimeter either side.
+STATION_ENTRY_TOLERANCE_M = 0.0005
 # An elevation change below this is no change: it is under the precision the section points carry,
 # so it must not turn a flat flowline into a sequence of tiny low and high points.
 ELEVATION_TOLERANCE_M = 1.0e-6
@@ -203,7 +206,7 @@ def _collectors(run: DitchRun, points: list[DrainagePoint], stations: list[Flowl
         )
         if not (own or crossing):
             continue
-        if start - STATION_TOLERANCE_M <= point.station <= end + STATION_TOLERANCE_M:
+        if start - STATION_ENTRY_TOLERANCE_M <= point.station <= end + STATION_ENTRY_TOLERANCE_M:
             collectors.append(point)
         elif own:
             off_run.append(
@@ -222,35 +225,71 @@ def _collectors(run: DitchRun, points: list[DrainagePoint], stations: list[Flowl
 
 
 def _reverse_flow_checks(run: DitchRun, stations, segments, collectors: list[DrainagePoint]) -> list[DrainageCheck]:
-    """An inlet or outfall where the flowline falls away on every side gets no water: the reverse
-    of a collector at a low point. A point on a slope between stations still takes what passes."""
+    """An inlet or outfall almost no ditch drains to: the reverse of a collector at a low point.
+
+    The water reaching a point is the flowline length upstream of it, up to the high point or run
+    end it divides at. A point with less than one section step of ditch draining to it sits at (or
+    next to) a high point or at an end the flowline falls away from.
+    """
 
     checks: list[DrainageCheck] = []
     values = [row.station for row in stations]
     for point in collectors:
         if point.ditch_run_ref != run.ditch_run_id:
             continue
-        at = next((index for index, value in enumerate(values) if abs(value - point.station) <= STATION_TOLERANCE_M), None)
-        if at is None:
+        measured = _upstream_length(values, segments, point.station)
+        if measured is None:
             continue
-        before = segments[at - 1] if at > 0 else None
-        after = segments[at] if at < len(segments) else None
-        away_before = before is None or before.grade_percent > 0.0
-        away_after = after is None or after.grade_percent < 0.0
-        if away_before and away_after and (before is not None or after is not None):
-            checks.append(
-                DrainageCheck(
-                    f"reverse_flow:{point.point_id}",
-                    "reverse_flow",
-                    CHECK_WARNING,
-                    run.ditch_run_id,
-                    point.station,
-                    point.station,
-                    f"{point.point_id}: the flowline falls away from STA {point.station:.3f} on every side, "
-                    "so no water reaches it. Move it to a low point.",
-                )
+        upstream, reach = measured
+        if upstream >= reach:
+            continue
+        checks.append(
+            DrainageCheck(
+                f"reverse_flow:{point.point_id}",
+                "reverse_flow",
+                CHECK_WARNING,
+                run.ditch_run_id,
+                point.station,
+                point.station,
+                f"{point.point_id}: only {upstream:.1f} m of ditch drains to STA {point.station:.3f}, so almost no "
+                "water reaches it: the flowline falls away from it. Move it toward a low point.",
             )
+        )
     return checks
+
+
+def _upstream_length(values: list[float], segments: list[FlowlineSegment], station: float) -> tuple[float, float] | None:
+    """The flowline length draining to `station`, and the section step there; None on a flat stretch."""
+
+    def from_left(vertex: int) -> float:
+        total = 0.0
+        while vertex > 0 and segments[vertex - 1].grade_percent < 0.0:
+            total += segments[vertex - 1].length_m
+            vertex -= 1
+        return total
+
+    def from_right(vertex: int) -> float:
+        total = 0.0
+        while vertex < len(segments) and segments[vertex].grade_percent > 0.0:
+            total += segments[vertex].length_m
+            vertex += 1
+        return total
+
+    vertex = next((index for index, value in enumerate(values) if abs(value - station) <= STATION_ENTRY_TOLERANCE_M), None)
+    if vertex is not None:
+        steps = [abs(values[at] - values[vertex]) for at in (vertex - 1, vertex + 1) if 0 <= at < len(values)]
+        return from_left(vertex) + from_right(vertex), max(steps) if steps else 0.0
+    index = next((at for at in range(len(segments)) if values[at] < station < values[at + 1]), None)
+    if index is None:
+        return None
+    segment = segments[index]
+    share = (station - values[index]) / (values[index + 1] - values[index])
+    step = values[index + 1] - values[index]
+    if segment.grade_percent < 0.0:
+        return share * segment.length_m + from_left(index), step
+    if segment.grade_percent > 0.0:
+        return (1.0 - share) * segment.length_m + from_right(index + 1), step
+    return None
 
 
 def point_places(points: list[DrainagePoint], flowlines: list[DitchRunFlowline]) -> dict[str, tuple[float, float, float]]:
@@ -277,7 +316,7 @@ def point_places(points: list[DrainagePoint], flowlines: list[DitchRunFlowline])
 
 def _flowline_place(stations: list[FlowlineStation], station: float) -> tuple[float, float, float] | None:
     for first, second in zip(stations, stations[1:]):
-        if first.station - STATION_TOLERANCE_M <= station <= second.station + STATION_TOLERANCE_M:
+        if first.station - STATION_ENTRY_TOLERANCE_M <= station <= second.station + STATION_ENTRY_TOLERANCE_M:
             span = second.station - first.station
             ratio = 0.0 if span <= 0.0 else min(max((station - first.station) / span, 0.0), 1.0)
             return (

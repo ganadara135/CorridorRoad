@@ -1,6 +1,7 @@
 import pytest
 
 from freecad.Corridor_Road.v1.models.output.cross_section_drawing import CrossSectionDrawingPayload
+from freecad.Corridor_Road.v1.models.output.drainage_output import DrainageOutput
 from freecad.Corridor_Road.v1.models.output.earthwork_output import EarthworkBalanceOutput, MassHaulOutput
 from freecad.Corridor_Road.v1.models.output.exchange_output import ExchangeOutput
 from freecad.Corridor_Road.v1.models.output.plan_output import PlanOutput
@@ -23,6 +24,13 @@ from freecad.Corridor_Road.v1.services.evaluation.output_traceability_service im
         QuantityOutput(schema_version=1, project_id="project:1", quantity_output_id="quantity-output:1", result_refs=["quantity:1"]),
         EarthworkBalanceOutput(schema_version=1, project_id="project:1", earthwork_output_id="earthwork-output:1", result_refs=["earthwork:1"]),
         MassHaulOutput(schema_version=1, project_id="project:1", mass_haul_output_id="mass-haul-output:1", result_refs=["mass-haul:1"]),
+        DrainageOutput(
+            schema_version=1,
+            project_id="project:1",
+            drainage_output_id="drainage-output:1",
+            source_refs=["drainage:main"],
+            result_refs=["drainage-result:main"],
+        ),
         ExchangeOutput(
             schema_version=1,
             project_id="project:1",

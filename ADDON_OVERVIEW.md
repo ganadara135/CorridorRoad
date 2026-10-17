@@ -73,7 +73,7 @@ Key references:
 - `docsV1/V1_REGION_MODEL.md`
 - `docsV1/V1_STRUCTURE_GEOMETRY_CONTRACT.md`
 - `docsV1/V1_EARTHWORK_IMPLEMENTATION_PLAN.md`
-- `docsV1/V1_DRAINAGE_IMPLEMENTATION_PLAN.md`
+- `docsV1/V1_DRAINAGE_MODEL.md`
 
 Online project resources:
 

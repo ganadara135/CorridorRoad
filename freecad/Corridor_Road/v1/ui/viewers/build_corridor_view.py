@@ -167,6 +167,8 @@ corridor_guided_review_step_visibility = None
 corridor_intersection_contract_review_rows = None
 is_general_road_document = None
 document_result_freshness = None
+corridor_drainage_review_summary = None
+open_drainage_review_panel = None
 freshness_text = None
 run_v1_rebuild_downstream_command = None
 corridor_region_boundary_rows = None
@@ -606,12 +608,16 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         structure_output_button = QtWidgets.QPushButton("Structure Output")
         structure_output_button.clicked.connect(self._open_structure_output_panel)
         row.addWidget(structure_output_button)
+        drainage_review_button = QtWidgets.QPushButton("Drainage Review")
+        drainage_review_button.setToolTip("Close Build Parametric and open Drainage Review.")
+        drainage_review_button.clicked.connect(lambda: open_drainage_review_panel(self.document))
+        row.addWidget(drainage_review_button)
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         row.addWidget(apply_button)
         rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
         rebuild_button.setToolTip(
-            "Rebuild stale Stations, 3D Centerline, Applied Sections and Build Parametric results with the options they were last built with."
+            "Rebuild stale Stations, 3D Centerline, Applied Sections, Drainage and Build Parametric results with the options they were last built with."
         )
         rebuild_button.clicked.connect(self._rebuild_downstream)
         row.addWidget(rebuild_button)
@@ -730,6 +736,8 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
                     "",
                     "Result freshness:",
                     freshness_text(document_result_freshness(self.document)),
+                    "",
+                    f"Drainage: {corridor_drainage_review_summary(self.document).get('notes', '')}",
                     "",
                     "Click Apply to create or update the v1 CorridorModel.",
             ]

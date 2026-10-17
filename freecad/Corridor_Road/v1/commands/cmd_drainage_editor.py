@@ -160,6 +160,16 @@ def drainage_downhill_links(document, points: list, links: list) -> tuple[list, 
     return added, f"{len(added)} link(s) added from inlets to the nearest lower point. Apply to keep them."
 
 
+def open_drainage_review(document):
+    """Close the Drainage panel and open Drainage Review: FreeCAD shows one task panel at a time."""
+
+    from .cmd_drainage_review import run_v1_drainage_review_command
+
+    if _gui_available():
+        Gui.Control.closeDialog()
+    return run_v1_drainage_review_command(document)
+
+
 def drainage_status_text(document) -> str:
     """The stored Drainage result's summary and whether it is current."""
 
@@ -214,6 +224,7 @@ configure_drainage_editor_task_panel_runtime(
         "drainage_downhill_links": drainage_downhill_links,
         "drainage_status_text": drainage_status_text,
         "drainage_suggestions": drainage_suggestions,
+        "open_drainage_review": open_drainage_review,
         "refresh_drainage_result": refresh_drainage_result,
     }
 )

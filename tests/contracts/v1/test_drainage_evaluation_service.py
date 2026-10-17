@@ -289,3 +289,30 @@ def test_a_link_to_a_point_off_every_flowline_cannot_be_measured() -> None:
 
     assert result.link_rows == []
     assert "outfall:far lies on no flowline" in next(row.message for row in result.check_rows if row.kind == "link_unplaced")
+
+
+def test_a_point_just_off_a_high_point_between_stations_gets_almost_no_water() -> None:
+    # rises to a crest at STA 50, then falls; a section every 10 m
+    hump = [(float(station), 10.0 - abs(station - 50.0) / 100.0) for station in range(0, 101, 10)]
+    points = [
+        DrainagePoint("outfall:crest", "outfall", 52.0, ditch_run_ref=RUN),
+        DrainagePoint("inlet:slope", "inlet", 80.0, ditch_run_ref=RUN),
+        DrainagePoint("outfall:end", "outfall", 100.0, ditch_run_ref=RUN),
+    ]
+
+    result = DrainageEvaluationService().evaluate(_model(points=points, spacing=1000.0), _sections(hump))
+
+    reverse = [row for row in result.check_rows if row.kind == "reverse_flow"]
+    assert [row.check_id for row in reverse] == ["reverse_flow:outfall:crest"]
+    assert "only 2.0 m of ditch drains to STA 52.000" in reverse[0].message
+
+
+def test_a_point_typed_at_the_rounded_end_station_still_collects() -> None:
+    # the flowline ends at STA 100.0004, shown and typed as 100.000
+    falling = [(0.0, 10.0), (50.0, 9.5), (100.0004, 9.0)]
+    outfall = DrainagePoint("outfall:1", "outfall", 100.0, ditch_run_ref=RUN)
+
+    result = DrainageEvaluationService().evaluate(_model(points=[outfall], spacing=1000.0), _sections(falling))
+
+    assert result.suggestion_rows == []
+    assert not {"low_point_uncollected", "point_off_run"} & {row.kind for row in result.check_rows}
