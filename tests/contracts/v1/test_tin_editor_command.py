@@ -1,4 +1,5 @@
 import FreeCAD as App
+import os
 import Mesh
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
@@ -30,7 +31,7 @@ from freecad.Corridor_Road.v1.models.source import TINEditOperation
 from freecad.Corridor_Road.v1.services.mapping import TINMeshPreviewMapper
 
 
-SAMPLE_PATH = r"tests\samples\pointcloud_utm_realistic_hilly.csv"
+SAMPLE_PATH = os.path.join("tests", "samples", "pointcloud_utm_realistic_hilly.csv")
 _QAPP = None
 
 

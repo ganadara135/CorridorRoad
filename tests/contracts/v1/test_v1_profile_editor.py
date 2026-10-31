@@ -445,7 +445,7 @@ def test_profile_eg_sample_rows_do_not_truncate_large_tin_preview_mesh() -> None
     doc, project = _new_project_doc()
     try:
         surface = TINBuildService().build_from_csv(
-            r"tests\samples\pointcloud_tin_mountain_valley_plain.csv",
+            os.path.join("tests", "samples", "pointcloud_tin_mountain_valley_plain.csv"),
             project_id="test-project",
             surface_id="tin:mountain-valley-plain",
         )
