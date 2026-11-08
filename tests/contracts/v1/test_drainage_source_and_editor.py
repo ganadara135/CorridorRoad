@@ -29,6 +29,7 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     apply_v1_assembly_subassembly_model,
     assembly_subassembly_preset_model_from_document,
 )
+from freecad.Corridor_Road.v1.services.evaluation.drainage_evaluation_service import suggest_points
 from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DitchRun,
     DrainageLink,
@@ -397,6 +398,74 @@ def test_the_flow_tab_continues_the_network_upstream_and_downstream_from_the_sel
         assert "already drains into" in panel._status.toPlainText()
 
         assert panel._apply() is True
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_trace_network_proposes_then_accepts_or_discards_and_leaves_the_sample_road_clean() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageTrace")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+
+        # the helper the panel uses gives the suggestions the evaluation stored
+        stored = to_drainage_result(find_v1_drainage_result_object(doc))
+        stored_points = to_drainage_model(find_v1_drainage_model(doc)).point_rows
+        from_helper = [
+            row
+            for flowline in stored.flowline_rows
+            for row in suggest_points(flowline, stored_points, low_point_rule="require_inlet", max_inlet_spacing_m=60.0)
+        ]
+        assert from_helper and sorted((row.kind, row.ditch_run_ref, row.station) for row in from_helper) == sorted(
+            (row.kind, row.ditch_run_ref, row.station) for row in stored.suggestion_rows
+        )
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._tabs.setCurrentWidget(panel._flow_tab)
+        assert not panel._accept_button.isEnabled() and not panel._discard_button.isEnabled()
+
+        # Discard drops a proposal without touching the tables
+        rows_before = panel._point_table.rowCount(), panel._link_table.rowCount()
+        panel._trace_network()
+        assert panel._trace is not None and panel._trace.found
+        assert panel._accept_button.isEnabled() and not panel._trace_button.isEnabled()
+        assert not any(button.isEnabled() for button in panel._continue_buttons)
+        assert any(text.startswith("+  ") for _id, _depth, text in _flow_items(panel))
+        assert (panel._point_table.rowCount(), panel._link_table.rowCount()) == rows_before
+        panel._discard_trace()
+        assert panel._trace is None and _flow_items(panel) == []
+        assert panel._trace_button.isEnabled() and all(button.isEnabled() for button in panel._continue_buttons)
+
+        # a proposal whose ids were taken meanwhile is dropped, not forced in
+        panel._trace_network()
+        taken = panel._trace.points[0]
+        panel._append_point(DrainagePoint(taken.point_id, "inlet", 1.0, ditch_run_ref=taken.ditch_run_ref))
+        panel._accept_trace()
+        assert panel._trace is None and "Trace Network again" in panel._status.toPlainText()
+        assert panel._point_table.rowCount() == rows_before[0] + 1
+        # the clashing row stays in the tables, so reload them from the stored Drainage
+        panel._load(to_drainage_model(find_v1_drainage_model(doc)))
+
+        # Accept puts the rows in the tables; Apply keeps them and the checks settle
+        panel._trace_network()
+        proposed_count = len(panel._trace.points)
+        proposed_links = len(panel._trace.links)
+        panel._accept_trace()
+        assert panel._trace is None
+        assert panel._point_table.rowCount() == proposed_count and panel._link_table.rowCount() == proposed_links
+        assert panel._apply() is True
+        kinds = {row.kind for row in to_drainage_result(find_v1_drainage_result_object(doc)).check_rows}
+        assert kinds.isdisjoint(
+            {"low_point_uncollected", "inlet_spacing", "drains_nowhere", "link_uphill", "link_flat", "link_loop", "drains_twice"}
+        ), kinds
+
+        # nothing is left to trace
+        panel._trace_network()
+        assert panel._trace is None and panel._status.toPlainText().startswith("Nothing to add")
     finally:
         App.closeDocument(doc.Name)
 

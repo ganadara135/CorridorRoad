@@ -25,6 +25,11 @@ def flow_node_text(node: FlowNode) -> str:
     counts = _severity_counts(node)
     if counts:
         parts.append(f"[{counts}]")
+    if node.pending == "point":
+        parts.insert(0, "+")
+        parts.append("(proposed)")
+    elif node.pending == "link":
+        parts.append("(proposed link)")
     return "  ".join(parts)
 
 

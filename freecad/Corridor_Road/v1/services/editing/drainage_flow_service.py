@@ -16,7 +16,12 @@ import math
 from dataclasses import dataclass
 
 from ...models.source.drainage_model import DrainageLink, DrainagePoint
-from ..evaluation.drainage_evaluation_service import ELEVATION_TOLERANCE_M, STATION_TOLERANCE_M, point_places
+from ..evaluation.drainage_evaluation_service import (
+    ELEVATION_TOLERANCE_M,
+    STATION_TOLERANCE_M,
+    point_places,
+    suggest_points,
+)
 from .drainage_editing_service import next_point_id
 
 CHECK_ERROR = "error"
@@ -45,6 +50,8 @@ class FlowNode:
     link_grade_percent: float | None = None
     check_rows: tuple = ()
     children: tuple["FlowNode", ...] = ()
+    # "point" for a proposed point, "link" for an existing point whose outgoing link is proposed
+    pending: str = ""
 
 
 @dataclass(frozen=True)
@@ -65,11 +72,14 @@ def build_flow_tree(
     *,
     check_rows=(),
     link_rows=(),
+    pending_point_ids=frozenset(),
+    pending_link_ids=frozenset(),
 ) -> FlowTree:
     """The flow forest of `points` and `links`.
 
     `check_rows` are the stored Drainage result's checks and `link_rows` its measured links; pass
     them only while that result is current, since a stale one may name stations that no longer hold.
+    `pending_point_ids` and `pending_link_ids` mark the rows of a proposal that is not in the tables yet.
     """
 
     by_id: dict[str, DrainagePoint] = {}
@@ -108,13 +118,16 @@ def build_flow_tree(
     built: dict[str, FlowNode] = {}
     for point_id in reversed(walked):
         children = tuple(built[child] for child in sorted(upstream.get(point_id, ()), key=order_key))
-        built[point_id] = _node(by_id[point_id], outgoing.get(point_id), by_id, checks, grades, children)
+        built[point_id] = _node(by_id[point_id], outgoing.get(point_id), by_id, checks, grades, children, pending_point_ids, pending_link_ids)
 
     seen = set(walked)
     loop_ids = sorted((point_id for point_id in by_id if point_id not in seen), key=order_key)
     return FlowTree(
         roots=tuple(built[point_id] for point_id in roots),
-        loop_nodes=tuple(_node(by_id[point_id], outgoing.get(point_id), by_id, checks, grades, ()) for point_id in loop_ids),
+        loop_nodes=tuple(
+            _node(by_id[point_id], outgoing.get(point_id), by_id, checks, grades, (), pending_point_ids, pending_link_ids)
+            for point_id in loop_ids
+        ),
     )
 
 
@@ -137,8 +150,10 @@ def flow_node_severity(node: FlowNode) -> str:
     return CHECK_WARNING if CHECK_WARNING in severities else ""
 
 
-def _node(point, link, by_id, checks, grades, children) -> FlowNode:
+def _node(point, link, by_id, checks, grades, children, pending_point_ids=frozenset(), pending_link_ids=frozenset()) -> FlowNode:
+    pending = "point" if point.point_id in pending_point_ids else "link" if link is not None and link.link_id in pending_link_ids else ""
     return FlowNode(
+        pending=pending,
         point_id=point.point_id,
         kind=point.kind,
         ditch_run_ref=point.ditch_run_ref,
@@ -421,3 +436,80 @@ class _Flowline:
                 ratio = 0.0 if span <= 0.0 else (station - self.stations[index - 1]) / span
                 return values[index - 1] + (values[index] - values[index - 1]) * min(max(ratio, 0.0), 1.0)
         return values[-1]
+
+
+@dataclass(frozen=True)
+class NetworkProposal:
+    """The points and links Trace Network would add, and the inlets it could not drain.
+
+    A proposal is never stored: the panel shows it as pending and the user accepts or discards it.
+    """
+
+    points: tuple[DrainagePoint, ...] = ()
+    links: tuple[DrainageLink, ...] = ()
+    undrained: tuple[str, ...] = ()
+    message: str = ""
+
+    @property
+    def found(self) -> bool:
+        return bool(self.points or self.links)
+
+
+def trace_network(
+    points: list[DrainagePoint],
+    links: list[DrainageLink],
+    flowlines: list,
+    *,
+    low_point_rule: str,
+    max_inlet_spacing_m: float,
+) -> NetworkProposal:
+    """The missing network: the points the checks would suggest, then a way down for every inlet.
+
+    Points come first (an outfall at a low point that falls to a run end, inlets at other low points
+    and where the spacing needs them), computed from `points` as they stand and the stored
+    flowlines. Then each inlet that drains nowhere, lowest first, is linked to the nearest lower
+    point or to a new outfall at the run end it falls toward (`add_downstream`). Existing points and
+    links are never moved or removed, so tracing again after hand edits fills only what is left.
+    """
+
+    working_points = list(points)
+    working_links = list(links)
+    new_points: list[DrainagePoint] = []
+    new_links: list[DrainageLink] = []
+    for flowline in sorted(flowlines, key=lambda row: (row.alignment_ref, row.ditch_run_ref)):
+        for suggestion in suggest_points(flowline, working_points, low_point_rule=low_point_rule, max_inlet_spacing_m=max_inlet_spacing_m):
+            point = DrainagePoint(
+                next_point_id(suggestion.kind, {row.point_id for row in working_points}),
+                suggestion.kind,
+                float(suggestion.station),
+                side=flowline.side,
+                ditch_run_ref=flowline.ditch_run_ref,
+                alignment_ref=flowline.alignment_ref,
+            )
+            working_points.append(point)
+            new_points.append(point)
+    places = point_places(working_points, flowlines)
+    draining = {link.from_ref for link in working_links}
+    waiting = sorted(
+        (point for point in working_points if point.kind == "inlet" and point.point_id not in draining),
+        key=lambda point: (places[point.point_id][2] if point.point_id in places else float("inf"), point.point_id),
+    )
+    undrained: list[str] = []
+    notes: list[str] = []
+    for inlet in waiting:
+        step = add_downstream(inlet.point_id, working_points, working_links, flowlines)
+        if not step.added:
+            undrained.append(inlet.point_id)
+            notes.append(step.message)
+            continue
+        working_points.extend(step.points)
+        working_links.extend(step.links)
+        new_points.extend(step.points)
+        new_links.extend(step.links)
+    if new_points or new_links:
+        text = f"Proposed {len(new_points)} point(s) and {len(new_links)} link(s). Accept to add them to the tables, or Discard."
+    else:
+        text = "Nothing to add: the points and links already cover every low point, the inlet spacing and every inlet's way down."
+    if notes:
+        text += "\n" + "\n".join(notes)
+    return NetworkProposal(tuple(new_points), tuple(new_links), tuple(undrained), text)

@@ -555,4 +555,40 @@ def _flat_grade_checks(run: DitchRun, segments: list[FlowlineSegment], min_grade
     return checks
 
 
-__all__ = ["DrainageEvaluationService", "ELEVATION_TOLERANCE_M", "STATION_TOLERANCE_M", "point_places"]
+def suggest_points(
+    flowline: DitchRunFlowline,
+    points: list[DrainagePoint],
+    *,
+    low_point_rule: str,
+    max_inlet_spacing_m: float,
+) -> list[DrainageSuggestion]:
+    """The points the evaluation would suggest on one run's flowline for the given `points`.
+
+    The same rules as `DrainageEvaluationService.evaluate`, run on a stored flowline and any list of
+    points (unsaved ones included), so the editor can propose a network before Apply. Nothing is added.
+    """
+
+    stations = list(flowline.station_rows)
+    if len(stations) < 2:
+        return []
+    run = DitchRun(
+        flowline.ditch_run_ref,
+        flowline.side,
+        flowline.subassembly_ref,
+        stations[0].station,
+        stations[-1].station,
+        alignment_ref=flowline.alignment_ref,
+    )
+    collectors, _off_run = _collectors(run, points, stations)
+    _low_checks, low_suggestions = _low_point_checks(run, stations, list(flowline.low_point_stations), collectors, low_point_rule)
+    _spacing, spacing_suggestions = _spacing_checks(
+        run,
+        stations,
+        list(flowline.high_point_stations),
+        sorted([point.station for point in collectors] + [row.station for row in low_suggestions]),
+        float(max_inlet_spacing_m),
+    )
+    return _numbered(run, low_suggestions + spacing_suggestions)
+
+
+__all__ = ["DrainageEvaluationService", "ELEVATION_TOLERANCE_M", "STATION_TOLERANCE_M", "point_places", "suggest_points"]

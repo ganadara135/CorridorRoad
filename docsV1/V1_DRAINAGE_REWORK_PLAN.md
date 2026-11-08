@@ -406,7 +406,7 @@ Done on 2026-11-08 (gate passed; GUI check pending):
 - Tests: placement on the sample flowline; repeated Add Upstream clears `inlet_spacing` up to the
   crest; Add Downstream never creates a second outgoing link; ids stay unique; refusals.
 
-Done on 2026-11-08 (gate pending; GUI check pending):
+Done on 2026-11-08 (gate passed; GUI check pending):
 
 - `add_upstream` and `add_downstream` in `drainage_flow_service.py` return a `FlowContinuation`
   (points, links, the node to select, a message); an empty one is a refusal with its reason.
@@ -432,6 +432,22 @@ Done on 2026-11-08 (gate pending; GUI check pending):
   places already come from the flowlines, so unsaved points work). It is not stored anywhere.
 - Tests: on the sample road the traced network leaves no low point, spacing, link or
   `drains_nowhere` check; a second trace proposes nothing; hand-placed points survive a trace.
+
+Done on 2026-11-08 (gate pending; GUI check pending):
+
+- `evaluation/drainage_evaluation_service.suggest_points` runs the evaluation's own suggestion
+  rules on one stored flowline and any list of points, so unsaved points count; a test pins it to
+  the suggestions the evaluation stores.
+- `trace_network` in `drainage_flow_service.py` returns a `NetworkProposal` (points, links, the
+  inlets it could not drain, a message). It adds the suggested points per run, then drains each
+  inlet that drains nowhere, lowest first, with `add_downstream` (a nearest lower point, else a new
+  outfall at the run end). An inlet at a low point with nothing lower stays undrained and is named.
+- The Flow tab has Trace Network, Accept and Discard. A proposal shows in the tree as pending (`+`,
+  `(proposed)`, `(proposed link)`, blue italics); Add Upstream and Add Downstream are off while it
+  waits. Accept re-checks ids and refs and drops the proposal if the tables changed. Nothing is
+  stored; a stale or missing result refuses with the Rebuild Downstream note (Q5).
+- On the sample road the traced network, once Accepted and applied, leaves no low point, spacing,
+  link or `drains_nowhere` check, and a second trace says there is nothing to add.
 
 #### DR-6d Fix from the flow
 

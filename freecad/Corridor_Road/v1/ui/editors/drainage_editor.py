@@ -26,6 +26,7 @@ from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import (
     add_upstream,
     build_flow_tree,
     flow_node_severity,
+    trace_network,
 )
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from freecad.Corridor_Road.v1.ui.presentation.drainage_flow_tree_presentation import (
@@ -78,6 +79,7 @@ class V1DrainageEditorTaskPanel:
         self._alignment_ids = [value for value in inputs["alignment_ids"]] or [""]
         self._prefill: list[DitchRun] = list(inputs["prefill"])
         self._suggestions: list = []
+        self._trace = None  # the Trace Network proposal while it waits for Accept or Discard
         self.form = fit_task_panel_width(self._build_ui())
         self._load(self._model)
         self._refresh_flow_tree()
@@ -198,16 +200,36 @@ class V1DrainageEditorTaskPanel:
         self._flow_tree.itemSelectionChanged.connect(self._flow_selection_changed)
         layout.addWidget(self._flow_tree, 1)
         continue_row = QtWidgets.QHBoxLayout()
+        self._continue_buttons = []
         upstream_button = QtWidgets.QPushButton("Add Upstream")
         upstream_button.setToolTip("Add an inlet one step up the ditch from the selected point, draining into it. Press again to walk on.")
         upstream_button.clicked.connect(lambda: self._continue_flow(upstream=True))
         continue_row.addWidget(upstream_button)
+        self._continue_buttons.append(upstream_button)
         downstream_button = QtWidgets.QPushButton("Add Downstream")
         downstream_button.setToolTip("Link the selected point, which drains nowhere, to the nearest lower point, or to a new outfall at the run end.")
         downstream_button.clicked.connect(lambda: self._continue_flow(upstream=False))
         continue_row.addWidget(downstream_button)
+        self._continue_buttons.append(downstream_button)
         continue_row.addStretch(1)
         layout.addLayout(continue_row)
+        trace_row = QtWidgets.QHBoxLayout()
+        self._trace_button = QtWidgets.QPushButton("Trace Network")
+        self._trace_button.setToolTip(
+            "Propose the missing outfalls, inlets and links for the whole network. Nothing is added until you Accept."
+        )
+        self._trace_button.clicked.connect(self._trace_network)
+        trace_row.addWidget(self._trace_button)
+        self._accept_button = QtWidgets.QPushButton("Accept")
+        self._accept_button.setToolTip("Add the proposed points and links to the tables; Apply keeps them.")
+        self._accept_button.clicked.connect(self._accept_trace)
+        trace_row.addWidget(self._accept_button)
+        self._discard_button = QtWidgets.QPushButton("Discard")
+        self._discard_button.clicked.connect(self._discard_trace)
+        trace_row.addWidget(self._discard_button)
+        trace_row.addStretch(1)
+        layout.addLayout(trace_row)
+        self._set_trace(None)
         self._flow_note = QtWidgets.QLabel("")
         self._flow_note.setWordWrap(True)
         layout.addWidget(self._flow_note)
@@ -229,7 +251,15 @@ class V1DrainageEditorTaskPanel:
             self._flow_note.setText(f"The tree needs a valid Points table: {exc}")
             return
         checks, link_rows, result_note = drainage_flow_result(self.document)
-        tree = build_flow_tree(points, links, check_rows=checks, link_rows=link_rows)
+        proposal = self._trace
+        tree = build_flow_tree(
+            points + list(proposal.points if proposal else ()),
+            links + list(proposal.links if proposal else ()),
+            check_rows=checks,
+            link_rows=link_rows,
+            pending_point_ids=frozenset(point.point_id for point in (proposal.points if proposal else ())),
+            pending_link_ids=frozenset(link.link_id for link in (proposal.links if proposal else ())),
+        )
         by_road = len({node.alignment_ref for node in tree.roots}) > 1
         groups: dict[str, object] = {}
         for node in tree.roots:
@@ -259,6 +289,12 @@ class V1DrainageEditorTaskPanel:
     def _add_flow_item(self, parent, node) -> None:
         item = QtWidgets.QTreeWidgetItem(parent, [flow_node_text(node)])
         item.setData(0, QtCore.Qt.UserRole, node.point_id)
+        if node.pending:
+            font = item.font(0)
+            font.setItalic(True)
+            item.setFont(0, font)
+            item.setForeground(0, QtGui.QBrush(QtGui.QColor(0, 90, 160)))
+            item.setToolTip(0, "Proposed by Trace Network: Accept adds it to the tables.")
         severity = flow_node_severity(node)
         if severity:
             colour = QtGui.QColor(176, 0, 32) if severity == CHECK_ERROR else QtGui.QColor(176, 96, 0)
@@ -298,6 +334,70 @@ class V1DrainageEditorTaskPanel:
         self._refresh_flow_tree()
         self._select_flow_node(step.select_point_id)
         self._set_status(f"{step.message} Apply to keep it.")
+
+    def _set_trace(self, proposal) -> None:
+        """Hold the proposal (or none) and enable only the buttons that make sense with it."""
+
+        self._trace = proposal if proposal is not None and proposal.found else None
+        pending = self._trace is not None
+        self._accept_button.setEnabled(pending)
+        self._discard_button.setEnabled(pending)
+        self._trace_button.setEnabled(not pending)
+        # Adding by hand while a proposal waits could clash with its ids
+        for button in self._continue_buttons:
+            button.setEnabled(not pending)
+
+    def _trace_network(self) -> None:
+        """Propose the missing network from the tables and the stored flowlines; Accept adds it."""
+
+        try:
+            points, links = self._points(), self._links()
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return
+        flowlines, note = drainage_flowlines(self.document)
+        if not flowlines:
+            self._set_status(note)
+            return
+        proposal = trace_network(
+            points,
+            links,
+            flowlines,
+            low_point_rule=str(self._low_point_rule.currentData() or LOW_POINT_RULES[0]),
+            max_inlet_spacing_m=float(self._max_spacing.value()),
+        )
+        self._set_trace(proposal)
+        self._refresh_flow_tree()
+        self._set_status(proposal.message)
+
+    def _accept_trace(self) -> None:
+        proposal = self._trace
+        if proposal is None:
+            return
+        point_ids = self._point_ids()
+        link_ids = {self._link_text(row, LINK_ID_COLUMN) for row in range(self._link_table.rowCount())}
+        known = point_ids | {point.point_id for point in proposal.points}
+        clash = any(point.point_id in point_ids for point in proposal.points) or any(
+            link.link_id in link_ids or link.from_ref not in known or link.to_ref not in known for link in proposal.links
+        )
+        self._set_trace(None)
+        if clash:
+            self._refresh_flow_tree()
+            self._set_status("The tables changed since the trace, so the proposal was dropped. Trace Network again.")
+            return
+        for point in proposal.points:
+            self._append_point(point)
+        for link in proposal.links:
+            self._append_link(link)
+        self._refresh_flow_tree()
+        self._set_status(
+            f"{len(proposal.points)} point(s) and {len(proposal.links)} link(s) added to the tables. Apply to keep them."
+        )
+
+    def _discard_trace(self) -> None:
+        self._set_trace(None)
+        self._refresh_flow_tree()
+        self._set_status("The proposal was discarded.")
 
     def _select_flow_node(self, point_id: str) -> None:
         iterator = QtWidgets.QTreeWidgetItemIterator(self._flow_tree)
