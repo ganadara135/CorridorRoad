@@ -32,7 +32,7 @@ class StructureSolidOutputService:
     """Build first-slice structure solid output rows from v1 source specs."""
 
     def build(self, request: StructureSolidBuildRequest) -> StructureSolidOutput:
-        """Create normalized bridge, culvert, wall, and envelope output rows."""
+        """Create normalized bridge, wall, and envelope output rows."""
 
         geometry_by_id = {
             str(row.geometry_spec_id): row
@@ -42,19 +42,10 @@ class StructureSolidOutputService:
             str(row.geometry_spec_ref): row
             for row in list(getattr(request.structure_model, "bridge_geometry_spec_rows", []) or [])
         }
-        culvert_by_ref = {
-            str(row.geometry_spec_ref): row
-            for row in list(getattr(request.structure_model, "culvert_geometry_spec_rows", []) or [])
-        }
         wall_by_ref = {
             str(row.geometry_spec_ref): row
             for row in list(getattr(request.structure_model, "retaining_wall_geometry_spec_rows", []) or [])
         }
-        connection_points_by_structure: dict[str, list[object]] = {}
-        for point in list(getattr(request.structure_model, "connection_point_rows", []) or []):
-            structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
-            if structure_ref:
-                connection_points_by_structure.setdefault(structure_ref, []).append(point)
 
         solid_rows: list[StructureSolidOutputRow] = []
         solid_segment_rows: list[StructureSolidSegmentRow] = []
@@ -87,9 +78,7 @@ class StructureSolidOutputService:
                 path_source=path_source,
                 applied_section_set=request.applied_section_set,
                 bridge=bridge_by_ref.get(spec_ref),
-                culvert=culvert_by_ref.get(spec_ref),
                 wall=wall_by_ref.get(spec_ref),
-                connection_points=connection_points_by_structure.get(structure_id, []),
             )
             solid_rows.append(solid_row)
             solid_segment_rows.extend(
@@ -104,7 +93,6 @@ class StructureSolidOutputService:
                 solid_rows,
                 solid_segment_rows,
                 geometry_by_id=geometry_by_id,
-                culvert_by_ref=culvert_by_ref,
             )
         )
 
@@ -144,13 +132,9 @@ def _solid_row_for_structure(
     path_source: str,
     applied_section_set: AppliedSectionSet | None = None,
     bridge=None,
-    culvert=None,
     wall=None,
-    connection_points: list[object] | None = None,
 ) -> StructureSolidOutputRow:
     kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
-    shape_kind = str(getattr(spec, "shape_kind", "") or "").strip().lower()
     station_start = float(getattr(row.placement, "station_start", 0.0) or 0.0)
     station_end = float(getattr(row.placement, "station_end", station_start) or station_start)
     if station_end < station_start:
@@ -161,31 +145,20 @@ def _solid_row_for_structure(
     material = str(getattr(spec, "material", "") or "")
     notes = ""
     context = _source_context_for_structure(applied_section_set, str(row.structure_id))
-    connection_points = list(connection_points or [])
-    drainage_native_kind = _drainage_native_kind(native_type, shape_kind, kind)
 
     if kind == "bridge":
         solid_kind = "bridge_deck_solid"
         width = float(getattr(bridge, "deck_width", 0.0) or width)
         height = float(getattr(bridge, "deck_thickness", 0.0) or height)
-    elif kind == "culvert":
-        solid_kind = "culvert_body_solid"
-        width = float(getattr(culvert, "span", 0.0) or getattr(culvert, "diameter", 0.0) or width)
-        height = float(getattr(culvert, "rise", 0.0) or getattr(culvert, "diameter", 0.0) or height)
-        if culvert is not None and not float(getattr(culvert, "length", 0.0) or 0.0):
-            notes = "Length derived from placement station range."
     elif kind in {"retaining_wall", "wall"}:
         solid_kind = "retaining_wall_solid"
         width = float(getattr(wall, "wall_thickness", 0.0) or width)
         height = float(getattr(wall, "wall_height", 0.0) or height)
-    elif drainage_native_kind:
-        solid_kind = f"{drainage_native_kind}_body_solid"
-        notes = f"drainage_native_kind={drainage_native_kind}"
     else:
         solid_kind = "structure_envelope_solid"
 
     volume = max(width, 0.0) * max(height, 0.0) * max(length, 0.0)
-    offset = _native_structure_offset(row, connection_points, drainage_native_kind=drainage_native_kind)
+    offset = float(getattr(row.placement, "offset", 0.0) or 0.0)
     start_x, start_y, start_z, start_tangent_direction_deg = _placement_from_applied_sections(
         applied_section_set,
         station=station_start,
@@ -196,10 +169,6 @@ def _solid_row_for_structure(
         station=station_end,
         offset=offset,
     )
-    connection_z = _native_structure_connection_z(connection_points, drainage_native_kind=drainage_native_kind)
-    if connection_z is not None:
-        start_z = connection_z
-        end_z = connection_z
     return StructureSolidOutputRow(
         output_object_id=f"structure-solid:{row.structure_id}",
         structure_id=str(row.structure_id),
@@ -240,52 +209,6 @@ def _path_source(applied_section_set: AppliedSectionSet | None) -> str:
     if any(getattr(section, "frame", None) is not None for section in sections):
         return "applied_section_frame"
     return "station_range"
-
-
-def _drainage_native_kind(native_type: str, shape_kind: str, structure_kind: str) -> str:
-    for value in (native_type, shape_kind, structure_kind):
-        text = str(value or "").strip().lower()
-        if text in {"inlet", "inlet_box", "catch_basin"}:
-            return "inlet"
-        if text in {"outlet", "outlet_headwall"}:
-            return "outlet"
-        if text == "headwall":
-            return "headwall"
-    return ""
-
-
-def _native_structure_offset(row: StructureRow, connection_points: list[object], *, drainage_native_kind: str) -> float:
-    explicit_offset = float(getattr(row.placement, "offset", 0.0) or 0.0)
-    if not drainage_native_kind or abs(explicit_offset) > 1.0e-9:
-        return explicit_offset
-    offsets = []
-    for point in list(connection_points or []):
-        try:
-            offsets.append(float(getattr(point, "offset", 0.0) or 0.0))
-        except Exception:
-            continue
-    if not offsets:
-        return explicit_offset
-    return sum(offsets) / len(offsets)
-
-
-def _native_structure_connection_z(connection_points: list[object], *, drainage_native_kind: str) -> float | None:
-    if not drainage_native_kind:
-        return None
-    values = []
-    for point in list(connection_points or []):
-        value = getattr(point, "invert_elevation", None)
-        if value is None:
-            value = getattr(point, "elevation", None)
-        if value is None:
-            continue
-        try:
-            values.append(float(value))
-        except Exception:
-            continue
-    if not values:
-        return None
-    return sum(values) / len(values)
 
 
 def _active_structure_refs(
@@ -389,7 +312,6 @@ def _structure_export_readiness_diagnostics(
     solid_segment_rows: list[StructureSolidSegmentRow],
     *,
     geometry_by_id: dict[str, StructureGeometrySpec],
-    culvert_by_ref: dict[str, object],
 ) -> list[StructureExportDiagnosticRow]:
     diagnostics: list[StructureExportDiagnosticRow] = []
     segments_by_parent: dict[str, list[StructureSolidSegmentRow]] = {}
@@ -447,22 +369,6 @@ def _structure_export_readiness_diagnostics(
                     notes=f"skew_angle_deg={float(getattr(spec, 'skew_angle_deg', 0.0) or 0.0):.6f}",
                 )
             )
-        culvert = culvert_by_ref.get(geometry_spec_id)
-        if culvert is not None:
-            inlet_skew = float(getattr(culvert, "inlet_skew_angle_deg", 0.0) or 0.0)
-            outlet_skew = float(getattr(culvert, "outlet_skew_angle_deg", 0.0) or 0.0)
-            if abs(inlet_skew) > 1.0e-9 or abs(outlet_skew) > 1.0e-9:
-                diagnostics.append(
-                    _export_diagnostic(
-                        "warning",
-                        "unsupported_skew",
-                        structure_id=structure_id,
-                        geometry_spec_id=geometry_spec_id,
-                        output_object_id=output_object_id,
-                        message="Culvert inlet/outlet skew is recorded in source geometry but is not applied to the current IFC swept solid.",
-                        notes=f"inlet_skew_angle_deg={inlet_skew:.6f};outlet_skew_angle_deg={outlet_skew:.6f}",
-                    )
-                )
         segment_count = len(segments_by_parent.get(output_object_id, []))
         if segment_count > 1:
             diagnostics.append(

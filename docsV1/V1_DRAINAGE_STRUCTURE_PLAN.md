@@ -124,11 +124,26 @@ Done on 2026-11-08 (gate pending; GUI check pending):
    `corridor_surface_geometry_service.py`, and the two diagnostics. Tests: the Applied Section and
    Structure object tests lose the rule and zone assertions; a station with a structure no longer
    warns; an old payload with the fields restores.
-2. **Culvert.** Remove the `culvert` kind, `CulvertGeometrySpec` and its rows and validation, the
+2. **Culvert (done 2026-11-08).** Remove the `culvert` kind, `CulvertGeometrySpec` and its rows and validation, the
    "Culvert Crossing" and "Drainage Structures" presets, the culvert paths of the solid, quantity,
    target discovery and watertight code (Watertight Solid stays paused; only these paths and their
    tests go), and reword the Region preset note. A document whose Structure still holds culvert
    rows loses them when next applied, and the editor says so once on opening.
+
+   Done: the `culvert` kind and the other drainage kinds (`inlet`, `outlet`, `headwall`, `manhole`,
+   `junction_box`) and native types (`box_culvert`, `pipe_culvert`, `inlet`, `outlet`, `headwall`) are
+   gone from the Structure editor (kind and native-type choices, the "Culvert Crossing" and
+   "Drainage Structures" presets, the detail fields and defaults, the preview shapes and the
+   derived connection points), from `CulvertGeometrySpec` and its rows and validation, from the
+   solid output (`culvert_body_solid` and the inlet/outlet/headwall bodies), the quantities (the
+   six culvert kinds), the solid target discovery (the drainage connection point requirement) and
+   Watertight Solid (circular, inlet and headwall bodies and the connection point check of an
+   external body). A document saved before keeps its rows until the Structure is applied: the
+   editor leaves them out and says so once, validation warns `structure_moved_to_drainage`, and
+   `prepare_structure_edit` drops them with their specs and connection points
+   (`without_removed_drainage_structures`). The old `CulvertGeometrySpecRows` property goes when
+   the object is next written. The Watertight and structure-extension plans still name culvert
+   targets; they are paused plans and are corrected if that work resumes.
 3. **Connection points.** Remove `StructureConnectionPoint`, its editor tab and preview, its
    diagnostics, and the two requirement checks above; update `scripts/run_local_validation.ps1`.
 4. **Documents.** Delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 and the

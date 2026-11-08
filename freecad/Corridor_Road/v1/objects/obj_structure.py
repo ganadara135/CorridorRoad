@@ -12,13 +12,13 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from ..models.source.structure_model import (
     BridgeGeometrySpec,
-    CulvertGeometrySpec,
     RetainingWallGeometrySpec,
     StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
     StructureRow,
+    is_removed_drainage_structure,
 )
 from .persistence_payload_adapter import ensure_model_payload_properties, read_model_payload, write_model_payload
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
@@ -42,12 +42,10 @@ _RETIRED_PROPERTIES = (
     "InfluenceStationEnds",
     "InfluenceOffsetMins",
     "InfluenceOffsetMaxes",
+    # culvert specs moved to Drainage on 2026-11-08
+    "CulvertGeometrySpecRows",
 )
 
-DRAINAGE_READY_STRUCTURE_KINDS = {"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"}
-DRAINAGE_READY_NATIVE_TYPES = {"box_culvert", "pipe_culvert", "inlet", "outlet", "headwall"}
-INCOMING_CONNECTION_ROLES = {"pipe_in", "inlet", "upstream"}
-OUTGOING_CONNECTION_ROLES = {"pipe_out", "outlet", "downstream", "discharge"}
 CIRCULAR_CONNECTION_ROLES = {"pipe_in", "pipe_out", "upstream", "downstream"}
 
 
@@ -124,7 +122,6 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "GeometrySpecStyleRoles", "Geometry Specs", "geometry spec style roles")
     _add_property(obj, "App::PropertyStringList", "GeometrySpecNotes", "Geometry Specs", "geometry spec notes")
     _add_property(obj, "App::PropertyStringList", "BridgeGeometrySpecRows", "Kind Geometry Specs", "bridge-specific geometry spec rows")
-    _add_property(obj, "App::PropertyStringList", "CulvertGeometrySpecRows", "Kind Geometry Specs", "culvert-specific geometry spec rows")
     _add_property(obj, "App::PropertyStringList", "RetainingWallGeometrySpecRows", "Kind Geometry Specs", "retaining-wall-specific geometry spec rows")
     _add_property(obj, "App::PropertyStringList", "GeometryRefs", "References", "geometry refs")
     _add_property(obj, "App::PropertyStringList", "ReferenceModes", "References", "reference modes")
@@ -195,7 +192,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     rows = list(getattr(structure_model, "structure_rows", []) or [])
     geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
     bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
-    culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
     connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
     diagnostics = validate_structure_model(structure_model)
@@ -233,7 +229,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.GeometrySpecStyleRoles = [str(row.style_role) for row in geometry_spec_rows]
     obj.GeometrySpecNotes = [str(row.notes) for row in geometry_spec_rows]
     obj.BridgeGeometrySpecRows = [_json_row(row) for row in bridge_geometry_spec_rows]
-    obj.CulvertGeometrySpecRows = [_json_row(row) for row in culvert_geometry_spec_rows]
     obj.RetainingWallGeometrySpecRows = [_json_row(row) for row in retaining_wall_geometry_spec_rows]
     obj.GeometryRefs = [str(row.geometry_ref) for row in rows]
     obj.ReferenceModes = [str(row.reference_mode) for row in rows]
@@ -250,7 +245,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
             "structure_rows",
             "geometry_spec_rows",
             "bridge_geometry_spec_rows",
-            "culvert_geometry_spec_rows",
             "retaining_wall_geometry_spec_rows",
             "connection_point_rows",
         ),
@@ -329,10 +323,6 @@ def to_structure_model(obj) -> StructureModel | None:
         BridgeGeometrySpec(**row)
         for row in _json_rows(getattr(obj, "BridgeGeometrySpecRows", []) or [])
     ]
-    culvert_geometry_spec_rows = [
-        CulvertGeometrySpec(**row)
-        for row in _json_rows(getattr(obj, "CulvertGeometrySpecRows", []) or [])
-    ]
     retaining_wall_geometry_spec_rows = [
         RetainingWallGeometrySpec(**row)
         for row in _json_rows(getattr(obj, "RetainingWallGeometrySpecRows", []) or [])
@@ -351,7 +341,6 @@ def to_structure_model(obj) -> StructureModel | None:
         structure_rows=rows,
         geometry_spec_rows=geometry_spec_rows,
         bridge_geometry_spec_rows=bridge_geometry_spec_rows,
-        culvert_geometry_spec_rows=culvert_geometry_spec_rows,
         retaining_wall_geometry_spec_rows=retaining_wall_geometry_spec_rows,
         connection_point_rows=connection_point_rows,
     )
@@ -376,7 +365,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
     rows = list(getattr(structure_model, "structure_rows", []) or [])
     geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
     bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
-    culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
     connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
     geometry_specs_by_id = {
@@ -386,10 +374,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
     bridge_specs_by_ref = {
         str(getattr(row, "geometry_spec_ref", "") or ""): row
         for row in bridge_geometry_spec_rows
-    }
-    culvert_specs_by_ref = {
-        str(getattr(row, "geometry_spec_ref", "") or ""): row
-        for row in culvert_geometry_spec_rows
     }
     retaining_wall_specs_by_ref = {
         str(getattr(row, "geometry_spec_ref", "") or ""): row
@@ -420,8 +404,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
             diagnostics.append(f"warning|geometry_reference_conflict|{structure_id or index}|Structure has both native geometry spec and external geometry reference.")
         if kind == "bridge" and geometry_spec_ref and geometry_spec_ref not in bridge_specs_by_ref:
             diagnostics.append(f"error|bridge_geometry_spec_missing|{structure_id or index}|Bridge structure is missing bridge-specific geometry spec fields.")
-        elif kind == "culvert" and geometry_spec_ref and geometry_spec_ref not in culvert_specs_by_ref:
-            diagnostics.append(f"error|culvert_geometry_spec_missing|{structure_id or index}|Culvert structure is missing culvert-specific geometry spec fields.")
         elif kind in {"retaining_wall", "wall"} and geometry_spec_ref and geometry_spec_ref not in retaining_wall_specs_by_ref:
             diagnostics.append(f"error|retaining_wall_geometry_spec_missing|{structure_id or index}|Retaining wall structure is missing retaining-wall-specific geometry spec fields.")
         if placement is None:
@@ -443,7 +425,11 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
                     diagnostics.append(
                         f"error|structure_outside_region_station_range|{structure_id or index}|Structure station range must stay inside the referenced Region boundary."
                     )
-        diagnostics.extend(_drainage_connection_point_diagnostics(row, connection_point_rows))
+        if is_removed_drainage_structure(row):
+            diagnostics.append(
+                f"warning|structure_moved_to_drainage|{structure_id or index}|"
+                "Culverts and drainage structures are modelled in Drainage; this row is dropped when the Structure is applied."
+            )
     seen_specs = set()
     structure_ids = {str(getattr(row, "structure_id", "") or "") for row in rows}
     for index, spec in enumerate(geometry_spec_rows, start=1):
@@ -473,22 +459,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         _validate_positive(diagnostics, "bridge_deck_width", spec_ref, getattr(spec, "deck_width", 0.0), "Bridge deck width must be greater than zero.")
         _validate_positive(diagnostics, "bridge_deck_thickness", spec_ref, getattr(spec, "deck_thickness", 0.0), "Bridge deck thickness must be greater than zero.")
         _validate_non_negative(diagnostics, "bridge_clearance_height", spec_ref, getattr(spec, "clearance_height", 0.0), "Bridge clearance height must not be negative.")
-    for spec in culvert_geometry_spec_rows:
-        spec_ref = str(getattr(spec, "geometry_spec_ref", "") or "")
-        if spec_ref and spec_ref not in spec_ids:
-            diagnostics.append(f"warning|culvert_geometry_spec_ref|{spec_ref}|Culvert geometry spec references an unknown common geometry spec.")
-        _validate_positive_int(diagnostics, "culvert_barrel_count", spec_ref, getattr(spec, "barrel_count", 0), "Culvert barrel count must be greater than zero.")
-        barrel_shape = str(getattr(spec, "barrel_shape", "") or "").strip().lower()
-        if barrel_shape in {"box", "pipe_arch", "custom_profile"}:
-            _validate_positive(diagnostics, "culvert_span", spec_ref, getattr(spec, "span", 0.0), "Culvert span must be greater than zero.")
-            _validate_positive(diagnostics, "culvert_rise", spec_ref, getattr(spec, "rise", 0.0), "Culvert rise must be greater than zero.")
-        elif barrel_shape == "circular":
-            _validate_positive(diagnostics, "culvert_diameter", spec_ref, getattr(spec, "diameter", 0.0), "Circular culvert diameter must be greater than zero.")
-        elif barrel_shape in {"inlet", "outlet", "headwall"}:
-            pass
-        else:
-            diagnostics.append(f"warning|culvert_barrel_shape|{spec_ref}|Culvert barrel shape is not a recommended value.")
-        _validate_non_negative(diagnostics, "culvert_wall_thickness", spec_ref, getattr(spec, "wall_thickness", 0.0), "Culvert wall thickness must not be negative.")
     for spec in retaining_wall_geometry_spec_rows:
         spec_ref = str(getattr(spec, "geometry_spec_ref", "") or "")
         if spec_ref and spec_ref not in spec_ids:
@@ -511,59 +481,6 @@ def _geometry_source_mode(row: StructureRow) -> str:
     if reference_mode in {"source_ref", "reference_geometry", "external_ref"} or geometry_ref:
         return "external_ref"
     return "native"
-
-
-def _drainage_connection_point_diagnostics(row: StructureRow, connection_point_rows: list[StructureConnectionPoint]) -> list[str]:
-    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
-    if not _is_drainage_ready_structure(kind=kind, native_type=native_type):
-        return []
-    structure_id = str(getattr(row, "structure_id", "") or "").strip()
-    if not structure_id:
-        return []
-    points = [
-        point
-        for point in connection_point_rows
-        if str(getattr(point, "structure_ref", "") or "").strip() == structure_id
-    ]
-    if not points:
-        return [
-            f"error|structure_connection_points_missing|{structure_id}|Drainage-ready structure has no connection points."
-        ]
-    roles = {str(getattr(point, "point_role", "") or "").strip().lower() for point in points}
-    diagnostics: list[str] = []
-    placement = getattr(row, "placement", None)
-    if placement is not None:
-        start = float(getattr(placement, "station_start", 0.0) or 0.0)
-        end = float(getattr(placement, "station_end", 0.0) or 0.0)
-        for point in points:
-            station = float(getattr(point, "station", 0.0) or 0.0)
-            if station < start or station > end:
-                point_id = str(getattr(point, "connection_point_id", "") or "") or structure_id
-                diagnostics.append(
-                    f"error|connection_point_outside_structure_station_range|{point_id}|Connection point station must stay inside the owning Structure station range."
-                )
-    if kind == "culvert" or native_type in {"box_culvert", "pipe_culvert"}:
-        if not _has_incoming_and_outgoing_roles(roles):
-            diagnostics.append(
-                f"error|culvert_connection_points_incomplete|{structure_id}|Culvert should have pipe_in/pipe_out, upstream/downstream, or inlet/outlet connection points."
-            )
-    elif native_type == "inlet" or kind == "inlet":
-        if "inlet" not in roles:
-            diagnostics.append(f"warning|inlet_collection_point_missing|{structure_id}|Inlet should have an inlet collection point.")
-        if "pipe_out" not in roles:
-            diagnostics.append(f"error|inlet_pipe_out_missing|{structure_id}|Inlet must have a pipe_out connection point before it can feed a pipe route.")
-    elif native_type in {"outlet", "headwall"} or kind in {"outlet", "headwall"}:
-        if "pipe_in" not in roles:
-            diagnostics.append(f"error|outlet_pipe_in_missing|{structure_id}|Outlet or headwall must have a pipe_in connection point.")
-        if not ({"discharge", "outlet"} & roles):
-            diagnostics.append(f"warning|outlet_discharge_point_missing|{structure_id}|Outlet or headwall should have a discharge connection point.")
-    elif kind in {"manhole", "junction_box"}:
-        if not _has_incoming_and_outgoing_roles(roles):
-            diagnostics.append(
-                f"warning|junction_connection_points_incomplete|{structure_id}|Junction structures should have at least one incoming and one outgoing pipe connection point."
-            )
-    return diagnostics
 
 
 def _connection_point_row_diagnostics(
@@ -616,14 +533,6 @@ def _regions_by_id(region_model) -> dict[str, object]:
         for row in rows
         if str(getattr(row, "region_id", "") or "")
     }
-
-
-def _is_drainage_ready_structure(*, kind: str, native_type: str) -> bool:
-    return kind in DRAINAGE_READY_STRUCTURE_KINDS or native_type in DRAINAGE_READY_NATIVE_TYPES
-
-
-def _has_incoming_and_outgoing_roles(roles: set[str]) -> bool:
-    return bool(roles & INCOMING_CONNECTION_ROLES) and bool(roles & OUTGOING_CONNECTION_ROLES)
 
 
 def _is_recommended_connection_role(role: str) -> bool:
@@ -694,15 +603,6 @@ def _validate_positive(diagnostics: list[str], kind: str, row_ref: str, value: o
 
 def _validate_non_negative(diagnostics: list[str], kind: str, row_ref: str, value: object, message: str) -> None:
     if float(value or 0.0) < 0.0:
-        diagnostics.append(f"error|{kind}|{row_ref}|{message}")
-
-
-def _validate_positive_int(diagnostics: list[str], kind: str, row_ref: str, value: object, message: str) -> None:
-    try:
-        parsed = int(value or 0)
-    except Exception:
-        parsed = 0
-    if parsed <= 0:
         diagnostics.append(f"error|{kind}|{row_ref}|{message}")
 
 

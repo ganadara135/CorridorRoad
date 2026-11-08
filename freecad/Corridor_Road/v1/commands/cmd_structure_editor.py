@@ -24,7 +24,6 @@ from ...objects.obj_project import (
 )
 from ..models.source.structure_model import (
     BridgeGeometrySpec,
-    CulvertGeometrySpec,
     RetainingWallGeometrySpec,
     StructureConnectionPoint,
     StructureGeometrySpec,
@@ -61,20 +60,15 @@ except Exception:  # pragma: no cover - PySide enum compatibility fallback.
     STRUCTURE_GEOMETRY_SOURCE_ROLE = 258
     STRUCTURE_NATIVE_TYPE_ROLE = 259
 
-STRUCTURE_KIND_CHOICES = ["bridge", "culvert", "retaining_wall", "wall", "utility", "custom"]
+STRUCTURE_KIND_CHOICES = ["bridge", "retaining_wall", "wall", "utility", "custom"]
 STRUCTURE_ROLE_CHOICES = ["active", "interface", "clearance_control", "split_zone", "reference"]
 LENGTH_MODE_CHOICES = ["station_range", "explicit_length", "reference_geometry"]
 VERTICAL_POSITION_MODE_CHOICES = ["profile_frame", "absolute_elevation", "terrain_relative", "structure_reference"]
 GEOMETRY_SOURCE_CHOICES = ["native", "external_ref"]
 NATIVE_TYPE_CHOICES = [
     "",
-    "box_culvert",
-    "pipe_culvert",
     "bridge_deck",
     "retaining_wall",
-    "headwall",
-    "inlet",
-    "outlet",
 ]
 
 
@@ -111,242 +105,6 @@ STRUCTURE_PRESETS = {
                 },
                 "notes": "Bridge deck/source handoff.",
             }
-        ],
-    },
-    "Culvert Crossing": {
-        "note": "One culvert influence band around the center station.",
-        "rows": [
-            {
-                "id": "structure:culvert-01",
-                "kind": "culvert",
-                "role": "clearance_control",
-                "start": 0.45,
-                "end": 0.55,
-                "offset": 0.0,
-                "geometry": "",
-                "spec": "geometry-spec:culvert-01",
-                "native_type": "box_culvert",
-                "width": 3.0,
-                "height": 2.0,
-                "shape": "box",
-                "material": "concrete",
-                "culvert": {
-                    "barrel_shape": "box",
-                    "barrel_count": 1,
-                    "span": 3.0,
-                    "rise": 2.0,
-                    "wall_thickness": 0.3,
-                    "headwall_type": "straight",
-                    "wingwall_type": "none",
-                },
-                "notes": "Culvert section interaction zone.",
-            }
-        ],
-    },
-    "Drainage Structures": {
-        "note": "Practical station-banded roadside drainage chain: ditch sections drain to local inlets, inlet pipes connect to one pipe culvert, and the culvert discharges to an outlet headwall.",
-        "rows": [
-            {
-                "id": "structure:inlet-01",
-                "kind": "utility",
-                "role": "reference",
-                "start": 0.23,
-                "end": 0.25,
-                "offset": -5.2,
-                "geometry": "",
-                "spec": "geometry-spec:inlet-01",
-                "native_type": "inlet",
-                "width": 1.8,
-                "height": 1.8,
-                "shape": "catch_basin",
-                "material": "concrete",
-                "notes": "Roadside inlet collecting the first ditch station band.",
-                "connection_points": [
-                    {
-                        "role": "inlet",
-                        "id": "connection:inlet-01:ditch-in",
-                        "at": "start",
-                        "width": 1.8,
-                        "height": 0.8,
-                        "shape": "ditch_inlet",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "pipe_out",
-                        "id": "connection:inlet-01:pipe-out",
-                        "at": "end",
-                        "diameter": 1.0,
-                        "shape": "circular",
-                        "direction": "out",
-                    },
-                ],
-            },
-            {
-                "id": "structure:inlet-02",
-                "kind": "utility",
-                "role": "reference",
-                "start": 0.37,
-                "end": 0.39,
-                "offset": -5.2,
-                "geometry": "",
-                "spec": "geometry-spec:inlet-02",
-                "native_type": "inlet",
-                "width": 1.8,
-                "height": 1.8,
-                "shape": "catch_basin",
-                "material": "concrete",
-                "notes": "Roadside inlet collecting the second ditch station band.",
-                "connection_points": [
-                    {
-                        "role": "inlet",
-                        "id": "connection:inlet-02:ditch-in",
-                        "at": "start",
-                        "width": 1.8,
-                        "height": 0.8,
-                        "shape": "ditch_inlet",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "pipe_in",
-                        "id": "connection:inlet-02:pipe-in",
-                        "at": "start",
-                        "diameter": 0.9,
-                        "shape": "circular",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "pipe_out",
-                        "id": "connection:inlet-02:pipe-out",
-                        "at": "end",
-                        "diameter": 0.9,
-                        "shape": "circular",
-                        "direction": "out",
-                    },
-                ],
-            },
-            {
-                "id": "structure:inlet-03",
-                "kind": "utility",
-                "role": "reference",
-                "start": 0.51,
-                "end": 0.53,
-                "offset": -5.2,
-                "geometry": "",
-                "spec": "geometry-spec:inlet-03",
-                "native_type": "inlet",
-                "width": 1.8,
-                "height": 1.8,
-                "shape": "catch_basin",
-                "material": "concrete",
-                "notes": "Roadside inlet collecting the third ditch station band before the culvert.",
-                "connection_points": [
-                    {
-                        "role": "inlet",
-                        "id": "connection:inlet-03:ditch-in",
-                        "at": "start",
-                        "width": 1.8,
-                        "height": 0.8,
-                        "shape": "ditch_inlet",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "pipe_in",
-                        "id": "connection:inlet-03:pipe-in",
-                        "at": "start",
-                        "diameter": 0.9,
-                        "shape": "circular",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "pipe_out",
-                        "id": "connection:inlet-03:pipe-out",
-                        "at": "end",
-                        "diameter": 1.2,
-                        "shape": "circular",
-                        "direction": "out",
-                    },
-                ],
-            },
-            {
-                "id": "structure:culvert-01",
-                "kind": "culvert",
-                "role": "clearance_control",
-                "start": 0.62,
-                "end": 0.72,
-                "offset": 0.0,
-                "geometry": "",
-                "spec": "geometry-spec:culvert-01",
-                "native_type": "pipe_culvert",
-                "width": 1.2,
-                "height": 1.2,
-                "shape": "circular_pipe",
-                "material": "concrete",
-                "culvert": {
-                    "barrel_shape": "circular",
-                    "barrel_count": 1,
-                    "diameter": 1.2,
-                    "wall_thickness": 0.15,
-                    "length": 12.0,
-                    "headwall_type": "flared",
-                    "wingwall_type": "short",
-                },
-                "notes": "Circular pipe culvert/cross-drain carrying collected ditch flow under the road.",
-                "connection_points": [
-                    {
-                        "role": "pipe_in",
-                        "id": "connection:culvert-01:pipe-in",
-                        "at": "start",
-                        "offset": 0.0,
-                        "diameter": 1.2,
-                        "shape": "circular",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "pipe_out",
-                        "id": "connection:culvert-01:pipe-out",
-                        "at": "end",
-                        "offset": 0.0,
-                        "diameter": 1.2,
-                        "shape": "circular",
-                        "direction": "out",
-                    },
-                ],
-            },
-            {
-                "id": "structure:outlet-01",
-                "kind": "utility",
-                "role": "reference",
-                "start": 0.78,
-                "end": 0.82,
-                "offset": 6.4,
-                "geometry": "",
-                "spec": "geometry-spec:outlet-01",
-                "native_type": "outlet",
-                "width": 2.8,
-                "height": 2.0,
-                "shape": "outlet_headwall",
-                "material": "concrete",
-                "notes": "Outlet headwall and outfall discharge point downstream of the culvert.",
-                "connection_points": [
-                    {
-                        "role": "pipe_in",
-                        "id": "connection:outlet-01:pipe-in",
-                        "at": "start",
-                        "diameter": 1.2,
-                        "shape": "circular",
-                        "direction": "in",
-                    },
-                    {
-                        "role": "discharge",
-                        "id": "connection:outlet-01:outfall",
-                        "at": "end",
-                        "width": 2.4,
-                        "height": 1.0,
-                        "shape": "outfall",
-                        "direction": "out",
-                    },
-                ],
-            },
         ],
     },
     "Retaining Wall": {
@@ -415,7 +173,6 @@ def structure_preset_model_from_document(
         alignment_id=alignment_id,
     )
     geometry_spec_rows = _preset_geometry_spec_rows(preset)
-    culvert_geometry_spec_rows = _preset_culvert_geometry_spec_rows(preset)
     return StructureModel(
         schema_version=1,
         project_id=_project_id(prj),
@@ -425,14 +182,7 @@ def structure_preset_model_from_document(
         structure_rows=structure_rows,
         geometry_spec_rows=geometry_spec_rows,
         bridge_geometry_spec_rows=_preset_bridge_geometry_spec_rows(preset),
-        culvert_geometry_spec_rows=culvert_geometry_spec_rows,
         retaining_wall_geometry_spec_rows=_preset_retaining_wall_geometry_spec_rows(preset),
-        connection_point_rows=_preset_connection_point_rows(
-            preset,
-            structure_rows=structure_rows,
-            geometry_spec_rows=geometry_spec_rows,
-            culvert_geometry_spec_rows=culvert_geometry_spec_rows,
-        ),
     )
 
 
@@ -724,33 +474,6 @@ def _preset_bridge_geometry_spec_rows(preset: dict) -> list[BridgeGeometrySpec]:
     return rows
 
 
-def _preset_culvert_geometry_spec_rows(preset: dict) -> list[CulvertGeometrySpec]:
-    rows: list[CulvertGeometrySpec] = []
-    for spec in list(preset.get("rows", []) or []):
-        values = dict(spec.get("culvert", {}) or {})
-        geometry_spec_ref = str(spec.get("spec", "") or "")
-        if not geometry_spec_ref or not values:
-            continue
-        rows.append(
-            CulvertGeometrySpec(
-                geometry_spec_ref=geometry_spec_ref,
-                barrel_shape=str(values.get("barrel_shape", "box") or "box"),
-                barrel_count=int(values.get("barrel_count", 1) or 1),
-                span=float(values.get("span", 0.0) or 0.0),
-                rise=float(values.get("rise", 0.0) or 0.0),
-                diameter=float(values.get("diameter", 0.0) or 0.0),
-                wall_thickness=float(values.get("wall_thickness", 0.0) or 0.0),
-                length=float(values.get("length", 0.0) or 0.0),
-                invert_elevation=_optional_float_text(values.get("invert_elevation", "")),
-                inlet_skew_angle_deg=float(values.get("inlet_skew_angle_deg", 0.0) or 0.0),
-                outlet_skew_angle_deg=float(values.get("outlet_skew_angle_deg", 0.0) or 0.0),
-                headwall_type=str(values.get("headwall_type", "") or ""),
-                wingwall_type=str(values.get("wingwall_type", "") or ""),
-            )
-        )
-    return rows
-
-
 def _preset_retaining_wall_geometry_spec_rows(preset: dict) -> list[RetainingWallGeometrySpec]:
     rows: list[RetainingWallGeometrySpec] = []
     for spec in list(preset.get("rows", []) or []):
@@ -774,110 +497,6 @@ def _preset_retaining_wall_geometry_spec_rows(preset: dict) -> list[RetainingWal
             )
         )
     return rows
-
-
-def _preset_connection_point_rows(
-    preset: dict,
-    *,
-    structure_rows: list[StructureRow],
-    geometry_spec_rows: list[StructureGeometrySpec],
-    culvert_geometry_spec_rows: list[CulvertGeometrySpec],
-) -> list[StructureConnectionPoint]:
-    rows: list[StructureConnectionPoint] = []
-    structure_by_ref = {str(getattr(row, "structure_id", "") or ""): row for row in structure_rows}
-    geometry_by_ref = {str(getattr(row, "structure_ref", "") or ""): row for row in geometry_spec_rows}
-    culvert_by_ref = {
-        str(getattr(row, "geometry_spec_ref", "") or ""): row for row in culvert_geometry_spec_rows
-    }
-    for spec in list(preset.get("rows", []) or []):
-        structure_ref = str(spec.get("id", "") or "")
-        structure_row = structure_by_ref.get(structure_ref)
-        if structure_row is None:
-            continue
-        geometry_spec = geometry_by_ref.get(structure_ref)
-        culvert_spec = culvert_by_ref.get(str(getattr(structure_row, "geometry_spec_ref", "") or ""))
-        point_specs = list(spec.get("connection_points", []) or [])
-        if not point_specs:
-            continue
-        for order, point_spec in enumerate(point_specs, start=1):
-            point = _preset_connection_point_from_spec(
-                point_spec,
-                structure_row=structure_row,
-                geometry_spec=geometry_spec,
-                culvert_spec=culvert_spec,
-                connection_order=order,
-            )
-            if point is not None:
-                rows.append(point)
-    return rows
-
-
-def _preset_connection_point_from_spec(
-    spec: dict,
-    *,
-    structure_row: StructureRow,
-    geometry_spec: StructureGeometrySpec | None,
-    culvert_spec: CulvertGeometrySpec | None,
-    connection_order: int,
-) -> StructureConnectionPoint | None:
-    role = str(spec.get("role", "") or "").strip()
-    structure_ref = str(getattr(structure_row, "structure_id", "") or "")
-    placement = getattr(structure_row, "placement", None)
-    if not role or not structure_ref or placement is None:
-        return None
-    start = float(getattr(placement, "station_start", 0.0) or 0.0)
-    end = float(getattr(placement, "station_end", start) or start)
-    at = str(spec.get("at", "") or "center").strip().lower()
-    if at == "start":
-        station = start
-    elif at == "end":
-        station = end
-    else:
-        station = (start + end) * 0.5
-    station = float(spec.get("station", station) or station)
-    offset = float(spec.get("offset", getattr(placement, "offset", 0.0)) or 0.0)
-    width = float(spec.get("width", getattr(geometry_spec, "width", 0.0)) or 0.0)
-    height = float(spec.get("height", getattr(geometry_spec, "height", 0.0)) or 0.0)
-    diameter = float(spec.get("diameter", 0.0) or 0.0)
-    shape = str(spec.get("shape", getattr(geometry_spec, "shape_kind", "")) or "")
-    if culvert_spec is not None and not diameter:
-        barrel_shape = str(getattr(culvert_spec, "barrel_shape", "") or "").strip().lower()
-        diameter = float(getattr(culvert_spec, "diameter", 0.0) or 0.0)
-        if barrel_shape == "circular" or diameter:
-            shape = shape or "circular"
-            width = 0.0
-            height = 0.0
-        else:
-            width = float(getattr(culvert_spec, "span", 0.0) or width)
-            height = float(getattr(culvert_spec, "rise", 0.0) or height)
-            shape = shape or "box"
-    if diameter:
-        width = float(spec.get("width", 0.0) or 0.0)
-        height = float(spec.get("height", 0.0) or 0.0)
-    base_id = structure_ref.split(":")[-1]
-    point_id = str(spec.get("id", "") or f"connection:{base_id}:{role.replace('_', '-')}")
-    elevation = spec.get("elevation", "")
-    invert = spec.get("invert_elevation", None)
-    notes = str(spec.get("notes", "") or "")
-    if _optional_float_text(elevation) is None and (invert is None or _optional_float_text(invert) is None):
-        notes = (notes + ";vertical_source=centerline3d").strip(";")
-    return StructureConnectionPoint(
-        connection_point_id=point_id,
-        structure_ref=structure_ref,
-        point_role=role,
-        station=station,
-        offset=offset,
-        elevation=_optional_float_text(elevation),
-        invert_elevation=_optional_float_text(invert) if invert is not None else None,
-        diameter=diameter,
-        width=width,
-        height=height,
-        shape_kind=shape,
-        direction=str(spec.get("direction", "") or ""),
-        connection_order=connection_order,
-        region_ref="",
-        notes=notes,
-    )
 
 
 def _normalized_connection_point_rows_for_structures(
@@ -947,23 +566,10 @@ def _native_type_from_preset_spec(spec: dict) -> str:
     if explicit:
         return explicit
     kind = str(spec.get("kind", "") or "").strip().lower()
-    shape = str(spec.get("shape", "") or "").strip().lower()
-    culvert = dict(spec.get("culvert", {}) or {})
     if kind == "bridge":
         return "bridge_deck"
     if kind in {"retaining_wall", "wall"}:
         return "retaining_wall"
-    if kind == "culvert":
-        barrel_shape = str(culvert.get("barrel_shape", "") or "").strip().lower()
-        if barrel_shape == "circular" or shape == "circular":
-            return "pipe_culvert"
-        return "box_culvert"
-    if "inlet" in shape:
-        return "inlet"
-    if "outlet" in shape:
-        return "outlet"
-    if "headwall" in shape:
-        return "headwall"
     return ""
 
 
@@ -1006,19 +612,6 @@ def _kind_detail_field_specs(structure_kind: str) -> list[tuple[str, str]]:
             ("approach_slab_length", "Approach Slab Length"),
             ("bearing_elevation_mode", "Bearing Elevation Mode"),
         ]
-    if kind == "culvert":
-        return [
-            ("barrel_shape", "Barrel Shape"),
-            ("barrel_count", "Barrel Count"),
-            ("span", "Span"),
-            ("rise", "Rise"),
-            ("diameter", "Diameter"),
-            ("wall_thickness", "Wall Thickness"),
-            ("length", "Length"),
-            ("invert_elevation", "Invert Elevation"),
-            ("headwall_type", "Headwall Type"),
-            ("wingwall_type", "Wingwall Type"),
-        ]
     if kind in {"retaining_wall", "wall"}:
         return [
             ("wall_height", "Wall Height"),
@@ -1037,26 +630,6 @@ def _kind_detail_field_specs(structure_kind: str) -> list[tuple[str, str]]:
 
 def _native_detail_field_specs(native_type: str, structure_kind: str) -> list[tuple[str, str]]:
     native = str(native_type or "").strip().lower()
-    if native == "box_culvert":
-        return [
-            ("barrel_count", "Barrel Count"),
-            ("span", "Opening Width"),
-            ("rise", "Opening Height"),
-            ("wall_thickness", "Wall Thickness"),
-            ("length", "Length"),
-            ("invert_elevation", "Invert Elevation"),
-            ("headwall_type", "Headwall Type"),
-            ("wingwall_type", "Wingwall Type"),
-        ]
-    if native == "pipe_culvert":
-        return [
-            ("barrel_count", "Barrel Count"),
-            ("diameter", "Pipe Diameter"),
-            ("wall_thickness", "Wall Thickness"),
-            ("length", "Length"),
-            ("invert_elevation", "Invert Elevation"),
-            ("headwall_type", "End Treatment"),
-        ]
     if native == "bridge_deck":
         return [
             ("deck_width", "Deck Width"),
@@ -1076,40 +649,11 @@ def _native_detail_field_specs(native_type: str, structure_kind: str) -> list[tu
             ("batter_slope", "Batter Slope"),
             ("coping_height", "Coping Height"),
         ]
-    if native == "headwall":
-        return [
-            ("span", "Opening Width"),
-            ("rise", "Opening Height"),
-            ("wall_thickness", "Wall Thickness"),
-            ("invert_elevation", "Invert Elevation"),
-            ("headwall_type", "Headwall Type"),
-            ("wingwall_type", "Wingwall Type"),
-        ]
-    if native == "inlet":
-        return [
-            ("span", "Inlet Width"),
-            ("rise", "Inlet Depth"),
-            ("diameter", "Outlet Pipe Diameter"),
-            ("wall_thickness", "Wall Thickness"),
-            ("invert_elevation", "Invert Elevation"),
-            ("headwall_type", "Grate/Cover Type"),
-        ]
-    if native == "outlet":
-        return [
-            ("span", "Outlet Width"),
-            ("rise", "Outlet Height"),
-            ("diameter", "Inlet Pipe Diameter"),
-            ("wall_thickness", "Wall Thickness"),
-            ("invert_elevation", "Invert Elevation"),
-            ("wingwall_type", "Apron/Wingwall Type"),
-        ]
     return _kind_detail_field_specs(structure_kind)
 
 
 def _detail_spec_family(native_type: str, structure_kind: str) -> str:
     native = str(native_type or "").strip().lower()
-    if native in {"box_culvert", "pipe_culvert", "headwall", "inlet", "outlet"}:
-        return "culvert"
     if native == "bridge_deck":
         return "bridge"
     if native == "retaining_wall":
@@ -1121,90 +665,15 @@ def _detail_spec_family(native_type: str, structure_kind: str) -> str:
 
 
 def _detail_values_with_native_defaults(native_type: str, values: dict[str, str]) -> dict[str, str]:
-    native = str(native_type or "").strip().lower()
-    output = dict(values or {})
-    if native == "box_culvert":
-        output["barrel_shape"] = "box"
-        _set_default_detail_value(output, "barrel_count", "1")
-        _set_default_detail_value(output, "span", "3.000")
-        _set_default_detail_value(output, "rise", "2.000")
-        _set_default_detail_value(output, "wall_thickness", "0.300")
-        output["diameter"] = "0"
-    elif native == "pipe_culvert":
-        output["barrel_shape"] = "circular"
-        _set_default_detail_value(output, "barrel_count", "1")
-        _set_default_detail_value(output, "diameter", "1.200")
-        _set_default_detail_value(output, "wall_thickness", "0.120")
-        output["span"] = "0"
-        output["rise"] = "0"
-    elif native == "headwall":
-        output["barrel_shape"] = "box"
-        _set_default_detail_value(output, "span", "2.800")
-        _set_default_detail_value(output, "rise", "2.000")
-        _set_default_detail_value(output, "diameter", "1.200")
-        _set_default_detail_value(output, "wall_thickness", "0.300")
-        output.setdefault("length", "0")
-    elif native == "inlet":
-        output["barrel_shape"] = "inlet"
-        _set_default_detail_value(output, "span", "1.800")
-        _set_default_detail_value(output, "rise", "1.800")
-        _set_default_detail_value(output, "diameter", "0.900")
-        _set_default_detail_value(output, "wall_thickness", "0.200")
-        output.setdefault("length", "0")
-    elif native == "outlet":
-        output["barrel_shape"] = "outlet"
-        _set_default_detail_value(output, "span", "2.800")
-        _set_default_detail_value(output, "rise", "2.000")
-        _set_default_detail_value(output, "diameter", "1.200")
-        _set_default_detail_value(output, "wall_thickness", "0.300")
-        output.setdefault("length", "0")
-        output.setdefault("headwall_type", "")
-    return output
+    """The detail values of a native type; bridge decks and retaining walls need no extra defaults."""
 
-
-def _set_default_detail_value(values: dict[str, str], key: str, default: str) -> None:
-    text = str(values.get(key, "") or "").strip()
-    if not text:
-        values[key] = default
-        return
-    try:
-        if float(text) == 0.0:
-            values[key] = default
-    except Exception:
-        pass
-
-
-def _effective_native_type(
-    row: StructureRow,
-    geometry_spec: StructureGeometrySpec | None = None,
-    culvert_spec: CulvertGeometrySpec | None = None,
-) -> str:
-    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
-    if native_type:
-        return native_type
-    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    shape = str(getattr(geometry_spec, "shape_kind", "") or "").strip().lower() if geometry_spec is not None else ""
-    if kind == "bridge":
-        return "bridge_deck"
-    if kind in {"retaining_wall", "wall"}:
-        return "retaining_wall"
-    if kind == "culvert":
-        barrel_shape = str(getattr(culvert_spec, "barrel_shape", "") or "").strip().lower() if culvert_spec is not None else ""
-        return "pipe_culvert" if barrel_shape == "circular" or shape == "circular" else "box_culvert"
-    if "inlet" in shape:
-        return "inlet"
-    if "outlet" in shape:
-        return "outlet"
-    if "headwall" in shape:
-        return "headwall"
-    return ""
+    return dict(values or {})
 
 
 def _kind_detail_values(
     structure_kind: str,
     geometry_spec_ref: str,
     bridge_rows: list[BridgeGeometrySpec],
-    culvert_rows: list[CulvertGeometrySpec],
     retaining_wall_rows: list[RetainingWallGeometrySpec],
 ) -> dict[str, str]:
     kind = str(structure_kind or "").strip().lower()
@@ -1221,20 +690,6 @@ def _kind_detail_values(
             "pier_station_refs": ", ".join(list(row.pier_station_refs or [])),
             "approach_slab_length": _format_float(row.approach_slab_length),
             "bearing_elevation_mode": row.bearing_elevation_mode,
-        }
-    if kind == "culvert":
-        row = _find_kind_spec(culvert_rows, geometry_spec_ref) or CulvertGeometrySpec(geometry_spec_ref=geometry_spec_ref)
-        return {
-            "barrel_shape": row.barrel_shape,
-            "barrel_count": str(int(row.barrel_count)),
-            "span": _format_float(row.span),
-            "rise": _format_float(row.rise),
-            "diameter": _format_float(row.diameter),
-            "wall_thickness": _format_float(row.wall_thickness),
-            "length": _format_float(row.length),
-            "invert_elevation": _format_optional_float(row.invert_elevation),
-            "headwall_type": row.headwall_type,
-            "wingwall_type": row.wingwall_type,
         }
     if kind in {"retaining_wall", "wall"}:
         row = _find_kind_spec(retaining_wall_rows, geometry_spec_ref) or RetainingWallGeometrySpec(geometry_spec_ref=geometry_spec_ref)
@@ -1273,22 +728,6 @@ def _bridge_spec_from_detail(geometry_spec_ref: str, values: dict[str, str]) -> 
         pier_station_refs=_csv_text_values(values.get("pier_station_refs", "")),
         approach_slab_length=_required_float(values.get("approach_slab_length", "0"), "Approach Slab Length"),
         bearing_elevation_mode=str(values.get("bearing_elevation_mode", "") or ""),
-    )
-
-
-def _culvert_spec_from_detail(geometry_spec_ref: str, values: dict[str, str]) -> CulvertGeometrySpec:
-    return CulvertGeometrySpec(
-        geometry_spec_ref=geometry_spec_ref,
-        barrel_shape=str(values.get("barrel_shape", "box") or "box"),
-        barrel_count=int(_required_float(values.get("barrel_count", "1"), "Barrel Count")),
-        span=_required_float(values.get("span", "0"), "Span"),
-        rise=_required_float(values.get("rise", "0"), "Rise"),
-        diameter=_required_float(values.get("diameter", "0"), "Diameter"),
-        wall_thickness=_required_float(values.get("wall_thickness", "0"), "Wall Thickness"),
-        length=_required_float(values.get("length", "0"), "Length"),
-        invert_elevation=_optional_float_text(values.get("invert_elevation", "")),
-        headwall_type=str(values.get("headwall_type", "") or ""),
-        wingwall_type=str(values.get("wingwall_type", "") or ""),
     )
 
 
@@ -1444,27 +883,16 @@ def _structure_row_preview_shape(row: StructureRow, path: dict[str, object], con
     offset = float(getattr(placement, "offset", 0.0) or 0.0)
     profile = _structure_preview_profile(row, context)
     base_z = _structure_preview_base_z(row, context)
-    if _structure_preview_uses_single_segment(row, profile):
-        stations = [start_sta, end_sta]
-    else:
-        stations = _structure_preview_sample_stations(start_sta, end_sta, path)
+    stations = _structure_preview_sample_stations(start_sta, end_sta, path)
     points = [_station_offset_xyz(path, station, offset, base_z) for station in stations]
     segment_shapes = []
     for point0, point1 in zip(points, points[1:]):
         segment = _structure_segment_preview_shape(point0, point1, profile)
         if segment is not None:
             segment_shapes.append(segment)
-    segment_shapes.extend(_structure_native_detail_preview_shapes(row, path, context, profile, base_z=base_z))
     if not segment_shapes:
         return None
     return Part.Compound(segment_shapes)
-
-
-def _structure_preview_uses_single_segment(row: StructureRow, profile: dict[str, object]) -> bool:
-    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
-    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
-    return kind == "culvert" and (native_type == "pipe_culvert" or shape_kind in {"circular", "pipe", "round"})
 
 
 def _structure_segment_preview_shape(point0, point1, profile: dict[str, object]):
@@ -1695,10 +1123,6 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
         },
-        "culvert_specs": {
-            str(row.geometry_spec_ref): row
-            for row in list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
-        },
         "retaining_wall_specs": {
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
@@ -1739,13 +1163,7 @@ def _structure_preview_review_notes(structure_model: StructureModel, context: di
         if float(getattr(spec, "skew_angle_deg", 0.0) or 0.0) != 0.0:
             notes.append(f"warning|skew_angle|{structure_id}|Preview records skew but does not yet skew generated review geometry.")
         kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-        spec_ref = str(getattr(spec, "geometry_spec_id", "") or "")
-        if kind == "culvert":
-            culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), spec_ref)
-            barrel_shape = str(getattr(culvert, "barrel_shape", "") or getattr(spec, "shape_kind", "") or "")
-            if barrel_shape and barrel_shape not in {"box", "rectangular", "circular"}:
-                notes.append(f"warning|culvert_shape|{structure_id}|Preview uses a simplified envelope for unsupported culvert shape {barrel_shape}.")
-        elif kind not in {"bridge", "retaining_wall", "wall", "utility", "custom"}:
+        if kind not in {"bridge", "retaining_wall", "wall", "utility", "custom"}:
             notes.append(f"warning|structure_kind|{structure_id}|Preview uses a generic envelope for unsupported structure kind {kind}.")
     return notes
 
@@ -1753,51 +1171,15 @@ def _structure_preview_review_notes(structure_model: StructureModel, context: di
 def _structure_preview_profile(row: StructureRow, context: dict[str, object] | None = None) -> dict[str, object]:
     context = context or {}
     spec = _structure_geometry_spec_for_row(row, context)
-    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
     width = float(getattr(spec, "width", 0.0) or 0.0) if spec is not None else 0.0
     height = float(getattr(spec, "height", 0.0) or 0.0) if spec is not None else 0.0
     shape_kind = str(getattr(spec, "shape_kind", "") or "")
     kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    native_type = _effective_native_type(row, spec, culvert)
     if kind == "bridge":
         bridge = _kind_spec_for_ref(context.get("bridge_specs", {}), getattr(row, "geometry_spec_ref", ""))
         width = float(getattr(bridge, "deck_width", 0.0) or width or 10.0) if bridge is not None else width
         height = float(getattr(bridge, "deck_thickness", 0.0) or height or 1.2) if bridge is not None else height
         return {"shape_kind": shape_kind or "deck_slab", "half_width": max(width, 10.0) / 2.0, "height": max(height, 1.2)}
-    if kind == "culvert":
-        diameter = 0.0
-        if culvert is not None:
-            barrel_shape = str(getattr(culvert, "barrel_shape", "") or "").strip().lower()
-            diameter = float(getattr(culvert, "diameter", 0.0) or 0.0)
-            if barrel_shape == "circular" or native_type == "pipe_culvert" or shape_kind == "circular":
-                diameter = diameter or width or height or 1.0
-                return {
-                    "shape_kind": "circular",
-                    "diameter": max(diameter, 0.2),
-                    "half_width": max(diameter, 0.2) / 2.0,
-                    "height": max(diameter, 0.2),
-                }
-            width = float(getattr(culvert, "span", 0.0) or width or 3.0)
-            height = float(getattr(culvert, "rise", 0.0) or height or 1.5)
-            shape_kind = barrel_shape or shape_kind
-        if native_type == "pipe_culvert" or shape_kind == "circular":
-            diameter = width or height or 1.0
-            return {
-                "shape_kind": "circular",
-                "diameter": max(diameter, 0.2),
-                "half_width": max(diameter, 0.2) / 2.0,
-                "height": max(diameter, 0.2),
-            }
-        return {"shape_kind": shape_kind or "box", "half_width": max(width, 3.0) / 2.0, "height": max(height, 1.5)}
-    if native_type in {"headwall", "inlet", "outlet"}:
-        if culvert is not None:
-            width = float(getattr(culvert, "span", 0.0) or width or _default_geometry_width_for_native(native_type, kind))
-            height = float(getattr(culvert, "rise", 0.0) or height or _default_geometry_height_for_native(native_type, kind))
-        return {
-            "shape_kind": native_type,
-            "half_width": max(width, _default_geometry_width_for_native(native_type, kind)) / 2.0,
-            "height": max(height, _default_geometry_height_for_native(native_type, kind)),
-        }
     if kind in {"retaining_wall", "wall"}:
         wall = _kind_spec_for_ref(context.get("retaining_wall_specs", {}), getattr(row, "geometry_spec_ref", ""))
         if wall is not None:
@@ -1818,370 +1200,12 @@ def _structure_preview_base_z(row: StructureRow, context: dict[str, object] | No
             return float(base_elevation)
         except Exception:
             pass
-    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
-    invert_elevation = getattr(culvert, "invert_elevation", None) if culvert is not None else None
-    if invert_elevation is not None:
-        try:
-            return float(invert_elevation)
-        except Exception:
-            pass
     placement = getattr(row, "placement", None)
     value = str(getattr(placement, "elevation_reference", "") or "").strip() if placement is not None else ""
     try:
         return float(value)
     except Exception:
         return 0.0
-
-
-def _structure_native_detail_preview_shapes(
-    row: StructureRow,
-    path: dict[str, object],
-    context: dict[str, object],
-    profile: dict[str, object],
-    *,
-    base_z: float,
-) -> list[object]:
-    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
-    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
-    if native_type == "inlet" or shape_kind in {"inlet", "catch_basin"}:
-        return _inlet_detail_preview_shapes(row, path, context, profile, base_z=base_z)
-    if native_type == "pipe_culvert" or shape_kind in {"circular", "pipe", "round"}:
-        return _pipe_culvert_endpoint_detail_preview_shapes(row, path, context, profile, base_z=base_z)
-    if native_type in {"outlet", "headwall"} or shape_kind in {"outlet", "outlet_headwall", "headwall"}:
-        return _outlet_headwall_detail_preview_shapes(row, path, context, profile, base_z=base_z)
-    return []
-
-
-def _inlet_detail_preview_shapes(
-    row: StructureRow,
-    path: dict[str, object],
-    context: dict[str, object],
-    profile: dict[str, object],
-    *,
-    base_z: float,
-) -> list[object]:
-    placement = getattr(row, "placement", None)
-    if placement is None:
-        return []
-    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
-    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
-    if end_sta < start_sta:
-        start_sta, end_sta = end_sta, start_sta
-    offset = float(getattr(placement, "offset", 0.0) or 0.0)
-    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
-    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
-    frame = _preview_segment_frame(point0, point1)
-    if frame is None:
-        return []
-    tangent, normal, length = frame
-    half_width = max(float(profile.get("half_width", 0.0) or 0.0), 0.6)
-    height = max(float(profile.get("height", 0.0) or 0.0), 0.6)
-    top_z = max(float(point0[2]), float(point1[2])) + height
-    shapes: list[object] = []
-
-    lid = _structure_segment_prism(
-        (point0[0], point0[1], top_z),
-        (point1[0], point1[1], top_z),
-        half_width * 0.92,
-        0.08,
-    )
-    if lid is not None:
-        shapes.append(lid)
-
-    grate_count = 3
-    for index in range(1, grate_count + 1):
-        ratio = index / float(grate_count + 1)
-        center = (
-            float(point0[0]) + tangent[0] * length * ratio,
-            float(point0[1]) + tangent[1] * length * ratio,
-            top_z + 0.10,
-        )
-        bar = _preview_cylinder_between(
-            (
-                center[0] - normal[0] * half_width * 0.78,
-                center[1] - normal[1] * half_width * 0.78,
-                center[2],
-            ),
-            (
-                center[0] + normal[0] * half_width * 0.78,
-                center[1] + normal[1] * half_width * 0.78,
-                center[2],
-            ),
-            0.035,
-        )
-        if bar is not None:
-            shapes.append(bar)
-
-    structure_id = str(getattr(row, "structure_id", "") or "")
-    connection_points = list(context.get("connection_points_by_structure", {}).get(structure_id, []) or [])
-    for point in connection_points:
-        role = str(getattr(point, "point_role", "") or "").strip().lower()
-        point_sta = float(getattr(point, "station", end_sta) or end_sta)
-        point_offset = float(getattr(point, "offset", offset) or offset)
-        px, py, pz = _station_offset_xyz(path, point_sta, point_offset, base_z)
-        diameter = max(float(getattr(point, "diameter", 0.0) or 0.0), 0.0)
-        if role in {"pipe_in", "pipe_out"}:
-            direction = tangent if role == "pipe_out" else (-tangent[0], -tangent[1])
-            radius = max(diameter / 2.0, 0.18)
-            stub_length = max(min(radius * 1.2, 0.8), 0.35)
-            z = _connection_point_display_z(point, float(pz)) + radius
-            stub = _preview_cylinder_between(
-                (px, py, z),
-                (px + direction[0] * stub_length, py + direction[1] * stub_length, z),
-                radius,
-            )
-            if stub is not None:
-                shapes.append(stub)
-        elif role in {"inlet", "ditch_in", "ditch-in"}:
-            mouth_center_z = float(pz) + height * 0.45
-            mouth = _structure_segment_prism(
-                (
-                    px - normal[0] * half_width * 0.65,
-                    py - normal[1] * half_width * 0.65,
-                    mouth_center_z,
-                ),
-                (
-                    px + normal[0] * half_width * 0.65,
-                    py + normal[1] * half_width * 0.65,
-                    mouth_center_z,
-                ),
-                0.08,
-                0.18,
-            )
-            if mouth is not None:
-                shapes.append(mouth)
-    return shapes
-
-
-def _outlet_headwall_detail_preview_shapes(
-    row: StructureRow,
-    path: dict[str, object],
-    context: dict[str, object],
-    profile: dict[str, object],
-    *,
-    base_z: float,
-) -> list[object]:
-    placement = getattr(row, "placement", None)
-    if placement is None:
-        return []
-    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
-    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
-    if end_sta < start_sta:
-        start_sta, end_sta = end_sta, start_sta
-    offset = float(getattr(placement, "offset", 0.0) or 0.0)
-    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
-    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
-    frame = _preview_segment_frame(point0, point1)
-    if frame is None:
-        return []
-    tangent, normal, length = frame
-    half_width = max(float(profile.get("half_width", 0.0) or 0.0), 0.8)
-    height = max(float(profile.get("height", 0.0) or 0.0), 0.8)
-    shapes: list[object] = []
-
-    headwall_center = (
-        float(point1[0]) - tangent[0] * min(length * 0.15, 0.6),
-        float(point1[1]) - tangent[1] * min(length * 0.15, 0.6),
-        float(point1[2]),
-    )
-    wall = _structure_segment_prism(
-        (
-            headwall_center[0] - normal[0] * half_width,
-            headwall_center[1] - normal[1] * half_width,
-            headwall_center[2],
-        ),
-        (
-            headwall_center[0] + normal[0] * half_width,
-            headwall_center[1] + normal[1] * half_width,
-            headwall_center[2],
-        ),
-        0.12,
-        height * 1.12,
-    )
-    if wall is not None:
-        shapes.append(wall)
-
-    apron_length = max(min(length * 0.45, 2.2), 0.8)
-    apron_width = half_width * 0.75
-    apron = _structure_segment_prism(
-        (
-            float(point1[0]),
-            float(point1[1]),
-            float(point1[2]) - 0.04,
-        ),
-        (
-            float(point1[0]) + tangent[0] * apron_length,
-            float(point1[1]) + tangent[1] * apron_length,
-            float(point1[2]) - 0.04,
-        ),
-        apron_width,
-        0.08,
-    )
-    if apron is not None:
-        shapes.append(apron)
-
-    for side in (-1.0, 1.0):
-        sidewall = _structure_segment_prism(
-            (
-                float(point1[0]) + normal[0] * apron_width * side,
-                float(point1[1]) + normal[1] * apron_width * side,
-                float(point1[2]),
-            ),
-            (
-                float(point1[0]) + tangent[0] * apron_length + normal[0] * apron_width * side * 1.25,
-                float(point1[1]) + tangent[1] * apron_length + normal[1] * apron_width * side * 1.25,
-                float(point1[2]),
-            ),
-            0.06,
-            height * 0.35,
-        )
-        if sidewall is not None:
-            shapes.append(sidewall)
-
-    structure_id = str(getattr(row, "structure_id", "") or "")
-    connection_points = list(context.get("connection_points_by_structure", {}).get(structure_id, []) or [])
-    for point in connection_points:
-        role = str(getattr(point, "point_role", "") or "").strip().lower()
-        point_sta = float(getattr(point, "station", start_sta if role == "pipe_in" else end_sta) or 0.0)
-        point_offset = float(getattr(point, "offset", offset) or offset)
-        px, py, pz = _station_offset_xyz(path, point_sta, point_offset, base_z)
-        if role == "pipe_in":
-            radius = max(float(getattr(point, "diameter", 0.0) or 0.0) / 2.0, 0.18)
-            z = _connection_point_display_z(point, float(pz)) + radius
-            stub = _preview_cylinder_between(
-                (px - tangent[0] * radius * 1.2, py - tangent[1] * radius * 1.2, z),
-                (px + tangent[0] * radius * 0.8, py + tangent[1] * radius * 0.8, z),
-                radius,
-            )
-            if stub is not None:
-                shapes.append(stub)
-        elif role in {"discharge", "outlet"}:
-            mouth_width = max(float(getattr(point, "width", 0.0) or 0.0), half_width)
-            mouth_height = max(float(getattr(point, "height", 0.0) or 0.0), height * 0.35)
-            mouth_z = _connection_point_display_z(point, float(pz)) + mouth_height * 0.35
-            mouth = _structure_segment_prism(
-                (
-                    px - normal[0] * mouth_width * 0.5,
-                    py - normal[1] * mouth_width * 0.5,
-                    mouth_z,
-                ),
-                (
-                    px + normal[0] * mouth_width * 0.5,
-                    py + normal[1] * mouth_width * 0.5,
-                    mouth_z,
-                ),
-                0.10,
-                mouth_height * 0.45,
-            )
-            if mouth is not None:
-                shapes.append(mouth)
-    return shapes
-
-
-def _pipe_culvert_endpoint_detail_preview_shapes(
-    row: StructureRow,
-    path: dict[str, object],
-    context: dict[str, object],
-    profile: dict[str, object],
-    *,
-    base_z: float,
-) -> list[object]:
-    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
-    headwall_type = str(getattr(culvert, "headwall_type", "") or "").strip().lower() if culvert is not None else ""
-    wingwall_type = str(getattr(culvert, "wingwall_type", "") or "").strip().lower() if culvert is not None else ""
-    if not headwall_type and not wingwall_type:
-        return []
-    placement = getattr(row, "placement", None)
-    if placement is None:
-        return []
-    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
-    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
-    if end_sta < start_sta:
-        start_sta, end_sta = end_sta, start_sta
-    offset = float(getattr(placement, "offset", 0.0) or 0.0)
-    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
-    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
-    frame = _preview_segment_frame(point0, point1)
-    if frame is None:
-        return []
-    tangent, normal, _length = frame
-    diameter = max(float(profile.get("diameter", 0.0) or profile.get("height", 0.0) or 0.0), 0.4)
-    half_width = max(diameter * 0.9, 0.6)
-    wall_height = max(diameter * 1.45, 0.9)
-    shapes: list[object] = []
-
-    endpoints = [
-        (point0, (-tangent[0], -tangent[1])),
-        (point1, tangent),
-    ]
-    for endpoint, outward in endpoints:
-        wall = _structure_segment_prism(
-            (
-                float(endpoint[0]) - normal[0] * half_width,
-                float(endpoint[1]) - normal[1] * half_width,
-                float(endpoint[2]) - diameter * 0.08,
-            ),
-            (
-                float(endpoint[0]) + normal[0] * half_width,
-                float(endpoint[1]) + normal[1] * half_width,
-                float(endpoint[2]) - diameter * 0.08,
-            ),
-            0.14,
-            wall_height,
-        )
-        if wall is not None:
-            shapes.append(wall)
-
-        if wingwall_type and wingwall_type not in {"none", "no", "false"}:
-            wing_length = max(diameter * (1.35 if wingwall_type in {"flared", "long"} else 0.95), 0.8)
-            wing_height = wall_height * 0.62
-            for side in (-1.0, 1.0):
-                wing = _structure_segment_prism(
-                    (
-                        float(endpoint[0]) + normal[0] * half_width * side,
-                        float(endpoint[1]) + normal[1] * half_width * side,
-                        float(endpoint[2]) - diameter * 0.05,
-                    ),
-                    (
-                        float(endpoint[0]) + outward[0] * wing_length + normal[0] * half_width * side * 1.35,
-                        float(endpoint[1]) + outward[1] * wing_length + normal[1] * half_width * side * 1.35,
-                        float(endpoint[2]) - diameter * 0.05,
-                    ),
-                    0.07,
-                    wing_height,
-                )
-                if wing is not None:
-                    shapes.append(wing)
-    return shapes
-
-
-def _preview_segment_frame(point0, point1) -> tuple[tuple[float, float], tuple[float, float], float] | None:
-    dx = float(point1[0]) - float(point0[0])
-    dy = float(point1[1]) - float(point0[1])
-    length = math.hypot(dx, dy)
-    if length <= 1.0e-9:
-        return None
-    tangent = (dx / length, dy / length)
-    normal = (-tangent[1], tangent[0])
-    return tangent, normal, length
-
-
-def _preview_cylinder_between(point0, point1, radius: float):
-    base = App.Vector(float(point0[0]), float(point0[1]), float(point0[2]))
-    direction = App.Vector(
-        float(point1[0]) - float(point0[0]),
-        float(point1[1]) - float(point0[1]),
-        float(point1[2]) - float(point0[2]),
-    )
-    if direction.Length <= 1.0e-9:
-        return None
-    try:
-        return Part.makeCylinder(max(float(radius), 0.02), direction.Length, base, direction)
-    except Exception:
-        try:
-            return Part.makePolygon([base, base.add(direction)])
-        except Exception:
-            return None
 
 
 def _style_structure_preview_object(obj) -> None:
@@ -2574,202 +1598,6 @@ def _connection_point_marker_shape(point: StructureConnectionPoint, x: float, y:
     return Part.makeSphere(radius, center)
 
 
-def _derive_default_connection_points_for_row(
-    row: StructureRow,
-    geometry_spec: StructureGeometrySpec | None,
-    culvert_spec: CulvertGeometrySpec | None,
-) -> list[StructureConnectionPoint]:
-    structure_ref = str(getattr(row, "structure_id", "") or "")
-    if not structure_ref:
-        return []
-    placement = getattr(row, "placement", None)
-    if placement is None:
-        return []
-    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    start = float(getattr(placement, "station_start", 0.0) or 0.0)
-    end = float(getattr(placement, "station_end", start) or start)
-    offset = float(getattr(placement, "offset", 0.0) or 0.0)
-    region_ref = ""
-    base_id = structure_ref.split(":")[-1]
-    width = float(getattr(geometry_spec, "width", 0.0) or 0.0)
-    height = float(getattr(geometry_spec, "height", 0.0) or 0.0)
-    shape = str(getattr(geometry_spec, "shape_kind", "") or "")
-    invert = getattr(culvert_spec, "invert_elevation", None) if culvert_spec is not None else None
-    diameter = 0.0
-    native_type = _effective_native_type(row, geometry_spec, culvert_spec)
-    if culvert_spec is not None:
-        barrel_shape = str(getattr(culvert_spec, "barrel_shape", "") or "").strip().lower()
-        diameter = float(getattr(culvert_spec, "diameter", 0.0) or 0.0)
-        if barrel_shape == "circular" or native_type == "pipe_culvert":
-            shape = "circular"
-            diameter = float(diameter or width or height or 0.0)
-            width = 0.0
-            height = 0.0
-        else:
-            shape = shape or "box"
-            width = float(getattr(culvert_spec, "span", 0.0) or width)
-            height = float(getattr(culvert_spec, "rise", 0.0) or height)
-    if kind == "culvert" or native_type in {"box_culvert", "pipe_culvert"}:
-        return [
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:upstream",
-                structure_ref=structure_ref,
-                point_role="upstream",
-                station=start,
-                offset=offset,
-                invert_elevation=invert,
-                diameter=diameter,
-                width=width,
-                height=height,
-                shape_kind=shape or "box",
-                direction="upstream",
-                connection_order=1,
-                region_ref=region_ref,
-            ),
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:downstream",
-                structure_ref=structure_ref,
-                point_role="downstream",
-                station=end,
-                offset=offset,
-                invert_elevation=invert,
-                diameter=diameter,
-                width=width,
-                height=height,
-                shape_kind=shape or "box",
-                direction="downstream",
-                connection_order=2,
-                region_ref=region_ref,
-            ),
-        ]
-    if kind == "inlet" or native_type == "inlet":
-        return [
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:inlet",
-                structure_ref=structure_ref,
-                point_role="inlet",
-                station=start,
-                offset=offset,
-                invert_elevation=invert,
-                diameter=0.0,
-                width=width,
-                height=height,
-                shape_kind=shape or "box",
-                direction="in",
-                connection_order=1,
-                region_ref=region_ref,
-            ),
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:pipe-out",
-                structure_ref=structure_ref,
-                point_role="pipe_out",
-                station=end,
-                offset=offset,
-                invert_elevation=invert,
-                diameter=diameter,
-                width=0.0 if diameter else width,
-                height=0.0 if diameter else height,
-                shape_kind="circular" if diameter else shape or "box",
-                direction="out",
-                connection_order=2,
-                region_ref=region_ref,
-            ),
-        ]
-    if kind == "headwall" or native_type == "headwall":
-        return [
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:pipe-in",
-                structure_ref=structure_ref,
-                point_role="pipe_in",
-                station=start,
-                offset=offset,
-                invert_elevation=invert,
-                diameter=diameter,
-                width=0.0 if diameter else width,
-                height=0.0 if diameter else height,
-                shape_kind="circular" if diameter else shape or "box",
-                direction="in",
-                connection_order=1,
-                region_ref=region_ref,
-            ),
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:discharge",
-                structure_ref=structure_ref,
-                point_role="discharge",
-                station=end,
-                offset=offset,
-                invert_elevation=invert,
-                width=width,
-                height=height,
-                shape_kind=shape or "headwall",
-                direction="out",
-                connection_order=2,
-                region_ref=region_ref,
-            ),
-        ]
-    if kind == "outlet" or native_type == "outlet":
-        return [
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:pipe-in",
-                structure_ref=structure_ref,
-                point_role="pipe_in",
-                station=start,
-                offset=offset,
-                invert_elevation=invert,
-                diameter=diameter,
-                width=0.0 if diameter else width,
-                height=0.0 if diameter else height,
-                shape_kind="circular" if diameter else shape or "box",
-                direction="in",
-                connection_order=1,
-                region_ref=region_ref,
-            ),
-            StructureConnectionPoint(
-                connection_point_id=f"connection:{base_id}:discharge",
-                structure_ref=structure_ref,
-                point_role="discharge",
-                station=end,
-                offset=offset,
-                invert_elevation=invert,
-                width=width,
-                height=height,
-                shape_kind=shape or "box",
-                direction="out",
-                connection_order=2,
-                region_ref=region_ref,
-            ),
-        ]
-    return []
-
-
-def _mark_auto_native_connection_points(points: list[StructureConnectionPoint]) -> list[StructureConnectionPoint]:
-    marked = []
-    for point in list(points or []):
-        notes = str(getattr(point, "notes", "") or "").strip()
-        if "auto_native_default" not in notes:
-            notes = (notes + "; " if notes else "") + "auto_native_default"
-        marked.append(
-            StructureConnectionPoint(
-                connection_point_id=point.connection_point_id,
-                structure_ref=point.structure_ref,
-                point_role=point.point_role,
-                station=point.station,
-                offset=point.offset,
-                elevation=point.elevation,
-                invert_elevation=point.invert_elevation,
-                shape_kind=point.shape_kind,
-                width=point.width,
-                height=point.height,
-                diameter=point.diameter,
-                direction=point.direction,
-                connection_order=point.connection_order,
-                region_ref=point.region_ref,
-                notes=notes,
-            )
-        )
-    return marked
-
-
 def _format_float(value: float) -> str:
     return f"{float(value):.3f}"
 
@@ -2793,57 +1621,35 @@ def _default_shape_kind(structure_kind: str) -> str:
     kind = str(structure_kind or "").strip().lower()
     if kind == "bridge":
         return "deck_slab"
-    if kind == "culvert":
-        return "box"
     if kind in {"retaining_wall", "wall"}:
         return "wall"
-    if kind == "utility":
-        return "envelope"
     return "envelope"
 
 
 def _default_shape_kind_for_native(native_type: str, structure_kind: str) -> str:
     native = str(native_type or "").strip().lower()
-    if native == "box_culvert":
-        return "box"
-    if native == "pipe_culvert":
-        return "circular"
     if native == "bridge_deck":
         return "deck_slab"
     if native == "retaining_wall":
         return "wall"
-    if native == "headwall":
-        return "headwall"
-    if native == "inlet":
-        return "catch_basin"
-    if native == "outlet":
-        return "outlet_headwall"
     return _default_shape_kind(structure_kind)
 
 
 def _default_structure_kind_for_native(native_type: str) -> str:
     native = str(native_type or "").strip().lower()
-    if native in {"box_culvert", "pipe_culvert"}:
-        return "culvert"
     if native == "bridge_deck":
         return "bridge"
     if native == "retaining_wall":
         return "retaining_wall"
-    if native in {"inlet", "outlet", "headwall"}:
-        return "utility"
     return ""
 
 
 def _default_structure_role_for_native(native_type: str) -> str:
     native = str(native_type or "").strip().lower()
-    if native in {"box_culvert", "pipe_culvert"}:
-        return "clearance_control"
     if native == "bridge_deck":
         return "interface"
     if native == "retaining_wall":
         return "active"
-    if native in {"inlet", "outlet", "headwall"}:
-        return "reference"
     return ""
 
 
@@ -2851,8 +1657,6 @@ def _default_geometry_width(structure_kind: str) -> float:
     kind = str(structure_kind or "").strip().lower()
     if kind == "bridge":
         return 10.0
-    if kind == "culvert":
-        return 3.0
     if kind in {"retaining_wall", "wall"}:
         return 0.9
     if kind == "utility":
@@ -2862,20 +1666,10 @@ def _default_geometry_width(structure_kind: str) -> float:
 
 def _default_geometry_width_for_native(native_type: str, structure_kind: str) -> float:
     native = str(native_type or "").strip().lower()
-    if native == "box_culvert":
-        return 3.0
-    if native == "pipe_culvert":
-        return 1.2
     if native == "bridge_deck":
         return 10.0
     if native == "retaining_wall":
         return 0.9
-    if native == "headwall":
-        return 4.0
-    if native == "inlet":
-        return 1.8
-    if native == "outlet":
-        return 2.8
     return _default_geometry_width(structure_kind)
 
 
@@ -2883,8 +1677,6 @@ def _default_geometry_height(structure_kind: str) -> float:
     kind = str(structure_kind or "").strip().lower()
     if kind == "bridge":
         return 1.2
-    if kind == "culvert":
-        return 2.0
     if kind in {"retaining_wall", "wall"}:
         return 3.0
     if kind == "utility":
@@ -2894,20 +1686,10 @@ def _default_geometry_height(structure_kind: str) -> float:
 
 def _default_geometry_height_for_native(native_type: str, structure_kind: str) -> float:
     native = str(native_type or "").strip().lower()
-    if native == "box_culvert":
-        return 2.0
-    if native == "pipe_culvert":
-        return 1.2
     if native == "bridge_deck":
         return 1.2
     if native == "retaining_wall":
         return 3.0
-    if native == "headwall":
-        return 2.0
-    if native == "inlet":
-        return 1.8
-    if native == "outlet":
-        return 2.0
     return _default_geometry_height(structure_kind)
 
 

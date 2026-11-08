@@ -1,7 +1,6 @@
 import pytest
 
 import json
-import math
 import tempfile
 from pathlib import Path
 
@@ -46,8 +45,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
 )
 from freecad.Corridor_Road.v1.models.source.solid_target_model import SolidTargetModel, SolidTargetRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
-    CulvertGeometrySpec,
-    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -426,58 +423,22 @@ def _structure_body_source_model() -> StructureModel:
         structure_model_id="structures:body-test",
         structure_rows=[
             StructureRow(
-                "structure:culvert-01",
-                "culvert",
-                "drainage_crossing",
-                StructurePlacement("placement:culvert-01", "alignment:main", 30.0, 36.0, offset=-4.5),
-                geometry_spec_ref="geometry-spec:culvert-01",
-                native_type="box_culvert",
+                "structure:wall-01",
+                "retaining_wall",
+                "active",
+                StructurePlacement("placement:wall-01", "alignment:main", 30.0, 36.0, offset=-4.5),
+                geometry_spec_ref="geometry-spec:wall-01",
+                native_type="retaining_wall",
             )
         ],
         geometry_spec_rows=[
             StructureGeometrySpec(
-                "geometry-spec:culvert-01",
-                "structure:culvert-01",
-                shape_kind="box",
+                "geometry-spec:wall-01",
+                "structure:wall-01",
+                shape_kind="wall",
                 width=1.5,
                 height=1.2,
                 material="concrete",
-            )
-        ],
-    )
-
-
-def _pipe_culvert_structure_body_source_model(*, wall_thickness: float = 0.0) -> StructureModel:
-    return StructureModel(
-        schema_version=1,
-        project_id="proj-1",
-        structure_model_id="structures:pipe-culvert-test",
-        structure_rows=[
-            StructureRow(
-                "structure:pipe-culvert-01",
-                "culvert",
-                "drainage_crossing",
-                StructurePlacement("placement:pipe-culvert-01", "alignment:main", 40.0, 46.0, offset=-3.0),
-                geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                native_type="pipe_culvert",
-            )
-        ],
-        geometry_spec_rows=[
-            StructureGeometrySpec(
-                "geometry-spec:pipe-culvert-01",
-                "structure:pipe-culvert-01",
-                shape_kind="circular",
-                width=1.2,
-                height=1.2,
-                material="concrete",
-            )
-        ],
-        culvert_geometry_spec_rows=[
-            CulvertGeometrySpec(
-                "geometry-spec:pipe-culvert-01",
-                barrel_shape="circular",
-                diameter=1.2,
-                wall_thickness=wall_thickness,
             )
         ],
     )
@@ -491,24 +452,12 @@ def _external_structure_body_source_model(geometry_ref: str) -> StructureModel:
         structure_rows=[
             StructureRow(
                 "structure:external-01",
-                "culvert",
+                "bridge",
                 "external_body",
                 StructurePlacement("placement:external-01", "alignment:main", 50.0, 56.0, offset=-2.0),
                 geometry_ref=geometry_ref,
                 reference_mode="source_ref",
                 geometry_source_mode="external_ref",
-            )
-        ],
-        connection_point_rows=[
-            StructureConnectionPoint(
-                "connection:external-01:pipe-in",
-                "structure:external-01",
-                "pipe_in",
-                station=50.0,
-                offset=-2.0,
-                invert_elevation=40.0,
-                diameter=0.8,
-                shape_kind="circular",
             )
         ],
     )
@@ -2208,11 +2157,11 @@ def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec(
         create_or_update_v1_structure_model_object(doc, project=project, structure_model=_structure_body_source_model())
 
         panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:structure-body:structure-culvert-01"
+        target_id = "solid-target:structure-body:structure-wall-01"
         row_index = _target_table_row(panel, target_id)
 
         assert row_index >= 0
-        assert panel._target_table.item(row_index, 1).text() == "Structure Body Solid - structure:culvert-01"
+        assert panel._target_table.item(row_index, 1).text() == "Structure Body Solid - structure:wall-01"
         assert panel._target_table.item(row_index, 2).text() == "Structure Body"
         assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
 
@@ -2231,74 +2180,11 @@ def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec(
         assert obj is not None
         assert obj.V1ObjectType == "V1WatertightSolidOutput"
         assert obj.TargetFamilies == ["structure_body"]
-        assert obj.StructureRefs == ["structure:culvert-01"]
+        assert obj.StructureRefs == ["structure:wall-01"]
         assert obj.Shape.Volume > 0.0
         assert state.watertight_output.solid_rows[0].material_ref == "concrete"
         assert state.watertight_output.solid_rows[0].path_source == "applied_section_frame"
         assert list(obj.PathSources) == ["applied_section_frame"]
-    finally:
-        App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_watertight_solids_builds_pipe_culvert_structure_body_as_cylinder() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsPipeCulvertBodyBuildTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipe_culvert_structure_body_source_model())
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:structure-body:structure-pipe-culvert-01"
-        row_index = _target_table_row(panel, target_id)
-
-        assert row_index >= 0
-        panel._target_table.selectRow(row_index)
-        panel._validate_button.click()
-        panel._build_selected_button.click()
-
-        state = panel._target_state_by_id[target_id]
-        obj = doc.getObject(state.output_object_ref)
-        expected_volume = math.pi * (1.2 / 2.0) ** 2 * 6.0
-
-        assert state.build_status == "built"
-        assert obj is not None
-        assert obj.TargetFamilies == ["structure_body"]
-        assert obj.StructureRefs == ["structure:pipe-culvert-01"]
-        assert abs(float(obj.Shape.Volume) - expected_volume) < 0.05
-        assert obj.FaceCounts[0] < 6
-    finally:
-        App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_watertight_solids_builds_pipe_culvert_structure_body_as_hollow_wall_when_thickness_exists() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsHollowPipeCulvertBodyBuildTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        create_or_update_v1_structure_model_object(
-            doc,
-            project=project,
-            structure_model=_pipe_culvert_structure_body_source_model(wall_thickness=0.15),
-        )
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:structure-body:structure-pipe-culvert-01"
-        row_index = _target_table_row(panel, target_id)
-
-        panel._target_table.selectRow(row_index)
-        panel._validate_button.click()
-        panel._build_selected_button.click()
-
-        state = panel._target_state_by_id[target_id]
-        obj = doc.getObject(state.output_object_ref)
-        expected_volume = math.pi * ((1.5 / 2.0) ** 2 - (1.2 / 2.0) ** 2) * 6.0
-
-        assert state.build_status == "built"
-        assert obj is not None
-        assert abs(float(obj.Shape.Volume) - expected_volume) < 0.08
-        assert float(obj.Shape.Volume) < math.pi * (1.5 / 2.0) ** 2 * 6.0
     finally:
         App.closeDocument(doc.Name)
 
@@ -2330,7 +2216,6 @@ def test_watertight_solids_reuses_external_structure_body_shape() -> None:
         state = panel._target_state_by_id[target_id]
         assert state.validation_status == "ok"
         assert "External Structure body shape candidate ready" in state.validation_message
-        assert "connection_point_status=ok" in state.validation_message
 
         panel._build_selected_button.click()
 
@@ -2344,39 +2229,6 @@ def test_watertight_solids_reuses_external_structure_body_shape() -> None:
         assert abs(float(obj.Shape.Volume) - 24.0) < 0.001
         assert f"geometry_ref={external_obj.Name}" in notes
         assert f"external_object={external_obj.Name}" in notes
-    finally:
-        App.closeDocument(doc.Name)
-
-
-@pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
-def test_watertight_solids_blocks_external_structure_body_when_connection_points_are_outside_shape() -> None:
-    _ensure_qapp()
-    doc, project = _new_project_doc("V1WatertightSolidsExternalStructureBodyPointMismatchTest")
-    try:
-        _populate_ready_build_corridor_outputs(doc, project)
-        external_obj = doc.addObject("Part::Feature", "ExternalStructureBody")
-        external_obj.Shape = Part.makeBox(2.0, 3.0, 4.0)
-        create_or_update_v1_structure_model_object(
-            doc,
-            project=project,
-            structure_model=_external_structure_body_source_model(external_obj.Name),
-        )
-
-        panel = V1WatertightSolidsTaskPanel(document=doc)
-        target_id = "solid-target:structure-body:structure-external-01"
-        row_index = _target_table_row(panel, target_id)
-
-        assert row_index >= 0
-        assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
-
-        panel._target_table.selectRow(row_index)
-        panel._validate_button.click()
-
-        state = panel._target_state_by_id[target_id]
-        assert state.validation_status == "error"
-        assert state.build_status == "blocked"
-        assert "connection_point_status=outside_shape" in state.validation_message
-        assert "connection:external-01:pipe-in" in state.validation_message
     finally:
         App.closeDocument(doc.Name)
 

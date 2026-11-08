@@ -14,8 +14,6 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     _kind_detail_values,
     _project_xy_to_alignment,
     _replace_kind_spec,
-    _structure_editor_diagnostics,
-    STRUCTURE_GEOMETRY_SPEC_REF_ROLE,
     apply_v1_structure_model,
     show_v1_structure_connection_points_preview_object,
     show_v1_structure_preview_object,
@@ -24,7 +22,7 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
 )
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
-    CulvertGeometrySpec,
+    RetainingWallGeometrySpec,
     StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
@@ -84,151 +82,26 @@ def test_structure_presets_offer_practical_structure_sets() -> None:
         names = structure_preset_names()
 
         assert "Bridge Segment" in names
-        assert "Culvert Crossing" in names
-        assert "Drainage Structures" in names
         assert "Retaining Wall" in names
-        model = structure_preset_model_from_document("Culvert Crossing", doc, project=project, alignment=alignment)
+        # culverts and the drainage chain are modelled in Drainage now
+        assert "Culvert Crossing" not in names
+        assert "Drainage Structures" not in names
+        model = structure_preset_model_from_document("Bridge Segment", doc, project=project, alignment=alignment)
 
         assert len(model.structure_rows) == 1
-        assert model.structure_rows[0].structure_id == "structure:culvert-01"
-        assert model.structure_rows[0].structure_kind == "culvert"
-        assert model.structure_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
-        assert model.geometry_spec_rows[0].structure_ref == "structure:culvert-01"
-        assert model.geometry_spec_rows[0].shape_kind == "box"
-        assert model.geometry_spec_rows[0].width == 3.0
-        assert model.geometry_spec_rows[0].height == 2.0
+        assert model.structure_rows[0].structure_id == "structure:bridge-01"
+        assert model.structure_rows[0].structure_kind == "bridge"
+        assert model.structure_rows[0].geometry_spec_ref == "geometry-spec:bridge-01"
+        assert model.geometry_spec_rows[0].structure_ref == "structure:bridge-01"
+        assert model.geometry_spec_rows[0].shape_kind == "deck_slab"
+        assert model.geometry_spec_rows[0].width == 10.0
+        assert model.geometry_spec_rows[0].height == 1.2
         assert model.geometry_spec_rows[0].vertical_position_mode == "profile_frame"
-        assert model.culvert_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
-        assert model.culvert_geometry_spec_rows[0].barrel_shape == "box"
-        assert model.culvert_geometry_spec_rows[0].wall_thickness == 0.3
+        assert model.bridge_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:bridge-01"
+        assert model.bridge_geometry_spec_rows[0].deck_width == 10.0
+        assert model.bridge_geometry_spec_rows[0].deck_thickness == 1.2
+        assert model.connection_point_rows == []
         assert model.structure_rows[0].placement.station_start < model.structure_rows[0].placement.station_end
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_preset_drainage_structures_provides_outlet_and_culvert_refs() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
-
-        model = structure_preset_model_from_document("Drainage Structures", doc, project=project, alignment=alignment)
-
-        assert [row.structure_id for row in model.structure_rows] == [
-            "structure:inlet-01",
-            "structure:inlet-02",
-            "structure:inlet-03",
-            "structure:culvert-01",
-            "structure:outlet-01",
-        ]
-        assert [row.structure_kind for row in model.structure_rows] == ["utility", "utility", "utility", "culvert", "utility"]
-        assert [row.native_type for row in model.structure_rows] == ["inlet", "inlet", "inlet", "pipe_culvert", "outlet"]
-        assert [row.structure_ref for row in model.geometry_spec_rows] == [
-            "structure:inlet-01",
-            "structure:inlet-02",
-            "structure:inlet-03",
-            "structure:culvert-01",
-            "structure:outlet-01",
-        ]
-        assert model.geometry_spec_rows[4].shape_kind == "outlet_headwall"
-        assert model.culvert_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
-        assert model.culvert_geometry_spec_rows[0].barrel_shape == "circular"
-        assert model.geometry_spec_rows[0].width == 1.8
-        assert model.geometry_spec_rows[0].height == 1.8
-        assert model.geometry_spec_rows[3].width == 1.2
-        assert model.geometry_spec_rows[3].height == 1.2
-        assert model.geometry_spec_rows[4].width == 2.8
-        assert model.geometry_spec_rows[4].height == 2.0
-        assert model.culvert_geometry_spec_rows[0].diameter == 1.2
-        assert model.culvert_geometry_spec_rows[0].wall_thickness == 0.15
-        assert model.culvert_geometry_spec_rows[0].headwall_type == "flared"
-        assert [row.connection_point_id for row in model.connection_point_rows] == [
-            "connection:inlet-01:ditch-in",
-            "connection:inlet-01:pipe-out",
-            "connection:inlet-02:ditch-in",
-            "connection:inlet-02:pipe-in",
-            "connection:inlet-02:pipe-out",
-            "connection:inlet-03:ditch-in",
-            "connection:inlet-03:pipe-in",
-            "connection:inlet-03:pipe-out",
-            "connection:culvert-01:pipe-in",
-            "connection:culvert-01:pipe-out",
-            "connection:outlet-01:pipe-in",
-            "connection:outlet-01:outfall",
-        ]
-        assert [row.point_role for row in model.connection_point_rows] == [
-            "inlet",
-            "pipe_out",
-            "inlet",
-            "pipe_in",
-            "pipe_out",
-            "inlet",
-            "pipe_in",
-            "pipe_out",
-            "pipe_in",
-            "pipe_out",
-            "pipe_in",
-            "discharge",
-        ]
-        assert [row.structure_ref for row in model.connection_point_rows] == [
-            "structure:inlet-01",
-            "structure:inlet-01",
-            "structure:inlet-02",
-            "structure:inlet-02",
-            "structure:inlet-02",
-            "structure:inlet-03",
-            "structure:inlet-03",
-            "structure:inlet-03",
-            "structure:culvert-01",
-            "structure:culvert-01",
-            "structure:outlet-01",
-            "structure:outlet-01",
-        ]
-        assert model.connection_point_rows[0].station == model.structure_rows[0].placement.station_start
-        assert model.connection_point_rows[1].station == model.structure_rows[0].placement.station_end
-        assert model.connection_point_rows[0].shape_kind == "ditch_inlet"
-        assert model.connection_point_rows[1].diameter == 1.0
-        assert model.connection_point_rows[7].diameter == 1.2
-        assert model.connection_point_rows[8].diameter == 1.2
-        assert model.connection_point_rows[8].offset == 0.0
-        assert model.connection_point_rows[9].offset == 0.0
-        assert model.connection_point_rows[10].diameter == 1.2
-        assert model.connection_point_rows[10].direction == "in"
-        assert model.connection_point_rows[11].shape_kind == "outfall"
-        assert all(row.region_ref == "" for row in model.connection_point_rows)
-        assert all(row.invert_elevation is None for row in model.connection_point_rows)
-        assert all("vertical_source=centerline3d" in row.notes for row in model.connection_point_rows)
-        diagnostics = _structure_editor_diagnostics(model, document=doc)
-        assert not any("connection_point_outside_structure_station_range" in row for row in diagnostics)
-        assert not any("connection_point_elevation" in row for row in diagnostics)
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_normalizes_connection_points_after_station_edits() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
-        panel = V1StructureEditorTaskPanel(document=doc)
-        panel._preset_combo.setCurrentText("Drainage Structures")
-        panel._load_selected_preset()
-        panel._table.item(1, 3).setText("75.000")
-        panel._table.item(1, 4).setText("80.000")
-
-        model = panel._model_from_table()
-        points = {
-            row.connection_point_id: row
-            for row in model.connection_point_rows
-            if row.structure_ref == "structure:inlet-02"
-        }
-        diagnostics = _structure_editor_diagnostics(model, document=doc)
-
-        assert points["connection:inlet-02:ditch-in"].station == 75.0
-        assert points["connection:inlet-02:pipe-in"].station == 75.0
-        assert points["connection:inlet-02:pipe-out"].station == 80.0
-        assert not any("connection_point_outside_structure_station_range" in row for row in diagnostics)
     finally:
         App.closeDocument(doc.Name)
 
@@ -310,85 +183,6 @@ def test_structure_editor_moves_geometry_ref_to_selected_detail() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_structure_editor_validates_external_ref_connection_points_against_body_bounds() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        external = doc.addObject("Part::Box", "ImportedInletBody")
-        external.Length = 4.0
-        external.Width = 4.0
-        external.Height = 3.0
-        external.Placement.Base = App.Vector(10.0, -6.0, 40.0)
-        doc.recompute()
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-editor",
-            structure_model_id="structures:main",
-            alignment_id="alignment:main",
-            structure_rows=[
-                StructureRow(
-                    structure_id="structure:inlet-ext-01",
-                    structure_kind="utility",
-                    structure_role="reference",
-                    placement=StructurePlacement(
-                        placement_id="placement:inlet-ext-01",
-                        alignment_id="alignment:main",
-                        station_start=8.0,
-                        station_end=15.0,
-                        offset=-4.0,
-                    ),
-                    geometry_ref=external.Name,
-                    reference_mode="source_ref",
-                    geometry_source_mode="external_ref",
-                    native_type="inlet",
-                )
-            ],
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:inlet-ext-01:pipe-out",
-                    structure_ref="structure:inlet-ext-01",
-                    point_role="pipe_out",
-                    station=12.0,
-                    offset=-4.0,
-                    invert_elevation=41.5,
-                    diameter=0.9,
-                    shape_kind="circular",
-                    direction="out",
-                )
-            ],
-        )
-
-        diagnostics = _structure_editor_diagnostics(model, document=doc)
-
-        assert not any("external_connection_point_outside_geometry_bounds" in row for row in diagnostics)
-
-        outside_model = StructureModel(
-            schema_version=1,
-            project_id=model.project_id,
-            structure_model_id=model.structure_model_id,
-            alignment_id=model.alignment_id,
-            structure_rows=model.structure_rows,
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:inlet-ext-01:pipe-out",
-                    structure_ref="structure:inlet-ext-01",
-                    point_role="pipe_out",
-                    station=20.0,
-                    offset=-4.0,
-                    invert_elevation=41.5,
-                    diameter=0.9,
-                    shape_kind="circular",
-                    direction="out",
-                )
-            ],
-        )
-        diagnostics = _structure_editor_diagnostics(outside_model, document=doc)
-
-        assert any(row.startswith("error|external_connection_point_outside_geometry_bounds|connection:inlet-ext-01:pipe-out|") for row in diagnostics)
-    finally:
-        App.closeDocument(doc.Name)
-
-
 def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
@@ -400,27 +194,27 @@ def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
             alignment_id="alignment:main",
             structure_rows=[
                 StructureRow(
-                    structure_id="structure:culvert-01",
-                    structure_kind="culvert",
-                    structure_role="drainage",
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
+                    structure_role="interface",
                     placement=StructurePlacement(
-                        placement_id="placement:culvert-01",
+                        placement_id="placement:bridge-01",
                         alignment_id="alignment:main",
-                        station_start=40.0,
-                        station_end=50.0,
+                        station_start=10.0,
+                        station_end=40.0,
                     ),
-                    geometry_spec_ref="geometry-spec:culvert-01",
+                    geometry_spec_ref="geometry-spec:bridge-01",
                     geometry_source_mode="native",
-                    native_type="box_culvert",
+                    native_type="bridge_deck",
                 )
             ],
             geometry_spec_rows=[
                 StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:culvert-01",
-                    structure_ref="structure:culvert-01",
-                    shape_kind="box",
-                    width=3.0,
-                    height=2.0,
+                    geometry_spec_id="geometry-spec:bridge-01",
+                    structure_ref="structure:bridge-01",
+                    shape_kind="deck_slab",
+                    width=10.0,
+                    height=1.2,
                 )
             ],
         )
@@ -435,18 +229,18 @@ def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
         assert panel._common_shape_label.text() == "Shape (auto)"
         assert panel._common_shape_field.placeholderText() == "Auto from Native Type"
         assert "Auto-filled from Native Type" in panel._common_shape_field.toolTip()
-        assert panel._connection_label.text() == "Drainage Connection Points"
+        assert panel._connection_label.text() == "Connection Points"
         assert panel._apply_detail_button.text() == "Apply Selected Detail"
-        assert "Drainage Connection Points" in panel._apply_detail_button.toolTip()
+        assert "connection points" in panel._apply_detail_button.toolTip()
         assert panel._save_button.text() == "Apply"
         assert "without creating a 3D preview" in panel._save_button.toolTip()
         assert panel._preview_button.text() == "Preview 3D"
         assert "without applying" in panel._preview_button.toolTip()
         assert panel._save_preview_button.text() == "Apply + Preview"
         assert "then create a 3D preview" in panel._save_preview_button.toolTip()
-        assert panel._common_shape_field.text() == "box"
-        panel._common_shape_field.setText("pipe")
-        panel._common_width_field.setText("1.800")
+        assert panel._common_shape_field.text() == "deck_slab"
+        panel._common_shape_field.setText("box_girder")
+        panel._common_width_field.setText("12.500")
         panel._common_height_field.setText("1.800")
         panel._common_vertical_mode_combo.setCurrentText("absolute_elevation")
         panel._common_base_elev_field.setText("45.250")
@@ -458,10 +252,10 @@ def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
         updated = panel._model_from_table()
         spec = updated.geometry_spec_rows[0]
 
-        assert spec.geometry_spec_id == "geometry-spec:culvert-01"
-        assert spec.structure_ref == "structure:culvert-01"
-        assert spec.shape_kind == "pipe"
-        assert spec.width == 1.8
+        assert spec.geometry_spec_id == "geometry-spec:bridge-01"
+        assert spec.structure_ref == "structure:bridge-01"
+        assert spec.shape_kind == "box_girder"
+        assert spec.width == 12.5
         assert spec.height == 1.8
         assert spec.vertical_position_mode == "absolute_elevation"
         assert spec.base_elevation == 45.25
@@ -480,11 +274,11 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
         create_sample_v1_alignment(doc, project=project)
 
         panel = V1StructureEditorTaskPanel(document=doc)
-        panel._preset_combo.setCurrentText("Drainage Structures")
+        panel._preset_combo.setCurrentText("Bridge Segment")
         panel._load_selected_preset()
-        panel._table.selectRow(4)
+        panel._table.selectRow(0)
         panel._load_selected_detail()
-        panel._common_width_field.setText("1.700")
+        panel._common_width_field.setText("12.000")
 
         # the panel calls the editor module's own injected binding, so patching the
         # command module would leave a real modal dialog in the way
@@ -497,28 +291,24 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
         finally:
             structure_editor_view._show_message = original_show_message
 
-        assert panel._table.rowCount() == 5
-        assert panel._table.currentRow() == 4
-        assert "outlet-01" in panel._detail_summary.text()
-        assert panel._common_width_field.text() == "1.700"
+        assert panel._table.rowCount() == 1
+        assert panel._table.currentRow() == 0
+        assert "bridge-01" in panel._detail_summary.text()
+        assert panel._common_width_field.text() == "12.000"
 
         reopened = V1StructureEditorTaskPanel(document=doc)
 
-        assert reopened._table.rowCount() == 5
-        assert reopened._table.item(0, 0).text() == "inlet-01"
-        assert reopened._table.item(1, 0).text() == "inlet-02"
-        assert reopened._table.item(2, 0).text() == "inlet-03"
-        assert reopened._table.item(3, 0).text() == "culvert-01"
-        assert reopened._table.item(4, 0).text() == "outlet-01"
+        assert reopened._table.rowCount() == 1
+        assert reopened._table.item(0, 0).text() == "bridge-01"
 
-        reopened._table.selectRow(4)
+        reopened._table.selectRow(0)
         reopened._load_selected_detail()
 
-        assert "outlet-01" in reopened._detail_summary.text()
-        assert reopened._native_type_combo.currentText() == "outlet"
-        assert reopened._common_shape_field.text() == "outlet_headwall"
-        assert reopened._common_width_field.text() == "1.700"
-        assert reopened._connection_table.rowCount() == 2
+        assert "bridge-01" in reopened._detail_summary.text()
+        assert reopened._native_type_combo.currentText() == "bridge_deck"
+        assert reopened._common_shape_field.text() == "deck_slab"
+        assert reopened._common_width_field.text() == "12.000"
+        assert reopened._connection_table.rowCount() == 0
     finally:
         App.closeDocument(doc.Name)
 
@@ -534,49 +324,53 @@ def test_structure_editor_double_click_loads_selected_structure_detail() -> None
             alignment_id="alignment:main",
             structure_rows=[
                 StructureRow(
-                    structure_id="structure:inlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
+                    structure_role="interface",
                     placement=StructurePlacement(
-                        placement_id="placement:inlet-01",
+                        placement_id="placement:bridge-01",
                         alignment_id="alignment:main",
                         station_start=10.0,
-                        station_end=12.0,
+                        station_end=40.0,
                     ),
-                    geometry_spec_ref="geometry-spec:inlet-01",
+                    geometry_spec_ref="geometry-spec:bridge-01",
                     geometry_source_mode="native",
-                    native_type="inlet",
+                    native_type="bridge_deck",
                 ),
                 StructureRow(
-                    structure_id="structure:outlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
+                    structure_id="structure:wall-01",
+                    structure_kind="retaining_wall",
+                    structure_role="active",
                     placement=StructurePlacement(
-                        placement_id="placement:outlet-01",
+                        placement_id="placement:wall-01",
                         alignment_id="alignment:main",
                         station_start=90.0,
-                        station_end=92.0,
+                        station_end=120.0,
                     ),
-                    geometry_spec_ref="geometry-spec:outlet-01",
+                    geometry_spec_ref="geometry-spec:wall-01",
                     geometry_source_mode="native",
-                    native_type="outlet",
+                    native_type="retaining_wall",
                 ),
             ],
             geometry_spec_rows=[
                 StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:inlet-01",
-                    structure_ref="structure:inlet-01",
-                    shape_kind="inlet_box",
-                    width=1.0,
-                    height=1.0,
-                ),
-                StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:outlet-01",
-                    structure_ref="structure:outlet-01",
-                    shape_kind="outlet_headwall",
-                    width=1.5,
+                    geometry_spec_id="geometry-spec:bridge-01",
+                    structure_ref="structure:bridge-01",
+                    shape_kind="deck_slab",
+                    width=10.0,
                     height=1.2,
                 ),
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:wall-01",
+                    structure_ref="structure:wall-01",
+                    shape_kind="wall",
+                    width=1.5,
+                    height=3.2,
+                ),
+            ],
+            bridge_geometry_spec_rows=[BridgeGeometrySpec("geometry-spec:bridge-01", deck_width=10.0, deck_thickness=1.2)],
+            retaining_wall_geometry_spec_rows=[
+                RetainingWallGeometrySpec("geometry-spec:wall-01", wall_height=3.2, wall_thickness=1.5)
             ],
         )
         apply_v1_structure_model(document=doc, project=project, structure_model=model)
@@ -585,9 +379,9 @@ def test_structure_editor_double_click_loads_selected_structure_detail() -> None
         panel._activate_structure_detail_row(1, 4)
 
         assert panel._table.currentRow() == 1
-        assert "outlet-01" in panel._detail_summary.text()
-        assert panel._native_type_combo.currentText() == "outlet"
-        assert panel._common_shape_field.text() == "outlet_headwall"
+        assert "wall-01" in panel._detail_summary.text()
+        assert panel._native_type_combo.currentText() == "retaining_wall"
+        assert panel._common_shape_field.text() == "wall"
         assert panel._common_width_field.text() == "1.500"
     finally:
         App.closeDocument(doc.Name)
@@ -604,68 +398,72 @@ def test_structure_editor_single_click_loads_selected_structure_detail() -> None
             alignment_id="alignment:main",
             structure_rows=[
                 StructureRow(
-                    structure_id="structure:inlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
+                    structure_role="interface",
                     placement=StructurePlacement(
-                        placement_id="placement:inlet-01",
+                        placement_id="placement:bridge-01",
                         alignment_id="alignment:main",
                         station_start=10.0,
-                        station_end=12.0,
+                        station_end=40.0,
                     ),
-                    geometry_spec_ref="geometry-spec:inlet-01",
+                    geometry_spec_ref="geometry-spec:bridge-01",
                     geometry_source_mode="native",
-                    native_type="inlet",
+                    native_type="bridge_deck",
                 ),
                 StructureRow(
-                    structure_id="structure:outlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
+                    structure_id="structure:wall-01",
+                    structure_kind="retaining_wall",
+                    structure_role="active",
                     placement=StructurePlacement(
-                        placement_id="placement:outlet-01",
+                        placement_id="placement:wall-01",
                         alignment_id="alignment:main",
                         station_start=90.0,
-                        station_end=92.0,
+                        station_end=120.0,
                     ),
-                    geometry_spec_ref="geometry-spec:outlet-01",
+                    geometry_spec_ref="geometry-spec:wall-01",
                     geometry_source_mode="native",
-                    native_type="outlet",
+                    native_type="retaining_wall",
                 ),
             ],
             geometry_spec_rows=[
                 StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:inlet-01",
-                    structure_ref="structure:inlet-01",
-                    shape_kind="inlet_box",
-                    width=1.0,
-                    height=1.0,
-                ),
-                StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:outlet-01",
-                    structure_ref="structure:outlet-01",
-                    shape_kind="outlet_headwall",
-                    width=1.5,
+                    geometry_spec_id="geometry-spec:bridge-01",
+                    structure_ref="structure:bridge-01",
+                    shape_kind="deck_slab",
+                    width=10.0,
                     height=1.2,
                 ),
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:wall-01",
+                    structure_ref="structure:wall-01",
+                    shape_kind="wall",
+                    width=1.5,
+                    height=3.2,
+                ),
+            ],
+            bridge_geometry_spec_rows=[BridgeGeometrySpec("geometry-spec:bridge-01", deck_width=10.0, deck_thickness=1.2)],
+            retaining_wall_geometry_spec_rows=[
+                RetainingWallGeometrySpec("geometry-spec:wall-01", wall_height=3.2, wall_thickness=1.5)
             ],
         )
         apply_v1_structure_model(document=doc, project=project, structure_model=model)
 
         panel = V1StructureEditorTaskPanel(document=doc)
 
-        assert "inlet-01" in panel._detail_summary.text()
+        assert "bridge-01" in panel._detail_summary.text()
 
         panel._table.cellClicked.emit(1, 0)
 
         assert panel._table.currentRow() == 1
-        assert "outlet-01" in panel._detail_summary.text()
-        assert panel._native_type_combo.currentText() == "outlet"
-        assert panel._common_shape_field.text() == "outlet_headwall"
+        assert "wall-01" in panel._detail_summary.text()
+        assert panel._native_type_combo.currentText() == "retaining_wall"
+        assert panel._common_shape_field.text() == "wall"
 
         panel._table.cellClicked.emit(0, 1)
 
         assert panel._table.currentRow() == 0
-        assert "inlet-01" in panel._detail_summary.text()
+        assert "bridge-01" in panel._detail_summary.text()
     finally:
         App.closeDocument(doc.Name)
 
@@ -681,27 +479,27 @@ def test_structure_editor_selected_detail_shows_structure_validation_summary() -
             alignment_id="alignment:main",
             structure_rows=[
                 StructureRow(
-                    structure_id="structure:inlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
+                    structure_role="interface",
                     placement=StructurePlacement(
-                        placement_id="placement:inlet-01",
+                        placement_id="placement:bridge-01",
                         alignment_id="alignment:main",
                         station_start=10.0,
-                        station_end=12.0,
+                        station_end=40.0,
                     ),
-                    geometry_spec_ref="geometry-spec:inlet-01",
+                    geometry_spec_ref="geometry-spec:bridge-01",
                     geometry_source_mode="native",
-                    native_type="inlet",
+                    native_type="bridge_deck",
                 )
             ],
             geometry_spec_rows=[
                 StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:inlet-01",
-                    structure_ref="structure:inlet-01",
-                    shape_kind="inlet_box",
-                    width=1.0,
-                    height=1.0,
+                    geometry_spec_id="geometry-spec:bridge-01",
+                    structure_ref="structure:bridge-01",
+                    shape_kind="deck_slab",
+                    width=10.0,
+                    height=1.2,
                 )
             ],
         )
@@ -709,34 +507,12 @@ def test_structure_editor_selected_detail_shows_structure_validation_summary() -
 
         panel = V1StructureEditorTaskPanel(document=doc)
 
+        # the bridge has no bridge-specific spec yet
         assert "Selected validation: error" in panel._detail_validation.text()
-        assert "structure_connection_points_missing" in panel._detail_validation.text()
+        assert "bridge_geometry_spec_missing" in panel._detail_validation.text()
 
-        panel._append_connection_point(
-            StructureConnectionPoint(
-                connection_point_id="connection:inlet-01:inlet",
-                structure_ref="structure:inlet-01",
-                point_role="inlet",
-                station=10.0,
-                offset=-5.0,
-                invert_elevation=44.5,
-                width=1.0,
-                height=0.5,
-                shape_kind="ditch_inlet",
-            )
-        )
-        panel._append_connection_point(
-            StructureConnectionPoint(
-                connection_point_id="connection:inlet-01:pipe-out",
-                structure_ref="structure:inlet-01",
-                point_role="pipe_out",
-                station=12.0,
-                offset=-5.0,
-                invert_elevation=44.25,
-                diameter=0.6,
-                shape_kind="circular",
-            )
-        )
+        panel._detail_fields[0].setText("10.000")
+        panel._detail_fields[1].setText("1.200")
         panel._apply_selected_detail()
 
         assert panel._detail_validation.text() == "Selected validation: ok"
@@ -755,34 +531,59 @@ def test_structure_editor_filters_detail_fields_by_native_type() -> None:
             alignment_id="alignment:main",
             structure_rows=[
                 StructureRow(
-                    structure_id="structure:pipe-culvert-01",
-                    structure_kind="culvert",
-                    structure_role="drainage",
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
+                    structure_role="interface",
                     placement=StructurePlacement(
-                        placement_id="placement:pipe-culvert-01",
+                        placement_id="placement:bridge-01",
                         alignment_id="alignment:main",
-                        station_start=40.0,
-                        station_end=55.0,
+                        station_start=10.0,
+                        station_end=40.0,
                     ),
-                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
+                    geometry_spec_ref="geometry-spec:bridge-01",
                     geometry_source_mode="native",
-                    native_type="box_culvert",
-                )
+                    native_type="bridge_deck",
+                ),
+                StructureRow(
+                    structure_id="structure:wall-01",
+                    structure_kind="retaining_wall",
+                    structure_role="active",
+                    placement=StructurePlacement(
+                        placement_id="placement:wall-01",
+                        alignment_id="alignment:main",
+                        station_start=90.0,
+                        station_end=120.0,
+                    ),
+                    geometry_spec_ref="geometry-spec:wall-01",
+                    geometry_source_mode="native",
+                    native_type="retaining_wall",
+                ),
             ],
             geometry_spec_rows=[
                 StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:pipe-culvert-01",
-                    structure_ref="structure:pipe-culvert-01",
-                    shape_kind="box",
-                    width=3.0,
-                    height=2.0,
-                )
+                    geometry_spec_id="geometry-spec:bridge-01",
+                    structure_ref="structure:bridge-01",
+                    shape_kind="deck_slab",
+                    width=10.0,
+                    height=1.2,
+                ),
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:wall-01",
+                    structure_ref="structure:wall-01",
+                    shape_kind="wall",
+                    width=1.5,
+                    height=3.2,
+                ),
+            ],
+            bridge_geometry_spec_rows=[BridgeGeometrySpec("geometry-spec:bridge-01", deck_width=10.0, deck_thickness=1.2)],
+            retaining_wall_geometry_spec_rows=[
+                RetainingWallGeometrySpec("geometry-spec:wall-01", wall_height=3.2, wall_thickness=1.5)
             ],
         )
         apply_v1_structure_model(document=doc, project=project, structure_model=model)
 
         panel = V1StructureEditorTaskPanel(document=doc)
-        panel._native_type_combo.setCurrentText("pipe_culvert")
+        panel._native_type_combo.setCurrentText("retaining_wall")
 
         visible_labels = [
             label.text()
@@ -791,35 +592,37 @@ def test_structure_editor_filters_detail_fields_by_native_type() -> None:
         ]
 
         assert visible_labels == [
-            "Barrel Count",
-            "Pipe Diameter",
+            "Wall Height",
             "Wall Thickness",
-            "Length",
-            "Invert Elevation",
-            "End Treatment",
+            "Footing Width",
+            "Footing Thickness",
+            "Retained Side",
+            "Batter Slope",
+            "Coping Height",
         ]
-        assert panel._common_shape_field.text() == "circular"
-        assert panel._common_width_field.text() == "1.200"
-        assert panel._common_height_field.text() == "1.200"
+        assert panel._common_shape_field.text() == "wall"
+        assert panel._common_width_field.text() == "0.900"
+        assert panel._common_height_field.text() == "3.000"
 
-        panel._detail_fields[0].setText("2")
-        panel._detail_fields[1].setText("1.200")
-        panel._detail_fields[2].setText("0.150")
-        panel._detail_fields[3].setText("15.000")
-        panel._detail_fields[4].setText("44.500")
-        panel._detail_fields[5].setText("headwall")
+        panel._detail_fields[0].setText("3.500")
+        panel._detail_fields[1].setText("0.800")
+        panel._detail_fields[2].setText("2.000")
+        panel._detail_fields[3].setText("0.500")
+        panel._detail_fields[4].setText("right")
+        panel._detail_fields[5].setText("0.100")
+        panel._detail_fields[6].setText("0.200")
         panel._apply_selected_detail()
         updated = panel._model_from_table()
 
-        assert updated.geometry_spec_rows[0].shape_kind == "circular"
-        assert updated.geometry_spec_rows[0].width == 1.2
-        assert updated.geometry_spec_rows[0].height == 1.2
-        assert updated.culvert_geometry_spec_rows[0].barrel_shape == "circular"
-        assert updated.culvert_geometry_spec_rows[0].barrel_count == 2
-        assert updated.culvert_geometry_spec_rows[0].diameter == 1.2
-        assert updated.culvert_geometry_spec_rows[0].span == 0.0
-        assert updated.culvert_geometry_spec_rows[0].rise == 0.0
-        assert updated.culvert_geometry_spec_rows[0].invert_elevation == 44.5
+        assert updated.geometry_spec_rows[0].shape_kind == "wall"
+        assert updated.geometry_spec_rows[0].width == 0.9
+        assert updated.geometry_spec_rows[0].height == 3.0
+        # the bridge row became a wall, so its spec joined the one the wall row already had
+        wall = next(row for row in updated.retaining_wall_geometry_spec_rows if row.geometry_spec_ref == "geometry-spec:bridge-01")
+        assert wall.wall_height == 3.5
+        assert wall.wall_thickness == 0.8
+        assert wall.retained_side == "right"
+        assert wall.coping_height == 0.2
     finally:
         App.closeDocument(doc.Name)
 
@@ -834,34 +637,34 @@ def test_structure_model_roundtrips_geometry_source_and_connection_points() -> N
             alignment_id="alignment:main",
             structure_rows=[
                 StructureRow(
-                    structure_id="structure:culvert-01",
-                    structure_kind="culvert",
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
                     structure_role="active",
                     placement=StructurePlacement(
-                        placement_id="placement:culvert-01",
+                        placement_id="placement:bridge-01",
                         alignment_id="alignment:main",
                         station_start=50.0,
                         station_end=60.0,
                     ),
-                    geometry_spec_ref="geometry-spec:culvert-01",
+                    geometry_spec_ref="geometry-spec:bridge-01",
                     geometry_source_mode="native",
-                    native_type="box_culvert",
+                    native_type="bridge_deck",
                 )
             ],
             geometry_spec_rows=[
                 StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:culvert-01",
-                    structure_ref="structure:culvert-01",
-                    shape_kind="box",
-                    width=3.0,
-                    height=2.0,
+                    geometry_spec_id="geometry-spec:bridge-01",
+                    structure_ref="structure:bridge-01",
+                    shape_kind="deck_slab",
+                    width=10.0,
+                    height=1.2,
                 )
             ],
             connection_point_rows=[
                 StructureConnectionPoint(
-                    connection_point_id="connection:culvert-01:upstream",
-                    structure_ref="structure:culvert-01",
-                    point_role="upstream",
+                    connection_point_id="connection:bridge-01:left",
+                    structure_ref="structure:bridge-01",
+                    point_role="left_port",
                     station=50.0,
                     offset=-3.0,
                     invert_elevation=45.0,
@@ -871,9 +674,9 @@ def test_structure_model_roundtrips_geometry_source_and_connection_points() -> N
                     direction="upstream",
                 ),
                 StructureConnectionPoint(
-                    connection_point_id="connection:culvert-01:downstream",
-                    structure_ref="structure:culvert-01",
-                    point_role="downstream",
+                    connection_point_id="connection:bridge-01:right",
+                    structure_ref="structure:bridge-01",
+                    point_role="right_port",
                     station=60.0,
                     offset=3.0,
                     invert_elevation=44.8,
@@ -889,10 +692,10 @@ def test_structure_model_roundtrips_geometry_source_and_connection_points() -> N
         roundtrip = to_structure_model(obj)
 
         assert roundtrip.structure_rows[0].geometry_source_mode == "native"
-        assert roundtrip.structure_rows[0].native_type == "box_culvert"
+        assert roundtrip.structure_rows[0].native_type == "bridge_deck"
         assert [row.connection_point_id for row in roundtrip.connection_point_rows] == [
-            "connection:culvert-01:upstream",
-            "connection:culvert-01:downstream",
+            "connection:bridge-01:left",
+            "connection:bridge-01:right",
         ]
     finally:
         App.closeDocument(doc.Name)
@@ -908,315 +711,54 @@ def test_structure_editor_selected_detail_edits_geometry_source() -> None:
         panel._load_selected_detail()
 
         panel._geometry_source_combo.setCurrentText("native")
-        panel._native_type_combo.setCurrentText("pipe_culvert")
+        panel._native_type_combo.setCurrentText("retaining_wall")
 
         model = panel._model_from_table()
 
         assert model.structure_rows[0].geometry_source_mode == "native"
-        assert model.structure_rows[0].native_type == "pipe_culvert"
+        assert model.structure_rows[0].native_type == "retaining_wall"
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_structure_editor_native_type_apply_sets_practical_defaults_and_ports() -> None:
+def test_structure_editor_native_type_apply_sets_practical_defaults() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         panel = V1StructureEditorTaskPanel(document=doc)
         panel._append_row(
             StructureRow(
-                structure_id="structure:inlet-auto-01",
+                structure_id="structure:wall-auto-01",
                 structure_kind="custom",
-                structure_role="active",
+                structure_role="reference",
                 placement=StructurePlacement(
-                    placement_id="placement:inlet-auto-01",
+                    placement_id="placement:wall-auto-01",
                     alignment_id="alignment:main",
                     station_start=30.0,
-                    station_end=32.0,
+                    station_end=60.0,
                     offset=-5.0,
                 ),
-                geometry_spec_ref="geometry-spec:inlet-auto-01",
+                geometry_spec_ref="geometry-spec:wall-auto-01",
             )
         )
         panel._table.selectRow(0)
         panel._load_selected_detail()
 
         panel._geometry_source_combo.setCurrentText("native")
-        panel._native_type_combo.setCurrentText("inlet")
+        panel._native_type_combo.setCurrentText("retaining_wall")
+        panel._detail_fields[0].setText("3.000")
         panel._apply_selected_detail()
         model = panel._model_from_table()
 
-        assert model.structure_rows[0].structure_kind == "utility"
-        assert model.structure_rows[0].structure_role == "reference"
-        assert model.structure_rows[0].native_type == "inlet"
-        assert model.geometry_spec_rows[0].shape_kind == "catch_basin"
-        assert model.geometry_spec_rows[0].width == 1.8
-        assert model.geometry_spec_rows[0].height == 1.8
-        assert model.culvert_geometry_spec_rows[0].barrel_shape == "inlet"
-        assert model.culvert_geometry_spec_rows[0].diameter == 0.9
-        assert [row.point_role for row in model.connection_point_rows] == ["inlet", "pipe_out"]
-        assert model.connection_point_rows[1].shape_kind == "circular"
-        assert model.connection_point_rows[1].diameter == 0.9
-        assert "auto_native_default" in model.connection_point_rows[1].notes
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_apply_selected_detail_syncs_drainage_connection_points() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        panel = V1StructureEditorTaskPanel(document=doc)
-        panel._append_row(
-            StructureRow(
-                structure_id="structure:outlet-01",
-                structure_kind="utility",
-                structure_role="reference",
-                placement=StructurePlacement(
-                    placement_id="placement:outlet-01",
-                    alignment_id="alignment:main",
-                    station_start=90.0,
-                    station_end=92.0,
-                ),
-                geometry_spec_ref="geometry-spec:outlet-01",
-                geometry_source_mode="native",
-                native_type="outlet",
-            )
-        )
-        panel._append_geometry_spec(
-            StructureGeometrySpec(
-                geometry_spec_id="geometry-spec:outlet-01",
-                structure_ref="structure:outlet-01",
-                shape_kind="outlet_headwall",
-                width=1.5,
-                height=1.2,
-            )
-        )
-        panel._table.selectRow(0)
-        panel._load_selected_detail()
-        panel._append_connection_point(
-            StructureConnectionPoint(
-                connection_point_id="connection:outlet-01:pipe-in",
-                structure_ref="structure:outlet-01",
-                point_role="pipe_in",
-                station=91.0,
-                offset=-6.0,
-                invert_elevation=44.5,
-                diameter=0.9,
-                direction="upstream",
-            )
-        )
-
-        panel._apply_selected_detail()
-        model = panel._model_from_table()
-
-        assert model.connection_point_rows[0].connection_point_id == "connection:outlet-01:pipe-in"
-        assert model.connection_point_rows[0].point_role == "pipe_in"
-        assert model.connection_point_rows[0].diameter == 0.9
-        assert "Selected detail applied" in panel._status.toPlainText()
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_derives_default_culvert_connection_points() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
-        panel = V1StructureEditorTaskPanel(document=doc)
-        panel._preset_combo.setCurrentText("Culvert Crossing")
-        panel._load_selected_preset()
-        panel._table.selectRow(0)
-        panel._load_selected_detail()
-        panel._geometry_source_combo.setCurrentText("native")
-        panel._native_type_combo.setCurrentText("box_culvert")
-
-        panel._derive_default_connection_points()
-        model = panel._model_from_table()
-
-        assert [row.point_role for row in model.connection_point_rows] == ["upstream", "downstream"]
-        assert [row.structure_ref for row in model.connection_point_rows] == [
-            "structure:culvert-01",
-            "structure:culvert-01",
-        ]
-        assert model.connection_point_rows[0].width == 3.0
-        assert model.connection_point_rows[0].height == 2.0
-        assert model.connection_point_rows[0].shape_kind == "box"
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_derives_pipe_culvert_connection_points() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        panel = V1StructureEditorTaskPanel(document=doc)
-        panel._append_row(
-            StructureRow(
-                structure_id="structure:pipe-culvert-01",
-                structure_kind="culvert",
-                structure_role="drainage",
-                placement=StructurePlacement(
-                    placement_id="placement:pipe-culvert-01",
-                    alignment_id="alignment:main",
-                    station_start=40.0,
-                    station_end=55.0,
-                ),
-                geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                geometry_source_mode="native",
-                native_type="pipe_culvert",
-            )
-        )
-        panel._append_geometry_spec(
-            StructureGeometrySpec(
-                geometry_spec_id="geometry-spec:pipe-culvert-01",
-                structure_ref="structure:pipe-culvert-01",
-                shape_kind="circular",
-                width=1.2,
-                height=1.2,
-            )
-        )
-        panel._culvert_geometry_spec_rows = [
-            CulvertGeometrySpec(
-                geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                barrel_shape="circular",
-                diameter=1.2,
-                invert_elevation=44.5,
-            )
-        ]
-        panel._table.selectRow(0)
-        panel._load_selected_detail()
-
-        panel._derive_default_connection_points()
-        model = panel._model_from_table()
-
-        assert [row.point_role for row in model.connection_point_rows] == ["upstream", "downstream"]
-        assert [row.diameter for row in model.connection_point_rows] == [1.2, 1.2]
-        assert [row.width for row in model.connection_point_rows] == [0.0, 0.0]
-        assert [row.height for row in model.connection_point_rows] == [0.0, 0.0]
-        assert [row.shape_kind for row in model.connection_point_rows] == ["circular", "circular"]
-        assert [row.invert_elevation for row in model.connection_point_rows] == [44.5, 44.5]
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_derives_inlet_and_outlet_connection_points() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        panel = V1StructureEditorTaskPanel(document=doc)
-        panel._append_row(
-            StructureRow(
-                structure_id="structure:inlet-01",
-                structure_kind="utility",
-                structure_role="reference",
-                placement=StructurePlacement(
-                    placement_id="placement:inlet-01",
-                    alignment_id="alignment:main",
-                    station_start=30.0,
-                    station_end=32.0,
-                    offset=-4.5,
-                ),
-                geometry_spec_ref="geometry-spec:inlet-01",
-                geometry_source_mode="native",
-                native_type="inlet",
-            )
-        )
-        panel._append_geometry_spec(
-            StructureGeometrySpec(
-                geometry_spec_id="geometry-spec:inlet-01",
-                structure_ref="structure:inlet-01",
-                shape_kind="inlet",
-                width=1.2,
-                height=1.0,
-            )
-        )
-        panel._culvert_geometry_spec_rows = [
-            CulvertGeometrySpec(
-                geometry_spec_ref="geometry-spec:inlet-01",
-                barrel_shape="inlet",
-                span=1.2,
-                rise=1.0,
-                diameter=0.6,
-                invert_elevation=44.2,
-            )
-        ]
-        panel._table.selectRow(0)
-        panel._load_selected_detail()
-
-        panel._derive_default_connection_points()
-        inlet_model = panel._model_from_table()
-
-        assert [row.point_role for row in inlet_model.connection_point_rows] == ["inlet", "pipe_out"]
-        assert inlet_model.connection_point_rows[1].diameter == 0.6
-        assert inlet_model.connection_point_rows[1].shape_kind == "circular"
-
-        panel._table.item(0, 0).setText("outlet-01")
-        panel._table.item(0, 3).setText("90.000")
-        panel._table.item(0, 4).setText("92.000")
-        panel._set_row_native_type(0, "outlet")
-        panel._set_row_geometry_source_mode(0, "native")
-        panel._table.item(0, 0).setData(STRUCTURE_GEOMETRY_SPEC_REF_ROLE, "geometry-spec:outlet-01")
-        panel._replace_geometry_specs([
-            StructureGeometrySpec(
-                geometry_spec_id="geometry-spec:outlet-01",
-                structure_ref="structure:outlet-01",
-                shape_kind="outlet",
-                width=1.5,
-                height=1.2,
-            )
-        ])
-        panel._culvert_geometry_spec_rows = [
-            CulvertGeometrySpec(
-                geometry_spec_ref="geometry-spec:outlet-01",
-                barrel_shape="outlet",
-                span=1.5,
-                rise=1.2,
-                diameter=0.8,
-                invert_elevation=43.6,
-            )
-        ]
-        panel._load_selected_detail()
-
-        panel._derive_default_connection_points()
-        outlet_model = panel._model_from_table()
-
-        assert [row.point_role for row in outlet_model.connection_point_rows] == ["pipe_in", "discharge"]
-        assert outlet_model.connection_point_rows[0].diameter == 0.8
-        assert outlet_model.connection_point_rows[0].shape_kind == "circular"
-        assert outlet_model.connection_point_rows[1].shape_kind == "outlet"
-
-        panel._table.item(0, 0).setText("headwall-01")
-        panel._set_row_native_type(0, "headwall")
-        panel._table.item(0, 0).setData(STRUCTURE_GEOMETRY_SPEC_REF_ROLE, "geometry-spec:headwall-01")
-        panel._replace_geometry_specs([
-            StructureGeometrySpec(
-                geometry_spec_id="geometry-spec:headwall-01",
-                structure_ref="structure:headwall-01",
-                shape_kind="headwall",
-                width=2.4,
-                height=1.4,
-            )
-        ])
-        panel._culvert_geometry_spec_rows = [
-            CulvertGeometrySpec(
-                geometry_spec_ref="geometry-spec:headwall-01",
-                barrel_shape="headwall",
-                span=2.4,
-                rise=1.4,
-                diameter=0.7,
-                invert_elevation=43.4,
-            )
-        ]
-        panel._load_selected_detail()
-
-        panel._derive_default_connection_points()
-        headwall_model = panel._model_from_table()
-
-        assert [row.point_role for row in headwall_model.connection_point_rows] == ["pipe_in", "discharge"]
-        assert headwall_model.connection_point_rows[0].diameter == 0.7
-        assert headwall_model.connection_point_rows[1].shape_kind == "headwall"
+        assert model.structure_rows[0].structure_kind == "retaining_wall"
+        assert model.structure_rows[0].structure_role == "active"
+        assert model.structure_rows[0].native_type == "retaining_wall"
+        assert model.geometry_spec_rows[0].shape_kind == "wall"
+        assert model.geometry_spec_rows[0].width == 0.9
+        assert model.geometry_spec_rows[0].height == 3.0
+        assert model.retaining_wall_geometry_spec_rows[0].wall_height == 3.0
+        # a wall has no drainage ports to derive
+        assert model.connection_point_rows == []
     finally:
         App.closeDocument(doc.Name)
 
@@ -1697,259 +1239,6 @@ def test_structure_preview_uses_geometry_spec_dimensions_and_notes() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_structure_preview_uses_pipe_culvert_circular_profile() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-preview",
-            structure_model_id="structures:main",
-            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-            structure_rows=[
-                StructureRow(
-                    structure_id="structure:pipe-culvert-01",
-                    structure_kind="culvert",
-                    structure_role="drainage",
-                    placement=StructurePlacement(
-                        placement_id="placement:pipe-culvert-01",
-                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-                        station_start=20.0,
-                        station_end=50.0,
-                    ),
-                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                    geometry_source_mode="native",
-                    native_type="pipe_culvert",
-                )
-            ],
-            geometry_spec_rows=[
-                StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:pipe-culvert-01",
-                    structure_ref="structure:pipe-culvert-01",
-                    shape_kind="circular",
-                    width=1.2,
-                    height=1.2,
-                )
-            ],
-            culvert_geometry_spec_rows=[
-                CulvertGeometrySpec(
-                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                    barrel_shape="circular",
-                    diameter=1.2,
-                    invert_elevation=44.5,
-                )
-            ],
-        )
-
-        preview = show_v1_structure_preview_object(doc, model, project=project)
-
-        assert preview.PreviewGeometrySource == "geometry_spec"
-        assert len(list(preview.Shape.Solids)) == 1
-        assert preview.Shape.BoundBox.ZMin >= 44.4
-        assert preview.Shape.BoundBox.ZLength >= 1.1
-        assert preview.Shape.BoundBox.ZLength < 1.4
-        assert preview.Shape.BoundBox.YLength < 2.0
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_preview_adds_pipe_culvert_headwall_wingwall_details() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-preview",
-            structure_model_id="structures:main",
-            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-            structure_rows=[
-                StructureRow(
-                    structure_id="structure:pipe-culvert-01",
-                    structure_kind="culvert",
-                    structure_role="drainage",
-                    placement=StructurePlacement(
-                        placement_id="placement:pipe-culvert-01",
-                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-                        station_start=20.0,
-                        station_end=50.0,
-                    ),
-                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                    geometry_source_mode="native",
-                    native_type="pipe_culvert",
-                )
-            ],
-            geometry_spec_rows=[
-                StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:pipe-culvert-01",
-                    structure_ref="structure:pipe-culvert-01",
-                    shape_kind="circular",
-                    width=1.2,
-                    height=1.2,
-                )
-            ],
-            culvert_geometry_spec_rows=[
-                CulvertGeometrySpec(
-                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
-                    barrel_shape="circular",
-                    diameter=1.2,
-                    invert_elevation=44.5,
-                    headwall_type="flared",
-                    wingwall_type="short",
-                )
-            ],
-        )
-
-        preview = show_v1_structure_preview_object(doc, model, project=project)
-        row_preview = doc.getObject("V1StructurePreview_structure_pipe_culvert_01")
-
-        assert preview.PreviewGeometrySource == "geometry_spec"
-        assert row_preview is not None
-        assert len(list(row_preview.Shape.Solids)) >= 7
-        assert row_preview.Shape.BoundBox.ZLength > 1.6
-        assert row_preview.Shape.BoundBox.YLength > 2.0
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_preview_adds_native_inlet_detail_geometry() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-preview",
-            structure_model_id="structures:main",
-            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-            structure_rows=[
-                StructureRow(
-                    structure_id="structure:inlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
-                    placement=StructurePlacement(
-                        placement_id="placement:inlet-01",
-                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-                        station_start=20.0,
-                        station_end=22.0,
-                        offset=-5.2,
-                    ),
-                    geometry_spec_ref="geometry-spec:inlet-01",
-                    geometry_source_mode="native",
-                    native_type="inlet",
-                )
-            ],
-            geometry_spec_rows=[
-                StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:inlet-01",
-                    structure_ref="structure:inlet-01",
-                    shape_kind="catch_basin",
-                    width=1.8,
-                    height=1.8,
-                )
-            ],
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:inlet-01:ditch-in",
-                    structure_ref="structure:inlet-01",
-                    point_role="inlet",
-                    station=20.0,
-                    offset=-5.2,
-                    width=1.8,
-                    height=0.8,
-                    shape_kind="ditch_inlet",
-                ),
-                StructureConnectionPoint(
-                    connection_point_id="connection:inlet-01:pipe-out",
-                    structure_ref="structure:inlet-01",
-                    point_role="pipe_out",
-                    station=22.0,
-                    offset=-5.2,
-                    diameter=0.9,
-                    shape_kind="circular",
-                ),
-            ],
-        )
-
-        preview = show_v1_structure_preview_object(doc, model, project=project)
-        row_preview = doc.getObject("V1StructurePreview_structure_inlet_01")
-
-        assert preview.PreviewGeometrySource == "geometry_spec"
-        assert row_preview is not None
-        assert len(list(row_preview.Shape.Solids)) >= 6
-        assert row_preview.Shape.BoundBox.ZLength > 1.9
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_preview_adds_native_outlet_headwall_detail_geometry() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-preview",
-            structure_model_id="structures:main",
-            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-            structure_rows=[
-                StructureRow(
-                    structure_id="structure:outlet-01",
-                    structure_kind="utility",
-                    structure_role="reference",
-                    placement=StructurePlacement(
-                        placement_id="placement:outlet-01",
-                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-                        station_start=70.0,
-                        station_end=74.0,
-                        offset=6.4,
-                    ),
-                    geometry_spec_ref="geometry-spec:outlet-01",
-                    geometry_source_mode="native",
-                    native_type="outlet",
-                )
-            ],
-            geometry_spec_rows=[
-                StructureGeometrySpec(
-                    geometry_spec_id="geometry-spec:outlet-01",
-                    structure_ref="structure:outlet-01",
-                    shape_kind="outlet_headwall",
-                    width=2.8,
-                    height=2.0,
-                )
-            ],
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:outlet-01:pipe-in",
-                    structure_ref="structure:outlet-01",
-                    point_role="pipe_in",
-                    station=70.0,
-                    offset=6.4,
-                    diameter=1.2,
-                    shape_kind="circular",
-                ),
-                StructureConnectionPoint(
-                    connection_point_id="connection:outlet-01:outfall",
-                    structure_ref="structure:outlet-01",
-                    point_role="discharge",
-                    station=74.0,
-                    offset=6.4,
-                    width=2.4,
-                    height=1.0,
-                    shape_kind="outfall",
-                ),
-            ],
-        )
-
-        preview = show_v1_structure_preview_object(doc, model, project=project)
-        row_preview = doc.getObject("V1StructurePreview_structure_outlet_01")
-
-        assert preview.PreviewGeometrySource == "geometry_spec"
-        assert row_preview is not None
-        assert len(list(row_preview.Shape.Solids)) >= 6
-        assert row_preview.Shape.BoundBox.XLength > preview.Shape.BoundBox.XLength * 0.5
-        assert row_preview.Shape.BoundBox.ZLength > 2.1
-    finally:
-        App.closeDocument(doc.Name)
-
-
 def test_structure_editor_command_resources_are_v1_structures() -> None:
     resources = CmdV1StructureEditor().GetResources()
 
@@ -1975,7 +1264,7 @@ def test_structure_detail_helpers_update_kind_specific_bridge_spec() -> None:
         },
     )
     rows = _replace_kind_spec([BridgeGeometrySpec("geometry-spec:old", deck_width=9.0)], spec)
-    values = _kind_detail_values("bridge", "geometry-spec:bridge-01", rows, [], [])
+    values = _kind_detail_values("bridge", "geometry-spec:bridge-01", rows, [])
 
     assert ("deck_width", "Deck Width") in fields
     assert len(rows) == 2
@@ -1992,3 +1281,67 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
     print("[PASS] v1 structure editor command contract tests completed.")
+
+
+def test_structure_editor_leaves_out_culverts_saved_before_drainage_took_them_over() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        create_sample_v1_alignment(doc, project=project)
+        old = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-editor",
+            structure_model_id="structures:main",
+            alignment_id="alignment:main",
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:bridge-01",
+                    structure_kind="bridge",
+                    structure_role="interface",
+                    placement=StructurePlacement("placement:bridge-01", "alignment:main", 10.0, 40.0),
+                    geometry_spec_ref="geometry-spec:bridge-01",
+                    native_type="bridge_deck",
+                ),
+                StructureRow(
+                    structure_id="structure:culvert-01",
+                    structure_kind="culvert",
+                    structure_role="clearance_control",
+                    placement=StructurePlacement("placement:culvert-01", "alignment:main", 60.0, 70.0),
+                    geometry_spec_ref="geometry-spec:culvert-01",
+                    native_type="box_culvert",
+                ),
+            ],
+            geometry_spec_rows=[
+                StructureGeometrySpec("geometry-spec:bridge-01", "structure:bridge-01", "deck_slab", 10.0, 1.2),
+                StructureGeometrySpec("geometry-spec:culvert-01", "structure:culvert-01", "box", 3.0, 2.0),
+            ],
+            bridge_geometry_spec_rows=[BridgeGeometrySpec("geometry-spec:bridge-01", deck_width=10.0, deck_thickness=1.2)],
+        )
+        # written straight to the object, the way an older document would hold it
+        from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
+
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=old)
+        assert len(to_structure_model(find_v1_structure_model(doc)).structure_rows) == 2
+
+        panel = V1StructureEditorTaskPanel(document=doc)
+
+        assert panel._table.rowCount() == 1
+        assert panel._table.item(0, 0).text() == "bridge-01"
+        status = panel._status.toPlainText()
+        assert "1 culvert or drainage structure(s)" in status and "structure:culvert-01" in status
+        assert "model them in Drainage" in status
+
+        import freecad.Corridor_Road.v1.ui.editors.structure_editor as structure_editor_view
+
+        original_show_message = structure_editor_view._show_message
+        structure_editor_view._show_message = lambda *_args, **_kwargs: None
+        try:
+            assert panel._apply(close_after=False, show_preview=False) is True
+        finally:
+            structure_editor_view._show_message = original_show_message
+
+        stored = to_structure_model(find_v1_structure_model(doc))
+        assert [row.structure_id for row in stored.structure_rows] == ["structure:bridge-01"]
+        assert [row.geometry_spec_id for row in stored.geometry_spec_rows] == ["geometry-spec:bridge-01"]
+    finally:
+        App.closeDocument(doc.Name)

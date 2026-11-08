@@ -4,7 +4,6 @@ from freecad.Corridor_Road.v1.models.source import (
     ProfileModel,
     ProjectModel,
     BridgeGeometrySpec,
-    CulvertGeometrySpec,
     RetainingWallGeometrySpec,
     StructureGeometrySpec,
     RegionModel,
@@ -129,9 +128,6 @@ def test_source_models_can_be_instantiated() -> None:
         bridge_geometry_spec_rows=[
             BridgeGeometrySpec("geometry-spec-1", deck_width=10.0, deck_thickness=1.2)
         ],
-        culvert_geometry_spec_rows=[
-            CulvertGeometrySpec("geometry-spec-2", barrel_shape="box", span=3.0, rise=2.0)
-        ],
         retaining_wall_geometry_spec_rows=[
             RetainingWallGeometrySpec("geometry-spec-3", wall_height=3.0, retained_side="right")
         ],
@@ -153,7 +149,6 @@ def test_source_models_can_be_instantiated() -> None:
     assert structure_model.structure_model_id == "str-1"
     assert structure_model.geometry_spec_rows[0].shape_kind == "deck_slab"
     assert structure_model.bridge_geometry_spec_rows[0].deck_width == 10.0
-    assert structure_model.culvert_geometry_spec_rows[0].barrel_shape == "box"
     assert structure_model.retaining_wall_geometry_spec_rows[0].retained_side == "right"
     assert superelevation.superelevation_id == "sup-1"
 

@@ -13,7 +13,6 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import (
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
-    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -739,24 +738,12 @@ def test_solid_target_discovery_allows_external_structure_body_candidates() -> N
         structure_rows=[
             StructureRow(
                 "structure:external",
-                "culvert",
+                "bridge",
                 "external_body",
                 StructurePlacement("placement:external", "alignment:main", 20.0, 30.0),
                 geometry_ref="ExternalStructureBody",
                 reference_mode="source_ref",
                 geometry_source_mode="external_ref",
-            )
-        ],
-        connection_point_rows=[
-            StructureConnectionPoint(
-                "connection:external:pipe-in",
-                "structure:external",
-                "pipe_in",
-                station=20.0,
-                offset=-4.0,
-                invert_elevation=42.0,
-                diameter=0.8,
-                shape_kind="circular",
             )
         ],
     )
@@ -777,39 +764,3 @@ def test_solid_target_discovery_allows_external_structure_body_candidates() -> N
     assert target.readiness_status == "available"
     assert "ExternalStructureBody" in target.source_refs
     assert "geometry_source_mode=external_ref" in target.notes
-    assert "connection_point_count=1" in target.notes
-
-
-def test_solid_target_discovery_blocks_external_drainage_structure_without_connection_points() -> None:
-    structure_model = StructureModel(
-        schema_version=1,
-        project_id="proj-1",
-        structure_model_id="structures:external",
-        structure_rows=[
-            StructureRow(
-                "structure:external",
-                "culvert",
-                "external_body",
-                StructurePlacement("placement:external", "alignment:main", 20.0, 30.0),
-                geometry_ref="ExternalStructureBody",
-                reference_mode="source_ref",
-                geometry_source_mode="external_ref",
-            )
-        ],
-    )
-
-    model = SolidTargetDiscoveryService().discover(
-        SolidTargetDiscoveryRequest(
-            project_id="proj-1",
-            corridor_ref="corridor:main",
-            applied_section_set=_applied_set(),
-            corridor_model=_corridor_model(),
-            structure_model=structure_model,
-        )
-    )
-
-    target = {row.target_id: row for row in model.target_rows}["solid-target:structure-body:structure-external"]
-    assert target.readiness_status == "blocked"
-    assert {row.kind for row in model.target_diagnostic_rows} == {"missing_external_structure_connection_points"}
-
-

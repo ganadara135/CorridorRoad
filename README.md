@@ -127,8 +127,8 @@ Current toolbar order is organized around the v1 workflow:
 - shared 3D Centerline review for downstream station/offset/elevation context
 - Superelevation source editing, station sample review, and Applied Sections / Build Parametric handoff
 - Assembly editor with ditch, side slope, bench, and preset support
-- Structure editor for bridge, culvert, retaining wall, and related source intent
-- Structure connection points, native inlet/outlet/culvert preview details, and Structure Output packages
+- Structure editor for bridge, retaining wall, and related source intent
+- Structure connection points and Structure Output packages
 - Region editor with continuous station spans and Assembly assignment
 - Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
 - Drainage Review for source rows, pipeline candidates, pipeline segments, networks, and junctions

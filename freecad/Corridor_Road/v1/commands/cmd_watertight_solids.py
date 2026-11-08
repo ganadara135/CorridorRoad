@@ -756,24 +756,18 @@ class V1WatertightSolidsTaskPanel:
             external_context = _external_structure_body_shape_context(self.document, selected_state.target_row)
             if external_context is not None:
                 structure_model, structure_row, shape, external_obj = external_context
-                connection_status, connection_message = _external_structure_connection_point_validation(
-                    structure_model,
-                    structure_row,
-                    shape,
-                )
                 selected_state.profile_set = external_obj
                 selected_state.edge_network = structure_row
                 selected_state.profile_count = 1
                 selected_state.face_count = _shape_count(shape, "Faces")
                 selected_state.edge_count = _shape_count(shape, "Edges")
                 selected_state.volume = float(getattr(shape, "Volume", 0.0) or 0.0)
-                selected_state.validation_status = "ok" if selected_state.volume > 0.0 and connection_status == "ok" else "error"
+                selected_state.validation_status = "ok" if selected_state.volume > 0.0 else "error"
                 selected_state.validation_message = (
                     "External Structure body shape candidate ready; "
                     f"structure={str(getattr(structure_row, 'structure_id', '') or '')}; "
                     f"geometry_ref={str(getattr(structure_row, 'geometry_ref', '') or '')}; "
-                    f"faces={selected_state.face_count}; volume={selected_state.volume:.6g}; "
-                    f"{connection_message}"
+                    f"faces={selected_state.face_count}; volume={selected_state.volume:.6g}."
                 )
                 if selected_state.validation_status != "ok":
                     selected_state.build_status = "blocked"
@@ -1966,91 +1960,6 @@ def _find_document_object_by_ref(document, ref: str):
     return None
 
 
-def _external_structure_connection_point_validation(structure_model, structure_row, shape) -> tuple[str, str]:
-    structure_ref = str(getattr(structure_row, "structure_id", "") or "")
-    points = [
-        point for point in list(getattr(structure_model, "connection_point_rows", []) or [])
-        if str(getattr(point, "structure_ref", "") or "") == structure_ref
-    ]
-    if not _external_structure_requires_connection_points(structure_row):
-        return "ok", f"connection_point_status=not_required; connection_point_count={len(points)}."
-    if not points:
-        return "error", "connection_point_status=missing; connection_point_count=0."
-    bbox = getattr(shape, "BoundBox", None)
-    if bbox is None:
-        return "error", f"connection_point_status=shape_bbox_missing; connection_point_count={len(points)}."
-    outside: list[str] = []
-    max_distance = 0.0
-    for point in points:
-        vector = _connection_point_world_vector(point)
-        tolerance = _connection_point_shape_tolerance(point)
-        distance = _bound_box_distance_to_point(bbox, vector)
-        max_distance = max(max_distance, distance)
-        if distance > tolerance:
-            outside.append(str(getattr(point, "connection_point_id", "") or "connection-point"))
-    if outside:
-        return (
-            "error",
-            "connection_point_status=outside_shape; "
-            f"connection_point_count={len(points)}; outside_connection_points={len(outside)}; "
-            f"max_bbox_distance={max_distance:.3f}; refs={','.join(outside)}.",
-        )
-    return (
-        "ok",
-        "connection_point_status=ok; "
-        f"connection_point_count={len(points)}; outside_connection_points=0; max_bbox_distance={max_distance:.3f}.",
-    )
-
-
-def _external_structure_requires_connection_points(structure_row) -> bool:
-    values = [
-        str(getattr(structure_row, "structure_kind", "") or ""),
-        str(getattr(structure_row, "structure_role", "") or ""),
-        str(getattr(structure_row, "native_type", "") or ""),
-    ]
-    drainage_tokens = {
-        "box_culvert",
-        "culvert",
-        "drainage_crossing",
-        "drainage_node",
-        "headwall",
-        "inlet",
-        "junction_box",
-        "manhole",
-        "outlet",
-        "pipe_culvert",
-    }
-    return any(value.strip().lower() in drainage_tokens for value in values)
-
-
-def _connection_point_world_vector(point):
-    z_value = getattr(point, "invert_elevation", None)
-    if z_value is None:
-        z_value = getattr(point, "elevation", None)
-    return App.Vector(
-        float(getattr(point, "station", 0.0) or 0.0),
-        float(getattr(point, "offset", 0.0) or 0.0),
-        float(z_value if z_value is not None else 0.0),
-    )
-
-
-def _connection_point_shape_tolerance(point) -> float:
-    size = max(
-        float(getattr(point, "diameter", 0.0) or 0.0),
-        float(getattr(point, "width", 0.0) or 0.0),
-        float(getattr(point, "height", 0.0) or 0.0),
-        0.02,
-    )
-    return max(size / 2.0, 0.02)
-
-
-def _bound_box_distance_to_point(bbox, point) -> float:
-    dx = _axis_distance(float(point.x), float(getattr(bbox, "XMin", 0.0)), float(getattr(bbox, "XMax", 0.0)))
-    dy = _axis_distance(float(point.y), float(getattr(bbox, "YMin", 0.0)), float(getattr(bbox, "YMax", 0.0)))
-    dz = _axis_distance(float(point.z), float(getattr(bbox, "ZMin", 0.0)), float(getattr(bbox, "ZMax", 0.0)))
-    return (dx * dx + dy * dy + dz * dz) ** 0.5
-
-
 def _axis_distance(value: float, minimum: float, maximum: float) -> float:
     if value < minimum:
         return minimum - value
@@ -2139,32 +2048,6 @@ def _structure_body_solid_shape(solid_row, *, structure_model=None):
         length = direction.Length
     if width <= 0.0 or height <= 0.0 or length <= 0.0:
         raise RuntimeError("Structure body dimensions must be greater than zero.")
-    circular_profile = _circular_structure_body_profile(solid_row, structure_model)
-    if circular_profile is not None:
-        inner_diameter, outer_diameter, wall_thickness = circular_profile
-        try:
-            if wall_thickness > 0.0 and outer_diameter > inner_diameter:
-                return _hollow_circular_structure_body_shape(
-                    start,
-                    direction,
-                    length,
-                    inner_diameter=inner_diameter,
-                    outer_diameter=outer_diameter,
-                )
-            return Part.makeCylinder(inner_diameter / 2.0, length, start, direction)
-        except Exception:
-            pass
-    drainage_endpoint_shape = _drainage_endpoint_structure_body_shape(
-        solid_row,
-        structure_model,
-        start=start,
-        direction=direction,
-        length=length,
-        width=width,
-        height=height,
-    )
-    if drainage_endpoint_shape is not None:
-        return drainage_endpoint_shape
     shape = _oriented_local_box_shape(
         0.0,
         -width / 2.0,
@@ -2187,194 +2070,9 @@ def _oriented_local_box_shape(x: float, y: float, z: float, dx: float, dy: float
         return Part.makeBox(dx, dy, dz, start)
 
 
-def _drainage_endpoint_structure_body_shape(solid_row, structure_model, *, start, direction, length: float, width: float, height: float):
-    profile = _drainage_endpoint_structure_profile(solid_row, structure_model)
-    if profile is None:
-        return None
-    kind, diameter = profile
-    if kind == "inlet":
-        return _inlet_box_structure_body_shape(start, direction, length=length, width=width, height=height)
-    if kind in {"outlet", "headwall"}:
-        return _headwall_structure_body_shape(
-            start,
-            direction,
-            length=length,
-            width=width,
-            height=height,
-            opening_diameter=diameter,
-        )
-    return None
-
-
-def _inlet_box_structure_body_shape(start, direction, *, length: float, width: float, height: float):
-    outer = _oriented_local_box_shape(
-        0.0,
-        -width / 2.0,
-        -height / 2.0,
-        length,
-        width,
-        height,
-        start=start,
-        direction=direction,
-    )
-    chamber_length = max(length * 0.60, min(length, 0.10))
-    chamber_width = max(width * 0.60, min(width, 0.10))
-    chamber_height = max(height * 0.70, min(height, 0.10))
-    if chamber_length >= length or chamber_width >= width or chamber_height >= height:
-        return outer
-    chamber = _oriented_local_box_shape(
-        (length - chamber_length) / 2.0,
-        -chamber_width / 2.0,
-        -chamber_height / 2.0,
-        chamber_length,
-        chamber_width,
-        chamber_height,
-        start=start,
-        direction=direction,
-    )
-    try:
-        shape = outer.cut(chamber)
-        return shape.removeSplitter()
-    except Exception:
-        return outer
-
-
-def _headwall_structure_body_shape(start, direction, *, length: float, width: float, height: float, opening_diameter: float):
-    body = _oriented_local_box_shape(
-        0.0,
-        -width / 2.0,
-        -height / 2.0,
-        length,
-        width,
-        height,
-        start=start,
-        direction=direction,
-    )
-    radius = max(float(opening_diameter or 0.0) / 2.0, min(width, height) * 0.18)
-    if radius <= 0.0 or radius * 2.0 >= min(width, height):
-        return body
-    try:
-        unit = App.Vector(float(direction.x), float(direction.y), float(direction.z))
-        if unit.Length <= 1.0e-9:
-            return body
-        unit.normalize()
-        epsilon = min(max(radius * 0.25, 0.01), max(float(length) * 0.05, 0.01))
-        cutter_start = App.Vector(
-            float(start.x) - float(unit.x) * epsilon,
-            float(start.y) - float(unit.y) * epsilon,
-            float(start.z) - float(unit.z) * epsilon,
-        )
-        cutter = Part.makeCylinder(radius, float(length) + 2.0 * epsilon, cutter_start, direction)
-        shape = body.cut(cutter)
-        return shape.removeSplitter()
-    except Exception:
-        return body
-
-
-def _hollow_circular_structure_body_shape(start, direction, length: float, *, inner_diameter: float, outer_diameter: float):
-    outer = Part.makeCylinder(outer_diameter / 2.0, length, start, direction)
-    unit = App.Vector(float(direction.x), float(direction.y), float(direction.z))
-    if unit.Length <= 1.0e-9:
-        return outer
-    unit.normalize()
-    epsilon = min(max(outer_diameter * 0.1, 0.01), max(float(length) * 0.05, 0.01))
-    inner_start = App.Vector(
-        float(start.x) - float(unit.x) * epsilon,
-        float(start.y) - float(unit.y) * epsilon,
-        float(start.z) - float(unit.z) * epsilon,
-    )
-    inner = Part.makeCylinder(inner_diameter / 2.0, float(length) + 2.0 * epsilon, inner_start, direction)
-    hollow = outer.cut(inner)
-    try:
-        hollow = hollow.removeSplitter()
-    except Exception:
-        pass
-    return hollow
-
-
-def _circular_structure_body_profile(solid_row, structure_model) -> tuple[float, float, float] | None:
-    if structure_model is None:
-        return None
-    structure_ref = str(getattr(solid_row, "structure_id", "") or getattr(solid_row, "structure_ref", "") or "")
-    spec_ref = str(getattr(solid_row, "geometry_spec_id", "") or "")
-    structure_row = _structure_row_by_ref(structure_model, structure_ref)
-    spec = _geometry_spec_by_ref(structure_model, spec_ref)
-    culvert = _culvert_spec_by_ref(structure_model, spec_ref)
-    native_type = str(getattr(structure_row, "native_type", "") or "").strip().lower()
-    shape_kind = str(getattr(spec, "shape_kind", "") or "").strip().lower()
-    barrel_shape = str(getattr(culvert, "barrel_shape", "") or "").strip().lower()
-    if native_type != "pipe_culvert" and shape_kind != "circular" and barrel_shape != "circular":
-        return None
-    inner_diameter = float(getattr(culvert, "diameter", 0.0) or 0.0)
-    if inner_diameter <= 0.0:
-        inner_diameter = max(
-            float(getattr(solid_row, "width", 0.0) or 0.0),
-            float(getattr(solid_row, "height", 0.0) or 0.0),
-            float(getattr(spec, "width", 0.0) or 0.0) if spec is not None else 0.0,
-            float(getattr(spec, "height", 0.0) or 0.0) if spec is not None else 0.0,
-        )
-    inner_diameter = max(inner_diameter, 0.0)
-    if inner_diameter <= 0.0:
-        return None
-    wall_thickness = max(float(getattr(culvert, "wall_thickness", 0.0) or 0.0), 0.0)
-    outer_diameter = inner_diameter + 2.0 * wall_thickness if wall_thickness > 0.0 else inner_diameter
-    return inner_diameter, outer_diameter, wall_thickness
-
-
-def _drainage_endpoint_structure_profile(solid_row, structure_model) -> tuple[str, float] | None:
-    if structure_model is None:
-        return None
-    structure_ref = str(getattr(solid_row, "structure_id", "") or getattr(solid_row, "structure_ref", "") or "")
-    spec_ref = str(getattr(solid_row, "geometry_spec_id", "") or "")
-    structure_row = _structure_row_by_ref(structure_model, structure_ref)
-    spec = _geometry_spec_by_ref(structure_model, spec_ref)
-    kind = _drainage_endpoint_kind(structure_row, spec, solid_row)
-    if not kind:
-        return None
-    diameter = 0.0
-    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
-        if str(getattr(point, "structure_ref", "") or "") != structure_ref:
-            continue
-        diameter = max(diameter, float(getattr(point, "diameter", 0.0) or 0.0))
-    return kind, diameter
-
-
-def _drainage_endpoint_kind(structure_row, spec, solid_row) -> str:
-    values = [
-        str(getattr(structure_row, "native_type", "") or ""),
-        str(getattr(structure_row, "structure_kind", "") or ""),
-        str(getattr(spec, "shape_kind", "") or ""),
-        str(getattr(solid_row, "solid_kind", "") or ""),
-        str(getattr(solid_row, "notes", "") or ""),
-    ]
-    for value in values:
-        text = value.strip().lower()
-        if text in {"inlet", "inlet_box", "catch_basin", "inlet_body_solid"} or "drainage_native_kind=inlet" in text:
-            return "inlet"
-        if text in {"outlet", "outlet_headwall", "outlet_body_solid"} or "drainage_native_kind=outlet" in text:
-            return "outlet"
-        if text in {"headwall", "headwall_body_solid"} or "drainage_native_kind=headwall" in text:
-            return "headwall"
-    return ""
-
-
 def _structure_row_by_ref(structure_model, structure_ref: str):
     for row in list(getattr(structure_model, "structure_rows", []) or []):
         if str(getattr(row, "structure_id", "") or "") == str(structure_ref or ""):
-            return row
-    return None
-
-
-def _geometry_spec_by_ref(structure_model, geometry_spec_ref: str):
-    for row in list(getattr(structure_model, "geometry_spec_rows", []) or []):
-        if str(getattr(row, "geometry_spec_id", "") or "") == str(geometry_spec_ref or ""):
-            return row
-    return None
-
-
-def _culvert_spec_by_ref(structure_model, geometry_spec_ref: str):
-    for row in list(getattr(structure_model, "culvert_geometry_spec_rows", []) or []):
-        if str(getattr(row, "geometry_spec_ref", "") or "") == str(geometry_spec_ref or ""):
             return row
     return None
 

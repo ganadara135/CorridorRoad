@@ -15,7 +15,7 @@ Depends on:
 
 This document defines how v1 should represent structure-specific geometry intent.
 
-It exists so bridges, culverts, retaining walls, and similar corridor structures can be authored with useful dimensions without turning generated 3D shapes into source truth.
+It exists so bridges, retaining walls, and similar corridor structures can be authored with useful dimensions without turning generated 3D shapes into source truth.
 
 ## 2. Scope
 
@@ -58,7 +58,7 @@ The ownership boundary is:
 
 - Keep structure source rows small enough to scan.
 - Keep kind-specific detail editable without crowding the main table.
-- Support useful first-slice 3D review for bridges, culverts, and retaining walls.
+- Support useful first-slice 3D review for bridges and retaining walls.
 - Allow later richer geometry without changing the source/output boundary.
 - Preserve traceability from preview, AppliedSection, CorridorModel, quantities, and exchange rows back to `structure_id`.
 - Allow referenced external geometry through `geometry_ref` without requiring every structure to be natively authored.
@@ -72,7 +72,6 @@ Recommended object families:
 - `StructurePlacement`
 - `StructureGeometrySpec`
 - `BridgeGeometrySpec`
-- `CulvertGeometrySpec`
 - `RetainingWallGeometrySpec`
 - `UtilityGeometrySpec`
 - `StructurePreviewOutput`
@@ -161,37 +160,13 @@ First-slice preview rule:
 - use `clearance_height` as a review envelope when present
 - do not infer structural adequacy from the preview
 
-## 10. Culvert Geometry Spec
+## 10. Culvert Geometry Spec (removed)
 
-Culvert specs should preserve barrel and crossing intent.
-
-Recommended fields:
-
-- `barrel_shape`
-- `barrel_count`
-- `span`
-- `rise`
-- `diameter`
-- `wall_thickness`
-- `length`
-- `invert_elevation`
-- `inlet_skew_angle_deg`
-- `outlet_skew_angle_deg`
-- `headwall_type`
-- `wingwall_type`
-
-Recommended `barrel_shape` values:
-
-- `box`
-- `circular`
-- `pipe_arch`
-- `custom_profile`
-
-First-slice preview rule:
-
-- `box` should show a rectangular or hollow-box body when wall thickness is available
-- `circular` should show a pipe-like envelope or simplified cylinder
-- if detailed shape is not yet implemented, show a clear simplified envelope and emit a review note
+Removed on 2026-11-08. Culverts and the structures around them (inlet, outlet, headwall, manhole,
+junction box) are modelled in Drainage: a pipe is a Drainage link with a diameter, and a culvert
+point's barrel is the pipe of its outgoing link (`V1_DRAINAGE_STRUCTURE_PLAN.md`). A Structure of
+those kinds is no longer supported; a document saved before loses such rows when the Structure is
+next applied.
 
 ## 11. Retaining Wall Geometry Spec
 
@@ -249,7 +224,6 @@ Some structures need local profile geometry.
 
 Use `geometry_profile_rows` for:
 
-- custom culvert profiles
 - variable-height walls
 - bridge deck edge profiles
 - clearance envelope sections
@@ -321,30 +295,14 @@ The visible `Geometry Specs` table is not part of the Structures panel UX.
 
 The detail panel should filter native-specific fields by `Native Type`.
 
-For example, `pipe_culvert` should show pipe diameter instead of box opening width and height, while `box_culvert` should show opening width and opening height.
-
-The first-slice 3D preview should also distinguish these practical profiles.
-
-`pipe_culvert` and circular culvert rows should render as a circular pipe envelope along the placement path.
-
-`box_culvert` rows may continue to render as a rectangular source envelope.
-
-Native drainage endpoint rows should derive connection point roles as source intent:
-
-- `inlet`: `inlet` and `pipe_out`
-- `outlet`: `pipe_in` and `discharge`
-- `headwall`: `pipe_in` and `discharge`
+For example, a `bridge_deck` shows deck width and thickness, and a `retaining_wall` shows wall height, thickness and footing.
 
 The editor should expose this as a `Geometry Source` choice:
 
 - `Native`: simple parametric Structure body authored through practical dimensions.
-- `External Ref`: referenced FreeCAD/imported body with explicit connection point mapping when Drainage connectivity is needed.
+- `External Ref`: referenced FreeCAD/imported body.
 
-Drainage-ready external geometry must not connect directly to imported faces or edges.
-
-It should connect through stable Structure connection point rows owned by `StructureModel`.
-
-Do not place every possible bridge, culvert, and wall field in the main table.
+Do not place every possible bridge and wall field in the main table.
 
 ## 16. Preview and Output Rule
 
@@ -385,7 +343,6 @@ It should not store editable structure geometry.
 Possible outputs:
 
 - bridge deck solids
-- culvert bodies
 - retaining wall solids
 - clearance envelopes
 - structure-adjacent surface splits
@@ -406,8 +363,6 @@ Structure quantities should be traceable to:
 Recommended first quantity kinds:
 
 - `bridge_deck_volume`
-- `culvert_body_volume`
-- `culvert_opening_area`
 - `wall_face_area`
 - `wall_body_volume`
 - `clearance_envelope_conflict_count`
@@ -444,7 +399,7 @@ Recommended implementation order:
 
 1. Add normalized geometry spec storage to `StructureModel`.
 2. Add common fields: width, height, skew, vertical position mode.
-3. Add kind-specific specs for bridge, culvert, and retaining wall.
+3. Add kind-specific specs for bridge and retaining wall (culvert specs were removed on 2026-11-08).
 4. Add selected-row detail panel in the Structures editor.
 5. Make `V1StructureShowPreview` read geometry specs.
 6. Add validation for required fields by kind.
@@ -469,7 +424,6 @@ Current execution status:
   - Validate zero or negative dimensions once the editor can author them.
 - [x] Step 3: Add kind-specific specs.
   - Add bridge deck, girder, barrier, clearance, and support fields.
-  - Add culvert barrel, wall, invert, inlet, outlet, headwall, and wingwall fields.
   - Add retaining wall body, footing, side, batter, coping, and drainage reference fields.
 - [x] Step 4: Add selected-row detail panel.
   - Keep the main Structures table compact.
@@ -487,7 +441,7 @@ Current execution status:
   - Pass active structures and clearance diagnostics through evaluation results.
   - Do not copy editable geometry into `AppliedSection`.
 - [x] Step 8: Add corridor structure solid outputs.
-  - Generate bridge, culvert, wall, clearance, and adjacent-surface outputs from source specs and resolved interactions.
+  - Generate bridge, wall, clearance, and adjacent-surface outputs from source specs and resolved interactions.
   - Keep corridor build code from inventing structure meaning from preview geometry.
 - [x] Step 9: Add structure quantity fragments.
   - Normalize quantities by `structure_id`, `geometry_spec_id`, output id, station range, and material.
@@ -668,12 +622,11 @@ Status: completed.
 
 Purpose:
 
-- Make quantities useful for bridge, culvert, and retaining-wall review instead of only envelope volume.
+- Make quantities useful for bridge and retaining-wall review instead of only envelope volume.
 
 Scope:
 
 - Split bridge quantities into deck, girder, barrier, approach slab, and support placeholders where source fields exist.
-- Split culvert quantities into barrel, opening, wall, headwall, and wingwall placeholders.
 - Split retaining wall quantities into wall body, footing, coping, and drainage layer placeholders.
 - Keep every quantity fragment traceable to source geometry specs and output solids.
 
@@ -693,13 +646,6 @@ Completed implementation:
   - `bridge_barrier_face_area`
   - `bridge_approach_slab_area`
   - `bridge_support_count`
-- Add culvert detail fragments when source fields exist:
-  - `culvert_barrel_volume`
-  - `culvert_opening_area`
-  - `culvert_barrel_count`
-  - `culvert_wall_volume`
-  - `culvert_headwall_count`
-  - `culvert_wingwall_count`
 - Add retaining-wall detail fragments when source fields exist:
   - `wall_body_volume`
   - `wall_footing_volume`
@@ -759,7 +705,7 @@ First-slice implementation is acceptable when:
 
 This contract does not make Parametric Road a structural design package.
 
-It does not replace bridge, culvert, or retaining wall engineering tools.
+It does not replace bridge or retaining wall engineering tools.
 
 It does not require exact final construction geometry for the first v1 slice.
 

@@ -288,11 +288,6 @@ def _structure_target_rows(
         for row in list(getattr(structure_model, "geometry_spec_rows", []) or [])
         if str(getattr(row, "geometry_spec_id", "") or "")
     }
-    connection_points_by_structure: dict[str, list[object]] = {}
-    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
-        structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
-        if structure_ref:
-            connection_points_by_structure.setdefault(structure_ref, []).append(point)
     rows: list[SolidTargetRow] = []
     diagnostics: list[SolidTargetDiagnosticRow] = []
     for structure in list(getattr(structure_model, "structure_rows", []) or []):
@@ -310,15 +305,9 @@ def _structure_target_rows(
         spec = geometry_by_id.get(spec_ref)
         target_id = f"solid-target:structure-body:{_safe_id(structure_id)}"
         diagnostic_refs: list[str] = []
-        connection_points = list(connection_points_by_structure.get(structure_id, []) or [])
-        needs_external_connection_points = (
-            geometry_source_mode == "external_ref"
-            and _structure_requires_connection_points(structure)
-        )
         ready = (
             (spec is not None or (geometry_source_mode == "external_ref" and bool(geometry_ref)))
             and end > start
-            and (not needs_external_connection_points or bool(connection_points))
         )
         if spec is None and geometry_source_mode != "external_ref":
             diagnostic = _diagnostic(
@@ -335,15 +324,6 @@ def _structure_target_rows(
                 "missing_structure_geometry_ref",
                 target_id,
                 f"Structure {structure_id} cannot produce an external solid target without a geometry_ref.",
-            )
-            diagnostics.append(diagnostic)
-            diagnostic_refs.append(diagnostic.diagnostic_id)
-        if needs_external_connection_points and not connection_points:
-            diagnostic = _diagnostic(
-                "error",
-                "missing_external_structure_connection_points",
-                target_id,
-                f"External Drainage-ready Structure {structure_id} needs at least one Structure connection point before it can be used as a solid target.",
             )
             diagnostics.append(diagnostic)
             diagnostic_refs.append(diagnostic.diagnostic_id)
@@ -372,8 +352,7 @@ def _structure_target_rows(
                 notes=(
                     "Structure body target discovered from StructureModel; "
                     f"structure_kind={str(getattr(structure, 'structure_kind', '') or '')}; "
-                    f"geometry_source_mode={geometry_source_mode}; "
-                    f"connection_point_count={len(connection_points)}."
+                    f"geometry_source_mode={geometry_source_mode}."
                 ),
             )
         )
@@ -942,27 +921,6 @@ def _structure_geometry_source_mode(row) -> str:
     if reference_mode in {"source_ref", "reference_geometry", "external_ref"} or geometry_ref:
         return "external_ref"
     return "native"
-
-
-def _structure_requires_connection_points(row) -> bool:
-    values = [
-        str(getattr(row, "structure_kind", "") or ""),
-        str(getattr(row, "structure_role", "") or ""),
-        str(getattr(row, "native_type", "") or ""),
-    ]
-    drainage_tokens = {
-        "box_culvert",
-        "culvert",
-        "drainage_crossing",
-        "drainage_node",
-        "headwall",
-        "inlet",
-        "junction_box",
-        "manhole",
-        "outlet",
-        "pipe_culvert",
-    }
-    return any(value.strip().lower() in drainage_tokens for value in values)
 
 
 def _single_ref(values) -> str:

@@ -35,8 +35,8 @@ def test_duplicate_source_row_identity_is_a_typed_edit_diagnostic() -> None:
         project_id="project:test",
         structure_model_id="structure:main",
         structure_rows=[
-            StructureRow("structure:1", "culvert", "crossing", placement),
-            StructureRow("structure:1", "culvert", "crossing", placement),
+            StructureRow("structure:1", "bridge", "crossing", placement),
+            StructureRow("structure:1", "bridge", "crossing", placement),
         ],
     )
 

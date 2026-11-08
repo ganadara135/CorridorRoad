@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.services.editing.editor_source_service import without_removed_drainage_structures
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 
 
 # Explicit runtime collaborators are replaced by the command callback map.
 App = None
-CulvertGeometrySpec = None
 GEOMETRY_SOURCE_CHOICES = None
 Gui = None
 LENGTH_MODE_CHOICES = None
@@ -28,7 +28,6 @@ StructureRow = None
 VERTICAL_POSITION_MODE_CHOICES = None
 _alignment_id = None
 _bridge_spec_from_detail = None
-_culvert_spec_from_detail = None
 _default_geometry_height = None
 _default_geometry_height_for_native = None
 _default_geometry_width = None
@@ -37,7 +36,6 @@ _default_shape_kind = None
 _default_shape_kind_for_native = None
 _default_structure_kind_for_native = None
 _default_structure_role_for_native = None
-_derive_default_connection_points_for_row = None
 _detail_spec_family = None
 _detail_values_with_native_defaults = None
 _display_structure_ref = None
@@ -49,7 +47,6 @@ _geometry_source_mode = None
 _item_text = None
 _item_user_data = None
 _kind_detail_values = None
-_mark_auto_native_connection_points = None
 _native_detail_field_specs = None
 _normalized_connection_point_rows_for_structures = None
 _optional_float_text = None
@@ -98,7 +95,6 @@ class StructureEditorTaskPanelPresentation:
         self.structure_obj = structure_finder(self.document) if callable(structure_finder) else None
         self._geometry_spec_rows = []
         self._bridge_geometry_spec_rows = []
-        self._culvert_geometry_spec_rows = []
         self._retaining_wall_geometry_spec_rows = []
         self._connection_point_rows = []
         self._active_detail_structure_id = ""
@@ -333,7 +329,7 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             self._detail_fields.append(field)
         detail_layout.addLayout(detail_form)
 
-        self._connection_label = QtWidgets.QLabel("Drainage Connection Points")
+        self._connection_label = QtWidgets.QLabel("Connection Points")
         self._connection_label.setToolTip("Stable source endpoints for Drainage pipe/channel connectivity.")
         detail_layout.addWidget(self._connection_label)
         self._connection_table = QtWidgets.QTableWidget(0, 12)
@@ -377,9 +373,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
         pick_point_button = QtWidgets.QPushButton("Pick From 3D")
         pick_point_button.clicked.connect(self._pick_connection_point_from_3d)
         connection_action_row.addWidget(pick_point_button)
-        derive_points_button = QtWidgets.QPushButton("Derive Defaults")
-        derive_points_button.clicked.connect(self._derive_default_connection_points)
-        connection_action_row.addWidget(derive_points_button)
         preview_points_button = QtWidgets.QPushButton("Preview Points")
         preview_points_button.clicked.connect(self._preview_connection_points)
         connection_action_row.addWidget(preview_points_button)
@@ -388,7 +381,7 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
 
         detail_action_row = QtWidgets.QHBoxLayout()
         self._apply_detail_button = QtWidgets.QPushButton("Apply Selected Detail")
-        self._apply_detail_button.setToolTip("Apply geometry detail and Drainage Connection Points for the selected Structure row.")
+        self._apply_detail_button.setToolTip("Apply the geometry detail and connection points for the selected Structure row.")
         self._apply_detail_button.clicked.connect(self._apply_selected_detail)
         detail_action_row.addWidget(self._apply_detail_button)
         detail_action_row.addStretch(1)
@@ -430,9 +423,9 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
         model = to_structure_model(self.structure_obj)
         if model is None:
             return
+        model, removed = without_removed_drainage_structures(model)
         self._geometry_spec_rows = list(getattr(model, "geometry_spec_rows", []) or [])
         self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
-        self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
         self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
         self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
         self._active_detail_structure_id = ""
@@ -440,16 +433,22 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
         self._replace_rows(model.structure_rows)
         self._replace_geometry_specs(self._geometry_spec_rows)
         self._select_first_structure_row()
-        self._set_status(f"Loaded {len(model.structure_rows)} Structure row(s) from {self.structure_obj.Label}.")
+        text = f"Loaded {len(model.structure_rows)} Structure row(s) from {self.structure_obj.Label}."
+        if removed:
+            text += (
+                f"\n{len(removed)} culvert or drainage structure(s) from an earlier version were left out "
+                f"({', '.join(removed)}): model them in Drainage. Apply drops them from the Structure."
+            )
+        self._set_status(text)
 
     def _reload_existing_rows(self, *, selected_structure_id: str = "") -> None:
         self.structure_obj = find_v1_structure_model(self.document, preferred_structure_model=self.structure_obj)
         model = to_structure_model(self.structure_obj)
         if model is None:
             return
+        model, _removed = without_removed_drainage_structures(model)
         self._geometry_spec_rows = list(getattr(model, "geometry_spec_rows", []) or [])
         self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
-        self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
         self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
         self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
         self._active_detail_structure_id = ""
@@ -467,7 +466,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             model = structure_preset_model_from_document(preset_name, document=self.document)
             self._geometry_spec_rows = list(getattr(model, "geometry_spec_rows", []) or [])
             self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
-            self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
             self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
             self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
             self._replace_rows(model.structure_rows)
@@ -647,19 +645,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             self._sync_connection_points_from_table(self._active_detail_structure_id)
         self._set_status(f"Deleted {len(rows)} connection point row(s).")
 
-    def _derive_default_connection_points(self) -> None:
-        row = self._current_structure_row()
-        if row is None:
-            self._set_status("Select a Structure row before deriving connection points.")
-            return
-        points = _derive_default_connection_points_for_row(row, self._geometry_spec_for_structure(row), self._culvert_spec_for_structure(row))
-        if not points:
-            self._set_status(f"No default connection point rule is defined for {row.structure_kind}.")
-            return
-        self._replace_connection_points(points)
-        self._sync_connection_points_from_table(str(row.structure_id))
-        self._set_status(f"Derived {len(points)} connection point row(s) for {row.structure_id}.")
-
     def _pick_connection_point_from_3d(self) -> None:
         row = self._current_structure_row()
         if row is None:
@@ -837,13 +822,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
                 return spec
         return None
 
-    def _culvert_spec_for_structure(self, row: StructureRow) -> CulvertGeometrySpec | None:
-        spec_ref = str(getattr(row, "geometry_spec_ref", "") or "")
-        for spec in list(self._culvert_geometry_spec_rows or []):
-            if str(getattr(spec, "geometry_spec_ref", "") or "") == spec_ref:
-                return spec
-        return None
-
     def _sort_rows(self) -> None:
         try:
             current_id = self._current_structure_id()
@@ -986,11 +964,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
                     self._bridge_geometry_spec_rows,
                     _bridge_spec_from_detail(spec_ref, values),
                 )
-            elif detail_family == "culvert":
-                self._culvert_geometry_spec_rows = _replace_kind_spec(
-                    self._culvert_geometry_spec_rows,
-                    _culvert_spec_from_detail(spec_ref, values),
-                )
             elif detail_family == "retaining_wall":
                 self._retaining_wall_geometry_spec_rows = _replace_kind_spec(
                     self._retaining_wall_geometry_spec_rows,
@@ -999,7 +972,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             else:
                 self._set_status(f"No kind-specific detail fields are defined for {kind or 'custom'}.")
                 return
-            self._derive_default_connection_points_if_empty_or_auto(row)
             self._sync_connection_points_from_table(str(row.structure_id))
             self._load_selected_detail()
             self._refresh_selected_detail_validation(str(row.structure_id), spec_ref)
@@ -1037,7 +1009,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             detail_family,
             spec_ref,
             self._bridge_geometry_spec_rows,
-            self._culvert_geometry_spec_rows,
             self._retaining_wall_geometry_spec_rows,
         )
         values = _detail_values_with_native_defaults(native_type, values)
@@ -1180,26 +1151,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             self._table.setItem(row_index, col_index, item)
         item.setText(str(value or ""))
 
-    def _derive_default_connection_points_if_empty_or_auto(self, row: StructureRow | None) -> None:
-        if row is None or not self._connection_table_is_empty_or_auto_native():
-            return
-        points = _derive_default_connection_points_for_row(
-            row,
-            self._geometry_spec_for_structure(row),
-            self._culvert_spec_for_structure(row),
-        )
-        if not points:
-            return
-        self._replace_connection_points(_mark_auto_native_connection_points(points))
-
-    def _connection_table_is_empty_or_auto_native(self) -> bool:
-        if self._connection_table.rowCount() <= 0:
-            return True
-        for row_index in range(self._connection_table.rowCount()):
-            if "auto_native_default" not in _item_text(self._connection_table, row_index, 11):
-                return False
-        return True
-
     def _validate(self) -> None:
         try:
             model = self._model_from_table()
@@ -1294,10 +1245,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
             geometry_spec_rows=geometry_spec_rows,
             bridge_geometry_spec_rows=_filter_kind_specs(
                 self._bridge_geometry_spec_rows or getattr(existing, "bridge_geometry_spec_rows", []),
-                geometry_spec_rows,
-            ),
-            culvert_geometry_spec_rows=_filter_kind_specs(
-                self._culvert_geometry_spec_rows or getattr(existing, "culvert_geometry_spec_rows", []),
                 geometry_spec_rows,
             ),
             retaining_wall_geometry_spec_rows=_filter_kind_specs(

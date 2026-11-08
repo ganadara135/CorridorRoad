@@ -122,7 +122,7 @@ REGION_PRESETS = {
         ],
     },
     "Drainage Control": {
-        "note": "Normal road split by a drainage-control zone with ditch and culvert references.",
+        "note": "Normal road split by a drainage-control zone with ditch references.",
         "rows": [
             {
                 "id": "region:normal-before",

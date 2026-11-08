@@ -7,12 +7,12 @@ command/object-adapter step after preparation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Generic, Iterable, TypeVar
 
 from ...models.source.assembly_model import AssemblySubassemblyModel
 from ...models.source.drainage_model import DrainageModel
-from ...models.source.structure_model import StructureModel
+from ...models.source.structure_model import StructureModel, is_removed_drainage_structure
 from ...models.source.subassembly_definition_model import SubassemblyLibrary
 
 
@@ -33,14 +33,55 @@ class PreparedSourceEdit(Generic[SourceT]):
         return not any(row.startswith("error|") for row in self.diagnostics)
 
 
+def without_removed_drainage_structures(model: StructureModel) -> tuple[StructureModel, tuple[str, ...]]:
+    """The model without the culvert and other drainage structures Drainage now owns, and their ids.
+
+    A document saved before 2026-11-08 may still hold such rows. They are dropped with their
+    geometry specs and connection points; nothing else is touched.
+    """
+
+    removed = tuple(
+        str(row.structure_id)
+        for row in list(getattr(model, "structure_rows", ()) or ())
+        if is_removed_drainage_structure(row)
+    )
+    if not removed:
+        return model, ()
+    gone = set(removed)
+    gone_specs = {
+        str(row.geometry_spec_id)
+        for row in list(getattr(model, "geometry_spec_rows", ()) or ())
+        if str(row.structure_ref) in gone
+    }
+    return (
+        replace(
+            model,
+            structure_rows=[row for row in model.structure_rows if str(row.structure_id) not in gone],
+            geometry_spec_rows=[row for row in model.geometry_spec_rows if str(row.geometry_spec_id) not in gone_specs],
+            bridge_geometry_spec_rows=[row for row in model.bridge_geometry_spec_rows if str(row.geometry_spec_ref) not in gone_specs],
+            retaining_wall_geometry_spec_rows=[
+                row for row in model.retaining_wall_geometry_spec_rows if str(row.geometry_spec_ref) not in gone_specs
+            ],
+            connection_point_rows=[row for row in model.connection_point_rows if str(row.structure_ref) not in gone],
+        ),
+        removed,
+    )
+
+
 def prepare_structure_edit(model: StructureModel) -> PreparedSourceEdit[StructureModel]:
-    return _prepare_model(
-        model,
+    cleaned, removed = without_removed_drainage_structures(model)
+    prepared = _prepare_model(
+        cleaned,
         StructureModel,
-        source_id=getattr(model, "structure_model_id", ""),
-        rows=getattr(model, "structure_rows", ()),
+        source_id=getattr(cleaned, "structure_model_id", ""),
+        rows=getattr(cleaned, "structure_rows", ()),
         row_id="structure_id",
     )
+    notes = tuple(
+        f"warning|structure_moved_to_drainage|{structure_id}|Culverts and drainage structures are modelled in Drainage; this row was dropped."
+        for structure_id in removed
+    )
+    return replace(prepared, diagnostics=prepared.diagnostics + notes) if notes else prepared
 
 
 def prepare_drainage_edit(model: DrainageModel) -> PreparedSourceEdit[DrainageModel]:
@@ -140,4 +181,5 @@ __all__ = [
     "prepare_profile_vertical_curve_rows",
     "prepare_structure_edit",
     "prepare_subassembly_library_edit",
+    "without_removed_drainage_structures",
 ]

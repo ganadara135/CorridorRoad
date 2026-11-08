@@ -58,7 +58,6 @@ Structures affect corridor behavior in ways that cannot be modeled by template, 
 
 Typical examples:
 
-- a box culvert crossing that changes local section treatment
 - a retaining wall zone that changes slope behavior
 - a clearance envelope that forces local notch, skip, or replacement logic
 - an IFC reference object used for clash and coordination review
@@ -100,7 +99,6 @@ That means the subsystem should preserve:
 
 Recommended early v1 support:
 
-- box culvert or crossing reference structures
 - retaining wall and wall-adjacent structure context
 - clearance envelopes
 - IFC-backed reference structures
@@ -163,7 +161,6 @@ Each `StructureRow` represents one structure or structure reference that may inf
 
 ### 10.3 Recommended kinds
 
-- `box_culvert`
 - `retaining_wall`
 - `crossing_structure`
 - `abutment_context`

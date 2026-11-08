@@ -25,7 +25,6 @@ from .project_model import ProjectModel
 from .region_model import RegionDiagnosticRow, RegionModel, RegionPolicySet, RegionRow
 from .structure_model import (
     BridgeGeometrySpec,
-    CulvertGeometrySpec,
     RetainingWallGeometrySpec,
     StructureGeometrySpec,
     StructureModel,
@@ -91,7 +90,6 @@ __all__ = [
     "StructureModel",
     "StructureGeometrySpec",
     "BridgeGeometrySpec",
-    "CulvertGeometrySpec",
     "RetainingWallGeometrySpec",
     "SuperelevationModel",
     "SubassemblyDefinition",

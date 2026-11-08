@@ -57,7 +57,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
 )
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
-    CulvertGeometrySpec,
     RetainingWallGeometrySpec,
     StructureGeometrySpec,
     StructureModel,
@@ -2013,7 +2012,7 @@ def test_structure_solid_output_service_filters_by_applied_section_structure_ref
     assert "structure:wall-01" not in output.source_refs
 
 
-def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
+def test_quantity_build_service_gives_a_culvert_solid_no_quantity_since_drainage_owns_culverts() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -2035,6 +2034,7 @@ def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
             )
         ],
     )
+    # a solid output saved before culverts moved to Drainage still names this solid kind
     structure_solid_output = StructureSolidOutput(
         schema_version=1,
         project_id="proj-1",
@@ -2055,35 +2055,6 @@ def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
             )
         ],
     )
-    structure_model = StructureModel(
-        schema_version=1,
-        project_id="proj-1",
-        structure_model_id="structures:main",
-        structure_rows=[
-            StructureRow(
-                "structure:culvert-01",
-                "culvert",
-                "active",
-                StructurePlacement("placement:culvert-01", "alignment:main", 10.0, 20.0),
-                geometry_spec_ref="geometry-spec:culvert-01",
-            )
-        ],
-        geometry_spec_rows=[
-            StructureGeometrySpec("geometry-spec:culvert-01", "structure:culvert-01", width=3.0, height=2.0)
-        ],
-        culvert_geometry_spec_rows=[
-            CulvertGeometrySpec(
-                "geometry-spec:culvert-01",
-                barrel_shape="box",
-                barrel_count=2,
-                span=3.0,
-                rise=2.0,
-                wall_thickness=0.25,
-                headwall_type="straight",
-                wingwall_type="flared",
-            )
-        ],
-    )
 
     result = QuantityBuildService().build(
         QuantityBuildRequest(
@@ -2092,29 +2063,11 @@ def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
             applied_section_set=applied_section_set,
             quantity_model_id="quantity:main",
             structure_solid_output=structure_solid_output,
-            structure_model=structure_model,
+            structure_model=StructureModel(schema_version=1, project_id="proj-1", structure_model_id="structures:main"),
         )
     )
 
-    structure_rows = [
-        row
-        for row in result.fragment_rows
-        if row.measurement_kind == "structure_solid_output"
-    ]
-
-    assert [row.quantity_kind for row in structure_rows] == [
-        "culvert_barrel_volume",
-        "culvert_opening_area",
-        "culvert_barrel_count",
-        "culvert_wall_volume",
-        "culvert_headwall_count",
-        "culvert_wingwall_count",
-    ]
-    # culvert_wall_volume multiplies by barrel_count (2 here), unlike barrel volume
-    # and opening area; see the M8 decision B record in the execution plan.
-    assert [row.value for row in structure_rows] == [60.0, 6.0, 2.0, 55.0, 2.0, 4.0]
-    assert all(row.structure_ref == "structure:culvert-01" for row in structure_rows)
-    assert "structure-solids:main" in result.source_refs
+    assert [row for row in result.fragment_rows if row.measurement_kind == "structure_solid_output"] == []
 
 
 def test_quantity_build_service_uses_singular_subassembly_structure_ref() -> None:

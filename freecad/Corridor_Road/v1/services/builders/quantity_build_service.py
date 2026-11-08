@@ -174,10 +174,6 @@ class QuantityBuildService:
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
         }
-        culvert_by_ref = {
-            str(row.geometry_spec_ref): row
-            for row in list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
-        }
         wall_by_ref = {
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
@@ -188,7 +184,6 @@ class QuantityBuildService:
                     output_id=output_id,
                     solid=solid,
                     bridge=bridge_by_ref.get(str(getattr(solid, "geometry_spec_id", "") or "")),
-                    culvert=culvert_by_ref.get(str(getattr(solid, "geometry_spec_id", "") or "")),
                     wall=wall_by_ref.get(str(getattr(solid, "geometry_spec_id", "") or "")),
                 )
             )
@@ -250,14 +245,11 @@ def _structure_solid_quantity_fragments(
     output_id: str,
     solid,
     bridge=None,
-    culvert=None,
     wall=None,
 ) -> list[QuantityFragment]:
     solid_kind = str(getattr(solid, "solid_kind", "") or "")
     if solid_kind == "bridge_deck_solid":
         return _bridge_quantity_fragments(output_id=output_id, solid=solid, bridge=bridge)
-    if solid_kind == "culvert_body_solid":
-        return _culvert_quantity_fragments(output_id=output_id, solid=solid, culvert=culvert)
     if solid_kind == "retaining_wall_solid":
         return _retaining_wall_quantity_fragments(output_id=output_id, solid=solid, wall=wall)
     if solid_kind == "structure_envelope_solid":
@@ -554,6 +546,8 @@ def _section_station(section: AppliedSection) -> float:
         return float(getattr(frame, "station", getattr(section, "station", 0.0)) or 0.0)
     except Exception:
         return float(getattr(section, "station", 0.0) or 0.0)
+
+
 def _subassembly_refs_for_sections(sections: list[AppliedSection]) -> list[str]:
     refs: list[str] = []
     for section in list(sections or []):
@@ -690,74 +684,6 @@ def _bridge_quantity_fragments(*, output_id: str, solid, bridge=None) -> list[Qu
     return rows
 
 
-def _culvert_quantity_fragments(*, output_id: str, solid, culvert=None) -> list[QuantityFragment]:
-    rows = [
-        _structure_fragment(
-            output_id=output_id,
-            solid=solid,
-            suffix="barrel",
-            quantity_kind="culvert_barrel_volume",
-            value=float(getattr(solid, "volume", 0.0) or 0.0),
-            unit="m3",
-        ),
-        _structure_fragment(
-            output_id=output_id,
-            solid=solid,
-            suffix="opening",
-            quantity_kind="culvert_opening_area",
-            value=_positive(getattr(solid, "width", 0.0)) * _positive(getattr(solid, "height", 0.0)),
-            unit="m2",
-        ),
-    ]
-    barrel_count = int(_positive(getattr(culvert, "barrel_count", 0.0)))
-    if barrel_count > 0:
-        rows.append(
-            _structure_fragment(
-                output_id=output_id,
-                solid=solid,
-                suffix="barrel-count",
-                quantity_kind="culvert_barrel_count",
-                value=float(barrel_count),
-                unit="ea",
-            )
-        )
-    wall_volume = _culvert_wall_volume(solid, culvert=culvert, barrel_count=barrel_count)
-    if wall_volume > 0.0:
-        rows.append(
-            _structure_fragment(
-                output_id=output_id,
-                solid=solid,
-                suffix="wall",
-                quantity_kind="culvert_wall_volume",
-                value=wall_volume,
-                unit="m3",
-            )
-        )
-    if str(getattr(culvert, "headwall_type", "") or "").strip():
-        rows.append(
-            _structure_fragment(
-                output_id=output_id,
-                solid=solid,
-                suffix="headwall",
-                quantity_kind="culvert_headwall_count",
-                value=2.0,
-                unit="ea",
-            )
-        )
-    if str(getattr(culvert, "wingwall_type", "") or "").strip():
-        rows.append(
-            _structure_fragment(
-                output_id=output_id,
-                solid=solid,
-                suffix="wingwall",
-                quantity_kind="culvert_wingwall_count",
-                value=4.0,
-                unit="ea",
-            )
-        )
-    return rows
-
-
 def _retaining_wall_quantity_fragments(*, output_id: str, solid, wall=None) -> list[QuantityFragment]:
     rows = [
         _structure_fragment(
@@ -829,29 +755,6 @@ def _structure_fragment(
         station_end=getattr(solid, "station_end", None),
         structure_ref=str(getattr(solid, "structure_id", "") or ""),
     )
-
-
-def _culvert_wall_volume(solid, *, culvert=None, barrel_count: int = 0) -> float:
-    thickness = _positive(getattr(culvert, "wall_thickness", 0.0))
-    length = _length(solid)
-    count = max(int(barrel_count or 0), 1)
-    if thickness <= 0.0 or length <= 0.0:
-        return 0.0
-    shape = str(getattr(culvert, "barrel_shape", "") or "").strip().lower()
-    if shape == "circular":
-        diameter = _positive(getattr(culvert, "diameter", 0.0), fallback=_positive(getattr(solid, "width", 0.0)))
-        if diameter <= 0.0:
-            return 0.0
-        inner_radius = diameter / 2.0
-        outer_radius = inner_radius + thickness
-        return math.pi * (outer_radius * outer_radius - inner_radius * inner_radius) * length * count
-    span = _positive(getattr(culvert, "span", 0.0), fallback=_positive(getattr(solid, "width", 0.0)))
-    rise = _positive(getattr(culvert, "rise", 0.0), fallback=_positive(getattr(solid, "height", 0.0)))
-    if span <= 0.0 or rise <= 0.0:
-        return 0.0
-    outer_area = (span + 2.0 * thickness) * (rise + 2.0 * thickness)
-    inner_area = span * rise
-    return max(outer_area - inner_area, 0.0) * length * count
 
 
 def _length(solid) -> float:

@@ -6,6 +6,21 @@ from dataclasses import dataclass, field
 
 from .base import SourceModelBase
 
+# Culverts and the structures around them (inlet, outlet, headwall, manhole, junction box) are
+# modelled in Drainage since 2026-11-08: a pipe is a Drainage link and a culvert point's barrel is
+# the pipe of its link. A Structure of these kinds is no longer supported; documents saved before
+# lose such rows when the Structure is next applied.
+REMOVED_DRAINAGE_STRUCTURE_KINDS = frozenset({"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"})
+REMOVED_DRAINAGE_NATIVE_TYPES = frozenset({"box_culvert", "pipe_culvert", "inlet", "outlet", "headwall"})
+
+
+def is_removed_drainage_structure(row) -> bool:
+    """True for a Structure row of a kind or native type that now belongs to Drainage."""
+
+    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    return kind in REMOVED_DRAINAGE_STRUCTURE_KINDS or native_type in REMOVED_DRAINAGE_NATIVE_TYPES
+
 
 @dataclass(frozen=True)
 class StructurePlacement:
@@ -73,25 +88,6 @@ class BridgeGeometrySpec:
 
 
 @dataclass(frozen=True)
-class CulvertGeometrySpec:
-    """Culvert-specific barrel and crossing source dimensions."""
-
-    geometry_spec_ref: str
-    barrel_shape: str = "box"
-    barrel_count: int = 1
-    span: float = 0.0
-    rise: float = 0.0
-    diameter: float = 0.0
-    wall_thickness: float = 0.0
-    length: float = 0.0
-    invert_elevation: float | None = None
-    inlet_skew_angle_deg: float = 0.0
-    outlet_skew_angle_deg: float = 0.0
-    headwall_type: str = ""
-    wingwall_type: str = ""
-
-
-@dataclass(frozen=True)
 class RetainingWallGeometrySpec:
     """Retaining-wall-specific body and side source dimensions."""
 
@@ -138,6 +134,5 @@ class StructureModel(SourceModelBase):
     structure_rows: list[StructureRow] = field(default_factory=list)
     geometry_spec_rows: list[StructureGeometrySpec] = field(default_factory=list)
     bridge_geometry_spec_rows: list[BridgeGeometrySpec] = field(default_factory=list)
-    culvert_geometry_spec_rows: list[CulvertGeometrySpec] = field(default_factory=list)
     retaining_wall_geometry_spec_rows: list[RetainingWallGeometrySpec] = field(default_factory=list)
     connection_point_rows: list[StructureConnectionPoint] = field(default_factory=list)

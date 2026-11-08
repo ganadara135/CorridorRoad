@@ -198,7 +198,7 @@ Preferred review workflow:
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
 - retain `Watertight Solids` only as a paused compatibility surface; do not expand targets, topology, simulation, UI, or exchange behavior
-- use `Structures` as the v1 source editor for bridge, culvert, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
+- use `Structures` as the v1 source editor for bridge, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
 - continue Structures stabilization as connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, and Drainage/output handoff
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
