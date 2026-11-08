@@ -162,6 +162,21 @@ def drainage_flow_result(document) -> tuple[list, list, str]:
     return list(result.check_rows), list(result.link_rows), "Checks and grades are those of the last evaluation; Apply evaluates your edits."
 
 
+def drainage_flowlines(document) -> tuple[list, str]:
+    """The stored result's flowlines for Add Upstream and Add Downstream, and a note when none are given.
+
+    A stale result may hold stations that no longer fit the ditch, so none are given then.
+    """
+
+    result = to_drainage_result(find_v1_drainage_result_object(document))
+    if result is None:
+        return [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), before continuing the flow."
+    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
+    if row.status != CURRENT:
+        return [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) before continuing the flow."
+    return list(result.flowline_rows), ""
+
+
 def drainage_downhill_links(document, points: list, links: list) -> tuple[list, str]:
     """Links from each unlinked inlet to the nearest lower point, from the stored result's flowlines."""
 
@@ -238,6 +253,7 @@ configure_drainage_editor_task_panel_runtime(
         "drainage_editor_inputs": drainage_editor_inputs,
         "drainage_downhill_links": drainage_downhill_links,
         "drainage_flow_result": drainage_flow_result,
+        "drainage_flowlines": drainage_flowlines,
         "drainage_status_text": drainage_status_text,
         "drainage_suggestions": drainage_suggestions,
         "open_drainage_review": open_drainage_review,

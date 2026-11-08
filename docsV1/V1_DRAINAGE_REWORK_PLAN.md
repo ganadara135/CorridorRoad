@@ -406,6 +406,22 @@ Done on 2026-11-08 (gate passed; GUI check pending):
 - Tests: placement on the sample flowline; repeated Add Upstream clears `inlet_spacing` up to the
   crest; Add Downstream never creates a second outgoing link; ids stay unique; refusals.
 
+Done on 2026-11-08 (gate pending; GUI check pending):
+
+- `add_upstream` and `add_downstream` in `drainage_flow_service.py` return a `FlowContinuation`
+  (points, links, the node to select, a message); an empty one is a refusal with its reason.
+- Add Upstream measures the stretch from the node to the next point, high point or run end on the
+  rising side, along the flowline's plan length, and places the inlet one equal part up
+  (`ceil(stretch / maximum spacing)` parts, the same split the spacing suggestions use). A
+  stretch already within the spacing adds nothing, so the walk ends one spacing short of the crest
+  and never puts an inlet where `reverse_flow` would flag it. A culvert has no ditch and refuses.
+- Add Downstream links to the nearest lower point (a culvert crossing counts); with none it adds an
+  outfall at the run end the ditch falls to all the way, and refuses at a crest-less pocket that
+  rises again first. A node that drains, and an outfall, refuse.
+- The Flow tab has the two buttons; the new rows go into the tables, the tree is rebuilt and the new
+  node selected, so pressing again walks on. `drainage_flowlines` in `cmd_drainage_editor.py` gives
+  the stored flowlines only while the result is current.
+
 #### DR-6c Trace Network
 
 - One button builds the missing network as a proposal: the outfalls and inlets the suggestions

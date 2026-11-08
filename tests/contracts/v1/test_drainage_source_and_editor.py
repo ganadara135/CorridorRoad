@@ -16,6 +16,7 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
     V1DrainageEditorTaskPanel,
     apply_v1_drainage_model,
     drainage_editor_inputs,
+    drainage_flowlines,
     refresh_drainage_result,
 )
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
@@ -343,6 +344,59 @@ def test_the_flow_tab_shows_the_points_under_what_they_drain_into_and_selects_th
         panel._refresh_flow_tree()
         assert panel._flow_tree.topLevelItemCount() == 0
         assert panel._flow_note.text().startswith("The tree needs a valid Points table")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_flow_tab_continues_the_network_upstream_and_downstream_from_the_selected_point() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageFlowContinue")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        # no result yet: the flowlines wait for Rebuild Downstream, and the note says so
+        assert drainage_flowlines(doc)[0] == [] and "Rebuild Downstream" in drainage_flowlines(doc)[1]
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+        flowlines, note = drainage_flowlines(doc)
+        assert flowlines and note == ""
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._tabs.setCurrentWidget(panel._flow_tab)
+        panel._continue_flow(upstream=True)
+        assert panel._status.toPlainText() == "Select a point in the tree first."
+
+        # an outfall at the end the first ditch falls toward, then walk up from it
+        line = flowlines[0]
+        low_end = min((line.station_rows[0], line.station_rows[-1]), key=lambda row: row.z)
+        panel._append_point(DrainagePoint("outfall:1", "outfall", low_end.station, ditch_run_ref=line.ditch_run_ref))
+        panel._refresh_flow_tree()
+        panel._select_flow_node("outfall:1")
+        before = panel._point_table.rowCount(), panel._link_table.rowCount()
+        panel._continue_flow(upstream=True)
+        added = panel._point_table.rowCount() - before[0], panel._link_table.rowCount() - before[1]
+        assert added == (1, 1), panel._status.toPlainText()
+        new_id = panel._point_text(panel._point_table.rowCount() - 1, 0)
+        assert new_id.startswith("inlet")
+        assert panel._link_text(panel._link_table.rowCount() - 1, 1, combo=True) == new_id
+        assert panel._link_text(panel._link_table.rowCount() - 1, 2, combo=True) == "outfall:1"
+        assert panel._flow_tree.selectedItems()[0].data(0, QtCore.Qt.UserRole) == new_id
+        assert panel._status.toPlainText().endswith("Apply to keep it.")
+
+        # a point that drains nowhere is linked to the nearest lower point
+        middle = (line.station_rows[0].station + line.station_rows[-1].station) / 2.0
+        panel._append_point(DrainagePoint("inlet:9", "inlet", middle, ditch_run_ref=line.ditch_run_ref))
+        panel._refresh_flow_tree()
+        panel._select_flow_node("inlet:9")
+        panel._continue_flow(upstream=False)
+        assert panel._link_table.rowCount() == before[1] + 2, panel._status.toPlainText()
+        assert panel._link_text(panel._link_table.rowCount() - 1, 1, combo=True) == "inlet:9"
+        panel._continue_flow(upstream=False)  # it drains now: nothing more is added
+        assert panel._link_table.rowCount() == before[1] + 2
+        assert "already drains into" in panel._status.toPlainText()
+
+        assert panel._apply() is True
     finally:
         App.closeDocument(doc.Name)
 

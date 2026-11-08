@@ -22,6 +22,8 @@ from freecad.Corridor_Road.v1.models.source.drainage_model import (
 from freecad.Corridor_Road.v1.services.editing.drainage_editing_service import ditch_run_id, next_point_id
 from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import (
     CHECK_ERROR,
+    add_downstream,
+    add_upstream,
     build_flow_tree,
     flow_node_severity,
 )
@@ -47,6 +49,7 @@ Gui = None
 apply_v1_drainage_model = None
 drainage_downhill_links = None
 drainage_flow_result = None
+drainage_flowlines = None
 drainage_editor_inputs = None
 drainage_status_text = None
 drainage_suggestions = None
@@ -194,6 +197,17 @@ class V1DrainageEditorTaskPanel:
         self._flow_tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._flow_tree.itemSelectionChanged.connect(self._flow_selection_changed)
         layout.addWidget(self._flow_tree, 1)
+        continue_row = QtWidgets.QHBoxLayout()
+        upstream_button = QtWidgets.QPushButton("Add Upstream")
+        upstream_button.setToolTip("Add an inlet one step up the ditch from the selected point, draining into it. Press again to walk on.")
+        upstream_button.clicked.connect(lambda: self._continue_flow(upstream=True))
+        continue_row.addWidget(upstream_button)
+        downstream_button = QtWidgets.QPushButton("Add Downstream")
+        downstream_button.setToolTip("Link the selected point, which drains nowhere, to the nearest lower point, or to a new outfall at the run end.")
+        downstream_button.clicked.connect(lambda: self._continue_flow(upstream=False))
+        continue_row.addWidget(downstream_button)
+        continue_row.addStretch(1)
+        layout.addLayout(continue_row)
         self._flow_note = QtWidgets.QLabel("")
         self._flow_note.setWordWrap(True)
         layout.addWidget(self._flow_note)
@@ -252,6 +266,47 @@ class V1DrainageEditorTaskPanel:
             item.setToolTip(0, "\n".join(row.message for row in node.check_rows))
         for child in node.children:
             self._add_flow_item(item, child)
+
+    def _continue_flow(self, *, upstream: bool) -> None:
+        """Add the next point or link of the flow from the selected node; Apply keeps it."""
+
+        items = self._flow_tree.selectedItems()
+        point_id = str(items[0].data(0, QtCore.Qt.UserRole) or "") if items else ""
+        if not point_id:
+            self._set_status("Select a point in the tree first.")
+            return
+        try:
+            points, links = self._points(), self._links()
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return
+        flowlines, note = drainage_flowlines(self.document)
+        if not flowlines:
+            self._set_status(note)
+            return
+        if upstream:
+            step = add_upstream(point_id, points, links, flowlines, float(self._max_spacing.value()))
+        else:
+            step = add_downstream(point_id, points, links, flowlines)
+        if not step.added:
+            self._set_status(step.message)
+            return
+        for point in step.points:
+            self._append_point(point)
+        for link in step.links:
+            self._append_link(link)
+        self._refresh_flow_tree()
+        self._select_flow_node(step.select_point_id)
+        self._set_status(f"{step.message} Apply to keep it.")
+
+    def _select_flow_node(self, point_id: str) -> None:
+        iterator = QtWidgets.QTreeWidgetItemIterator(self._flow_tree)
+        while iterator.value():
+            item = iterator.value()
+            if str(item.data(0, QtCore.Qt.UserRole) or "") == point_id:
+                self._flow_tree.setCurrentItem(item)
+                return
+            iterator += 1
 
     def _flow_selection_changed(self) -> None:
         """Select the point's row in the Points table and its outgoing Link in the Links table."""
