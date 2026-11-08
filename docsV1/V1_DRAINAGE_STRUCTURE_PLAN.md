@@ -72,32 +72,79 @@ Done on 2026-11-08 (gate pending; GUI check pending):
 
 ### DS-3 Remove the Structure culvert, interaction rules and zones
 
-Inspect first (read-only): who consumes the zone ids besides diagnostics, and whether any
-non-drainage kind needs connection points. Then remove, in this order:
+#### Inspection results (read-only, 2026-11-08)
 
-1. Culvert: kind `culvert`, `CulvertGeometrySpec` and its rows, the culvert presets (the
-   "Culvert Crossing" and roadside drainage chain presets of `cmd_structure_editor.py`), the
-   culvert paths of `corridor_solid_service.py`, `quantity_build_service.py`,
-   `solid_target_discovery_service.py` and `cmd_watertight_solids.py` (Watertight Solid stays
-   paused; only the culvert paths go, with their tests).
-2. Interaction rules and zones: `StructureInteractionRule`, `StructureInfluenceZone`,
-   `structure_interaction_service.py`, their object properties in `obj_structure.py`, the editor
-   tabs, and the `active_structure_influence_zone_ids` and interaction rule ids that flow through
-   `applied_section.py`, `applied_section_service.py` and `corridor_surface_geometry_service.py`.
-3. Connection points, unless the inspection shows a remaining kind needs them.
-4. Documents: delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 of
-   `V1_STRUCTURE_MODEL.md`; update `V1_STRUCTURE_GEOMETRY_CONTRACT.md` and
-   `V1_PERSISTENCE_SCHEMA_INVENTORY.md`.
+- **Rules and zones are inert.** `StructureInteractionService.resolve_station` returns the active
+  structure ids, rule ids and zone ids of a station. Only the structure ids are used (Applied
+  Sections, Region review, solid target discovery, the section viewer, Build Parametric). The rule
+  and zone ids are stored on each Applied Section (`active_structure_rule_ids`,
+  `active_structure_influence_zone_ids`, the properties `ActiveStructureRuleRows` and
+  `ActiveStructureInfluenceZoneRows`), copied through `corridor_surface_geometry_service.py`, and
+  turned into two diagnostics in `applied_section_service.py` (`structure_interaction_rule` warns
+  when a structure has no rule; `structure_influence_zone` informs the same for zones). Nothing
+  reads them to decide geometry. The service itself stays: its job is "which structures are active
+  here", and it loses only the rule and zone parts.
+- **Connection points are drainage-only.** The two places that require them
+  (`_structure_requires_connection_points` in `solid_target_discovery_service.py` and
+  `_external_structure_requires_connection_points` in `cmd_watertight_solids.py`) test a closed
+  token list that is all drainage: `culvert`, `box_culvert`, `pipe_culvert`, `drainage_crossing`,
+  `drainage_node`, `headwall`, `inlet`, `outlet`, `junction_box`, `manhole`. No bridge, wall,
+  retaining wall, utility or custom structure needs them, so they go with the culvert.
+- **Persistence tolerates removed fields.** A probe wrote a payload with a row field and a whole row
+  list that the model class no longer has and restored it: the extra data was ignored and the rest
+  restored. So deleting dataclass fields and rows does not break older documents. The old
+  FeaturePython properties stay on an old object until it is next written; `obj_structure.py` and
+  `obj_applied_section.py` remove them then, the way `obj_drainage.py` removes its retired ones.
+- **Applied Sections do not need a forced rebuild.** Freshness follows the inputs, not the schema,
+  and an old stored set simply restores without the two removed lists. (This corrects the first
+  version of this plan, which said they become stale.)
+- **Size.** Culvert and connection-point lines: `cmd_structure_editor.py` 212 of 2,927,
+  `structure_editor.py` 99 of 1,545, `obj_structure.py` 60 of 811, `cmd_watertight_solids.py` 38 of
+  5,182, `corridor_solid_service.py` 29, `quantity_build_service.py` 23,
+  `solid_target_discovery_service.py` 15. Tests: `test_structure_editor_command.py` 247 matching
+  lines, `test_v1_structure_source_object.py` 79, `test_watertight_solids_command.py` 39,
+  `test_result_builders.py` 33, `test_solid_target_discovery_service.py` 12, and nine smaller files.
+- **Tests that use "culvert" only as a kind label** (`test_resolution_services.py`,
+  `test_section_command_bridge.py`, `test_build_corridor_command.py`,
+  `test_editor_source_edit_service.py`, `test_persistence_payload_object_adapters.py`) are
+  relabelled `bridge`; they test something else. The ones that test culvert behaviour are deleted.
+- **Outside the code:** `scripts/run_local_validation.ps1` names the test
+  `test_structure_editor_normalizes_connection_points_after_station_edits`; it is updated when that
+  test goes. The "Drainage Control" Region preset only has the words "ditch and culvert references"
+  in its note. The project tree keeps the legacy `CulvertModel` alias to the Drainage folder.
+  Culvert quantities (`culvert_barrel_volume`, opening area, barrel count, wall volume, headwall
+  count) disappear with the culvert solid; pipe volumes are in the Drainage output and are not yet
+  a quantity (Q4).
 
-- Applied Sections and Corridor results change contract, so they become stale and rebuild.
-- Tests: the Structure editor with only the remaining kinds, Applied Sections without zone ids,
-  the architecture test, all three regression runners.
+#### Steps, one commit each, each ending with the gate
+
+1. **Interaction rules and zones.** Remove `StructureInteractionRule` and `StructureInfluenceZone`
+   with their model rows, `obj_structure.py` properties and diagnostics, the editor tabs and preset
+   rows, the rule and zone parts of `StructureInteractionService` and `StructureResolutionResult`,
+   the two Applied Section fields and properties, their pass-through in
+   `corridor_surface_geometry_service.py`, and the two diagnostics. Tests: the Applied Section and
+   Structure object tests lose the rule and zone assertions; a station with a structure no longer
+   warns; an old payload with the fields restores.
+2. **Culvert.** Remove the `culvert` kind, `CulvertGeometrySpec` and its rows and validation, the
+   "Culvert Crossing" and "Drainage Structures" presets, the culvert paths of the solid, quantity,
+   target discovery and watertight code (Watertight Solid stays paused; only these paths and their
+   tests go), and reword the Region preset note. A document whose Structure still holds culvert
+   rows loses them when next applied, and the editor says so once on opening.
+3. **Connection points.** Remove `StructureConnectionPoint`, its editor tab and preview, its
+   diagnostics, and the two requirement checks above; update `scripts/run_local_validation.ps1`.
+4. **Documents.** Delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 and the
+   culvert kind from `V1_STRUCTURE_MODEL.md`; update `V1_STRUCTURE_GEOMETRY_CONTRACT.md`,
+   `V1_PERSISTENCE_SCHEMA_INVENTORY.md`, the CHANGELOG, and the line in `AGENTS.md` that says pipes
+   wait for the Structure rebuild.
+
+Order matters only between steps 2 and 3: connection points go last because the culvert is what
+required them. Step 1 is independent and the smallest, so it goes first.
 
 ## 5. Order and gate
 
 DR-6 first, then DS-1, DS-2, DS-3. Each phase ends with the gate in section 9 of the Drainage plan,
 a GUI check, a CHANGELOG `[Unreleased]` line and a commit. DS-3 is the large one (the Structure
-editor command alone is 2,927 lines) and is done in the four steps above, one commit each.
+editor command alone is 2,927 lines) and is done in the four steps of its section, one commit each.
 
 ## 6. Non-goals
 
@@ -111,3 +158,10 @@ editor command alone is 2,927 lines) and is done in the four steps above, one co
 - Q2: The culvert barrel is the pipe of the culvert point's outgoing link; a culvert has no size
   field of its own.
 - Q3: The Region preset text "ditch and culvert references" is reworded in DS-3.
+
+## 8. Open questions
+
+- Q4: Should Quantities and Earthwork take the pipe volumes from the Drainage output, now that the
+  culvert quantities go? Proposed: later, as its own step after DS-3; DS-3 only removes.
+- Q5: Should `StructureInteractionService` be renamed once it only resolves active structures?
+  Proposed: no; the name is exported and used widely, and a rename earns nothing.
