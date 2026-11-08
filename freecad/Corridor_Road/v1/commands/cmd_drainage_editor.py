@@ -138,13 +138,28 @@ def drainage_suggestions(document) -> tuple[list, str]:
 
     result = to_drainage_result(find_v1_drainage_result_object(document))
     if result is None:
-        return [], "No Drainage result yet: Apply, or run Rebuild Downstream, to get suggestions."
+        return [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), to get suggestions."
     row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
     if row.status != CURRENT:
-        return [], "The Drainage result is stale; run Rebuild Downstream for current suggestions."
+        return [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) for current suggestions."
     if not result.suggestion_rows:
         return [], "No suggestions: every low point is collected and the inlet spacing holds."
     return list(result.suggestion_rows), f"{len(result.suggestion_rows)} suggestion(s)."
+
+
+def drainage_flow_result(document) -> tuple[list, list, str]:
+    """The stored result's checks and measured links for the flow tree, and a note on them.
+
+    A stale result may name stations that no longer hold, so none are given then.
+    """
+
+    result = to_drainage_result(find_v1_drainage_result_object(document))
+    if result is None:
+        return [], [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), to see checks and grades."
+    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
+    if row.status != CURRENT:
+        return [], [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) to see checks and grades."
+    return list(result.check_rows), list(result.link_rows), "Checks and grades are those of the last evaluation; Apply evaluates your edits."
 
 
 def drainage_downhill_links(document, points: list, links: list) -> tuple[list, str]:
@@ -152,10 +167,10 @@ def drainage_downhill_links(document, points: list, links: list) -> tuple[list, 
 
     result = to_drainage_result(find_v1_drainage_result_object(document))
     if result is None:
-        return [], "No Drainage result yet: Apply, or run Rebuild Downstream, before linking downhill."
+        return [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), before linking downhill."
     row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
     if row.status != CURRENT:
-        return [], "The Drainage result is stale; run Rebuild Downstream before linking downhill."
+        return [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) before linking downhill."
     added = downhill_links(points, links, result.flowline_rows)
     return added, f"{len(added)} link(s) added from inlets to the nearest lower point. Apply to keep them."
 
@@ -222,6 +237,7 @@ configure_drainage_editor_task_panel_runtime(
         "apply_v1_drainage_model": apply_v1_drainage_model,
         "drainage_editor_inputs": drainage_editor_inputs,
         "drainage_downhill_links": drainage_downhill_links,
+        "drainage_flow_result": drainage_flow_result,
         "drainage_status_text": drainage_status_text,
         "drainage_suggestions": drainage_suggestions,
         "open_drainage_review": open_drainage_review,

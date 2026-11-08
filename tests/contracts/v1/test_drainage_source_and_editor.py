@@ -8,7 +8,7 @@ import FreeCAD as App
 import pytest
 
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import corridor_drainage_review_summary
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_drainage_review import V1DrainageReviewTaskPanel
@@ -274,6 +274,75 @@ def test_the_panel_adds_the_suggested_points_and_apply_settles_the_checks() -> N
         assert not {row.kind for row in result.check_rows} & {"drains_nowhere", "link_uphill", "link_loop", "link_unplaced"}
         assert len(result.link_rows) == len(inlets)
         assert all(row.grade_percent < 0.0 for row in result.link_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def _flow_items(panel) -> list[tuple[str, int, str]]:
+    """The flow tree's point rows as (point id, depth, text), parents before children."""
+
+    rows: list[tuple[str, int, str]] = []
+    stack = [(panel._flow_tree.topLevelItem(index), 0) for index in reversed(range(panel._flow_tree.topLevelItemCount()))]
+    while stack:
+        item, depth = stack.pop()
+        point_id = str(item.data(0, QtCore.Qt.UserRole) or "")
+        if point_id:
+            rows.append((point_id, depth, item.text(0)))
+        stack.extend((item.child(index), depth + 1) for index in reversed(range(item.childCount())))
+    return rows
+
+
+def test_the_flow_tab_shows_the_points_under_what_they_drain_into_and_selects_their_rows() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageFlowTab")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        assert [panel._tabs.tabText(i) for i in range(panel._tabs.count())][:3] == ["Policy", "Ditch Runs", "Flow"]
+        assert _flow_items(panel) == []
+        assert panel._flow_note.text().startswith("No points yet.")
+
+        # unsaved points show at once, each draining nowhere
+        panel._add_suggestions(selected_only=False)
+        panel._tabs.setCurrentWidget(panel._flow_tab)
+        unlinked = _flow_items(panel)
+        assert len(unlinked) == panel._point_table.rowCount()
+        assert {depth for _id, depth, _text in unlinked} == {0}
+        assert all("drains nowhere" in text for point_id, _depth, text in unlinked if point_id.startswith("inlet"))
+
+        assert panel._apply() is True
+        panel._link_downhill()
+        panel._refresh_flow_tree()
+        linked = _flow_items(panel)
+        point_ids = [point_id for point_id, _depth, _text in linked]
+        assert sorted(point_ids) == sorted(panel._point_text(row, 0) for row in range(panel._point_table.rowCount()))
+        assert len(set(point_ids)) == len(point_ids)
+        inlets = [point_id for point_id in point_ids if point_id.startswith("inlet")]
+        assert any(depth > 0 for _id, depth, _text in linked), "a linked inlet sits under the point it drains into"
+        assert all(depth == 0 for point_id, depth, _text in linked if not point_id.startswith("inlet"))
+        # a linked inlet reads its grade; the result is current, so the checks of the last Apply show
+        assert all(" into " in text for point_id, depth, text in linked if depth > 0)
+
+        # selecting a node selects its row in the Points table and its Link in the Links table
+        target = next(index for index in range(panel._flow_tree.topLevelItemCount()) if panel._flow_tree.topLevelItem(index).childCount())
+        child = panel._flow_tree.topLevelItem(target).child(0)
+        panel._flow_tree.setCurrentItem(child)
+        chosen = child.data(0, QtCore.Qt.UserRole)
+        assert chosen in inlets
+        selected_points = {panel._point_text(index.row(), 0) for index in panel._point_table.selectionModel().selectedRows()}
+        selected_links = {panel._link_text(index.row(), 1, combo=True) for index in panel._link_table.selectionModel().selectedRows()}
+        assert selected_points == {chosen} and selected_links == {chosen}
+
+        # a Points table that cannot be read says so instead of raising
+        panel._point_table.item(0, 3).setText("abc")
+        panel._refresh_flow_tree()
+        assert panel._flow_tree.topLevelItemCount() == 0
+        assert panel._flow_note.text().startswith("The tree needs a valid Points table")
     finally:
         App.closeDocument(doc.Name)
 

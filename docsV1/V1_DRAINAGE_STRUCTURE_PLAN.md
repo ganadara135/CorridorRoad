@@ -1,0 +1,94 @@
+# Parametric Road V1 Drainage Structure Plan
+
+Status: planned on 2026-11-08, not started. Starts after DR-6 (see `V1_DRAINAGE_REWORK_PLAN.md`).
+Replaces the "Structure rebuild" for drainage that the Drainage plan deferred, and makes
+`V1_STRUCTURE_CONNECTION_NODE_PLAN.md` obsolete.
+
+## 1. Purpose
+
+Culverts and pipes are part of the drainage flow, so the Drainage source owns them. Today the same
+culvert exists twice, as a Drainage point and as a Structure with connection points, and the two
+positions can disagree. After this plan there is one place to author them, the Flow tab, and one
+pipe geometry.
+
+## 2. Decisions taken (2026-11-08)
+
+- D1: Drainage owns culverts and pipes. Structure keeps the non-drainage kinds only (`bridge`,
+  `retaining_wall`, `wall`, `utility`, `custom`).
+- D2: Pipes are included, in the simplest form: a pipe is an attribute of a `DrainageLink`, always
+  circular, always straight between its two points.
+- D3: Structure interaction rules and influence zones are removed. They only produced diagnostics.
+
+## 3. Simplified model
+
+| Item | Source | Evaluated, never authored |
+|---|---|---|
+| Pipe | `DrainageLink.pipe_diameter_m` (`0` = open flow, no pipe) | length, invert at both ends (the flowline of each point), grade, barrel volume |
+| Culvert | a `DrainagePoint` of kind `culvert`, as today; its barrel is the pipe of its outgoing link | crossing length, from the road section width at its station |
+| Inlet, outfall | unchanged | unchanged |
+
+- One pipe geometry: a straight circular tube between the two 3D point positions. No manholes,
+  headwalls, wingwalls, skew, wall thickness or barrel count.
+- Position lives in the Drainage point only. Structure connection points are not needed for it.
+- The pipe body is a result of the Drainage stage (`pipe_rows` of `DrainageResult`), never source.
+- Units follow the Drainage source: meters, grade in percent.
+
+## 4. Phases
+
+### DS-1 Pipe on the link
+
+- `DrainageLink.pipe_diameter_m`, its object property with an `if not hasattr` guard, the Links
+  tab column and the Flow tab text (`... into outfall:1 via pipe 0.60 m`).
+- Diagnostics: a negative or non-numeric diameter is rejected at Apply.
+- Tests: source round trip, save and reopen, editor column, node text.
+
+### DS-2 Pipe results and review
+
+- The evaluation adds `pipe_rows` (link, from and to invert, length, grade, diameter, volume) and
+  checks `pipe_uphill` and `pipe_flat` that reuse the Policy minimum grade. Freshness stays the
+  `drainage` stage.
+- Drainage Review lists pipes and previews them as tubes; the Drainage output carries the rows and
+  their traceability to the link ids.
+- Tests: grade and length on the sample road, stale detection when a point moves, output rows.
+
+### DS-3 Remove the Structure culvert, interaction rules and zones
+
+Inspect first (read-only): who consumes the zone ids besides diagnostics, and whether any
+non-drainage kind needs connection points. Then remove, in this order:
+
+1. Culvert: kind `culvert`, `CulvertGeometrySpec` and its rows, the culvert presets (the
+   "Culvert Crossing" and roadside drainage chain presets of `cmd_structure_editor.py`), the
+   culvert paths of `corridor_solid_service.py`, `quantity_build_service.py`,
+   `solid_target_discovery_service.py` and `cmd_watertight_solids.py` (Watertight Solid stays
+   paused; only the culvert paths go, with their tests).
+2. Interaction rules and zones: `StructureInteractionRule`, `StructureInfluenceZone`,
+   `structure_interaction_service.py`, their object properties in `obj_structure.py`, the editor
+   tabs, and the `active_structure_influence_zone_ids` and interaction rule ids that flow through
+   `applied_section.py`, `applied_section_service.py` and `corridor_surface_geometry_service.py`.
+3. Connection points, unless the inspection shows a remaining kind needs them.
+4. Documents: delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 of
+   `V1_STRUCTURE_MODEL.md`; update `V1_STRUCTURE_GEOMETRY_CONTRACT.md` and
+   `V1_PERSISTENCE_SCHEMA_INVENTORY.md`.
+
+- Applied Sections and Corridor results change contract, so they become stale and rebuild.
+- Tests: the Structure editor with only the remaining kinds, Applied Sections without zone ids,
+  the architecture test, all three regression runners.
+
+## 5. Order and gate
+
+DR-6 first, then DS-1, DS-2, DS-3. Each phase ends with the gate in section 9 of the Drainage plan,
+a GUI check, a CHANGELOG `[Unreleased]` line and a commit. DS-3 is the large one (the Structure
+editor command alone is 2,927 lines) and is done in the four steps above, one commit each.
+
+## 6. Non-goals
+
+- Hydraulics and automatic pipe sizing.
+- Box culverts, headwalls, wingwalls, manholes and pipe junctions.
+- Bridge and retaining wall changes.
+
+## 7. Questions answered on 2026-11-08
+
+- Q1: Saved documents that hold culvert Structures need no migration; the removed rows are dropped.
+- Q2: The culvert barrel is the pipe of the culvert point's outgoing link; a culvert has no size
+  field of its own.
+- Q3: The Region preset text "ditch and culvert references" is reworded in DS-3.

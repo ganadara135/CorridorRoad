@@ -8,7 +8,7 @@ Assembly when the stored Drainage has none, and adding a suggestion only adds a 
 
 from __future__ import annotations
 
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DITCH_RUN_SIDES,
     DRAINAGE_POINT_KINDS,
@@ -20,7 +20,18 @@ from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DrainagePolicy,
 )
 from freecad.Corridor_Road.v1.services.editing.drainage_editing_service import ditch_run_id, next_point_id
+from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import (
+    CHECK_ERROR,
+    build_flow_tree,
+    flow_node_severity,
+)
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
+from freecad.Corridor_Road.v1.ui.presentation.drainage_flow_tree_presentation import (
+    LOOP_GROUP_TITLE,
+    flow_group_title,
+    flow_node_text,
+    flow_tree_note,
+)
 
 
 def configure_drainage_editor_task_panel_runtime(bindings) -> None:
@@ -35,6 +46,7 @@ App = None
 Gui = None
 apply_v1_drainage_model = None
 drainage_downhill_links = None
+drainage_flow_result = None
 drainage_editor_inputs = None
 drainage_status_text = None
 drainage_suggestions = None
@@ -65,6 +77,7 @@ class V1DrainageEditorTaskPanel:
         self._suggestions: list = []
         self.form = fit_task_panel_width(self._build_ui())
         self._load(self._model)
+        self._refresh_flow_tree()
         self._refresh_suggestions()
         if inputs["prefilled"]:
             self._set_status(
@@ -94,8 +107,9 @@ class V1DrainageEditorTaskPanel:
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        policy_box = QtWidgets.QGroupBox("Policy")
-        policy_form = QtWidgets.QFormLayout(policy_box)
+        # The Policy is its own tab so a short task panel cannot cut it off above the tables.
+        policy_tab = QtWidgets.QWidget()
+        policy_form = QtWidgets.QFormLayout(policy_tab)
         self._min_grade = QtWidgets.QDoubleSpinBox()
         self._min_grade.setRange(0.0, 20.0)
         self._min_grade.setDecimals(2)
@@ -112,9 +126,9 @@ class V1DrainageEditorTaskPanel:
         for rule in LOW_POINT_RULES:
             self._low_point_rule.addItem(LOW_POINT_LABELS.get(rule, rule), rule)
         policy_form.addRow("Low point:", self._low_point_rule)
-        layout.addWidget(policy_box)
 
         self._tabs = QtWidgets.QTabWidget()
+        self._tabs.addTab(policy_tab, "Policy")
         runs_tab = QtWidgets.QWidget()
         runs_layout = QtWidgets.QVBoxLayout(runs_tab)
         runs_layout.addWidget(QtWidgets.QLabel("The Assembly ditches that drain the road"))
@@ -143,10 +157,12 @@ class V1DrainageEditorTaskPanel:
         edit_row.addStretch(1)
         runs_layout.addLayout(edit_row)
         self._tabs.addTab(runs_tab, "Ditch Runs")
+        self._flow_tab = self._build_flow_tab()
+        self._tabs.addTab(self._flow_tab, "Flow")
         self._tabs.addTab(self._build_points_tab(), "Points")
         self._tabs.addTab(self._build_links_tab(), "Links")
         # Points name runs and Links name points, so their lists follow the other tabs
-        self._tabs.currentChanged.connect(lambda _index: self._refresh_reference_choices())
+        self._tabs.currentChanged.connect(self._tab_changed)
         layout.addWidget(self._tabs, 1)
 
         self._status = QtWidgets.QPlainTextEdit()
@@ -168,6 +184,91 @@ class V1DrainageEditorTaskPanel:
         action_row.addWidget(close_button)
         layout.addLayout(action_row)
         return widget
+
+    def _build_flow_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.addWidget(QtWidgets.QLabel("Where the water goes: each point sits under the point it drains into"))
+        self._flow_tree = QtWidgets.QTreeWidget()
+        self._flow_tree.setHeaderHidden(True)
+        self._flow_tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._flow_tree.itemSelectionChanged.connect(self._flow_selection_changed)
+        layout.addWidget(self._flow_tree, 1)
+        self._flow_note = QtWidgets.QLabel("")
+        self._flow_note.setWordWrap(True)
+        layout.addWidget(self._flow_note)
+        return tab
+
+    def _tab_changed(self, _index: int) -> None:
+        # Points name runs and Links name points, and the flow tree reads both tables
+        self._refresh_reference_choices()
+        if self._tabs.currentWidget() is self._flow_tab:
+            self._refresh_flow_tree()
+
+    def _refresh_flow_tree(self) -> None:
+        """Rebuild the tree from the tables as they stand, edits not yet applied included."""
+
+        self._flow_tree.clear()
+        try:
+            points, links = self._points(), self._links()
+        except ValueError as exc:
+            self._flow_note.setText(f"The tree needs a valid Points table: {exc}")
+            return
+        checks, link_rows, result_note = drainage_flow_result(self.document)
+        tree = build_flow_tree(points, links, check_rows=checks, link_rows=link_rows)
+        by_road = len({node.alignment_ref for node in tree.roots}) > 1
+        groups: dict[str, object] = {}
+        for node in tree.roots:
+            parent = self._flow_tree.invisibleRootItem()
+            if by_road:
+                if node.alignment_ref not in groups:
+                    groups[node.alignment_ref] = QtWidgets.QTreeWidgetItem(self._flow_tree, [""])
+                parent = groups[node.alignment_ref]
+            self._add_flow_item(parent, node)
+        for alignment_ref, group in groups.items():
+            members = sum(1 + _descendants(group.child(index)) for index in range(group.childCount()))
+            group.setText(0, flow_group_title(alignment_ref, members))
+        if tree.loop_nodes:
+            loop_group = QtWidgets.QTreeWidgetItem(self._flow_tree, [LOOP_GROUP_TITLE])
+            for node in tree.loop_nodes:
+                self._add_flow_item(loop_group, node)
+        self._flow_tree.expandAll()
+        self._flow_note.setText(
+            flow_tree_note(
+                point_count=tree.node_count,
+                root_count=len(tree.roots),
+                loop_count=len(tree.loop_nodes),
+                result_note=result_note,
+            )
+        )
+
+    def _add_flow_item(self, parent, node) -> None:
+        item = QtWidgets.QTreeWidgetItem(parent, [flow_node_text(node)])
+        item.setData(0, QtCore.Qt.UserRole, node.point_id)
+        severity = flow_node_severity(node)
+        if severity:
+            colour = QtGui.QColor(176, 0, 32) if severity == CHECK_ERROR else QtGui.QColor(176, 96, 0)
+            item.setForeground(0, QtGui.QBrush(colour))
+            item.setToolTip(0, "\n".join(row.message for row in node.check_rows))
+        for child in node.children:
+            self._add_flow_item(item, child)
+
+    def _flow_selection_changed(self) -> None:
+        """Select the point's row in the Points table and its outgoing Link in the Links table."""
+
+        items = self._flow_tree.selectedItems()
+        point_id = str(items[0].data(0, QtCore.Qt.UserRole) or "") if items else ""
+        if not point_id:
+            return
+        for row in range(self._point_table.rowCount()):
+            if self._point_text(row, POINT_ID_COLUMN) == point_id:
+                self._point_table.selectRow(row)
+                break
+        self._link_table.clearSelection()
+        for row in range(self._link_table.rowCount()):
+            if self._link_text(row, LINK_FROM_COLUMN, combo=True) == point_id:
+                self._link_table.selectRow(row)
+                break
 
     def _build_points_tab(self):
         tab = QtWidgets.QWidget()
@@ -195,16 +296,19 @@ class V1DrainageEditorTaskPanel:
         layout.addWidget(QtWidgets.QLabel("Suggestions from the Drainage checks"))
         self._suggestion_list = QtWidgets.QListWidget()
         self._suggestion_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        layout.addWidget(self._suggestion_list, 1)
+        # A bounded list keeps the Add buttons below it on screen in a short task panel.
+        self._suggestion_list.setMinimumHeight(70)
+        self._suggestion_list.setMaximumHeight(150)
+        layout.addWidget(self._suggestion_list)
         self._suggestion_note = QtWidgets.QLabel("")
         self._suggestion_note.setWordWrap(True)
         layout.addWidget(self._suggestion_note)
         suggestion_row = QtWidgets.QHBoxLayout()
-        add_selected = QtWidgets.QPushButton("Add Selected")
+        add_selected = QtWidgets.QPushButton("Add Selected Suggestions")
         add_selected.setToolTip("Add the selected suggestions as points; Apply keeps them.")
         add_selected.clicked.connect(lambda: self._add_suggestions(selected_only=True))
         suggestion_row.addWidget(add_selected)
-        add_all = QtWidgets.QPushButton("Add All")
+        add_all = QtWidgets.QPushButton("Add All Suggestions")
         add_all.clicked.connect(lambda: self._add_suggestions(selected_only=False))
         suggestion_row.addWidget(add_all)
         suggestion_row.addStretch(1)
@@ -324,6 +428,13 @@ class V1DrainageEditorTaskPanel:
         self._suggestion_note.setText(note)
 
     def _add_suggestions(self, *, selected_only: bool) -> None:
+        if not self._suggestions:
+            # Say why nothing happens instead of reporting "0 added".
+            self._set_status(self._suggestion_note.text() or "There are no suggestions to add.")
+            return
+        if selected_only and not self._suggestion_list.selectedItems():
+            self._set_status("Select one or more suggestions first, or use Add All Suggestions.")
+            return
         indexes = (
             sorted(self._suggestion_list.row(item) for item in self._suggestion_list.selectedItems())
             if selected_only
@@ -456,6 +567,7 @@ class V1DrainageEditorTaskPanel:
             f"{len(model.link_rows)} link(s).\n{evaluation}"
         )
         self._refresh_suggestions()
+        self._refresh_flow_tree()
         if close_after and _gui_available():
             Gui.Control.closeDialog()
         return True
@@ -499,6 +611,10 @@ class V1DrainageEditorTaskPanel:
 
     def _set_status(self, text: str) -> None:
         self._status.setPlainText(str(text or ""))
+
+
+def _descendants(item) -> int:
+    return sum(1 + _descendants(item.child(index)) for index in range(item.childCount()))
 
 
 def _combo(values: list[str], current: str):

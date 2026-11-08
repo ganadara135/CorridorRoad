@@ -2,7 +2,8 @@
 
 Date: 2026-10-16
 Branch: `ganada_0902`
-Status: Done on 2026-10-16 (DR-1 to DR-5); the current model is in V1_DRAINAGE_MODEL.md
+Status: Done on 2026-10-16 (DR-1 to DR-5); the current model is in V1_DRAINAGE_MODEL.md. DR-6
+(authoring by flow) is planned, section 8
 Scope: Drainage rewritten from scratch for road-side drainage: ditch runs, inlets, outfalls and
 culverts, flowline checks against a policy, and their review
 Related:
@@ -45,8 +46,9 @@ from the road results.
   Assembly; Drainage never edits section geometry.
 - Flow direction, grades, low points and elevations are evaluated, never authored.
 - Kinds are a closed list. No kind, family or side is ever inferred from an id or a label.
-- Pipes stop at a checked link: from, to, length and grade. Pipe bodies, Structure ports and the
-  network and junction results wait for the Structure rebuild, which owns the ports.
+- Pipes stop at a checked link: from, to, length and grade. Pipe bodies wait for the Drainage
+  structure work in `V1_DRAINAGE_STRUCTURE_PLAN.md` (decided 2026-11-08: Drainage owns culverts and
+  pipes; Structure interaction rules and zones are removed).
 - The Drainage paths of Watertight Solids and the Simulation package are removed with the old
   pipe results (D2 of the general road plan deferred this to here).
 
@@ -330,7 +332,104 @@ GUI review fixes, 2026-10-17:
   the stage freshness, a per-stage progress bar (`rebuild_downstream(progress=...)`) and the report.
 - Cross Section viewer columns are user-resizable.
 
-Each phase ends with the gate and a GUI check, then a commit.
+### DR-6 Authoring by flow
+
+Planned on 2026-11-08. Not started.
+
+Why. DR-1 to DR-5 made the model and its checks right, but the panel still authors it as three flat
+tables. A user adds a point (its station starts at 0.0 and is typed), adds a Link in another tab and
+picks both ends from combo boxes, and sees what drains where only by reading the rows or opening
+Drainage Review. The only helpers are the suggestions and Link Downhill. The panel does not show the
+checks at all. Drainage is a network, so it should be built and read as one: start from where the
+water leaves, and continue upstream along the flow.
+
+Decisions:
+
+- No source change. `DrainagePoint` and `DrainageLink` stay as they are; the flow tree is a view of
+  them, and every action only adds, changes or removes points and links in the panel's tables.
+  Nothing is written before Apply, Cancel writes nothing, and opening the panel creates nothing.
+- Station, side and elevation of a new point come from the stored result's flowlines, as the
+  suggestions do; the user never types a station for a continued point. A stale result disables
+  Continue and Trace with the same note the suggestions use.
+- The tree follows the model's own rules: a point drains into one point at most (`drains_twice`), a
+  loop is an error (`link_loop`), so the structure is a forest. Roots are the points with no
+  outgoing link (outfalls, culverts, and an inlet that drains nowhere, which is flagged). A loop
+  is shown under a separate "Loop" node and never hangs the builder.
+- Logic is pure Python and UI-independent: `services/editing/drainage_flow_service.py` (tree,
+  continue, trace) and `ui/presentation/drainage_flow_tree_presentation.py` (rows and text).
+  `drainage_editing_service.downhill_links` and the suggestion rules are reused, not copied: the
+  per-inlet "nearest lower point" step becomes one public function both Link Downhill and Continue
+  Downstream call.
+- Checks reach a node through the check id (`kind:point_id`, `kind:link_id`); no result field is
+  added. Station-only checks (`low_point_uncollected`, `inlet_spacing`) attach to the nearest node
+  of the run.
+- Existing documents keep working: the new tab reads the same points and links.
+
+#### DR-6a Flow tree
+
+- A Flow tab between Ditch Runs and Points: one tree per document (roads in a multi-road document
+  are top-level groups), nodes ordered by station. A node reads like
+  `inlet:3  STA 120.000  falls 0.8 % to outfall:1`, and carries a severity mark from its checks.
+- Selecting a node selects its row in the Points table; selecting a link target selects its Link
+  row. The tree is read-only in this phase.
+- Tests: tree of the sample road after Accept All and Link Downhill (roots are the outfalls, every
+  inlet sits under exactly one root, no orphan); a loop and a link to a missing point do not hang
+  or raise; checks attach by id; the presentation text.
+
+Done on 2026-11-08 (gate passed; GUI check pending):
+
+- `services/editing/drainage_flow_service.py`: `build_flow_tree` makes the forest from the points
+  and links (iterative, so a long chain cannot hit the recursion limit); `FlowNode`, `FlowTree`,
+  `walk_flow_nodes`, `flow_node_severity`. A point with two outgoing links follows the first; a link
+  to a missing point or to itself leaves a root that says so; duplicate point ids make one node.
+- Checks attach by id (`kind:point_id`, or `kind:link_id` to the link's From point); only
+  `low_point_uncollected` and `inlet_spacing` go to the nearest point of their run. No result field
+  was added.
+- `ui/presentation/drainage_flow_tree_presentation.py` holds the node, group and note text.
+- The Flow tab sits between Ditch Runs and Points. It rebuilds from the tables as they stand when
+  the tab opens, after load and after Apply; the stored result's checks and link grades show only
+  while it is current (`drainage_flow_result` in `cmd_drainage_editor.py`). Selecting a node selects
+  its Points row and its outgoing Link row.
+- Tests: `test_drainage_flow_tree.py` (new, 13) and the Flow tab case in
+  `test_drainage_source_and_editor.py`. Gate 1,151 passed / 14 skipped, three runners PASS.
+
+#### DR-6b Continue from a node
+
+- **Add Upstream** on a selected node: a new inlet on the node's run, linked into the node. It sits
+  one equal step up the flowline, with the step taken from the stretch to the next collector, high
+  point or run end, so the Policy's maximum spacing holds and pressing it repeatedly walks up to the
+  crest. At the crest or a run end it says there is nothing upstream and adds nothing.
+- **Add Downstream** on a node that drains nowhere: a link to the nearest lower point on its run (or
+  a culvert crossing its road), and if there is none, a new outfall at the run end the flowline
+  falls toward, linked. A node that already drains refuses and names where.
+- Both put the new rows in the tables and select the new node.
+- Tests: placement on the sample flowline; repeated Add Upstream clears `inlet_spacing` up to the
+  crest; Add Downstream never creates a second outgoing link; ids stay unique; refusals.
+
+#### DR-6c Trace Network
+
+- One button builds the missing network as a proposal: the outfalls and inlets the suggestions
+  would add, then a downhill link for every inlet that drains nowhere. The tree shows the proposal
+  rows as pending; Accept moves them into the tables, Discard drops them. Existing points and
+  links are never moved or removed, so it can be run again after hand edits to fill only the gaps.
+- The proposal is computed from the current tables and the stored result's flowlines (the points'
+  places already come from the flowlines, so unsaved points work). It is not stored anywhere.
+- Tests: on the sample road the traced network leaves no low point, spacing, link or
+  `drains_nowhere` check; a second trace proposes nothing; hand-placed points survive a trace.
+
+#### DR-6d Fix from the flow
+
+- The Flow tab lists the selected node's checks (message and severity), with the action that fixes
+  each: `drains_nowhere` and `low_point_uncollected` offer Add Downstream or the suggestion;
+  `link_uphill`, `link_flat` and `drains_twice` offer Reconnect To (a list of the points lower than
+  the From point) or Delete Link; `reverse_flow` and `point_off_run` offer Delete Point.
+- Tests: each action clears its check after Apply on the sample road.
+
+Out of scope for DR-6: picking points in the 3D view, hydraulics, pipe bodies and Structure ports
+(Structure rebuild), automatic culvert placement, and a drag-and-drop graph editor.
+
+Each phase ends with the gate, a GUI check, and a CHANGELOG `[Unreleased]` line, then a commit. DR-6
+ends by updating section 6 of `V1_DRAINAGE_MODEL.md`; the wiki draft is changed only on request.
 
 ## 9. Validation per phase
 
@@ -344,7 +443,7 @@ Each phase ends with the gate and a GUI check, then a commit.
 ## 10. Non-goals
 
 - Hydraulics: catchment areas, runoff, capacity and pipe sizing.
-- Pipe bodies, manholes and Structure ports (Structure rebuild).
+- Pipe bodies and manholes (pipe bodies: `V1_DRAINAGE_STRUCTURE_PLAN.md`; manholes stay out).
 - Intersection drainage beyond what the intersection kernel already reports as a low point.
 - Drainage in Watertight Solids or the Simulation package.
 
@@ -354,3 +453,9 @@ Each phase ends with the gate and a GUI check, then a commit.
   Proposed: wait.
 - Q2: Should the editor's Ditch Run prefill follow Region spans, or run over the whole Alignment
   where the Assembly has a ditch? Proposed: Region spans, since Regions own the Assembly assignment.
+- Q3 (DR-6): Is a culvert a node like any other, tagged "crosses road", whose outgoing link goes to
+  a point on either side? Proposed: yes; Continue never creates a crossing by itself.
+- Q4 (DR-6): At a low point both directions rise, so which way does Add Upstream go? Proposed: the
+  longer uncollected stretch first, and the next press takes the other.
+- Q5 (DR-6): May Trace Network run on a stale result? Proposed: no, as for the suggestions; the
+  note says to run Rebuild Downstream.
