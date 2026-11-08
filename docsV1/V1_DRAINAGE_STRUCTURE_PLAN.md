@@ -42,6 +42,14 @@ pipe geometry.
 - Diagnostics: a negative or non-numeric diameter is rejected at Apply.
 - Tests: source round trip, save and reopen, editor column, node text.
 
+Done on 2026-11-08 (gate passed; GUI check pending):
+
+- `DrainageLink.pipe_diameter_m` (default 0, so a link stored before pipes restores as open flow;
+  a test writes such a payload). The Links tab has a `Pipe (m)` column, blank for open flow; a
+  number that is not one is refused when the table is read, and Apply refuses a negative or
+  non-finite diameter. Reconnect To keeps a link's pipe. The Flow tab reads
+  `... into outfall:1 via pipe 0.60 m`.
+
 ### DS-2 Pipe results and review
 
 - The evaluation adds `pipe_rows` (link, from and to invert, length, grade, diameter, volume) and

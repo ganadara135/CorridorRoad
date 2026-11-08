@@ -49,6 +49,7 @@ class FlowNode:
     drains_to_missing: bool = False
     link_ref: str = ""
     link_grade_percent: float | None = None
+    pipe_diameter_m: float = 0.0
     check_rows: tuple = ()
     children: tuple["FlowNode", ...] = ()
     # "point" for a proposed point, "link" for an existing point whose outgoing link is proposed
@@ -164,6 +165,7 @@ def _node(point, link, by_id, checks, grades, children, pending_point_ids=frozen
         drains_to_missing=link is not None and link.to_ref not in by_id,
         link_ref=link.link_id if link is not None else "",
         link_grade_percent=grades.get(link.link_id) if link is not None else None,
+        pipe_diameter_m=float(link.pipe_diameter_m) if link is not None else 0.0,
         check_rows=tuple(checks.get(point.point_id, ())),
         children=children,
     )

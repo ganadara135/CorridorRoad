@@ -29,6 +29,8 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     apply_v1_assembly_subassembly_model,
     assembly_subassembly_preset_model_from_document,
 )
+from freecad.Corridor_Road.v1.services.editing.drainage_editing_service import link_diagnostics
+from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import FlowEdit
 from freecad.Corridor_Road.v1.services.evaluation.drainage_evaluation_service import suggest_points
 from freecad.Corridor_Road.v1.ui.editors.drainage_editor import LINK_TO_COLUMN as LINK_TO
 from freecad.Corridor_Road.v1.models.source.drainage_model import (
@@ -88,7 +90,7 @@ def _model() -> DrainageModel:
         policy=DrainagePolicy(min_grade_percent=0.5, max_inlet_spacing_m=45.0, low_point_rule="allow_ponding"),
         ditch_run_rows=[DitchRun("ditch-run:left", "left", "ditch:left", 0.0, 120.0, alignment_ref="alignment:main")],
         point_rows=[DrainagePoint("inlet:1", "inlet", 60.0, side="left", ditch_run_ref="ditch-run:left")],
-        link_rows=[DrainageLink("link:1", "inlet:1", "outfall:1")],
+        link_rows=[DrainageLink("link:1", "inlet:1", "outfall:1", pipe_diameter_m=0.6)],
     )
 
 
@@ -115,6 +117,72 @@ class _DrainageBeforeTheRework:
     project_id: str
     drainage_model_id: str = "drainage:main"
     element_rows: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class _LinkBeforePipes:
+    link_id: str
+    from_ref: str
+    to_ref: str
+
+
+@dataclass
+class _DrainageBeforePipes:
+    schema_version: int
+    project_id: str
+    drainage_model_id: str = "drainage:main"
+    policy: DrainagePolicy = field(default_factory=DrainagePolicy)
+    ditch_run_rows: list = field(default_factory=list)
+    point_rows: list = field(default_factory=list)
+    link_rows: list = field(default_factory=list)
+
+
+def test_a_link_stored_before_pipes_restores_as_open_flow() -> None:
+    doc, project = _new_project_doc("V1DrainageSourceBeforePipes")
+    try:
+        obj = create_or_update_v1_drainage_model_object(doc, project=project)
+        old = _DrainageBeforePipes(1, "p", link_rows=[_LinkBeforePipes("link:1", "inlet:1", "outfall:1")])
+        write_model_payload(obj, old, model_type="DrainageModel", row_fields=("ditch_run_rows", "point_rows", "link_rows"))
+        model = to_drainage_model(obj)
+        assert model is not None
+        assert model.link_rows == [DrainageLink("link:1", "inlet:1", "outfall:1")]
+        assert model.link_rows[0].pipe_diameter_m == 0.0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_links_tab_keeps_a_pipe_diameter_blank_for_open_flow_and_refuses_text() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageLinkPipe")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        run = panel._run_ids()[0]
+        for point in (DrainagePoint("inlet:1", "inlet", 10.0, ditch_run_ref=run), DrainagePoint("outfall:1", "outfall", 90.0, ditch_run_ref=run)):
+            panel._append_point(point)
+        panel._append_link(DrainageLink("link:1", "inlet:1", "outfall:1", pipe_diameter_m=0.6))
+        panel._append_link(DrainageLink("link:2", "outfall:1", "inlet:1"))
+        assert panel._link_table.item(0, 3).text() == "0.6" and panel._link_table.item(1, 3).text() == ""
+        assert [link.pipe_diameter_m for link in panel._links()] == [0.6, 0.0]
+        panel._link_table.item(1, 3).setText("0.45")
+        assert panel._links()[1].pipe_diameter_m == 0.45
+        panel._link_table.item(1, 3).setText("wide")
+        with pytest.raises(ValueError, match="Link row 2: Pipe 'wide' is not a number"):
+            panel._links()
+        # reconnecting a link keeps its pipe
+        panel._link_table.item(1, 3).setText("")
+        panel._apply_flow_edit(FlowEdit(relink=(("link:1", "inlet:1"),)))
+        assert panel._links()[0].pipe_diameter_m == 0.6 and panel._links()[0].to_ref == "inlet:1"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_a_negative_or_non_finite_pipe_diameter_is_refused_at_apply() -> None:
+    points = [DrainagePoint("inlet:1", "inlet", 1.0, ditch_run_ref="r"), DrainagePoint("outfall:1", "outfall", 9.0, ditch_run_ref="r")]
+    assert link_diagnostics([DrainageLink("link:1", "inlet:1", "outfall:1", 0.6)], points) == []
+    assert link_diagnostics([DrainageLink("link:1", "inlet:1", "outfall:1", 0.0)], points) == []
+    assert "pipe diameter must be 0 (open flow) or more" in link_diagnostics([DrainageLink("link:1", "inlet:1", "outfall:1", -0.3)], points)[0]
+    assert "pipe diameter" in link_diagnostics([DrainageLink("link:1", "inlet:1", "outfall:1", float("nan"))], points)[0]
 
 
 def test_a_drainage_object_from_before_the_rework_restores_empty_and_drops_its_old_rows() -> None:

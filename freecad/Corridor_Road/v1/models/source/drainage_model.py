@@ -64,11 +64,16 @@ class DrainagePoint:
 
 @dataclass(frozen=True)
 class DrainageLink:
-    """Water from one point drains into another."""
+    """Water from one point drains into another.
+
+    `pipe_diameter_m` is the circular pipe that carries it; 0 means open flow, no pipe. The pipe's
+    length, ends and grade are measured from the points' places, never authored.
+    """
 
     link_id: str
     from_ref: str
     to_ref: str
+    pipe_diameter_m: float = 0.0
 
 
 @dataclass

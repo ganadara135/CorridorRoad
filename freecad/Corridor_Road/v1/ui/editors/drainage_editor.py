@@ -68,8 +68,8 @@ POINT_COLUMNS = ("ID", "Kind", "Ditch Run", "STA")
 POINT_ID_COLUMN, POINT_KIND_COLUMN, POINT_RUN_COLUMN, POINT_STATION_COLUMN = range(len(POINT_COLUMNS))
 # A culvert crosses the road and collects from every run it meets, so it may name no run.
 CROSSES_ROAD = ""
-LINK_COLUMNS = ("ID", "From", "To")
-LINK_ID_COLUMN, LINK_FROM_COLUMN, LINK_TO_COLUMN = range(len(LINK_COLUMNS))
+LINK_COLUMNS = ("ID", "From", "To", "Pipe (m)")
+LINK_ID_COLUMN, LINK_FROM_COLUMN, LINK_TO_COLUMN, LINK_PIPE_COLUMN = range(len(LINK_COLUMNS))
 
 
 class V1DrainageEditorTaskPanel:
@@ -635,6 +635,10 @@ class V1DrainageEditorTaskPanel:
         self._link_table.setItem(row, LINK_ID_COLUMN, id_item)
         self._link_table.setCellWidget(row, LINK_FROM_COLUMN, _combo(point_ids, link.from_ref))
         self._link_table.setCellWidget(row, LINK_TO_COLUMN, _combo(point_ids, link.to_ref))
+        # blank means open flow; a diameter in meters makes the link a circular pipe
+        pipe_item = QtWidgets.QTableWidgetItem(f"{link.pipe_diameter_m:g}" if link.pipe_diameter_m > 0.0 else "")
+        pipe_item.setToolTip("Pipe diameter in meters; leave blank for open flow.")
+        self._link_table.setItem(row, LINK_PIPE_COLUMN, pipe_item)
 
     def _delete_selected_links(self) -> None:
         for row in sorted({index.row() for index in self._link_table.selectionModel().selectedRows()}, reverse=True):
@@ -656,6 +660,7 @@ class V1DrainageEditorTaskPanel:
                 self._link_text(row, LINK_ID_COLUMN),
                 self._link_text(row, LINK_FROM_COLUMN, combo=True),
                 self._link_text(row, LINK_TO_COLUMN, combo=True),
+                _pipe_diameter(self._link_table.item(row, LINK_PIPE_COLUMN), f"Link row {row + 1}: Pipe"),
             )
             for row in range(self._link_table.rowCount())
         ]
@@ -927,6 +932,18 @@ def _station(item, label: str) -> float:
     exact = item.data(_EXACT_STATION_ROLE) if item is not None else None
     if exact is not None and text == f"{float(exact):.3f}":
         return float(exact)
+    try:
+        return float(text)
+    except ValueError:
+        raise ValueError(f"{label} '{text}' is not a number.") from None
+
+
+def _pipe_diameter(item, label: str) -> float:
+    """The pipe diameter typed into a cell: blank is open flow (0), else a number."""
+
+    text = str(item.text() if item is not None else "").strip()
+    if not text:
+        return 0.0
     try:
         return float(text)
     except ValueError:

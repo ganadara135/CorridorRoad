@@ -159,6 +159,14 @@ def test_a_long_chain_does_not_hit_the_recursion_limit() -> None:
     assert sum(1 for _node in walk_flow_nodes(tree.roots)) == count
 
 
+def test_the_node_text_names_the_pipe_a_link_carries() -> None:
+    points = [DrainagePoint("outfall:1", "outfall", 100.0, ditch_run_ref="r"), DrainagePoint("inlet:1", "inlet", 60.0, ditch_run_ref="r")]
+    piped = build_flow_tree(points, [DrainageLink("link:1", "inlet:1", "outfall:1", pipe_diameter_m=0.6)]).roots[0].children[0]
+    open_flow = build_flow_tree(points, [DrainageLink("link:1", "inlet:1", "outfall:1")]).roots[0].children[0]
+    assert flow_node_text(piped).endswith("into outfall:1 via pipe 0.60 m")
+    assert "pipe" not in flow_node_text(open_flow)
+
+
 def test_the_node_text_reads_station_grade_target_and_checks() -> None:
     points, links = _chain()
     measured = [DrainageLinkRow("link:1", "inlet:1", "outfall:1", 20.0, 9.8, 9.7, -0.5)]

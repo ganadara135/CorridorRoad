@@ -7,6 +7,7 @@ span; Regions own which Assembly applies where, so the prefill follows the Regio
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ...models.source.assembly_model import AssemblySubassemblyModel
@@ -189,6 +190,9 @@ def link_diagnostics(links: list[DrainageLink], points: list[DrainagePoint]) -> 
                 messages.append(f"{label}: {end} point '{ref}' does not exist.")
         if link.from_ref and link.from_ref == link.to_ref:
             messages.append(f"{label}: links {link.from_ref} to itself.")
+        diameter = float(link.pipe_diameter_m)
+        if not math.isfinite(diameter) or diameter < 0.0:
+            messages.append(f"{label}: the pipe diameter must be 0 (open flow) or more, in meters, not {link.pipe_diameter_m}.")
         if (link.from_ref, link.to_ref) in pairs:
             messages.append(f"{label}: {link.from_ref} is already linked to {link.to_ref}.")
         pairs.add((link.from_ref, link.to_ref))

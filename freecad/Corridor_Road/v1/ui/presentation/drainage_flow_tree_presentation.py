@@ -19,7 +19,8 @@ def flow_node_text(node: FlowNode) -> str:
     if node.drains_to_missing:
         parts.append(f"drains into {node.drains_to}, which is not in the Points table")
     elif node.drains_to:
-        parts.append(f"{_grade_words(node.link_grade_percent)} into {node.drains_to}".strip())
+        pipe = f" via pipe {node.pipe_diameter_m:.2f} m" if node.pipe_diameter_m > 0.0 else ""
+        parts.append(f"{_grade_words(node.link_grade_percent)} into {node.drains_to}{pipe}".strip())
     elif node.kind == "inlet":
         parts.append("drains nowhere")
     counts = _severity_counts(node)
