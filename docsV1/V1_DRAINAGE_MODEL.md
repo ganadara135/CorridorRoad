@@ -99,10 +99,16 @@ model and its result refs the Drainage result and the Applied Sections
 
 ## 6. User surfaces
 
-- **Drainage panel** (`CorridorRoad_V1EditDrainage`): Policy, and Ditch Runs, Points and Links
-  tabs. Fill from Assembly prefills the runs, Add Selected / Add All take suggestions, Link
-  Downhill links every inlet that drains nowhere to the nearest lower point. Nothing is written
-  until Apply.
+- **Drainage panel** (`CorridorRoad_V1EditDrainage`): Policy, Ditch Runs, Flow, Points and Links
+  tabs. Fill from Assembly prefills the runs, Add Selected Suggestions / Add All Suggestions take
+  suggestions, Link Downhill links every inlet that drains nowhere to the nearest lower point.
+  The Flow tab is a view of the Points and Links, not a second source: each point sits under the
+  point it drains into, with the link grade and the checks of the current result. From a selected
+  point, Add Upstream and Add Downstream continue the network; Trace Network proposes the missing
+  outfalls, inlets and links as pending rows that Accept adds to the tables or Discard drops; a
+  selected check offers its fix (Add Downstream, Add Suggested, Reconnect To, Delete Link, Delete
+  Extra Links, Delete Point). All of these need a current result for the flowlines and change the
+  tables only. Nothing is written until Apply.
 - **Drainage Review** (`CorridorRoad_V1DrainageReview`): read-only. Per run the flowline profile
   with points, low and high points and flagged stretches; the checks table, whose double-click
   highlights a check on the flowline in the 3D view; whether the result is current.

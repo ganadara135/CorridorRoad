@@ -433,7 +433,7 @@ Done on 2026-11-08 (gate passed; GUI check pending):
 - Tests: on the sample road the traced network leaves no low point, spacing, link or
   `drains_nowhere` check; a second trace proposes nothing; hand-placed points survive a trace.
 
-Done on 2026-11-08 (gate pending; GUI check pending):
+Done on 2026-11-08 (gate passed; GUI check pending):
 
 - `evaluation/drainage_evaluation_service.suggest_points` runs the evaluation's own suggestion
   rules on one stored flowline and any list of points, so unsaved points count; a test pins it to
@@ -456,6 +456,21 @@ Done on 2026-11-08 (gate pending; GUI check pending):
   `link_uphill`, `link_flat` and `drains_twice` offer Reconnect To (a list of the points lower than
   the From point) or Delete Link; `reverse_flow` and `point_off_run` offer Delete Point.
 - Tests: each action clears its check after Apply on the sample road.
+
+Done on 2026-11-08 (gate pending; GUI check pending):
+
+- `fixes_for_check`, `reconnect_targets` and `edit_for_fix` in `drainage_flow_service.py` map a
+  check kind to its fixes and return a `FlowEdit` (points and links to add, rows to remove, links to
+  point elsewhere, or a refusal message): `drains_nowhere` Add Downstream; `low_point_uncollected`
+  and `inlet_spacing` Add Suggested (only the suggestions inside the check's stations);
+  `link_uphill` and `link_flat` Reconnect To (the lower points, nearest first) or Delete Link;
+  `link_loop` Delete Link; `drains_twice` Delete Extra Links (keeps the first link, the one the tree
+  follows); `reverse_flow` and `point_off_run` Delete Point (with the links that touched it).
+- The Flow tab lists the selected point's checks with the fix each offers, and enables only the fix
+  buttons of the selected check (none while a Trace Network proposal waits). Fixes change the tables;
+  Apply keeps them and evaluates.
+- On the sample road, Add Downstream, Reconnect To, Delete Point and Add Suggested each clear their
+  check after Apply.
 
 Out of scope for DR-6: picking points in the 3D view, hydraulics, pipe bodies and Structure ports
 (Structure rebuild), automatic culvert placement, and a drag-and-drop graph editor.

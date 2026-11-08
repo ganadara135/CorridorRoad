@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from ...models.source.drainage_model import DrainageLink, DrainagePoint
 from ..evaluation.drainage_evaluation_service import (
     ELEVATION_TOLERANCE_M,
+    STATION_ENTRY_TOLERANCE_M,
     STATION_TOLERANCE_M,
     point_places,
     suggest_points,
@@ -324,14 +325,7 @@ def add_downstream(
             message=f"{node.point_id} lies on no flowline of the Drainage result, so its way down cannot be found; run Rebuild Downstream."
         )
     used = {link.link_id for link in links}
-    lower = [
-        point
-        for point in points
-        if point.point_id != node.point_id
-        and point.point_id in places
-        and places[point.point_id][2] < here[2]
-        and (node.kind == "culvert" or point.ditch_run_ref == node.ditch_run_ref or (point.kind == "culvert" and not point.ditch_run_ref))
-    ]
+    lower = _lower_points(node, points, places, here)
     if lower:
         nearest = min(lower, key=lambda point: (abs(point.station - node.station), point.point_id))
         link = DrainageLink(next_point_id("link", used), node.point_id, nearest.point_id)
@@ -513,3 +507,149 @@ def trace_network(
     if notes:
         text += "\n" + "\n".join(notes)
     return NetworkProposal(tuple(new_points), tuple(new_links), tuple(undrained), text)
+
+
+# What each check offers as a fix. A fix is an action the panel can run on the check's point.
+_FIXES_BY_CHECK_KIND = {
+    "drains_nowhere": (("add_downstream", "Add Downstream"),),
+    "low_point_uncollected": (("add_suggested", "Add Suggested Point"),),
+    "inlet_spacing": (("add_suggested", "Add Suggested Points"),),
+    "link_uphill": (("reconnect", "Reconnect To"), ("delete_link", "Delete Link")),
+    "link_flat": (("reconnect", "Reconnect To"), ("delete_link", "Delete Link")),
+    "link_loop": (("delete_link", "Delete Link"),),
+    "drains_twice": (("delete_extra_links", "Delete Extra Links"),),
+    "reverse_flow": (("delete_point", "Delete Point"),),
+    "point_off_run": (("delete_point", "Delete Point"),),
+}
+
+
+@dataclass(frozen=True)
+class FlowFix:
+    """One action that fixes a check: `action` is the key, `label` the button text."""
+
+    action: str
+    label: str
+
+
+@dataclass(frozen=True)
+class FlowEdit:
+    """The table changes of a fix, or why there are none. Nothing is written until Apply."""
+
+    add_points: tuple[DrainagePoint, ...] = ()
+    add_links: tuple[DrainageLink, ...] = ()
+    remove_point_ids: tuple[str, ...] = ()
+    remove_link_ids: tuple[str, ...] = ()
+    relink: tuple[tuple[str, str], ...] = ()  # (link id, the point it now drains into)
+    message: str = ""
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.add_points or self.add_links or self.remove_point_ids or self.remove_link_ids or self.relink)
+
+
+def fixes_for_check(check) -> tuple[FlowFix, ...]:
+    """The fixes a check offers; empty for a check the Flow tab has no action for."""
+
+    return tuple(FlowFix(action, label) for action, label in _FIXES_BY_CHECK_KIND.get(str(check.kind), ()))
+
+
+def reconnect_targets(node_id: str, points: list[DrainagePoint], flowlines: list) -> list[str]:
+    """The points the node could drain into instead: the lower ones, nearest first."""
+
+    node = _point_named(points, node_id)
+    places = point_places(points, flowlines)
+    if node is None or node.point_id not in places:
+        return []
+    lower = _lower_points(node, points, places, places[node.point_id])
+    return [point.point_id for point in sorted(lower, key=lambda point: (abs(point.station - node.station), point.point_id))]
+
+
+def edit_for_fix(
+    action: str,
+    check,
+    node_id: str,
+    points: list[DrainagePoint],
+    links: list[DrainageLink],
+    flowlines: list,
+    *,
+    low_point_rule: str,
+    max_inlet_spacing_m: float,
+    target: str = "",
+) -> FlowEdit:
+    """The table changes that fix `check` on the point `node_id`, by `action` (see `fixes_for_check`)."""
+
+    node = _point_named(points, node_id)
+    if node is None:
+        return FlowEdit(message="Select a point in the tree first.")
+    if action == "add_downstream":
+        step = add_downstream(node_id, points, links, flowlines)
+        return FlowEdit(add_points=step.points, add_links=step.links, message=step.message)
+    if action == "add_suggested":
+        return _add_suggested_edit(check, points, flowlines, low_point_rule, max_inlet_spacing_m)
+    if action == "delete_point":
+        touching = tuple(link.link_id for link in links if node_id in (link.from_ref, link.to_ref))
+        text = f"Deleted {node_id}" + (f" and the {len(touching)} link(s) that touched it." if touching else ".")
+        return FlowEdit(remove_point_ids=(node_id,), remove_link_ids=touching, message=text)
+    outgoing = [link for link in links if link.from_ref == node_id]
+    if action == "delete_extra_links":
+        extra = tuple(link.link_id for link in outgoing[1:])
+        if not extra:
+            return FlowEdit(message=f"{node_id} has only one link out.")
+        return FlowEdit(remove_link_ids=extra, message=f"Deleted {', '.join(extra)}; {node_id} keeps {outgoing[0].link_id}.")
+    link = _link_of_check(check, outgoing)
+    if link is None:
+        return FlowEdit(message=f"The link of this check is not in the Links table; {node_id} has no link out.")
+    if action == "delete_link":
+        return FlowEdit(remove_link_ids=(link.link_id,), message=f"Deleted {link.link_id}.")
+    if action == "reconnect":
+        if target not in reconnect_targets(node_id, points, flowlines):
+            return FlowEdit(message=f"{target or 'That point'} is not a lower point {node_id} can drain into.")
+        return FlowEdit(relink=((link.link_id, target),), message=f"{link.link_id} now drains {node_id} into {target}.")
+    return FlowEdit(message=f"There is no fix '{action}'.")
+
+
+def _lower_points(node: DrainagePoint, points: list[DrainagePoint], places: dict, here) -> list[DrainagePoint]:
+    """The points lower than `node` that it may drain into: on its run, or a culvert crossing its road."""
+
+    return [
+        point
+        for point in points
+        if point.point_id != node.point_id
+        and point.point_id in places
+        and places[point.point_id][2] < here[2]
+        and (node.kind == "culvert" or point.ditch_run_ref == node.ditch_run_ref or (point.kind == "culvert" and not point.ditch_run_ref))
+    ]
+
+
+def _link_of_check(check, outgoing: list[DrainageLink]):
+    """The link a link check names (`link_uphill:link:1`), else the point's first link out (a loop)."""
+
+    prefix = f"{check.kind}:"
+    named = str(check.check_id)[len(prefix):] if str(check.check_id).startswith(prefix) else ""
+    return next((link for link in outgoing if link.link_id == named), outgoing[0] if outgoing and check.kind == "link_loop" else None)
+
+
+def _add_suggested_edit(check, points, flowlines, low_point_rule: str, max_inlet_spacing_m: float) -> FlowEdit:
+    line = _flowline_of(flowlines, check.ditch_run_ref)
+    if line is None:
+        return FlowEdit(message=f"{check.ditch_run_ref or 'The run'} has no flowline in the Drainage result; run Rebuild Downstream.")
+    start, end = sorted((float(check.station_start), float(check.station_end)))
+    working = list(points)
+    added: list[DrainagePoint] = []
+    for suggestion in suggest_points(line, working, low_point_rule=low_point_rule, max_inlet_spacing_m=max_inlet_spacing_m):
+        if not start - STATION_ENTRY_TOLERANCE_M <= suggestion.station <= end + STATION_ENTRY_TOLERANCE_M:
+            continue
+        point = DrainagePoint(
+            next_point_id(suggestion.kind, {row.point_id for row in working}),
+            suggestion.kind,
+            float(suggestion.station),
+            side=line.side,
+            ditch_run_ref=line.ditch_run_ref,
+            alignment_ref=line.alignment_ref,
+        )
+        working.append(point)
+        added.append(point)
+    if not added:
+        return FlowEdit(message=f"No suggested point falls within STA {start:.3f} to {end:.3f} of {check.ditch_run_ref}.")
+    names = ", ".join(f"{point.point_id} at STA {point.station:.3f}" for point in added)
+    return FlowEdit(add_points=tuple(added), message=f"Added {names}.")

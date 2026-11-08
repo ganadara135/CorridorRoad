@@ -25,8 +25,12 @@ from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import (
     add_downstream,
     add_upstream,
     build_flow_tree,
+    edit_for_fix,
+    fixes_for_check,
     flow_node_severity,
+    reconnect_targets,
     trace_network,
+    walk_flow_nodes,
 )
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from freecad.Corridor_Road.v1.ui.presentation.drainage_flow_tree_presentation import (
@@ -80,6 +84,7 @@ class V1DrainageEditorTaskPanel:
         self._prefill: list[DitchRun] = list(inputs["prefill"])
         self._suggestions: list = []
         self._trace = None  # the Trace Network proposal while it waits for Accept or Discard
+        self._flow_nodes: dict = {}
         self.form = fit_task_panel_width(self._build_ui())
         self._load(self._model)
         self._refresh_flow_tree()
@@ -199,6 +204,30 @@ class V1DrainageEditorTaskPanel:
         self._flow_tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._flow_tree.itemSelectionChanged.connect(self._flow_selection_changed)
         layout.addWidget(self._flow_tree, 1)
+        layout.addWidget(QtWidgets.QLabel("Checks of the selected point, and what fixes them"))
+        self._flow_check_list = QtWidgets.QListWidget()
+        self._flow_check_list.setMaximumHeight(90)
+        self._flow_check_list.itemSelectionChanged.connect(self._update_fix_buttons)
+        layout.addWidget(self._flow_check_list)
+        fix_row = QtWidgets.QHBoxLayout()
+        self._fix_buttons = {}
+        self._reconnect_combo = QtWidgets.QComboBox()
+        self._reconnect_combo.setToolTip("The lower points the selected point could drain into instead.")
+        fix_row.addWidget(self._reconnect_combo)
+        for action, label in (
+            ("reconnect", "Reconnect To"),
+            ("delete_link", "Delete Link"),
+            ("delete_extra_links", "Delete Extra Links"),
+            ("delete_point", "Delete Point"),
+            ("add_suggested", "Add Suggested"),
+        ):
+            button = QtWidgets.QPushButton(label)
+            button.clicked.connect(lambda _checked=False, action=action: self._run_fix(action))
+            fix_row.addWidget(button)
+            self._fix_buttons[action] = button
+        fix_row.addStretch(1)
+        layout.addLayout(fix_row)
+        self._update_fix_buttons()
         continue_row = QtWidgets.QHBoxLayout()
         self._continue_buttons = []
         upstream_button = QtWidgets.QPushButton("Add Upstream")
@@ -277,6 +306,7 @@ class V1DrainageEditorTaskPanel:
             for node in tree.loop_nodes:
                 self._add_flow_item(loop_group, node)
         self._flow_tree.expandAll()
+        self._flow_nodes = {node.point_id: node for node in [*walk_flow_nodes(tree.roots), *tree.loop_nodes]}
         self._flow_note.setText(
             flow_tree_note(
                 point_count=tree.node_count,
@@ -335,6 +365,98 @@ class V1DrainageEditorTaskPanel:
         self._select_flow_node(step.select_point_id)
         self._set_status(f"{step.message} Apply to keep it.")
 
+    def _show_flow_checks(self, point_id: str) -> None:
+        """List the selected point's checks, each with the fix it offers."""
+
+        self._flow_check_list.clear()
+        node = self._flow_nodes.get(point_id)
+        for index, row in enumerate(node.check_rows if node is not None else ()):
+            fixes = ", ".join(fix.label for fix in fixes_for_check(row))
+            text = f"{row.severity}: {row.message}" + (f"  -> {fixes}" if fixes else "")
+            item = QtWidgets.QListWidgetItem(text)
+            item.setData(QtCore.Qt.UserRole, index)
+            self._flow_check_list.addItem(item)
+        self._update_fix_buttons()
+
+    def _selected_flow_check(self):
+        """The selected point's id and the check selected in the list, or empty ones."""
+
+        items = self._flow_tree.selectedItems()
+        point_id = str(items[0].data(0, QtCore.Qt.UserRole) or "") if items else ""
+        node = self._flow_nodes.get(point_id)
+        picked = self._flow_check_list.selectedItems()
+        if node is None or not picked:
+            return point_id, None
+        index = int(picked[0].data(QtCore.Qt.UserRole))
+        return point_id, node.check_rows[index] if 0 <= index < len(node.check_rows) else None
+
+    def _update_fix_buttons(self) -> None:
+        """Enable only the fixes the selected check offers (none while a proposal waits)."""
+
+        point_id, check = self._selected_flow_check()
+        offered = {fix.action for fix in fixes_for_check(check)} if check is not None and self._trace is None else set()
+        for action, button in self._fix_buttons.items():
+            button.setEnabled(action in offered)
+        self._reconnect_combo.clear()
+        self._reconnect_combo.setEnabled("reconnect" in offered)
+        if "reconnect" in offered:
+            try:
+                flowlines, _note = drainage_flowlines(self.document)
+                self._reconnect_combo.addItems(reconnect_targets(point_id, self._points(), flowlines))
+            except ValueError:
+                pass
+
+    def _run_fix(self, action: str) -> None:
+        """Fix the selected check in the tables; Apply keeps the change."""
+
+        point_id, check = self._selected_flow_check()
+        if check is None:
+            self._set_status("Select a point and one of its checks first.")
+            return
+        try:
+            points, links = self._points(), self._links()
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return
+        flowlines, note = drainage_flowlines(self.document)
+        if not flowlines:
+            self._set_status(note)
+            return
+        edit = edit_for_fix(
+            action,
+            check,
+            point_id,
+            points,
+            links,
+            flowlines,
+            low_point_rule=str(self._low_point_rule.currentData() or LOW_POINT_RULES[0]),
+            max_inlet_spacing_m=float(self._max_spacing.value()),
+            target=self._reconnect_combo.currentText(),
+        )
+        if not edit.changed:
+            self._set_status(edit.message)
+            return
+        self._apply_flow_edit(edit)
+        self._refresh_flow_tree()
+        self._set_status(f"{edit.message} Apply to keep it.")
+
+    def _apply_flow_edit(self, edit) -> None:
+        for point in edit.add_points:
+            self._append_point(point)
+        self._refresh_reference_choices()
+        for link in edit.add_links:
+            self._append_link(link)
+        for link_id, target in edit.relink:
+            for row in range(self._link_table.rowCount()):
+                if self._link_text(row, LINK_ID_COLUMN) == link_id:
+                    self._link_table.cellWidget(row, LINK_TO_COLUMN).setCurrentText(target)
+        for row in reversed(range(self._link_table.rowCount())):
+            if self._link_text(row, LINK_ID_COLUMN) in edit.remove_link_ids:
+                self._link_table.removeRow(row)
+        for row in reversed(range(self._point_table.rowCount())):
+            if self._point_text(row, POINT_ID_COLUMN) in edit.remove_point_ids:
+                self._point_table.removeRow(row)
+
     def _set_trace(self, proposal) -> None:
         """Hold the proposal (or none) and enable only the buttons that make sense with it."""
 
@@ -343,6 +465,7 @@ class V1DrainageEditorTaskPanel:
         self._accept_button.setEnabled(pending)
         self._discard_button.setEnabled(pending)
         self._trace_button.setEnabled(not pending)
+        self._update_fix_buttons()
         # Adding by hand while a proposal waits could clash with its ids
         for button in self._continue_buttons:
             button.setEnabled(not pending)
@@ -413,6 +536,7 @@ class V1DrainageEditorTaskPanel:
 
         items = self._flow_tree.selectedItems()
         point_id = str(items[0].data(0, QtCore.Qt.UserRole) or "") if items else ""
+        self._show_flow_checks(point_id)
         if not point_id:
             return
         for row in range(self._point_table.rowCount()):

@@ -30,6 +30,7 @@ from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     assembly_subassembly_preset_model_from_document,
 )
 from freecad.Corridor_Road.v1.services.evaluation.drainage_evaluation_service import suggest_points
+from freecad.Corridor_Road.v1.ui.editors.drainage_editor import LINK_TO_COLUMN as LINK_TO
 from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DitchRun,
     DrainageLink,
@@ -466,6 +467,113 @@ def test_trace_network_proposes_then_accepts_or_discards_and_leaves_the_sample_r
         # nothing is left to trace
         panel._trace_network()
         assert panel._trace is None and panel._status.toPlainText().startswith("Nothing to add")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def _apply_points_and_links(doc, points, links) -> set[str]:
+    """Store the Drainage with `points` and `links`, evaluate it, and give the ids of its checks."""
+
+    base = drainage_editor_inputs(doc)["model"]
+    apply_v1_drainage_model(
+        document=doc,
+        drainage_model=DrainageModel(
+            schema_version=base.schema_version,
+            project_id=base.project_id,
+            label=base.label,
+            drainage_model_id=base.drainage_model_id,
+            policy=base.policy,
+            ditch_run_rows=list(base.ditch_run_rows),
+            point_rows=list(points),
+            link_rows=list(links),
+        ),
+    )
+    refresh_drainage_result(doc)
+    return {row.check_id for row in to_drainage_result(find_v1_drainage_result_object(doc)).check_rows}
+
+
+def _select_check(panel, point_id: str, kind: str):
+    panel._tabs.setCurrentWidget(panel._flow_tab)
+    panel._refresh_flow_tree()
+    panel._select_flow_node(point_id)
+    rows = panel._flow_nodes[point_id].check_rows
+    for index, row in enumerate(rows):
+        if row.kind == kind:
+            panel._flow_check_list.setCurrentRow(index)
+            return row
+    raise AssertionError(f"{point_id} has no {kind} check: {[row.kind for row in rows]}")
+
+
+def test_the_flow_tab_fixes_a_check_and_apply_clears_it() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageFlowFix")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+        line = drainage_flowlines(doc)[0][0]
+        run = line.ditch_run_ref
+        # the sample ditch rises from a low point at its start to a crest, then falls to a low point at its end
+        low, high = line.low_point_stations[0], round(line.high_point_stations[0], 3)
+        middle = (low + high) / 2.0
+
+        def point(point_id, kind, station):
+            return DrainagePoint(point_id, kind, station, ditch_run_ref=run)
+
+        def reopen():
+            return V1DrainageEditorTaskPanel(document=doc)
+
+        # drains_nowhere -> Add Downstream
+        checks = _apply_points_and_links(doc, [point("inlet:1", "inlet", middle), point("outfall:1", "outfall", low)], [])
+        assert "drains_nowhere:inlet:1" in checks
+        panel = reopen()
+        _select_check(panel, "inlet:1", "drains_nowhere")
+        panel._run_fix("add_downstream")
+        assert panel._link_table.rowCount() == 1
+        assert panel._apply() is True
+        assert "drains_nowhere:inlet:1" not in {row.check_id for row in to_drainage_result(find_v1_drainage_result_object(doc)).check_rows}
+
+        # link_uphill -> Reconnect To a lower point; a high inlet nobody feeds -> Delete Point
+        uphill = [DrainageLink("link:1", "inlet:1", "inlet:2")]
+        checks = _apply_points_and_links(
+            doc,
+            [point("inlet:1", "inlet", middle), point("inlet:2", "inlet", high), point("outfall:1", "outfall", low)],
+            uphill,
+        )
+        assert "link_uphill:link:1" in checks
+        panel = reopen()
+        _select_check(panel, "inlet:1", "link_uphill")
+        assert panel._fix_buttons["reconnect"].isEnabled() and panel._fix_buttons["delete_link"].isEnabled()
+        assert not panel._fix_buttons["delete_point"].isEnabled()
+        assert panel._reconnect_combo.currentText() == "outfall:1"
+        panel._run_fix("reconnect")
+        assert panel._link_text(0, LINK_TO, combo=True) == "outfall:1"
+        assert panel._apply() is True
+        checks = {row.check_id for row in to_drainage_result(find_v1_drainage_result_object(doc)).check_rows}
+        assert "link_uphill:link:1" not in checks
+        assert "reverse_flow:inlet:2" in checks
+        panel = reopen()
+        _select_check(panel, "inlet:2", "reverse_flow")
+        before = panel._point_table.rowCount()
+        panel._run_fix("delete_point")
+        assert panel._point_table.rowCount() == before - 1
+        assert panel._apply() is True
+        assert "reverse_flow:inlet:2" not in {row.check_id for row in to_drainage_result(find_v1_drainage_result_object(doc)).check_rows}
+
+        # a low point nobody collects -> Add Suggested; fixes are off while a proposal waits
+        checks = _apply_points_and_links(doc, [point("inlet:1", "inlet", high)], [])
+        wanted = [check for check in checks if check.startswith(f"low_point_uncollected:{run}")]
+        assert wanted
+        panel = reopen()
+        check = _select_check(panel, "inlet:1", "low_point_uncollected")
+        assert panel._fix_buttons["add_suggested"].isEnabled()
+        panel._run_fix("add_suggested")
+        assert panel._point_table.rowCount() >= 2
+        assert panel._apply() is True
+        checks = {row.check_id for row in to_drainage_result(find_v1_drainage_result_object(doc)).check_rows}
+        assert check.check_id not in checks
     finally:
         App.closeDocument(doc.Name)
 
