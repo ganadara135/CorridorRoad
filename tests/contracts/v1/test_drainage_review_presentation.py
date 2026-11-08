@@ -14,6 +14,7 @@ from freecad.Corridor_Road.v1.services.evaluation.output_traceability_service im
 from freecad.Corridor_Road.v1.services.mapping.drainage_output_mapper import DrainageOutputMapper
 from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation import (
     drainage_check_table_rows,
+    drainage_pipe_table_rows,
     drainage_flowline_profile,
     drainage_review_run_rows,
     drainage_review_summary,
@@ -54,6 +55,50 @@ def _output():
     )
     result = DrainageEvaluationService().evaluate(model, sections)
     return DrainageOutputMapper().map(model, result)
+
+
+def test_the_output_carries_the_pipes_and_the_review_lists_them() -> None:
+    output = _output()
+    assert output.pipe_rows == [] and drainage_pipe_table_rows(output) == []
+    assert "pipe(s)" not in drainage_review_summary(output)
+
+    model = DrainageModel(
+        schema_version=1,
+        project_id="p",
+        policy=DrainagePolicy(min_grade_percent=0.3, max_inlet_spacing_m=1000.0),
+        ditch_run_rows=[DitchRun(RUN, "left", "ditch:left", 0.0, 100.0, alignment_ref="alignment:main")],
+        point_rows=[
+            DrainagePoint("inlet:1", "inlet", 20.0, side="left", ditch_run_ref=RUN),
+            DrainagePoint("outfall:1", "outfall", 40.0, side="left", ditch_run_ref=RUN),
+        ],
+        link_rows=[DrainageLink("link:1", "inlet:1", "outfall:1", pipe_diameter_m=0.6)],
+    )
+    sections = AppliedSectionSet(
+        schema_version=1,
+        project_id="p",
+        applied_section_set_id="applied:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="p",
+                applied_section_id=f"section:{station:g}",
+                alignment_id="alignment:main",
+                station=station,
+                point_rows=[AppliedSectionPoint("flow", station, 6.0, z, "ditch_flowline", 6.0, "ditch:left", "left", RUN)],
+            )
+            for station, z in SAG
+        ],
+    )
+    result = DrainageEvaluationService().evaluate(model, sections)
+    piped = DrainageOutputMapper().map(model, result)
+    (pipe,) = piped.pipe_rows
+    assert (pipe.link_ref, pipe.from_ref, pipe.to_ref, pipe.diameter_m) == ("link:1", "inlet:1", "outfall:1", 0.6)
+    assert (pipe.from_invert_z, pipe.to_invert_z) == (result.pipe_rows[0].from_z, result.pipe_rows[0].to_z)
+    assert pipe.from_xyz == (20.0, 6.0, pipe.from_invert_z) and pipe.to_xyz[0] == 40.0
+    assert pipe.volume_m3 == result.pipe_rows[0].volume_m3 > 0.0
+    (row,) = drainage_pipe_table_rows(piped)
+    assert (row["link_ref"], row["route"], row["diameter"]) == ("link:1", "inlet:1 -> outfall:1", "0.60")
+    assert ", 1 pipe(s);" in drainage_review_summary(piped)
 
 
 def test_the_output_carries_flowlines_points_links_and_checks_with_their_owners() -> None:

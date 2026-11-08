@@ -12,6 +12,7 @@ from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation import (
     drainage_check_table_rows,
     drainage_flowline_profile,
+    drainage_pipe_table_rows,
     drainage_review_run_rows,
     drainage_review_summary,
 )
@@ -29,9 +30,11 @@ App = None
 Gui = None
 drainage_review_state = None
 focus_drainage_check = None
+focus_drainage_pipe = None
 open_drainage_editor = None
 
 CHECK_COLUMNS = ("Severity", "Check", "Ditch Run", "STA", "Message")
+PIPE_COLUMNS = ("Link", "Route", "Dia (m)", "Length (m)", "Inverts (m)", "Grade (%)", "Volume (m3)")
 SEVERITY_COLORS = {"error": (200, 40, 40), "warning": (220, 140, 20), "info": (90, 90, 90)}
 MARKER_COLORS = {"inlet": (30, 140, 60), "outfall": (20, 60, 170), "culvert": (130, 60, 160)}
 
@@ -112,6 +115,7 @@ class V1DrainageReviewTaskPanel:
     def __init__(self, *, document=None):
         self.document = document
         self._output = None
+        self._pipe_refs: list = []
         self.form = fit_task_panel_width(self._build_ui())
         self._refresh()
 
@@ -159,6 +163,18 @@ class V1DrainageReviewTaskPanel:
             pass
         self._checks.cellDoubleClicked.connect(lambda row, _column: self._focus_check(row))
         layout.addWidget(self._checks, 1)
+        layout.addWidget(QtWidgets.QLabel("Pipes on the links (double-click to draw one in the 3D view)"))
+        self._pipes = QtWidgets.QTableWidget(0, len(PIPE_COLUMNS))
+        self._pipes.setHorizontalHeaderLabels(list(PIPE_COLUMNS))
+        self._pipes.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._pipes.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._pipes.setMaximumHeight(130)
+        try:
+            self._pipes.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._pipes.cellDoubleClicked.connect(lambda row, _column: self._focus_pipe(row))
+        layout.addWidget(self._pipes)
         self._status = QtWidgets.QLabel("Double-click a check to highlight it on the flowline.")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
@@ -167,6 +183,10 @@ class V1DrainageReviewTaskPanel:
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh)
         buttons.addWidget(refresh_button)
+        self._all_pipes_button = QtWidgets.QPushButton("Show All Pipes")
+        self._all_pipes_button.setToolTip("Draw every pipe as a tube in the 3D view.")
+        self._all_pipes_button.clicked.connect(lambda: self._focus_pipe(-1))
+        buttons.addWidget(self._all_pipes_button)
         editor_button = QtWidgets.QPushButton("Drainage")
         editor_button.setToolTip("Close the review and open the Drainage panel.")
         editor_button.clicked.connect(lambda: open_drainage_editor(self.document))
@@ -189,6 +209,7 @@ class V1DrainageReviewTaskPanel:
             self._run_combo.addItem(str(row["label"]) + counts, row["ditch_run_ref"])
         self._run_combo.blockSignals(False)
         self._show_run()
+        self._show_pipes()
 
     def _show_run(self) -> None:
         run_ref = str(self._run_combo.currentData() or "")
@@ -204,6 +225,29 @@ class V1DrainageReviewTaskPanel:
                 if key == "severity":
                     item.setForeground(QtGui.QBrush(QtGui.QColor(*SEVERITY_COLORS.get(row["severity"], (0, 0, 0)))))
                 self._checks.setItem(index, column, item)
+
+    def _show_pipes(self) -> None:
+        rows = drainage_pipe_table_rows(self._output) if self._output is not None else []
+        self._pipe_refs = [row["link_ref"] for row in rows]
+        self._pipes.setRowCount(0)
+        for row in rows:
+            index = self._pipes.rowCount()
+            self._pipes.insertRow(index)
+            for column, key in enumerate(("link_ref", "route", "diameter", "length", "inverts", "grade", "volume")):
+                self._pipes.setItem(index, column, QtWidgets.QTableWidgetItem(str(row[key])))
+        self._all_pipes_button.setEnabled(bool(rows))
+
+    def _focus_pipe(self, row: int) -> None:
+        """Draw the pipe of a table row, or all of them for row -1."""
+
+        if row >= len(self._pipe_refs):
+            return
+        try:
+            obj = focus_drainage_pipe(self.document, self._pipe_refs[row] if row >= 0 else "")
+        except (RuntimeError, ValueError) as exc:
+            self._status.setText(f"The pipe was not drawn: {exc}")
+            return
+        self._status.setText(f"Drawn in the 3D view: {getattr(obj, 'Label', '')}.")
 
     def _focus_check(self, row: int) -> None:
         if row < 0 or row >= len(self._check_refs):

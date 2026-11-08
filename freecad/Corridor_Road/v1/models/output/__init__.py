@@ -11,6 +11,7 @@ from .drainage_output import (
     DrainageCheckOutputRow,
     DrainageFlowlineOutputRow,
     DrainageLinkOutputRow,
+    DrainagePipeOutputRow,
     DrainageOutput,
     DrainagePointOutputRow,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "DrainageCheckOutputRow",
     "DrainageFlowlineOutputRow",
     "DrainageLinkOutputRow",
+    "DrainagePipeOutputRow",
     "DrainageOutput",
     "DrainagePointOutputRow",
     "EarthworkBalanceOutput",

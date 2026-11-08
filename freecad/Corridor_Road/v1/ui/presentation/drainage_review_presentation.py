@@ -104,13 +104,31 @@ def drainage_check_table_rows(output: DrainageOutput, ditch_run_ref: str = "") -
     ]
 
 
+def drainage_pipe_table_rows(output: DrainageOutput) -> list[dict[str, object]]:
+    """The pipes by link, each with its diameter, length, inverts, grade and barrel volume."""
+
+    return [
+        {
+            "link_ref": row.link_ref,
+            "route": f"{row.from_ref} -> {row.to_ref}",
+            "diameter": f"{row.diameter_m:.2f}",
+            "length": f"{row.length_m:.1f}",
+            "inverts": f"{row.from_invert_z:.2f} -> {row.to_invert_z:.2f}",
+            "grade": f"{row.grade_percent:.2f}",
+            "volume": f"{row.volume_m3:.2f}",
+        }
+        for row in sorted(output.pipe_rows, key=lambda pipe: pipe.link_ref)
+    ]
+
+
 def drainage_review_summary(output: DrainageOutput | None) -> str:
     if output is None:
         return "No Drainage result. Add Ditch Runs in the Drainage panel, then Apply or run Rebuild Downstream."
     counts = {severity: sum(1 for row in output.check_rows if row.severity == severity) for severity in SEVERITY_ORDER}
+    pipes = f", {len(output.pipe_rows)} pipe(s)" if output.pipe_rows else ""
     return (
         f"Drainage: {output.status}; {len(output.flowline_rows)} flowline(s), {len(output.point_rows)} point(s), "
-        f"{len(output.link_rows)} link(s); {counts['error']} error(s), {counts['warning']} warning(s). "
+        f"{len(output.link_rows)} link(s){pipes}; {counts['error']} error(s), {counts['warning']} warning(s). "
         f"Policy: minimum grade {output.min_grade_percent:.2f} %, inlet spacing {output.max_inlet_spacing_m:.1f} m."
     )
 
@@ -129,6 +147,7 @@ __all__ = [
     "ProfileMarker",
     "drainage_check_table_rows",
     "drainage_flowline_profile",
+    "drainage_pipe_table_rows",
     "drainage_review_run_rows",
     "drainage_review_summary",
 ]

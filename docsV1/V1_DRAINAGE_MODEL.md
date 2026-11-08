@@ -78,12 +78,18 @@ Drainage input, so a Policy, point or link edit leaves them current.
 | `link_unplaced` | warning | a link end on no flowline |
 | `drains_nowhere` / `drains_twice` | warning | an inlet without an outgoing link, or a point with two |
 
+Pipes: a link with a `pipe_diameter_m` above 0 also gives a pipe row, measured between the
+places of its two points (the flowlines, so the inverts are the ditch flowline heights): diameter,
+straight 3D length, end coordinates, inverts, grade (drop over plan length, negative when it falls)
+and the volume inside the barrel. A pipe adds no check of its own: it is a link, so `link_uphill`,
+`link_flat` and `link_unplaced` already judge it. A pipe whose end lies on no flowline has no row.
+
 Suggestions: an outfall at a run end the flowline falls toward and an inlet at another
 uncollected low point; inlets at equal spacing along a stretch that is too long. They are rows of
 the result; only the panel adds them to the source, on request.
 
 `DrainageResult` (`models/result/drainage_result.py`) holds the flowlines, checks, suggestions and
-measured links, on `V1DrainageResult` in the Drainage folder. It is the `drainage` freshness stage
+measured links and pipes, on `V1DrainageResult` in the Drainage folder. It is the `drainage` freshness stage
 after Applied Sections: stale when the Applied Sections or the Drainage source change, rebuilt by
 Rebuild Downstream (which also makes the first one when a Drainage with runs meets existing
 Applied Sections), and by the Drainage panel's Apply when the Applied Sections are current.
@@ -93,7 +99,7 @@ Applied Sections), and by the Drainage panel's Apply when the Applied Sections a
 `DrainageOutput` (`models/output/drainage_output.py`, mapped by
 `services/mapping/drainage_output_mapper.py`) is the normalized handoff: per run the flowline
 span, length, grade range, profile and low and high points; the points with their places on the
-flowlines; the links with their length and grade; the checks. Its source ref is the Drainage
+flowlines; the links with their length and grade; the pipes they carry; the checks. Its source ref is the Drainage
 model and its result refs the Drainage result and the Applied Sections
 (`source_and_result` traceability).
 
@@ -111,7 +117,9 @@ model and its result refs the Drainage result and the Applied Sections
   tables only. Nothing is written until Apply.
 - **Drainage Review** (`CorridorRoad_V1DrainageReview`): read-only. Per run the flowline profile
   with points, low and high points and flagged stretches; the checks table, whose double-click
-  highlights a check on the flowline in the 3D view; whether the result is current.
+  highlights a check on the flowline in the 3D view; the pipes table, whose double-click (or Show
+  All Pipes) draws the tubes in the 3D view as a review preview, not a source; whether the result
+  is current.
 - **Build Parametric:** the Drainage line in the summary and Guided Review "6. Drainage Surface"
   (ditch points without a run, and the result's status and counts), and a Drainage Review button.
 

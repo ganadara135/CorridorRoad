@@ -228,6 +228,39 @@ def test_a_linked_chain_down_to_the_outfall_is_clean_and_measured() -> None:
     ]
 
 
+def test_a_link_with_a_diameter_is_a_pipe_measured_between_its_inverts() -> None:
+    links = _chain_links()
+    links[0] = DrainageLink("link:1", "inlet:1", "inlet:2", pipe_diameter_m=0.6)
+    links[3] = DrainageLink("link:4", "inlet:4", "outfall:1", pipe_diameter_m=1.0)
+    result = DrainageEvaluationService().evaluate(_model(points=CHAIN, links=links), _sections(FALLING))
+
+    assert result.status == "ok", [row.message for row in result.check_rows]
+    # only the links that carry a pipe have a row; the other two are open flow
+    assert [row.link_ref for row in result.pipe_rows] == ["link:1", "link:4"]
+    first, last = result.pipe_rows
+    assert (first.diameter_m, first.from_z, first.to_z) == (0.6, pytest.approx(9.4), pytest.approx(8.8))
+    # 60 m in plan and 0.6 m down: the 3D length and the drop over the plan length
+    assert first.length_m == pytest.approx((60.0**2 + 0.6**2) ** 0.5)
+    assert first.grade_percent == pytest.approx(-1.0)
+    assert first.volume_m3 == pytest.approx(3.141592653589793 * 0.3**2 * first.length_m)
+    assert (first.from_x, first.from_y, first.to_x) == pytest.approx((60.0, 6.0, 120.0))
+    assert last.volume_m3 == pytest.approx(3.141592653589793 * 0.5**2 * last.length_m)
+    # a link without a diameter, and one whose end lies on no flowline, give no row
+    assert not any(row.link_ref in ("link:2", "link:3") for row in result.pipe_rows)
+    off = [DrainagePoint("inlet:9", "inlet", 900.0, ditch_run_ref=RUN)]
+    unplaced = DrainageEvaluationService().evaluate(
+        _model(points=CHAIN + off, links=[DrainageLink("link:9", "inlet:1", "inlet:9", pipe_diameter_m=0.6)]), _sections(FALLING)
+    )
+    assert unplaced.pipe_rows == [] and "link_unplaced" in _kinds(unplaced)
+
+
+def test_a_pipe_that_runs_uphill_is_flagged_by_its_link() -> None:
+    links = [DrainageLink("link:1", "inlet:2", "inlet:1", pipe_diameter_m=0.6)]
+    result = DrainageEvaluationService().evaluate(_model(points=CHAIN, links=links), _sections(FALLING))
+    assert [row.link_ref for row in result.pipe_rows] == ["link:1"] and result.pipe_rows[0].grade_percent > 0.0
+    assert "link_uphill" in _kinds(result)
+
+
 def test_an_uphill_link_and_a_flat_link_are_warnings() -> None:
     links = _chain_links() + [DrainageLink("link:back", "inlet:2", "inlet:1")]
 

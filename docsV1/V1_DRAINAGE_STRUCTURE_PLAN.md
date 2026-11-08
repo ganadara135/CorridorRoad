@@ -52,12 +52,23 @@ Done on 2026-11-08 (gate passed; GUI check pending):
 
 ### DS-2 Pipe results and review
 
-- The evaluation adds `pipe_rows` (link, from and to invert, length, grade, diameter, volume) and
-  checks `pipe_uphill` and `pipe_flat` that reuse the Policy minimum grade. Freshness stays the
-  `drainage` stage.
+- The evaluation adds `pipe_rows` (link, from and to invert, length, grade, diameter, volume). The
+  link checks judge the pipe's grade (see the note below). Freshness stays the `drainage` stage.
 - Drainage Review lists pipes and previews them as tubes; the Drainage output carries the rows and
   their traceability to the link ids.
 - Tests: grade and length on the sample road, stale detection when a point moves, output rows.
+
+Done on 2026-11-08 (gate pending; GUI check pending):
+
+- `DrainageResult.pipe_rows` (`DrainagePipeRow`): the links with a diameter, measured between their
+  points' places. Decision: no `pipe_uphill` or `pipe_flat` checks, which this plan first listed; a
+  pipe is a link, so `link_uphill`, `link_flat` and `link_unplaced` already judge it and a second
+  check would report each problem twice.
+- `DrainageOutput.pipe_rows` (`DrainagePipeOutputRow`) through the mapper, so reports and exchange
+  see the pipes with their link ids.
+- Drainage Review has a Pipes table (double-click draws that pipe) and Show All Pipes; both draw
+  cylinders into one `ReviewDrainagePipes` object, replaced each time. It is a preview of the
+  stored result, never a source.
 
 ### DS-3 Remove the Structure culvert, interaction rules and zones
 

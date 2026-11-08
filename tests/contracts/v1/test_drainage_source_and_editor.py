@@ -11,7 +11,7 @@ from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensur
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import corridor_drainage_review_summary
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
-from freecad.Corridor_Road.v1.commands.cmd_drainage_review import V1DrainageReviewTaskPanel
+from freecad.Corridor_Road.v1.commands.cmd_drainage_review import V1DrainageReviewTaskPanel, focus_drainage_pipe
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
     V1DrainageEditorTaskPanel,
     apply_v1_drainage_model,
@@ -570,6 +570,49 @@ def _select_check(panel, point_id: str, kind: str):
             panel._flow_check_list.setCurrentRow(index)
             return row
     raise AssertionError(f"{point_id} has no {kind} check: {[row.kind for row in rows]}")
+
+
+def test_drainage_review_lists_the_pipes_and_draws_them_as_tubes() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainagePipeReview")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+        line = drainage_flowlines(doc)[0][0]
+        run = line.ditch_run_ref
+        low, high = line.low_point_stations[0], round(line.high_point_stations[0], 3)
+
+        # no pipe yet: the list is empty and there is nothing to draw
+        _apply_points_and_links(doc, [DrainagePoint("inlet:1", "inlet", high, ditch_run_ref=run)], [])
+        panel = V1DrainageReviewTaskPanel(document=doc)
+        assert panel._pipes.rowCount() == 0 and not panel._all_pipes_button.isEnabled()
+        with pytest.raises(ValueError, match="no pipes"):
+            focus_drainage_pipe(doc)
+
+        points = [DrainagePoint("inlet:1", "inlet", high, ditch_run_ref=run), DrainagePoint("outfall:1", "outfall", low, ditch_run_ref=run)]
+        _apply_points_and_links(doc, points, [DrainageLink("link:1", "inlet:1", "outfall:1", pipe_diameter_m=0.6)])
+        panel = V1DrainageReviewTaskPanel(document=doc)
+        assert panel._pipes.rowCount() == 1 and panel._pipes.item(0, 0).text() == "link:1"
+        assert panel._pipes.item(0, 2).text() == "0.60" and panel._all_pipes_button.isEnabled()
+        assert "1 pipe(s)" in panel._summary.text()
+
+        pipe = to_drainage_result(find_v1_drainage_result_object(doc)).pipe_rows[0]
+        obj = focus_drainage_pipe(doc, "link:1")
+        assert obj.Name == "ReviewDrainagePipes" and not obj.Shape.isNull()
+        # a cylinder of the pipe's diameter and 3D length
+        assert obj.Shape.Volume == pytest.approx(3.141592653589793 * 0.3**2 * pipe.length_m, rel=1.0e-3)
+
+        panel._focus_pipe(0)
+        assert panel._status.text().startswith("Drawn in the 3D view: Drainage pipe: link:1")
+        panel._focus_pipe(-1)
+        assert panel._status.text().startswith("Drawn in the 3D view: Drainage pipes (1)")
+        with pytest.raises(ValueError, match="No Drainage pipe link:9"):
+            focus_drainage_pipe(doc, "link:9")
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_the_flow_tab_fixes_a_check_and_apply_clears_it() -> None:

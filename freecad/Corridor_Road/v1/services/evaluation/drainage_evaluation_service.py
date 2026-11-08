@@ -28,6 +28,7 @@ from ...models.result.drainage_result import (
     DitchRunFlowline,
     DrainageCheck,
     DrainageLinkRow,
+    DrainagePipeRow,
     DrainageResult,
     DrainageSuggestion,
     FlowlineSegment,
@@ -105,6 +106,7 @@ class DrainageEvaluationService:
         places = point_places(drainage_model.point_rows, flowlines)
         link_rows, link_checks = _link_checks(drainage_model, places, float(policy.min_grade_percent))
         checks.extend(link_checks)
+        pipe_rows = _pipe_rows(drainage_model, places)
         severities = {check.severity for check in checks}
         if not drainage_model.ditch_run_rows:
             status = "empty"
@@ -124,6 +126,7 @@ class DrainageEvaluationService:
             check_rows=checks,
             suggestion_rows=suggestions,
             link_rows=link_rows,
+            pipe_rows=pipe_rows,
             status=status,
             source_refs=[drainage_model.drainage_model_id],
         )
@@ -390,6 +393,42 @@ def _link_checks(model: DrainageModel, places: dict, min_grade_percent: float):
                 )
             )
     return rows, checks
+
+
+def _pipe_rows(model: DrainageModel, places: dict) -> list[DrainagePipeRow]:
+    """The links that carry a pipe, measured between their points' places.
+
+    A pipe whose ends cannot be placed on a flowline has no row; its link already reports
+    `link_unplaced`. Whether the pipe falls is the link's own `link_uphill` and `link_flat`.
+    """
+
+    rows: list[DrainagePipeRow] = []
+    for link in model.link_rows:
+        diameter = float(link.pipe_diameter_m)
+        source, target = places.get(link.from_ref), places.get(link.to_ref)
+        if not diameter > 0.0 or source is None or target is None:
+            continue
+        plan = math.hypot(target[0] - source[0], target[1] - source[1])
+        length = math.sqrt(plan * plan + (target[2] - source[2]) ** 2)
+        grade = 0.0 if plan <= 0.0 else (target[2] - source[2]) / plan * 100.0
+        rows.append(
+            DrainagePipeRow(
+                link.link_id,
+                link.from_ref,
+                link.to_ref,
+                diameter,
+                length,
+                source[0],
+                source[1],
+                source[2],
+                target[0],
+                target[1],
+                target[2],
+                grade,
+                math.pi * (diameter / 2.0) ** 2 * length,
+            )
+        )
+    return rows
 
 
 def _link_check(link, kind: str, severity: str, points: dict, message: str) -> DrainageCheck:

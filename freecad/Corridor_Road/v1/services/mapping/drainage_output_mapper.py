@@ -7,6 +7,7 @@ from ...models.output.drainage_output import (
     DrainageFlowlineOutputRow,
     DrainageLinkOutputRow,
     DrainageOutput,
+    DrainagePipeOutputRow,
     DrainagePointOutputRow,
 )
 from ...models.result.drainage_result import DrainageResult
@@ -65,6 +66,22 @@ class DrainageOutputMapper:
             link_rows=[
                 DrainageLinkOutputRow(row.link_ref, row.from_ref, row.to_ref, row.length_m, row.grade_percent)
                 for row in result.link_rows
+            ],
+            pipe_rows=[
+                DrainagePipeOutputRow(
+                    row.link_ref,
+                    row.from_ref,
+                    row.to_ref,
+                    row.diameter_m,
+                    row.length_m,
+                    row.from_z,
+                    row.to_z,
+                    row.grade_percent,
+                    row.volume_m3,
+                    (row.from_x, row.from_y, row.from_z),
+                    (row.to_x, row.to_y, row.to_z),
+                )
+                for row in result.pipe_rows
             ],
             check_rows=[
                 DrainageCheckOutputRow(row.check_id, row.kind, row.severity, row.ditch_run_ref, row.station_start, row.station_end, row.message)

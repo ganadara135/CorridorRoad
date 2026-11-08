@@ -85,6 +85,30 @@ class DrainageLinkRow:
 
 
 @dataclass(frozen=True)
+class DrainagePipeRow:
+    """A Link that carries a pipe, measured between its points' places on the flowlines.
+
+    The pipe ends sit on the flowlines (the lowest point of each ditch), so `from_z` and `to_z` are
+    its inverts. `length_m` is the straight 3D length; `grade_percent` is the drop over the plan
+    length and falls negative, like a link's. `volume_m3` is the volume inside the barrel.
+    """
+
+    link_ref: str
+    from_ref: str
+    to_ref: str
+    diameter_m: float
+    length_m: float
+    from_x: float
+    from_y: float
+    from_z: float
+    to_x: float
+    to_y: float
+    to_z: float
+    grade_percent: float
+    volume_m3: float
+
+
+@dataclass(frozen=True)
 class DrainageSuggestion:
     """A point the evaluation proposes; the Drainage panel adds it to the source on request."""
 
@@ -106,4 +130,5 @@ class DrainageResult(ResultModelBase):
     check_rows: list[DrainageCheck] = field(default_factory=list)
     suggestion_rows: list[DrainageSuggestion] = field(default_factory=list)
     link_rows: list[DrainageLinkRow] = field(default_factory=list)
+    pipe_rows: list[DrainagePipeRow] = field(default_factory=list)
     status: str = "empty"

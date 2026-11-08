@@ -22,6 +22,8 @@ from ..services.mapping.drainage_output_mapper import DrainageOutputMapper
 from ..ui.viewers.drainage_review_view import V1DrainageReviewTaskPanel, configure_drainage_review_task_panel_runtime
 
 HIGHLIGHT_OBJECT_NAME = "ReviewDrainageCheckHighlight"
+PIPE_OBJECT_NAME = "ReviewDrainagePipes"
+_PIPE_COLOR = (0.25, 0.45, 0.75)
 # The flowline lies on the ditch surface, so a marker drawn on it shares its faces and shows
 # through them in pieces. The stretch is drawn this far above the flowline, the station marker on a
 # stem rising to this height (meters, the model's units).
@@ -134,6 +136,47 @@ def focus_drainage_check(document, check_ref: str):
     return obj
 
 
+def focus_drainage_pipe(document, link_ref: str = ""):
+    """Draw one pipe, or every pipe when `link_ref` is empty, as a tube between its end inverts.
+
+    The tube is a review preview of the stored result (meters, the model's units); it is not a
+    source and is replaced the next time it is drawn.
+    """
+
+    result = to_drainage_result(find_v1_drainage_result_object(document))
+    pipes = [row for row in (result.pipe_rows if result else []) if not link_ref or row.link_ref == link_ref]
+    if not pipes:
+        raise ValueError(f"No Drainage pipe {link_ref}; refresh the review." if link_ref else "The Drainage result has no pipes.")
+    import Part
+
+    shapes = []
+    for pipe in pipes:
+        start = App.Vector(pipe.from_x, pipe.from_y, pipe.from_z)
+        axis = App.Vector(pipe.to_x, pipe.to_y, pipe.to_z) - start
+        if axis.Length <= 0.0:
+            raise RuntimeError(f"{pipe.link_ref}: the pipe has no length, so it cannot be drawn.")
+        shapes.append(Part.makeCylinder(pipe.diameter_m / 2.0, axis.Length, start, axis))
+    obj = document.getObject(PIPE_OBJECT_NAME) or document.addObject("Part::Feature", PIPE_OBJECT_NAME)
+    obj.Shape = Part.makeCompound(shapes)
+    obj.Label = f"Drainage pipe: {link_ref}" if link_ref else f"Drainage pipes ({len(pipes)})"
+    for name, value in (("CRRecordKind", "v1_review_issue"), ("IssueKind", "drainage_pipe")):
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyString", name, "Review", name)
+        setattr(obj, name, value)
+    project = find_project(document)
+    if project is not None:
+        route_object_to_project_tree(project, obj)
+    view = getattr(obj, "ViewObject", None)
+    if view is not None:
+        view.ShapeColor = _PIPE_COLOR
+        view.Visibility = True
+    if _gui_available():
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+        Gui.SendMsgToActiveView("ViewSelection")
+    return obj
+
+
 def open_drainage_editor(document):
     """Close Drainage Review and open the Drainage panel."""
 
@@ -154,6 +197,7 @@ configure_drainage_review_task_panel_runtime(
         "Gui": Gui,
         "drainage_review_state": drainage_review_state,
         "focus_drainage_check": focus_drainage_check,
+        "focus_drainage_pipe": focus_drainage_pipe,
         "open_drainage_editor": open_drainage_editor,
     }
 )
