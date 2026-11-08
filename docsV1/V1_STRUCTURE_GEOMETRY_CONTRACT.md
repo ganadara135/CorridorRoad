@@ -50,8 +50,6 @@ The ownership boundary is:
 - `StructureRow` owns identity, kind, role, placement, reference mode, and geometry spec reference.
 - `StructurePlacement` owns station range, offset, elevation reference, and orientation mode.
 - `StructureGeometrySpec` owns dimensions and kind-specific shape parameters.
-- `StructureInteractionRule` owns how the structure affects section and corridor evaluation.
-- `StructureInfluenceZone` owns where the interaction applies beyond the physical structure footprint.
 - `V1StructureShowPreview` is presentation geometry only.
 - `V1StructurePipeConnectionPointPreview` is the Structure-owned Pipe In / Pipe Out review marker used by Drainage flow previews.
 - future structure corridor solids are output geometry only.
@@ -375,8 +373,6 @@ Future `StructureSolidOutput` should be generated from the same source specs but
 It may store:
 
 - active `structure_ids`
-- active interaction rule ids
-- active influence zone ids
 - clearance diagnostics
 - structure-specific Subassembly or point roles where relevant
 
@@ -488,7 +484,7 @@ Current execution status:
   - Emit diagnostics for missing native specs, missing required fields, invalid dimensions, unsupported skew, and reference conflicts.
   - Keep validation messages traceable to `structure_id` and `geometry_spec_id`.
 - [x] Step 7: Add AppliedSection structure-context rows.
-  - Pass active structures, interaction rules, influence zones, and clearance diagnostics through evaluation results.
+  - Pass active structures and clearance diagnostics through evaluation results.
   - Do not copy editable geometry into `AppliedSection`.
 - [x] Step 8: Add corridor structure solid outputs.
   - Generate bridge, culvert, wall, clearance, and adjacent-surface outputs from source specs and resolved interactions.

@@ -181,8 +181,6 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "AssemblyIds", "Resolved Context", "resolved assembly ids")
     _add_property(obj, "App::PropertyStringList", "TemplateIds", "Resolved Context", "resolved template ids")
     _add_property(obj, "App::PropertyStringList", "ActiveStructureRows", "Resolved Context", "active structure ids by section")
-    _add_property(obj, "App::PropertyStringList", "ActiveStructureRuleRows", "Resolved Context", "active structure interaction rule ids by section")
-    _add_property(obj, "App::PropertyStringList", "ActiveStructureInfluenceZoneRows", "Resolved Context", "active structure influence zone ids by section")
     _add_property(obj, "App::PropertyStringList", "StructureDiagnosticRows", "Resolved Context", "structure context diagnostic rows")
     _add_property(obj, "App::PropertyIntegerList", "SubassemblyCounts", "Resolved Context", "subassembly counts")
     _add_property(obj, "App::PropertyIntegerList", "DiagnosticCounts", "Diagnostics", "diagnostic counts")
@@ -336,10 +334,9 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.AssemblyIds = [str(getattr(section_by_id.get(row.applied_section_id), "assembly_id", "") or "") for row in station_rows]
     obj.TemplateIds = [str(getattr(section_by_id.get(row.applied_section_id), "template_id", "") or "") for row in station_rows]
     obj.ActiveStructureRows = _section_list_rows(station_rows, section_by_id, "active_structure_ids")
-    obj.ActiveStructureRuleRows = _section_list_rows(station_rows, section_by_id, "active_structure_rule_ids")
-    obj.ActiveStructureInfluenceZoneRows = _section_list_rows(station_rows, section_by_id, "active_structure_influence_zone_ids")
     obj.StructureDiagnosticRows = _section_list_rows(station_rows, section_by_id, "structure_diagnostic_rows")
     _clear_existing_property(obj, "CompatibilityRowCounts")
+    _remove_retired_properties(obj, _RETIRED_PROPERTIES)
     obj.SubassemblyCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "subassembly_rows", []) or [])) for row in station_rows]
     obj.DiagnosticCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "diagnostic_rows", []) or [])) for row in station_rows]
     obj.DiagnosticRows = _diagnostic_rows(sections)
@@ -550,8 +547,6 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     sections: list[AppliedSection] = []
     point_rows_by_section = _parse_point_rows(getattr(obj, "PointRows", []) or [])
     active_structures_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureRows", []) or [])
-    active_rules_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureRuleRows", []) or [])
-    active_zones_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureInfluenceZoneRows", []) or [])
     structure_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "StructureDiagnosticRows", []) or [])
     superelevation_sources_by_section = _parse_section_list_rows(getattr(obj, "SuperelevationSourceRows", []) or [])
     frame_source_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "FrameSourceDiagnosticRows", []) or [])
@@ -619,8 +614,6 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 subassembly_shape_rows=subassembly_shape_rows_by_section.get(section_id, []),
                 point_rows=point_rows_by_section.get(section_id, []),
                 active_structure_ids=active_structures_by_section.get(section_id, []),
-                active_structure_rule_ids=active_rules_by_section.get(section_id, []),
-                active_structure_influence_zone_ids=active_zones_by_section.get(section_id, []),
                 structure_diagnostic_rows=structure_diagnostics_by_section.get(section_id, []),
                 frame=AppliedSectionFrame(
                     station=float(station),
@@ -1239,6 +1232,21 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
         obj.addProperty(property_type, name, group, doc)
     except Exception:
         pass
+
+
+# Removed on 2026-11-08 with the Structure interaction rules and influence zones.
+_RETIRED_PROPERTIES = ("ActiveStructureRuleRows", "ActiveStructureInfluenceZoneRows")
+
+
+def _remove_retired_properties(obj, names: tuple[str, ...]) -> None:
+    """Drop properties a later version no longer writes, from a document saved before."""
+
+    for name in names:
+        if obj is not None and hasattr(obj, name):
+            try:
+                obj.removeProperty(name)
+            except Exception:
+                pass
 
 
 def _clear_existing_property(obj, name: str) -> None:

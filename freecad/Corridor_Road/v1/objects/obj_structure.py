@@ -16,8 +16,6 @@ from ..models.source.structure_model import (
     RetainingWallGeometrySpec,
     StructureConnectionPoint,
     StructureGeometrySpec,
-    StructureInfluenceZone,
-    StructureInteractionRule,
     StructureModel,
     StructurePlacement,
     StructureRow,
@@ -25,6 +23,26 @@ from ..models.source.structure_model import (
 from .persistence_payload_adapter import ensure_model_payload_properties, read_model_payload, write_model_payload
 from freecad.Corridor_Road.v1.objects.project_document_adapter import route_object_to_project_tree
 
+
+# Interaction rules and influence zones were removed on 2026-11-08: they decided no geometry. An
+# object saved before still has these properties until it is next written.
+_RETIRED_PROPERTIES = (
+    "RuleIds",
+    "RuleStructureRefs",
+    "RuleKinds",
+    "RuleTargetScopes",
+    "RuleParameters",
+    "RuleValues",
+    "RuleUnits",
+    "RulePriorities",
+    "InfluenceZoneIds",
+    "InfluenceStructureRefs",
+    "InfluenceZoneKinds",
+    "InfluenceStationStarts",
+    "InfluenceStationEnds",
+    "InfluenceOffsetMins",
+    "InfluenceOffsetMaxes",
+)
 
 DRAINAGE_READY_STRUCTURE_KINDS = {"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"}
 DRAINAGE_READY_NATIVE_TYPES = {"box_culvert", "pipe_culvert", "inlet", "outlet", "headwall"}
@@ -113,21 +131,6 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "GeometrySourceModes", "References", "geometry source modes")
     _add_property(obj, "App::PropertyStringList", "NativeTypes", "References", "native structure geometry types")
     _add_property(obj, "App::PropertyStringList", "ConnectionPointRows", "Connection Points", "structure connection point rows")
-    _add_property(obj, "App::PropertyStringList", "RuleIds", "Interaction Rules", "interaction rule ids")
-    _add_property(obj, "App::PropertyStringList", "RuleStructureRefs", "Interaction Rules", "rule structure refs")
-    _add_property(obj, "App::PropertyStringList", "RuleKinds", "Interaction Rules", "rule kinds")
-    _add_property(obj, "App::PropertyStringList", "RuleTargetScopes", "Interaction Rules", "rule target scopes")
-    _add_property(obj, "App::PropertyStringList", "RuleParameters", "Interaction Rules", "rule parameters")
-    _add_property(obj, "App::PropertyStringList", "RuleValues", "Interaction Rules", "rule values")
-    _add_property(obj, "App::PropertyStringList", "RuleUnits", "Interaction Rules", "rule units")
-    _add_property(obj, "App::PropertyIntegerList", "RulePriorities", "Interaction Rules", "rule priorities")
-    _add_property(obj, "App::PropertyStringList", "InfluenceZoneIds", "Influence Zones", "influence zone ids")
-    _add_property(obj, "App::PropertyStringList", "InfluenceStructureRefs", "Influence Zones", "influence structure refs")
-    _add_property(obj, "App::PropertyStringList", "InfluenceZoneKinds", "Influence Zones", "influence zone kinds")
-    _add_property(obj, "App::PropertyFloatList", "InfluenceStationStarts", "Influence Zones", "influence start stations")
-    _add_property(obj, "App::PropertyFloatList", "InfluenceStationEnds", "Influence Zones", "influence end stations")
-    _add_property(obj, "App::PropertyFloatList", "InfluenceOffsetMins", "Influence Zones", "influence min offsets")
-    _add_property(obj, "App::PropertyFloatList", "InfluenceOffsetMaxes", "Influence Zones", "influence max offsets")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "structure validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "structure diagnostics")
     ensure_model_payload_properties(obj, add_property=_add_property)
@@ -187,6 +190,7 @@ def create_or_update_v1_structure_model_object(
 def update_v1_structure_model_object(obj, structure_model: StructureModel, *, label: str = "Structures"):
     """Write StructureModel rows into an existing FreeCAD object."""
 
+    _remove_properties(obj, _RETIRED_PROPERTIES)
     ensure_v1_structure_properties(obj)
     rows = list(getattr(structure_model, "structure_rows", []) or [])
     geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
@@ -194,8 +198,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
     connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
-    rule_rows = list(getattr(structure_model, "interaction_rule_rows", []) or [])
-    zone_rows = list(getattr(structure_model, "influence_zone_rows", []) or [])
     diagnostics = validate_structure_model(structure_model)
 
     obj.Label = label
@@ -238,21 +240,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.GeometrySourceModes = [str(getattr(row, "geometry_source_mode", "") or _geometry_source_mode(row)) for row in rows]
     obj.NativeTypes = [str(getattr(row, "native_type", "") or "") for row in rows]
     obj.ConnectionPointRows = [_json_row(row) for row in connection_point_rows]
-    obj.RuleIds = [str(row.interaction_rule_id) for row in rule_rows]
-    obj.RuleStructureRefs = [str(row.structure_ref) for row in rule_rows]
-    obj.RuleKinds = [str(row.rule_kind) for row in rule_rows]
-    obj.RuleTargetScopes = [str(row.target_scope) for row in rule_rows]
-    obj.RuleParameters = [str(row.parameter) for row in rule_rows]
-    obj.RuleValues = [str(row.value) for row in rule_rows]
-    obj.RuleUnits = [str(row.unit) for row in rule_rows]
-    obj.RulePriorities = [int(row.priority) for row in rule_rows]
-    obj.InfluenceZoneIds = [str(row.influence_zone_id) for row in zone_rows]
-    obj.InfluenceStructureRefs = [str(row.structure_ref) for row in zone_rows]
-    obj.InfluenceZoneKinds = [str(row.zone_kind) for row in zone_rows]
-    obj.InfluenceStationStarts = [float(row.station_start) for row in zone_rows]
-    obj.InfluenceStationEnds = [float(row.station_end) for row in zone_rows]
-    obj.InfluenceOffsetMins = [_optional_float_value(row.offset_min) for row in zone_rows]
-    obj.InfluenceOffsetMaxes = [_optional_float_value(row.offset_max) for row in zone_rows]
     obj.ValidationStatus = _validation_status(diagnostics)
     obj.DiagnosticRows = diagnostics
     write_model_payload(
@@ -266,8 +253,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
             "culvert_geometry_spec_rows",
             "retaining_wall_geometry_spec_rows",
             "connection_point_rows",
-            "interaction_rule_rows",
-            "influence_zone_rows",
         ),
         required_refs=("project_id", "structure_model_id"),
     )
@@ -357,38 +342,6 @@ def to_structure_model(obj) -> StructureModel | None:
         for row in _json_rows(getattr(obj, "ConnectionPointRows", []) or [])
     ]
 
-    rule_rows: list[StructureInteractionRule] = []
-    rule_ids = list(getattr(obj, "RuleIds", []) or [])
-    for index, rule_id in enumerate(rule_ids):
-        rule_rows.append(
-            StructureInteractionRule(
-                interaction_rule_id=str(rule_id),
-                structure_ref=_list_value(getattr(obj, "RuleStructureRefs", []), index, ""),
-                rule_kind=_list_value(getattr(obj, "RuleKinds", []), index, "section_handoff"),
-                target_scope=_list_value(getattr(obj, "RuleTargetScopes", []), index, "section"),
-                parameter=_list_value(getattr(obj, "RuleParameters", []), index, ""),
-                value=_list_value(getattr(obj, "RuleValues", []), index, ""),
-                unit=_list_value(getattr(obj, "RuleUnits", []), index, ""),
-                priority=_int_list_value(getattr(obj, "RulePriorities", []), index, 0),
-            )
-        )
-
-    zone_rows: list[StructureInfluenceZone] = []
-    zone_ids = list(getattr(obj, "InfluenceZoneIds", []) or [])
-    offset_mins = _float_list(getattr(obj, "InfluenceOffsetMins", []) or [])
-    offset_maxes = _float_list(getattr(obj, "InfluenceOffsetMaxes", []) or [])
-    for index, zone_id in enumerate(zone_ids):
-        zone_rows.append(
-            StructureInfluenceZone(
-                influence_zone_id=str(zone_id),
-                structure_ref=_list_value(getattr(obj, "InfluenceStructureRefs", []), index, ""),
-                zone_kind=_list_value(getattr(obj, "InfluenceZoneKinds", []), index, "influence"),
-                station_start=_float_list_value(getattr(obj, "InfluenceStationStarts", []), index, 0.0),
-                station_end=_float_list_value(getattr(obj, "InfluenceStationEnds", []), index, 0.0),
-                offset_min=_none_if_blank_offset(offset_mins, index),
-                offset_max=_none_if_blank_offset(offset_maxes, index),
-            )
-        )
     return StructureModel(
         schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
         project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
@@ -401,8 +354,6 @@ def to_structure_model(obj) -> StructureModel | None:
         culvert_geometry_spec_rows=culvert_geometry_spec_rows,
         retaining_wall_geometry_spec_rows=retaining_wall_geometry_spec_rows,
         connection_point_rows=connection_point_rows,
-        interaction_rule_rows=rule_rows,
-        influence_zone_rows=zone_rows,
     )
 
 
@@ -718,6 +669,15 @@ def _is_v1_structure_model(obj) -> bool:
     return proxy_type == "V1StructureModel" or name.startswith("V1StructureModel")
 
 
+def _remove_properties(obj, names: tuple[str, ...]) -> None:
+    for name in names:
+        if obj is not None and hasattr(obj, name):
+            try:
+                obj.removeProperty(name)
+            except Exception:
+                pass
+
+
 def _add_property(obj, property_type: str, name: str, group: str, doc: str = "") -> None:
     if obj is None or hasattr(obj, name):
         return
@@ -770,14 +730,6 @@ def _float_list(values) -> list[float]:
 
 def _float_list_value(values, index: int, default: float = 0.0) -> float:
     return float(_float_list(values)[index]) if index < len(_float_list(values)) else float(default)
-
-
-def _int_list_value(values, index: int, default: int = 0) -> int:
-    try:
-        values_list = list(values or [])
-        return int(values_list[index]) if index < len(values_list) else int(default)
-    except Exception:
-        return int(default)
 
 
 def _optional_float_value(value) -> float:

@@ -1305,8 +1305,6 @@ class V1StructureEditorTaskPanel(StructureEditorTaskPanelPresentation):
                 geometry_spec_rows,
             ),
             connection_point_rows=connection_point_rows,
-            interaction_rule_rows=[],
-            influence_zone_rows=[],
         )
 
     def _table_rows(self) -> list[StructureRow]:

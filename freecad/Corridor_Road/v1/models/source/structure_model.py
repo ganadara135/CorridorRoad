@@ -22,33 +22,6 @@ class StructurePlacement:
 
 
 @dataclass(frozen=True)
-class StructureInteractionRule:
-    """Minimal structure interaction rule."""
-
-    interaction_rule_id: str
-    structure_ref: str
-    rule_kind: str
-    target_scope: str
-    parameter: str = ""
-    value: float | str = ""
-    unit: str = ""
-    priority: int = 0
-
-
-@dataclass(frozen=True)
-class StructureInfluenceZone:
-    """Minimal structure influence zone."""
-
-    influence_zone_id: str
-    structure_ref: str
-    zone_kind: str
-    station_start: float
-    station_end: float
-    offset_min: float | None = None
-    offset_max: float | None = None
-
-
-@dataclass(frozen=True)
 class StructureRow:
     """Minimal corridor-related structure row."""
 
@@ -168,5 +141,3 @@ class StructureModel(SourceModelBase):
     culvert_geometry_spec_rows: list[CulvertGeometrySpec] = field(default_factory=list)
     retaining_wall_geometry_spec_rows: list[RetainingWallGeometrySpec] = field(default_factory=list)
     connection_point_rows: list[StructureConnectionPoint] = field(default_factory=list)
-    interaction_rule_rows: list[StructureInteractionRule] = field(default_factory=list)
-    influence_zone_rows: list[StructureInfluenceZone] = field(default_factory=list)

@@ -242,14 +242,6 @@ class AppliedSectionService:
             centerline_frame=centerline_frame,
         )
         active_structure_ids = list(getattr(structure_result, "active_structure_ids", []) or []) if structure_result is not None else []
-        active_rule_ids = list(getattr(structure_result, "active_rule_ids", []) or []) if structure_result is not None else []
-        active_influence_zone_ids = list(getattr(structure_result, "active_influence_zone_ids", []) or []) if structure_result is not None else []
-        structure_diagnostics = _structure_context_diagnostics(
-            station=request.station,
-            active_structure_ids=active_structure_ids,
-            active_rule_ids=active_rule_ids,
-            active_influence_zone_ids=active_influence_zone_ids,
-        )
         superelevation_result = self._evaluate_superelevation(
             request.superelevation_model,
             request.station,
@@ -389,9 +381,6 @@ class AppliedSectionService:
             subassembly_link_rows=subassembly_link_rows,
             subassembly_shape_rows=subassembly_shape_rows,
             active_structure_ids=active_structure_ids,
-            active_structure_rule_ids=active_rule_ids,
-            active_structure_influence_zone_ids=active_influence_zone_ids,
-            structure_diagnostic_rows=structure_diagnostics,
             label=f"STA {request.station:g}",
             source_refs=[
                 ref
@@ -3629,27 +3618,6 @@ def _bench_diagnostics(
                     notes=f"template_id={template_id}",
                 )
             )
-    return diagnostics
-
-
-def _structure_context_diagnostics(
-    *,
-    station: float,
-    active_structure_ids: list[str],
-    active_rule_ids: list[str],
-    active_influence_zone_ids: list[str],
-) -> list[str]:
-    if not active_structure_ids:
-        return []
-    diagnostics: list[str] = []
-    if not active_rule_ids:
-        diagnostics.append(
-            f"warning|structure_interaction_rule|STA {float(station):g}|Active structure context has no interaction rule ids."
-        )
-    if not active_influence_zone_ids:
-        diagnostics.append(
-            f"info|structure_influence_zone|STA {float(station):g}|Active structure context has no influence zone ids."
-        )
     return diagnostics
 
 

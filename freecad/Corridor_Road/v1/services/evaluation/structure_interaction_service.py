@@ -1,4 +1,4 @@
-"""Structure interaction service for CorridorRoad v1."""
+"""Structure interaction service for CorridorRoad v1: which structures are active at a station."""
 
 from __future__ import annotations
 
@@ -13,12 +13,10 @@ class StructureResolutionResult:
 
     station: float
     active_structure_ids: list[str] = field(default_factory=list)
-    active_rule_ids: list[str] = field(default_factory=list)
-    active_influence_zone_ids: list[str] = field(default_factory=list)
 
 
 class StructureInteractionService:
-    """Resolve active structures and interaction rules for a station."""
+    """Resolve the structures whose placement covers a station."""
 
     def resolve_station(
         self,
@@ -28,7 +26,7 @@ class StructureInteractionService:
         active_structure_ref: str = "",
         active_region_ref: str = "",
     ) -> StructureResolutionResult:
-        """Resolve active structures, rules, and influence zones at a station."""
+        """Resolve the active structures at a station."""
 
         active_structures = self._active_structures(structure_model.structure_rows, station)
         active_region_ref = str(active_region_ref or "").strip()
@@ -45,25 +43,7 @@ class StructureInteractionService:
             ]
         active_structure_ids = [row.structure_id for row in active_structures]
 
-        active_zone_ids = [
-            row.influence_zone_id
-            for row in structure_model.influence_zone_rows
-            if self._covers_station(row.station_start, row.station_end, station)
-            and row.structure_ref in active_structure_ids
-        ]
-
-        active_rule_ids = [
-            row.interaction_rule_id
-            for row in structure_model.interaction_rule_rows
-            if row.structure_ref in active_structure_ids
-        ]
-
-        return StructureResolutionResult(
-            station=station,
-            active_structure_ids=active_structure_ids,
-            active_rule_ids=active_rule_ids,
-            active_influence_zone_ids=active_zone_ids,
-        )
+        return StructureResolutionResult(station=station, active_structure_ids=active_structure_ids)
 
     @staticmethod
     def _active_structures(

@@ -118,9 +118,8 @@ Done on 2026-11-08 (gate pending; GUI check pending):
 
 #### Steps, one commit each, each ending with the gate
 
-1. **Interaction rules and zones.** Remove `StructureInteractionRule` and `StructureInfluenceZone`
-   with their model rows, `obj_structure.py` properties and diagnostics, the editor tabs and preset
-   rows, the rule and zone parts of `StructureInteractionService` and `StructureResolutionResult`,
+1. **Interaction rules and zones (done 2026-11-08).** Remove `StructureInteractionRule` and `StructureInfluenceZone`
+   with their model rows, `obj_structure.py` properties and diagnostics, (the editor never had a tab or preset rows for them; it only wrote empty lists), the rule and zone parts of `StructureInteractionService` and `StructureResolutionResult`,
    the two Applied Section fields and properties, their pass-through in
    `corridor_surface_geometry_service.py`, and the two diagnostics. Tests: the Applied Section and
    Structure object tests lose the rule and zone assertions; a station with a structure no longer

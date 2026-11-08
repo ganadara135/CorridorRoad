@@ -1,3 +1,5 @@
+from dataclasses import dataclass, field
+
 import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import (
@@ -11,13 +13,12 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     RetainingWallGeometrySpec,
     StructureConnectionPoint,
     StructureGeometrySpec,
-    StructureInfluenceZone,
-    StructureInteractionRule,
     StructureModel,
     StructurePlacement,
     StructureRow,
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.objects.persistence_payload_adapter import write_model_payload
 from freecad.Corridor_Road.v1.objects.obj_structure import (
     create_or_update_v1_structure_model_object,
     find_v1_structure_model,
@@ -83,26 +84,6 @@ def _sample_structure_model() -> StructureModel:
                 bearing_elevation_mode="absolute_elevation",
             )
         ],
-        interaction_rule_rows=[
-            StructureInteractionRule(
-                interaction_rule_id="rule:bridge-section",
-                structure_ref="structure:bridge-01",
-                rule_kind="section_handoff",
-                target_scope="section",
-                priority=20,
-            )
-        ],
-        influence_zone_rows=[
-            StructureInfluenceZone(
-                influence_zone_id="zone:bridge-01",
-                structure_ref="structure:bridge-01",
-                zone_kind="clearance",
-                station_start=95.0,
-                station_end=185.0,
-                offset_min=-8.0,
-                offset_max=8.0,
-            )
-        ],
     )
 
 
@@ -128,8 +109,7 @@ def test_create_or_update_v1_structure_model_object_routes_to_structures_tree() 
         assert list(obj.GeometrySpecSkewAngles) == [5.0]
         assert list(obj.GeometrySpecVerticalPositionModes) == ["absolute_elevation"]
         assert len(list(obj.BridgeGeometrySpecRows)) == 1
-        assert list(obj.RuleIds) == ["rule:bridge-section"]
-        assert list(obj.InfluenceZoneIds) == ["zone:bridge-01"]
+        assert not hasattr(obj, "RuleIds") and not hasattr(obj, "InfluenceZoneIds")
         assert obj.Name in _group_names(tree[V1_TREE_STRUCTURES])
     finally:
         App.closeDocument(doc.Name)
@@ -158,8 +138,6 @@ def test_v1_structure_model_object_roundtrips_to_structure_model() -> None:
         assert model.geometry_spec_rows[0].material == "concrete"
         assert model.bridge_geometry_spec_rows[0].deck_width == 12.0
         assert model.bridge_geometry_spec_rows[0].clearance_height == 5.2
-        assert model.interaction_rule_rows[0].structure_ref == "structure:bridge-01"
-        assert model.influence_zone_rows[0].offset_max == 8.0
     finally:
         App.closeDocument(doc.Name)
 
@@ -562,6 +540,45 @@ def test_kind_specific_geometry_specs_roundtrip() -> None:
 
         assert model.culvert_geometry_spec_rows[0].barrel_count == 2
         assert model.retaining_wall_geometry_spec_rows[0].retained_side == "right"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+@dataclass
+class _StructureModelWithRulesAndZones(StructureModel):
+    """What a Structure payload held before the interaction rules and influence zones were removed."""
+
+    interaction_rule_rows: list = field(default_factory=list)
+    influence_zone_rows: list = field(default_factory=list)
+
+
+def test_a_structure_saved_with_rules_and_zones_restores_without_them_and_drops_their_properties() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        obj = create_or_update_v1_structure_model_object(doc, project=project, structure_model=_sample_structure_model())
+        for name in ("RuleIds", "RuleKinds", "InfluenceZoneIds", "InfluenceOffsetMaxes"):
+            obj.addProperty("App::PropertyStringList", name, "Old", "from before")
+        obj.RuleIds = ["rule:bridge-section"]
+        sample = _sample_structure_model()
+        old = _StructureModelWithRulesAndZones(
+            **{name: getattr(sample, name) for name in sample.__dataclass_fields__},
+            interaction_rule_rows=[{"interaction_rule_id": "rule:bridge-section", "structure_ref": "structure:bridge-01"}],
+            influence_zone_rows=[{"influence_zone_id": "zone:bridge-01", "station_start": 95.0, "station_end": 185.0}],
+        )
+        write_model_payload(
+            obj,
+            old,
+            model_type="StructureModel",
+            row_fields=("structure_rows", "geometry_spec_rows", "interaction_rule_rows", "influence_zone_rows"),
+        )
+
+        # the rows the model no longer has are ignored; everything else restores
+        assert to_structure_model(obj) == sample
+
+        # the old properties go the next time the object is written
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=sample)
+        assert not any(hasattr(obj, name) for name in ("RuleIds", "RuleKinds", "InfluenceZoneIds", "InfluenceOffsetMaxes"))
+        assert to_structure_model(obj) == sample
     finally:
         App.closeDocument(doc.Name)
 

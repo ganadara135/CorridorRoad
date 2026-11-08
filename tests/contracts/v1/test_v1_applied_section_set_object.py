@@ -87,8 +87,6 @@ def _sample_set() -> AppliedSectionSet:
                 region_id="region:main",
                 subassembly_rows=[AppliedSectionSubassemblyRow("lane-1", "lane", drainage_refs=["drainage:side-ditch-right"])],
                 active_structure_ids=["structure:bridge-01"],
-                active_structure_rule_ids=["rule:bridge-section"],
-                active_structure_influence_zone_ids=["zone:bridge-01"],
                 structure_diagnostic_rows=["info|structure|section:1|Structure context active."],
                 point_rows=[
                     AppliedSectionPoint(
@@ -192,8 +190,7 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.RegionIds) == ["region:main", "region:main"]
         assert list(obj.AssemblyIds) == ["assembly:basic-road", "assembly:basic-road"]
         assert list(obj.ActiveStructureRows) == ["section:1|structure:bridge-01"]
-        assert list(obj.ActiveStructureRuleRows) == ["section:1|rule:bridge-section"]
-        assert list(obj.ActiveStructureInfluenceZoneRows) == ["section:1|zone:bridge-01"]
+        assert not hasattr(obj, "ActiveStructureRuleRows") and not hasattr(obj, "ActiveStructureInfluenceZoneRows")
         assert list(obj.StructureDiagnosticRows) == ["section:1|info\\pstructure\\psection:1\\pStructure context active."]
         assert obj.ReviewShapeStatus == "not_built"
         assert obj.SourceSectionCount == 2
@@ -341,8 +338,6 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert model.sections[0].subassembly_rows[0].drainage_refs == ["drainage:side-ditch-right"]
         assert [len(section.point_rows) for section in model.sections] == [3, 3]
         assert model.sections[0].active_structure_ids == ["structure:bridge-01"]
-        assert model.sections[0].active_structure_rule_ids == ["rule:bridge-section"]
-        assert model.sections[0].active_structure_influence_zone_ids == ["zone:bridge-01"]
         assert model.sections[0].structure_diagnostic_rows == ["info|structure|section:1|Structure context active."]
         assert model.sections[0].point_rows[0].point_role == "fg_surface"
         assert model.sections[0].point_rows[0].lateral_offset == -4.5
@@ -371,6 +366,22 @@ def test_v1_applied_section_set_builds_review_shape_when_unhidden() -> None:
         assert obj.ViewObject.Visibility is True
         assert obj.ReviewShapeStatus == "built"
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_an_applied_section_set_drops_the_rule_and_zone_properties_it_was_saved_with() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        obj = create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_set())
+        for name in ("ActiveStructureRuleRows", "ActiveStructureInfluenceZoneRows"):
+            obj.addProperty("App::PropertyStringList", name, "Resolved Context", "from before")
+        obj.ActiveStructureRuleRows = ["section:1|rule:bridge-section"]
+
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_set())
+
+        assert not hasattr(obj, "ActiveStructureRuleRows") and not hasattr(obj, "ActiveStructureInfluenceZoneRows")
+        assert to_applied_section_set(obj).sections[0].active_structure_ids == ["structure:bridge-01"]
     finally:
         App.closeDocument(doc.Name)
 

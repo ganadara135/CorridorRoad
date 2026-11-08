@@ -14,7 +14,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines the v1 internal source contract for corridor-related structures and structure interaction rules.
+This document defines the v1 internal source contract for corridor-related structures. Interaction rules and influence zones were removed on 2026-11-08 (sections 12 and 13).
 
 It exists to make clear:
 
@@ -29,7 +29,7 @@ This model covers:
 
 - corridor-adjacent structure identity
 - station-aware structure placement
-- clearance and interaction rules
+- clearance context
 - reference and IFC-backed structures
 - structure interaction resolution
 - diagnostics and traceability
@@ -103,8 +103,6 @@ Recommended early v1 support:
 - box culvert or crossing reference structures
 - retaining wall and wall-adjacent structure context
 - clearance envelopes
-- structure influence zones
-- notch, skip, split, and replacement interaction rules
 - IFC-backed reference structures
 
 Deferred or later refinements may include:
@@ -122,15 +120,13 @@ Recommended primary object families:
 - `StructurePlacement`
 - `StructureGeometrySpec`
 - `StructureConnectionPoint`
-- `StructureInteractionRule`
-- `StructureInfluenceZone`
 - `StructureResolutionResult`
 
 ## 9. StructureModel Root
 
 ### 9.1 Purpose
 
-`StructureModel` is the durable container for corridor-related structure objects and rules.
+`StructureModel` is the durable container for corridor-related structure objects.
 
 ### 9.2 Recommended root fields
 
@@ -140,14 +136,12 @@ Recommended primary object families:
 - optional `alignment_id`
 - `label`
 - `structure_rows`
-- `interaction_rule_rows`
-- `influence_zone_rows`
 - `source_refs`
 - `diagnostic_rows`
 
 ### 9.3 Rule
 
-Structure identity and interaction rules must remain explicit and separate from generated corridor results.
+Structure identity must remain explicit and separate from generated corridor results.
 
 ## 10. StructureRow
 
@@ -224,65 +218,17 @@ For active v1 corridor workflows, `region_ref` is the Structure-to-Region owners
 
 Validate structure placement against the referenced Region boundary before applying source changes.
 
-## 12. StructureInteractionRule
+## 12. StructureInteractionRule (removed)
 
-### 12.1 Purpose
+Removed on 2026-11-08. The rows were stored and turned into one diagnostic per station, but no
+geometry, quantity or review was ever decided by them. Which structures are active at a station is
+all the resolution needs. If a real structure effect on sections is built later, it starts from its
+own contract, not from this one.
 
-This rule family defines how structures affect section and corridor evaluation.
+## 13. StructureInfluenceZone (removed)
 
-### 12.2 Recommended fields
-
-- `interaction_rule_id`
-- `structure_ref`
-- `rule_kind`
-- `target_scope`
-- `parameter`
-- `value`
-- `unit`
-- `priority`
-- `notes`
-
-### 12.3 Recommended rule kinds
-
-- `clearance_rule`
-- `notch_rule`
-- `skip_rule`
-- `split_rule`
-- `local_replacement_rule`
-- `approach_treatment_rule`
-- `wall_adjacent_rule`
-
-### 12.4 Rule
-
-Interaction rules should modify section and corridor evaluation through structured semantics, not through direct mesh surgery.
-
-## 13. StructureInfluenceZone
-
-### 13.1 Purpose
-
-`StructureInfluenceZone` captures the station or spatial range over which a structure affects the corridor.
-
-### 13.2 Recommended fields
-
-- `influence_zone_id`
-- `structure_ref`
-- `zone_kind`
-- `station_start`
-- `station_end`
-- optional `offset_min`
-- optional `offset_max`
-- `notes`
-
-### 13.3 Recommended kinds
-
-- `clearance_zone`
-- `transition_zone`
-- `replacement_zone`
-- `structure_review_zone`
-
-### 13.4 Rule
-
-Influence zones should remain explicit instead of being inferred ad hoc from display geometry in every consumer.
+Removed on 2026-11-08 for the same reason as the interaction rules above: the station range of a
+structure's `StructurePlacement` is the only range anything used.
 
 ## 14. Reference and IFC Policy
 
@@ -311,14 +257,12 @@ An imported IFC structure may be sufficient for coordination and clearance witho
 
 ### 15.1 Purpose
 
-This service resolves which structure context and interaction rules are active at a station or station range.
+This service resolves which structures are active at a station or station range.
 
 ### 15.2 Typical queries
 
 - station to active structures
-- station to active influence zones
 - structure conflict lookup
-- active clearance rule lookup
 - structure interaction packaging for applied sections
 
 ### 15.3 Rule
@@ -336,8 +280,6 @@ This result object captures the active structure context for downstream consumer
 - `resolution_id`
 - `station`
 - `active_structure_ids`
-- `active_rule_ids`
-- `active_influence_zone_ids`
 - `diagnostic_rows`
 - `notes`
 
@@ -370,8 +312,6 @@ But they must not become the new structure source.
 The Viewer should be able to trace a section effect back to:
 
 - `structure_id`
-- `interaction_rule_id`
-- `influence_zone_id`
 
 ## 19. Relationship to Quantities and Earthwork
 
@@ -390,9 +330,7 @@ Diagnostics should be produced when:
 
 - a structure placement cannot be resolved
 - imported structure coordinates are degraded or ambiguous
-- a clearance rule is impossible
-- overlapping structure influence zones conflict
-- a structure interaction rule targets unsupported behavior
+- a clearance is impossible
 
 Recommended diagnostic fields:
 
@@ -440,11 +378,10 @@ Validation results should be recorded in `diagnostic_rows`.
 AI-assisted workflows may propose:
 
 - alternative retaining-wall extents
-- different structure influence zones
 - clearance-aware corridor alternatives
 - reduced-earthwork structure-adjacent treatments
 
-But accepted changes must still be written into normalized structure source objects or related interaction rules.
+But accepted changes must still be written into normalized structure source objects.
 
 The AI layer must not keep a hidden structure patch system.
 
@@ -464,8 +401,7 @@ In v1, `StructureModel` is the durable source contract for:
 
 - corridor-related structures and references
 - station-aware placement
-- structure interaction rules
-- influence zones and clearance context
+- clearance context
 
 It should remain explicit and interaction-focused, so that:
 

@@ -20,7 +20,7 @@ The typed model payload is authoritative for newly written objects. Readable Fre
 
 | Family | Layer | Typed model | Counted nested rows | Required refs |
 | --- | --- | --- | --- | --- |
-| Structures | source | `StructureModel` | structures, geometry specs, kind specs, connection points, interaction rules, influence zones | `project_id`, `structure_model_id` |
+| Structures | source | `StructureModel` | structures, geometry specs, kind specs, connection points | `project_id`, `structure_model_id` |
 | Drainage | source | `DrainageModel` | policy, ditch runs, points, links | `project_id`, `drainage_model_id` |
 | SubAssembly Library | source | `SubassemblyLibrary` | definitions | `project_id`, `library_id` |
 | Assembly/Subassembly | source | `AssemblySubassemblyModel` | templates and their nested placed rows | `project_id`, `assembly_id` |

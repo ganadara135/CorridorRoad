@@ -172,6 +172,4 @@ class AppliedSection(ResultModelBase):
     subassembly_shape_rows: list[AppliedSectionSubassemblyShape] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)
     active_structure_ids: list[str] = field(default_factory=list)
-    active_structure_rule_ids: list[str] = field(default_factory=list)
-    active_structure_influence_zone_ids: list[str] = field(default_factory=list)
     structure_diagnostic_rows: list[str] = field(default_factory=list)

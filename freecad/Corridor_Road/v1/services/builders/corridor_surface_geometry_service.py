@@ -2031,8 +2031,6 @@ def _interpolate_transition_applied_section(
         active_intersection_grading_policy_ref=str(getattr(section, "active_intersection_grading_policy_ref", "") or ""),
         intersection_diagnostic_rows=list(getattr(section, "intersection_diagnostic_rows", []) or []),
         active_structure_ids=list(getattr(section, "active_structure_ids", []) or []),
-        active_structure_rule_ids=list(getattr(section, "active_structure_rule_ids", []) or []),
-        active_structure_influence_zone_ids=list(getattr(section, "active_structure_influence_zone_ids", []) or []),
         structure_diagnostic_rows=list(getattr(section, "structure_diagnostic_rows", []) or [])
         + [f"info|surface_transition_generated|{transition_id}|{transition_mode}"]
         + diagnostics,
@@ -2541,8 +2539,6 @@ def _interpolate_applied_section(
         subassembly_shape_rows=subassembly_shape_rows,
         quantity_rows=[],
         active_structure_ids=list(getattr(first, "active_structure_ids", []) or []),
-        active_structure_rule_ids=list(getattr(first, "active_structure_rule_ids", []) or []),
-        active_structure_influence_zone_ids=list(getattr(first, "active_structure_influence_zone_ids", []) or []),
         structure_diagnostic_rows=list(getattr(first, "structure_diagnostic_rows", []) or []),
     )
 

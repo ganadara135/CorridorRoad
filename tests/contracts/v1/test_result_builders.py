@@ -60,8 +60,6 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     CulvertGeometrySpec,
     RetainingWallGeometrySpec,
     StructureGeometrySpec,
-    StructureInfluenceZone,
-    StructureInteractionRule,
     StructureModel,
     StructurePlacement,
     StructureRow,
@@ -1714,12 +1712,6 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
                 ),
             )
         ],
-        interaction_rule_rows=[
-            StructureInteractionRule("rule:bridge-section", "structure:bridge-01", "section_handoff", "section")
-        ],
-        influence_zone_rows=[
-            StructureInfluenceZone("zone:bridge-01", "structure:bridge-01", "clearance", 15.0, 45.0)
-        ],
     )
 
     result = AppliedSectionService().build(
@@ -1737,8 +1729,6 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
     )
 
     assert result.active_structure_ids == ["structure:bridge-01"]
-    assert result.active_structure_rule_ids == ["rule:bridge-section"]
-    assert result.active_structure_influence_zone_ids == ["zone:bridge-01"]
     assert result.structure_diagnostic_rows == []
     assert result.subassembly_rows[0].structure_ids == ["structure:bridge-01"]
 
@@ -1827,14 +1817,6 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
                 ),
             ),
         ],
-        interaction_rule_rows=[
-            StructureInteractionRule("rule:bridge", "structure:bridge-01", "section_handoff", "section"),
-            StructureInteractionRule("rule:wall", "structure:wall-01", "section_handoff", "section"),
-        ],
-        influence_zone_rows=[
-            StructureInfluenceZone("zone:bridge", "structure:bridge-01", "clearance", 15.0, 45.0),
-            StructureInfluenceZone("zone:wall", "structure:wall-01", "clearance", 15.0, 45.0),
-        ],
     )
 
     result = AppliedSectionService().build(
@@ -1852,8 +1834,6 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
     )
 
     assert result.active_structure_ids == ["structure:bridge-01"]
-    assert result.active_structure_rule_ids == ["rule:bridge"]
-    assert result.active_structure_influence_zone_ids == ["zone:bridge"]
     assert result.subassembly_rows[0].structure_ids == ["structure:bridge-01"]
 
 

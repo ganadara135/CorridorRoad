@@ -433,8 +433,6 @@ def structure_preset_model_from_document(
             geometry_spec_rows=geometry_spec_rows,
             culvert_geometry_spec_rows=culvert_geometry_spec_rows,
         ),
-        interaction_rule_rows=[],
-        influence_zone_rows=[],
     )
 
 
