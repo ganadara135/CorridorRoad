@@ -12,10 +12,8 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     _bridge_spec_from_detail,
     _kind_detail_field_specs,
     _kind_detail_values,
-    _project_xy_to_alignment,
     _replace_kind_spec,
     apply_v1_structure_model,
-    show_v1_structure_connection_points_preview_object,
     show_v1_structure_preview_object,
     structure_preset_model_from_document,
     structure_preset_names,
@@ -23,7 +21,6 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
     RetainingWallGeometrySpec,
-    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -32,12 +29,10 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
-from freecad.Corridor_Road.v1.objects.obj_alignment import to_alignment_model
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import find_v1_structure_model, to_structure_model
-from freecad.Corridor_Road.v1.services.evaluation import AlignmentEvaluationService
 
 _QAPP = None
 
@@ -100,7 +95,6 @@ def test_structure_presets_offer_practical_structure_sets() -> None:
         assert model.bridge_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:bridge-01"
         assert model.bridge_geometry_spec_rows[0].deck_width == 10.0
         assert model.bridge_geometry_spec_rows[0].deck_thickness == 1.2
-        assert model.connection_point_rows == []
         assert model.structure_rows[0].placement.station_start < model.structure_rows[0].placement.station_end
     finally:
         App.closeDocument(doc.Name)
@@ -229,9 +223,8 @@ def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
         assert panel._common_shape_label.text() == "Shape (auto)"
         assert panel._common_shape_field.placeholderText() == "Auto from Native Type"
         assert "Auto-filled from Native Type" in panel._common_shape_field.toolTip()
-        assert panel._connection_label.text() == "Connection Points"
         assert panel._apply_detail_button.text() == "Apply Selected Detail"
-        assert "connection points" in panel._apply_detail_button.toolTip()
+        assert not hasattr(panel, "_connection_table")
         assert panel._save_button.text() == "Apply"
         assert "without creating a 3D preview" in panel._save_button.toolTip()
         assert panel._preview_button.text() == "Preview 3D"
@@ -308,7 +301,6 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
         assert reopened._native_type_combo.currentText() == "bridge_deck"
         assert reopened._common_shape_field.text() == "deck_slab"
         assert reopened._common_width_field.text() == "12.000"
-        assert reopened._connection_table.rowCount() == 0
     finally:
         App.closeDocument(doc.Name)
 
@@ -627,7 +619,7 @@ def test_structure_editor_filters_detail_fields_by_native_type() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_structure_model_roundtrips_geometry_source_and_connection_points() -> None:
+def test_structure_model_roundtrips_geometry_source_and_native_type() -> None:
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -660,32 +652,6 @@ def test_structure_model_roundtrips_geometry_source_and_connection_points() -> N
                     height=1.2,
                 )
             ],
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:bridge-01:left",
-                    structure_ref="structure:bridge-01",
-                    point_role="left_port",
-                    station=50.0,
-                    offset=-3.0,
-                    invert_elevation=45.0,
-                    width=3.0,
-                    height=2.0,
-                    shape_kind="box",
-                    direction="upstream",
-                ),
-                StructureConnectionPoint(
-                    connection_point_id="connection:bridge-01:right",
-                    structure_ref="structure:bridge-01",
-                    point_role="right_port",
-                    station=60.0,
-                    offset=3.0,
-                    invert_elevation=44.8,
-                    width=3.0,
-                    height=2.0,
-                    shape_kind="box",
-                    direction="downstream",
-                ),
-            ],
         )
 
         obj = apply_v1_structure_model(document=doc, project=project, structure_model=model)
@@ -693,10 +659,8 @@ def test_structure_model_roundtrips_geometry_source_and_connection_points() -> N
 
         assert roundtrip.structure_rows[0].geometry_source_mode == "native"
         assert roundtrip.structure_rows[0].native_type == "bridge_deck"
-        assert [row.connection_point_id for row in roundtrip.connection_point_rows] == [
-            "connection:bridge-01:left",
-            "connection:bridge-01:right",
-        ]
+        # connection points were removed with the culverts: no property holds them any more
+        assert not hasattr(obj, "ConnectionPointRows")
     finally:
         App.closeDocument(doc.Name)
 
@@ -757,175 +721,6 @@ def test_structure_editor_native_type_apply_sets_practical_defaults() -> None:
         assert model.geometry_spec_rows[0].width == 0.9
         assert model.geometry_spec_rows[0].height == 3.0
         assert model.retaining_wall_geometry_spec_rows[0].wall_height == 3.0
-        # a wall has no drainage ports to derive
-        assert model.connection_point_rows == []
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_connection_point_table_edits_persist_to_model() -> None:
-    _ensure_qapp()
-    doc, project, _tree = _new_project_doc()
-    try:
-        panel = V1StructureEditorTaskPanel(document=doc)
-        panel._append_row(
-            StructureRow(
-                structure_id="structure:inlet-01",
-                structure_kind="inlet",
-                structure_role="active",
-                placement=StructurePlacement(
-                    placement_id="placement:inlet-01",
-                    alignment_id="alignment:main",
-                    station_start=20.0,
-                    station_end=20.0,
-                    offset=-4.0,
-                ),
-                geometry_source_mode="native",
-                native_type="inlet",
-            )
-        )
-        panel._table.selectRow(0)
-        panel._load_selected_detail()
-
-        panel._add_connection_point()
-        panel._connection_table.item(0, 0).setText("connection:inlet-01:pipe-out")
-        panel._connection_table.item(0, 1).setText("pipe_out")
-        panel._connection_table.item(0, 5).setText("44.250")
-        panel._connection_table.item(0, 9).setText("0.600")
-
-        model = panel._model_from_table()
-
-        assert len(model.connection_point_rows) == 1
-        assert model.connection_point_rows[0].connection_point_id == "connection:inlet-01:pipe-out"
-        assert model.connection_point_rows[0].point_role == "pipe_out"
-        assert model.connection_point_rows[0].invert_elevation == 44.25
-        assert model.connection_point_rows[0].diameter == 0.6
-        assert model.connection_point_rows[0].region_ref == ""
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_editor_projects_3d_pick_xy_to_station_offset() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment_obj = create_sample_v1_alignment(doc, project=project)
-        alignment = to_alignment_model(alignment_obj)
-        service = AlignmentEvaluationService()
-        x, y = service.station_offset_to_xy(alignment, 30.0, 4.0)
-
-        station, offset = _project_xy_to_alignment(alignment, x, y)
-
-        assert abs(station - 30.0) < 1.0e-6
-        assert abs(offset - 4.0) < 1.0e-6
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_show_v1_structure_connection_points_preview_object_creates_markers() -> None:
-    doc, project, tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-editor",
-            structure_model_id="structures:main",
-            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-            structure_rows=[
-                StructureRow(
-                    structure_id="structure:culvert-01",
-                    structure_kind="culvert",
-                    structure_role="active",
-                    placement=StructurePlacement(
-                        placement_id="placement:culvert-01",
-                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
-                        station_start=20.0,
-                        station_end=40.0,
-                    ),
-                )
-            ],
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:culvert-01:upstream",
-                    structure_ref="structure:culvert-01",
-                    point_role="upstream",
-                    station=20.0,
-                    offset=-3.0,
-                    invert_elevation=45.0,
-                    width=3.0,
-                    height=2.0,
-                    shape_kind="box",
-                ),
-                StructureConnectionPoint(
-                    connection_point_id="connection:culvert-01:downstream",
-                    structure_ref="structure:culvert-01",
-                    point_role="downstream",
-                    station=40.0,
-                    offset=3.0,
-                    invert_elevation=44.5,
-                    width=3.0,
-                    height=2.0,
-                    shape_kind="box",
-                ),
-            ],
-        )
-
-        preview = show_v1_structure_connection_points_preview_object(
-            doc,
-            model,
-            structure_ref="structure:culvert-01",
-            project=project,
-        )
-
-        assert preview.Name == "V1StructureConnectionPointPreview"
-        assert preview.CRRecordKind == "v1_structure_connection_point_preview"
-        assert preview.V1ObjectType == "V1StructureConnectionPointPreview"
-        assert preview.ConnectionPointCount == 2
-        assert list(preview.ConnectionPointIds) == [
-            "connection:culvert-01:upstream",
-            "connection:culvert-01:downstream",
-        ]
-        assert preview.Shape.BoundBox.XLength > 0.0
-        assert preview.Shape.BoundBox.ZLength > 2.0
-        if preview.ViewObject is not None:
-            assert preview.ViewObject.Transparency == 0
-            assert float(preview.ViewObject.LineWidth) >= 4.0
-        assert preview.Name in _group_names(tree[V1_TREE_STRUCTURES])
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_show_v1_structure_connection_points_preview_object_can_focus_one_point() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        create_sample_v1_alignment(doc, project=project)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-editor",
-            structure_model_id="structures:main",
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:inlet-01:pipe-out",
-                    structure_ref="structure:inlet-01",
-                    point_role="pipe_out",
-                    station=20.0,
-                    offset=-4.0,
-                    invert_elevation=44.0,
-                    diameter=0.6,
-                )
-            ],
-        )
-
-        preview = show_v1_structure_connection_points_preview_object(
-            doc,
-            model,
-            structure_ref="structure:inlet-01",
-            connection_point_ref="connection:inlet-01:pipe-out",
-            project=project,
-        )
-
-        assert preview.ConnectionPointCount == 1
-        assert preview.ConnectionPointRef == "connection:inlet-01:pipe-out"
-        assert preview.Shape.BoundBox.ZLength > 1.0
     finally:
         App.closeDocument(doc.Name)
 
@@ -1148,41 +943,6 @@ def test_structure_preview_prefers_centerline3d_result_when_available() -> None:
         assert preview.PreviewPathSource == "centerline3d_result"
         assert preview.Shape.BoundBox.ZMin > 10.0
         assert preview.Shape.BoundBox.ZLength > 0.0
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_structure_connection_point_preview_uses_centerline3d_elevation_when_point_has_no_explicit_elevation() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        alignment = create_sample_v1_alignment(doc, project=project)
-        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
-        create_sample_v1_profile(doc, project=project, alignment=alignment)
-        model = StructureModel(
-            schema_version=1,
-            project_id="proj-structure-editor",
-            structure_model_id="structures:main",
-            connection_point_rows=[
-                StructureConnectionPoint(
-                    connection_point_id="connection:inlet-01:pipe-out",
-                    structure_ref="structure:inlet-01",
-                    point_role="pipe_out",
-                    station=60.0,
-                    offset=-4.0,
-                    diameter=0.6,
-                )
-            ],
-        )
-
-        preview = show_v1_structure_connection_points_preview_object(
-            doc,
-            model,
-            structure_ref="structure:inlet-01",
-            connection_point_ref="connection:inlet-01:pipe-out",
-            project=project,
-        )
-
-        assert preview.Shape.BoundBox.ZMin > 10.0
     finally:
         App.closeDocument(doc.Name)
 

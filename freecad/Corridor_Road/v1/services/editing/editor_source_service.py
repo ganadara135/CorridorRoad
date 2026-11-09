@@ -37,7 +37,7 @@ def without_removed_drainage_structures(model: StructureModel) -> tuple[Structur
     """The model without the culvert and other drainage structures Drainage now owns, and their ids.
 
     A document saved before 2026-11-08 may still hold such rows. They are dropped with their
-    geometry specs and connection points; nothing else is touched.
+    geometry specs; nothing else is touched.
     """
 
     removed = tuple(
@@ -62,7 +62,6 @@ def without_removed_drainage_structures(model: StructureModel) -> tuple[Structur
             retaining_wall_geometry_spec_rows=[
                 row for row in model.retaining_wall_geometry_spec_rows if str(row.geometry_spec_ref) not in gone_specs
             ],
-            connection_point_rows=[row for row in model.connection_point_rows if str(row.structure_ref) not in gone],
         ),
         removed,
     )

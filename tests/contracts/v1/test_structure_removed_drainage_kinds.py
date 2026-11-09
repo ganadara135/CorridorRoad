@@ -7,7 +7,6 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
-    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -51,10 +50,6 @@ def _model() -> StructureModel:
         ],
         geometry_spec_rows=[StructureGeometrySpec(f"geometry-spec:{structure_id}", structure_id, width=3.0, height=2.0) for structure_id in ids],
         bridge_geometry_spec_rows=[BridgeGeometrySpec("geometry-spec:structure:bridge-01", deck_width=10.0, deck_thickness=1.2)],
-        connection_point_rows=[
-            StructureConnectionPoint("connection:culvert-01:in", "structure:culvert-01", "pipe_in", 10.0, 0.0),
-            StructureConnectionPoint("connection:bridge-01:a", "structure:bridge-01", "left_port", 100.0, 0.0),
-        ],
     )
 
 
@@ -67,14 +62,13 @@ def test_a_row_of_a_drainage_kind_or_native_type_is_recognised() -> None:
     assert not is_removed_drainage_structure(_row("f", "utility", 0.0, 1.0))
 
 
-def test_the_removed_rows_go_with_their_specs_and_connection_points_and_nothing_else_changes() -> None:
+def test_the_removed_rows_go_with_their_specs_and_nothing_else_changes() -> None:
     cleaned, removed = without_removed_drainage_structures(_model())
 
     assert removed == ("structure:culvert-01", "structure:inlet-01")
     assert [row.structure_id for row in cleaned.structure_rows] == ["structure:bridge-01"]
     assert [row.geometry_spec_id for row in cleaned.geometry_spec_rows] == ["geometry-spec:structure:bridge-01"]
     assert [row.geometry_spec_ref for row in cleaned.bridge_geometry_spec_rows] == ["geometry-spec:structure:bridge-01"]
-    assert [row.connection_point_id for row in cleaned.connection_point_rows] == ["connection:bridge-01:a"]
 
     same, nothing = without_removed_drainage_structures(cleaned)
     assert same is cleaned and nothing == ()
@@ -102,12 +96,13 @@ def test_validation_warns_about_a_row_that_belongs_to_drainage_now() -> None:
 
 @dataclass
 class _StructureModelWithCulvertSpecs(StructureModel):
-    """What a Structure payload held before the culvert specs were removed."""
+    """What a Structure payload held before the culvert specs and connection points were removed."""
 
     culvert_geometry_spec_rows: list = field(default_factory=list)
+    connection_point_rows: list = field(default_factory=list)
 
 
-def test_a_structure_saved_with_culvert_specs_restores_and_drops_their_property() -> None:
+def test_a_structure_saved_with_culvert_specs_and_connection_points_restores_and_drops_their_properties() -> None:
     doc = App.newDocument("V1StructureBeforeCulvertRemoval")
     project = doc.addObject("App::FeaturePython", "CorridorRoadProject")
     CorridorRoadProject(project)
@@ -117,15 +112,26 @@ def test_a_structure_saved_with_culvert_specs_restores_and_drops_their_property(
         obj = create_or_update_v1_structure_model_object(doc, project=project, structure_model=model)
         obj.addProperty("App::PropertyStringList", "CulvertGeometrySpecRows", "Kind Geometry Specs", "from before")
         obj.CulvertGeometrySpecRows = ["{}"]
+        obj.addProperty("App::PropertyStringList", "ConnectionPointRows", "Connection Points", "from before")
+        obj.ConnectionPointRows = ["{}"]
         old = _StructureModelWithCulvertSpecs(
             **{name: getattr(model, name) for name in model.__dataclass_fields__},
             culvert_geometry_spec_rows=[{"geometry_spec_ref": "geometry-spec:structure:culvert-01", "barrel_shape": "box"}],
+            connection_point_rows=[
+                {
+                    "connection_point_id": "connection:bridge-01:a",
+                    "structure_ref": "structure:bridge-01",
+                    "point_role": "left_port",
+                    "station": 100.0,
+                    "offset": 0.0,
+                }
+            ],
         )
         write_model_payload(
             obj,
             old,
             model_type="StructureModel",
-            row_fields=("structure_rows", "geometry_spec_rows", "culvert_geometry_spec_rows"),
+            row_fields=("structure_rows", "geometry_spec_rows", "culvert_geometry_spec_rows", "connection_point_rows"),
         )
 
         restored = to_structure_model(obj)
@@ -133,5 +139,6 @@ def test_a_structure_saved_with_culvert_specs_restores_and_drops_their_property(
 
         create_or_update_v1_structure_model_object(doc, project=project, structure_model=model)
         assert not hasattr(obj, "CulvertGeometrySpecRows")
+        assert not hasattr(obj, "ConnectionPointRows")
     finally:
         App.closeDocument(doc.Name)

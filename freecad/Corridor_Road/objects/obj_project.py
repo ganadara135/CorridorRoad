@@ -975,8 +975,6 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_structure_row_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
-    if record_kind == "v1_structure_connection_point_preview":
-        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind in {
         "v1_applied_section_show_preview",
         "v1_applied_sections_show_all_preview",
@@ -1008,8 +1006,6 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_QUANTITIES, None)
     if record_kind in {"v1_drainage_model", "v1_drainage_result"}:
         return tree.get(V1_TREE_DRAINAGE, None)
-    if record_kind == "v1_structure_pipe_connection_point_preview":
-        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":

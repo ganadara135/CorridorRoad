@@ -121,7 +121,6 @@ function Invoke-FastValidation {
             tests/contracts/v1/test_intersection_patch_constraint_build_service.py `
             tests/contracts/v1/test_build_corridor_tin_builder_services.py `
             tests/contracts/v1/test_build_corridor_presentation_boundaries.py `
-            "tests/contracts/v1/test_structure_editor_command.py::test_structure_editor_normalizes_connection_points_after_station_edits" `
             "tests/contracts/v1/test_structure_editor_command.py::test_structure_editor_reopens_with_applied_rows_and_selected_detail" `
             "tests/contracts/v1/test_structure_editor_command.py::test_apply_v1_structure_model_creates_structure_source_object_only" `
             "tests/contracts/v1/test_structure_editor_command.py::test_show_v1_structure_preview_object_creates_visible_3d_preview" `

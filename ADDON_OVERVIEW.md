@@ -36,7 +36,7 @@ Typical v1 workflow:
 - SubAssembly Designer and Assembly editor workflow with ditch, side slope, bench, and preset support
 - Region editor with continuous station spans and Assembly assignment
 - Intersection starter sources, multi-alignment centerline preview, Intersection Slope Face, and Tie Slope review
-- Structure editor with connection points and native drainage-structure preview details
+- Structure editor for bridge, retaining wall, and related source intent
 - Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
 - Applied Sections generation and review handoff
 - Build Parametric preview surfaces, Intersection Tie Slope output, shared breakline audit, and diagnostics

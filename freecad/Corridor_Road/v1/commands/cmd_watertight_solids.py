@@ -2275,28 +2275,6 @@ def _ray_bound_box_hit_distance(origin, unit, bbox) -> float:
     return max(t_max, t_min, 0.0)
 
 
-def _connection_point_direction_vector(connection_point):
-    text = (
-        str(getattr(connection_point, "direction", "") or "")
-        or str(getattr(connection_point, "point_role", "") or "")
-    ).strip().lower()
-    if not text:
-        return None
-    if text in {"downstream", "station_forward", "forward", "+station"}:
-        return App.Vector(1.0, 0.0, 0.0)
-    if text in {"upstream", "station_backward", "backward", "-station"}:
-        return App.Vector(-1.0, 0.0, 0.0)
-    if text in {"left", "offset_left", "+offset"}:
-        return App.Vector(0.0, 1.0, 0.0)
-    if text in {"right", "offset_right", "-offset"}:
-        return App.Vector(0.0, -1.0, 0.0)
-    if text in {"up", "vertical_up"}:
-        return App.Vector(0.0, 0.0, 1.0)
-    if text in {"down", "vertical_down"}:
-        return App.Vector(0.0, 0.0, -1.0)
-    return None
-
-
 def _terminal_pipe_outward_direction(point, segment_refs: list[str], geometry_by_segment: dict[str, object]):
     for segment_ref in list(segment_refs or []):
         geometry = geometry_by_segment.get(str(segment_ref or ""))
@@ -2311,14 +2289,6 @@ def _terminal_pipe_outward_direction(point, segment_refs: list[str], geometry_by
             return points[0].sub(points[1])
         if points[-1].sub(point).Length <= 1.0e-6:
             return points[-1].sub(points[-2])
-    return None
-
-
-def _first_connection_point(connection_point_refs: list[str], connection_point_map: dict[str, object]):
-    for ref in list(connection_point_refs or []):
-        point = connection_point_map.get(str(ref or ""))
-        if point is not None:
-            return point
     return None
 
 
@@ -2344,15 +2314,6 @@ def _bound_box_center_vector(bbox):
 
 def _built_structure_body_shapes_for_refs(document, structure_refs: list[str]) -> tuple[list[object], list[str]]:
     return _structure_body_shape_map_values(_built_structure_body_shape_map_for_refs(document, structure_refs))
-
-
-def _structure_connection_point_map(document) -> dict[str, object]:
-    structure_model = to_structure_model(find_v1_structure_model(document))
-    return {
-        str(getattr(row, "connection_point_id", "") or ""): row
-        for row in list(getattr(structure_model, "connection_point_rows", []) or [])
-        if str(getattr(row, "connection_point_id", "") or "")
-    } if structure_model is not None else {}
 
 
 def _built_structure_body_shape_map_for_refs(document, structure_refs: list[str]) -> dict[str, list[tuple[object, str]]]:

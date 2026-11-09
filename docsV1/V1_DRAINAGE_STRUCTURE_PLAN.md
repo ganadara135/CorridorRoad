@@ -144,8 +144,19 @@ Done on 2026-11-08 (gate pending; GUI check pending):
    (`without_removed_drainage_structures`). The old `CulvertGeometrySpecRows` property goes when
    the object is next written. The Watertight and structure-extension plans still name culvert
    targets; they are paused plans and are corrected if that work resumes.
-3. **Connection points.** Remove `StructureConnectionPoint`, its editor tab and preview, its
+3. **Connection points (done 2026-11-09).** Remove `StructureConnectionPoint`, its editor tab and preview, its
    diagnostics, and the two requirement checks above; update `scripts/run_local_validation.ps1`.
+
+   Done: `StructureConnectionPoint` and `connection_point_rows` are gone from the Structure model,
+   the Structure object (`ConnectionPointRows` and its diagnostics), the editor (the connection
+   table, Add/Delete Point, Pick From 3D, Preview Points, and the 3D point and projection helpers
+   that only they used), the command (the connection preview object
+   `V1StructureConnectionPointPreview`, the station normalization, and the connection check of an
+   external body, whose reference is still checked for being found in the document), the
+   `commands` export and the project tree routes of the two preview kinds, and the dead
+   connection helpers of the Watertight command. A document saved before still opens: the payload
+   keeps its rows unread, and the old `ConnectionPointRows` property goes when the object is next
+   written.
 4. **Documents.** Delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 and the
    culvert kind from `V1_STRUCTURE_MODEL.md`; update `V1_STRUCTURE_GEOMETRY_CONTRACT.md`,
    `V1_PERSISTENCE_SCHEMA_INVENTORY.md`, the CHANGELOG, and the line in `AGENTS.md` that says pipes

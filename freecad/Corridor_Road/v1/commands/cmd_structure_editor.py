@@ -25,7 +25,6 @@ from ...objects.obj_project import (
 from ..models.source.structure_model import (
     BridgeGeometrySpec,
     RetainingWallGeometrySpec,
-    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -301,60 +300,6 @@ def _create_structure_row_preview_objects(
     return objects
 
 
-def show_v1_structure_connection_points_preview_object(
-    document,
-    structure_model: StructureModel,
-    *,
-    structure_ref: str = "",
-    connection_point_ref: str = "",
-    project=None,
-):
-    """Create or update a 3D review object for Structure connection points."""
-
-    if document is None:
-        raise RuntimeError("No active document.")
-    if App is None or Part is None:
-        raise RuntimeError("FreeCAD Part workbench is required for Structure connection point preview.")
-    points = _filtered_connection_points(
-        list(getattr(structure_model, "connection_point_rows", []) or []),
-        structure_ref=structure_ref,
-        connection_point_ref=connection_point_ref,
-    )
-    if not points:
-        raise ValueError("Connection point preview requires at least one connection point row.")
-    shapes = []
-    for point in points:
-        x, y, z = _connection_point_xyz(document, point)
-        shapes.append(_connection_point_marker_shape(point, float(x), float(y), float(z)))
-    shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
-    obj = document.getObject("V1StructureConnectionPointPreview")
-    if obj is None:
-        obj = document.addObject("Part::Feature", "V1StructureConnectionPointPreview")
-    obj.Label = "Structure Connection Points"
-    obj.Shape = shape
-    _set_preview_string_property(obj, "CRRecordKind", "v1_structure_connection_point_preview")
-    _set_preview_string_property(obj, "V1ObjectType", "V1StructureConnectionPointPreview")
-    _set_preview_string_property(obj, "StructureModelId", str(getattr(structure_model, "structure_model_id", "") or ""))
-    _set_preview_string_property(obj, "StructureRef", str(structure_ref or ""))
-    _set_preview_string_property(obj, "ConnectionPointRef", str(connection_point_ref or ""))
-    _set_preview_integer_property(obj, "ConnectionPointCount", len(points))
-    _set_preview_string_list_property(
-        obj,
-        "ConnectionPointIds",
-        [str(getattr(point, "connection_point_id", "") or "") for point in points],
-    )
-    _style_connection_point_preview_object(obj)
-    try:
-        route_object_to_project_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    try:
-        document.recompute()
-    except Exception:
-        pass
-    return obj
-
-
 def run_v1_structure_editor_command():
     """Open the v1 Structure editor panel."""
 
@@ -497,68 +442,6 @@ def _preset_retaining_wall_geometry_spec_rows(preset: dict) -> list[RetainingWal
             )
         )
     return rows
-
-
-def _normalized_connection_point_rows_for_structures(
-    connection_point_rows: list[StructureConnectionPoint],
-    structure_rows: list[StructureRow],
-) -> list[StructureConnectionPoint]:
-    structures = {
-        str(getattr(row, "structure_id", "") or "").strip(): row
-        for row in list(structure_rows or [])
-        if str(getattr(row, "structure_id", "") or "").strip()
-    }
-    output: list[StructureConnectionPoint] = []
-    for point in list(connection_point_rows or []):
-        structure = structures.get(str(getattr(point, "structure_ref", "") or "").strip())
-        if structure is None:
-            output.append(point)
-            continue
-        placement = getattr(structure, "placement", None)
-        if placement is None:
-            output.append(point)
-            continue
-        start = float(getattr(placement, "station_start", 0.0) or 0.0)
-        end = float(getattr(placement, "station_end", start) or start)
-        lower = min(start, end)
-        upper = max(start, end)
-        station = float(getattr(point, "station", 0.0) or 0.0)
-        tolerance = 1.0e-6
-        if lower - tolerance <= station <= upper + tolerance:
-            output.append(point)
-            continue
-        output.append(
-            StructureConnectionPoint(
-                connection_point_id=str(getattr(point, "connection_point_id", "") or ""),
-                structure_ref=str(getattr(point, "structure_ref", "") or ""),
-                point_role=str(getattr(point, "point_role", "") or ""),
-                station=_station_for_connection_point_inside_structure(point, lower=lower, upper=upper),
-                offset=float(getattr(point, "offset", 0.0) or 0.0),
-                elevation=getattr(point, "elevation", None),
-                invert_elevation=getattr(point, "invert_elevation", None),
-                diameter=float(getattr(point, "diameter", 0.0) or 0.0),
-                width=float(getattr(point, "width", 0.0) or 0.0),
-                height=float(getattr(point, "height", 0.0) or 0.0),
-                shape_kind=str(getattr(point, "shape_kind", "") or ""),
-                direction=str(getattr(point, "direction", "") or ""),
-                connection_order=int(getattr(point, "connection_order", 0) or 0),
-                region_ref=str(getattr(point, "region_ref", "") or ""),
-                notes=str(getattr(point, "notes", "") or ""),
-            )
-        )
-    return output
-
-
-def _station_for_connection_point_inside_structure(point: StructureConnectionPoint, *, lower: float, upper: float) -> float:
-    role = str(getattr(point, "point_role", "") or "").strip().lower()
-    direction = str(getattr(point, "direction", "") or "").strip().lower()
-    point_id = str(getattr(point, "connection_point_id", "") or "").strip().lower()
-    if direction == "out" or role in {"pipe_out", "discharge", "outlet", "downstream"} or "outfall" in point_id:
-        return float(upper)
-    if direction == "in" or role in {"pipe_in", "inlet", "upstream"}:
-        return float(lower)
-    station = float(getattr(point, "station", 0.0) or 0.0)
-    return min(max(station, float(lower)), float(upper))
 
 
 def _native_type_from_preset_spec(spec: dict) -> str:
@@ -798,15 +681,9 @@ def _selected_structure_diagnostics(structure_model: StructureModel, structure_r
     spec_ref = str(spec_ref or "").strip()
     if not structure_ref:
         return []
-    point_refs = {
-        str(getattr(row, "connection_point_id", "") or "").strip()
-        for row in list(getattr(structure_model, "connection_point_rows", []) or [])
-        if str(getattr(row, "structure_ref", "") or "").strip() == structure_ref
-    }
     tokens = {structure_ref, structure_ref.split(":")[-1]}
     if spec_ref:
         tokens.add(spec_ref)
-    tokens.update(point_refs)
     diagnostics = []
     for row in _structure_editor_diagnostics(structure_model, document=document):
         text = str(row)
@@ -824,11 +701,6 @@ def _structure_editor_diagnostics(structure_model: StructureModel, *, document=N
 def _external_geometry_mapping_diagnostics(structure_model: StructureModel, *, document=None) -> list[str]:
     if document is None:
         return []
-    points_by_structure: dict[str, list[StructureConnectionPoint]] = {}
-    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
-        structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
-        if structure_ref:
-            points_by_structure.setdefault(structure_ref, []).append(point)
     diagnostics: list[str] = []
     for row in list(getattr(structure_model, "structure_rows", []) or []):
         if _geometry_source_mode(row) != "external_ref":
@@ -837,24 +709,10 @@ def _external_geometry_mapping_diagnostics(structure_model: StructureModel, *, d
         geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
         if not geometry_ref:
             continue
-        external_obj = _external_geometry_object(document, geometry_ref)
-        if external_obj is None:
+        if _external_geometry_object(document, geometry_ref) is None:
             diagnostics.append(
                 f"warning|external_geometry_ref_unresolved|{structure_ref}|External geometry reference was not found in the document: {geometry_ref}."
             )
-            continue
-        bbox = getattr(getattr(external_obj, "Shape", None), "BoundBox", None) or getattr(external_obj, "BoundBox", None)
-        if bbox is None:
-            diagnostics.append(
-                f"warning|external_geometry_bounds_unavailable|{structure_ref}|External geometry reference has no bounding box for connection-point validation."
-            )
-            continue
-        for point in points_by_structure.get(structure_ref, []):
-            if not _connection_point_inside_external_bounds(point, bbox):
-                point_id = str(getattr(point, "connection_point_id", "") or structure_ref)
-                diagnostics.append(
-                    f"error|external_connection_point_outside_geometry_bounds|{point_id}|Mapped connection point is outside the external Structure body bounds."
-                )
     return diagnostics
 
 
@@ -1112,11 +970,6 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
         str(row.geometry_spec_id): row
         for row in list(getattr(structure_model, "geometry_spec_rows", []) or [])
     }
-    connection_points_by_structure: dict[str, list[StructureConnectionPoint]] = {}
-    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
-        structure_ref = str(getattr(point, "structure_ref", "") or "")
-        if structure_ref:
-            connection_points_by_structure.setdefault(structure_ref, []).append(point)
     return {
         "geometry_specs": geometry_specs,
         "bridge_specs": {
@@ -1127,7 +980,6 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
         },
-        "connection_points_by_structure": connection_points_by_structure,
     }
 
 
@@ -1219,26 +1071,6 @@ def _style_structure_preview_object(obj) -> None:
         vobj.PointColor = (0.95, 0.85, 0.20)
         vobj.Transparency = 35
         vobj.LineWidth = 2.0
-    except Exception:
-        pass
-
-
-def _style_connection_point_preview_object(obj) -> None:
-    try:
-        vobj = getattr(obj, "ViewObject", None)
-        if vobj is None:
-            return
-        vobj.Visibility = True
-        vobj.ShapeColor = (1.0, 0.68, 0.05)
-        vobj.LineColor = (0.05, 0.05, 0.02)
-        vobj.PointColor = (1.0, 0.95, 0.05)
-        vobj.Transparency = 0
-        vobj.LineWidth = 4.0
-        vobj.PointSize = 8.0
-        try:
-            vobj.DisplayMode = "Shaded"
-        except Exception:
-            pass
     except Exception:
         pass
 
@@ -1345,39 +1177,6 @@ def _geometry_source_mode(row: StructureRow) -> str:
     return "native"
 
 
-def _selected_3d_point():
-    if Gui is None:
-        raise RuntimeError("FreeCAD GUI selection is required for Pick From 3D.")
-    selection_ex = []
-    try:
-        selection_ex = list(Gui.Selection.getSelectionEx() or [])
-    except Exception:
-        selection_ex = []
-    for selection in selection_ex:
-        for sub_object in list(getattr(selection, "SubObjects", []) or []):
-            point = _point_from_shape_like(sub_object)
-            if point is not None:
-                return point
-        obj = getattr(selection, "Object", None)
-        point = _point_from_shape_like(getattr(obj, "Shape", None))
-        if point is not None:
-            return point
-        point = _point_from_shape_like(obj)
-        if point is not None:
-            return point
-    try:
-        for obj in list(Gui.Selection.getSelection() or []):
-            point = _point_from_shape_like(getattr(obj, "Shape", None))
-            if point is not None:
-                return point
-            point = _point_from_shape_like(obj)
-            if point is not None:
-                return point
-    except Exception:
-        pass
-    raise RuntimeError("Select a vertex, edge, face, or object in the 3D View first.")
-
-
 def _selected_3d_object():
     if Gui is None:
         raise RuntimeError("FreeCAD GUI selection is required for Pick External.")
@@ -1397,30 +1196,6 @@ def _selected_3d_object():
         if obj is not None:
             return obj
     raise RuntimeError("Select one FreeCAD object in the 3D View or tree first.")
-
-
-def _point_from_shape_like(value):
-    if value is None:
-        return None
-    point = getattr(value, "Point", None)
-    if point is not None:
-        return point
-    center = getattr(value, "CenterOfMass", None)
-    if center is not None:
-        return center
-    vertexes = list(getattr(value, "Vertexes", []) or [])
-    if vertexes:
-        return getattr(vertexes[0], "Point", None)
-    bound_box = getattr(value, "BoundBox", None)
-    if bound_box is not None:
-        center = getattr(bound_box, "Center", None)
-        if center is not None:
-            return center
-    placement = getattr(value, "Placement", None)
-    base = getattr(placement, "Base", None)
-    if base is not None:
-        return base
-    return None
 
 
 def _external_geometry_object(document, geometry_ref: str):
@@ -1446,156 +1221,6 @@ def _external_geometry_object(document, geometry_ref: str):
         if ref in {name, label} or any(candidate and candidate in {name, label} for candidate in candidates):
             return obj
     return None
-
-
-def _connection_point_inside_external_bounds(point: StructureConnectionPoint, bbox, *, tolerance: float = 0.05) -> bool:
-    x = float(getattr(point, "station", 0.0) or 0.0)
-    y = float(getattr(point, "offset", 0.0) or 0.0)
-    z_value = getattr(point, "elevation", None)
-    if z_value is None:
-        z_value = getattr(point, "invert_elevation", None)
-    checks = [
-        (float(getattr(bbox, "XMin", 0.0) or 0.0) - tolerance) <= x <= (float(getattr(bbox, "XMax", 0.0) or 0.0) + tolerance),
-        (float(getattr(bbox, "YMin", 0.0) or 0.0) - tolerance) <= y <= (float(getattr(bbox, "YMax", 0.0) or 0.0) + tolerance),
-    ]
-    if z_value is not None:
-        z = float(z_value)
-        checks.append(
-            (float(getattr(bbox, "ZMin", 0.0) or 0.0) - tolerance) <= z <= (float(getattr(bbox, "ZMax", 0.0) or 0.0) + tolerance)
-        )
-    return all(checks)
-
-
-def _station_offset_from_point(document, point) -> tuple[float, float]:
-    alignment = to_alignment_model(find_v1_alignment(document))
-    if alignment is None:
-        return float(getattr(point, "x", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0)
-    projected = _project_xy_to_alignment(alignment, float(getattr(point, "x", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0))
-    if projected is None:
-        return float(getattr(point, "x", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0)
-    return projected
-
-
-def _project_xy_to_alignment(alignment, x: float, y: float) -> tuple[float, float] | None:
-    best = None
-    for element in list(getattr(alignment, "geometry_sequence", []) or []):
-        x_values = _numeric_values(getattr(element, "geometry_payload", {}).get("x_values", []))
-        y_values = _numeric_values(getattr(element, "geometry_payload", {}).get("y_values", []))
-        points = list(zip(x_values, y_values))
-        if len(points) < 2:
-            continue
-        geometry_length = _polyline_length(points)
-        station_length = float(getattr(element, "station_end", 0.0) or 0.0) - float(getattr(element, "station_start", 0.0) or 0.0)
-        if geometry_length <= 1.0e-12 or station_length <= 1.0e-12:
-            continue
-        traversed = 0.0
-        for (x0, y0), (x1, y1) in zip(points, points[1:]):
-            dx = float(x1) - float(x0)
-            dy = float(y1) - float(y0)
-            seg_len_sq = dx * dx + dy * dy
-            if seg_len_sq <= 1.0e-12:
-                continue
-            raw_t = ((float(x) - float(x0)) * dx + (float(y) - float(y0)) * dy) / seg_len_sq
-            t = min(max(raw_t, 0.0), 1.0)
-            px = float(x0) + dx * t
-            py = float(y0) + dy * t
-            dist_sq = (float(x) - px) ** 2 + (float(y) - py) ** 2
-            seg_len = seg_len_sq ** 0.5
-            geometry_offset = traversed + seg_len * t
-            station = float(getattr(element, "station_start", 0.0) or 0.0) + (geometry_offset / geometry_length) * station_length
-            normal_x = -dy / seg_len
-            normal_y = dx / seg_len
-            offset = (float(x) - px) * normal_x + (float(y) - py) * normal_y
-            if best is None or dist_sq < best[0]:
-                best = (dist_sq, station, offset)
-            traversed += seg_len
-    if best is None:
-        return None
-    return float(best[1]), float(best[2])
-
-
-def _numeric_values(values) -> list[float]:
-    result: list[float] = []
-    for value in list(values or []):
-        try:
-            result.append(float(value))
-        except Exception:
-            continue
-    return result
-
-
-def _polyline_length(points: list[tuple[float, float]]) -> float:
-    total = 0.0
-    for (x0, y0), (x1, y1) in zip(points, points[1:]):
-        total += ((float(x1) - float(x0)) ** 2 + (float(y1) - float(y0)) ** 2) ** 0.5
-    return total
-
-
-def _filtered_connection_points(
-    rows: list[StructureConnectionPoint],
-    *,
-    structure_ref: str = "",
-    connection_point_ref: str = "",
-) -> list[StructureConnectionPoint]:
-    structure_ref = str(structure_ref or "")
-    connection_point_ref = str(connection_point_ref or "")
-    output = []
-    for row in list(rows or []):
-        if structure_ref and str(getattr(row, "structure_ref", "") or "") != structure_ref:
-            continue
-        if connection_point_ref and str(getattr(row, "connection_point_id", "") or "") != connection_point_ref:
-            continue
-        output.append(row)
-    return output
-
-
-def _connection_point_xyz(document, point: StructureConnectionPoint) -> tuple[float, float, float]:
-    station = float(getattr(point, "station", 0.0) or 0.0)
-    offset = float(getattr(point, "offset", 0.0) or 0.0)
-    z_value = getattr(point, "invert_elevation", None)
-    if z_value is None:
-        z_value = getattr(point, "elevation", None)
-    path = _centerline3d_result_path_source(document)
-    if path is not None:
-        try:
-            x, y, centerline_z = _station_offset_xyz(path, station, offset, 0.0)
-            z = _connection_point_display_z(point, float(z_value if z_value is not None else centerline_z))
-            return float(x), float(y), z
-        except Exception:
-            pass
-    z = _connection_point_display_z(point, float(z_value if z_value is not None else 0.0))
-    alignment = to_alignment_model(find_v1_alignment(document))
-    if alignment is None:
-        return station, offset, z
-    try:
-        x, y = AlignmentEvaluationService().station_offset_to_xy(alignment, station, offset)
-        return float(x), float(y), z
-    except Exception:
-        return station, offset, z
-
-
-def _connection_point_display_z(point: StructureConnectionPoint, z: float) -> float:
-    diameter = float(getattr(point, "diameter", 0.0) or 0.0)
-    shape_kind = str(getattr(point, "shape_kind", "") or "").strip().lower()
-    if diameter <= 0.0:
-        return float(z)
-    if shape_kind and shape_kind not in {"circular", "pipe", "round", "circular_pipe"}:
-        return float(z)
-    return float(z) + diameter / 2.0
-
-
-def _connection_point_marker_radius(point: StructureConnectionPoint) -> float:
-    diameter = float(getattr(point, "diameter", 0.0) or 0.0)
-    width = float(getattr(point, "width", 0.0) or 0.0)
-    height = float(getattr(point, "height", 0.0) or 0.0)
-    reference_size = max(diameter, width, height, 0.8)
-    return max(0.55, min(reference_size * 0.38, 2.2))
-
-
-def _connection_point_marker_shape(point: StructureConnectionPoint, x: float, y: float, z: float):
-    radius = _connection_point_marker_radius(point)
-    center = App.Vector(float(x), float(y), float(z))
-    return Part.makeSphere(radius, center)
 
 
 def _format_float(value: float) -> str:

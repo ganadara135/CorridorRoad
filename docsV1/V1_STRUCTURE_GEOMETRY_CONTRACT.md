@@ -51,7 +51,6 @@ The ownership boundary is:
 - `StructurePlacement` owns station range, offset, elevation reference, and orientation mode.
 - `StructureGeometrySpec` owns dimensions and kind-specific shape parameters.
 - `V1StructureShowPreview` is presentation geometry only.
-- `V1StructurePipeConnectionPointPreview` is the Structure-owned Pipe In / Pipe Out review marker used by Drainage flow previews.
 - future structure corridor solids are output geometry only.
 
 ## 5. Design Goals

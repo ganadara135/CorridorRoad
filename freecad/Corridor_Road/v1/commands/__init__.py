@@ -38,7 +38,6 @@ from .cmd_structure_editor import (
     apply_v1_structure_model,
     run_v1_structure_editor_command,
     show_v1_structure_preview_object,
-    show_v1_structure_connection_points_preview_object,
 )
 from .cmd_review_plan_profile import run_v1_plan_profile_preview_command
 from .cmd_centerline3d import (
@@ -78,7 +77,6 @@ __all__ = [
     "run_v1_superelevation_editor_command",
     "run_v1_structure_output_command",
     "show_v1_structure_preview_object",
-    "show_v1_structure_connection_points_preview_object",
     "show_v1_superelevation_review_object",
     "show_v1_centerline3d_preview_object",
     "run_v1_plan_profile_preview_command",

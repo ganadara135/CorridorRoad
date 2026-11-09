@@ -13,7 +13,6 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 from ..models.source.structure_model import (
     BridgeGeometrySpec,
     RetainingWallGeometrySpec,
-    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -44,9 +43,9 @@ _RETIRED_PROPERTIES = (
     "InfluenceOffsetMaxes",
     # culvert specs moved to Drainage on 2026-11-08
     "CulvertGeometrySpecRows",
+    # connection points were removed with them: Drainage points and links carry the connectivity
+    "ConnectionPointRows",
 )
-
-CIRCULAR_CONNECTION_ROLES = {"pipe_in", "pipe_out", "upstream", "downstream"}
 
 
 class V1StructureModelObject:
@@ -127,7 +126,6 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "ReferenceModes", "References", "reference modes")
     _add_property(obj, "App::PropertyStringList", "GeometrySourceModes", "References", "geometry source modes")
     _add_property(obj, "App::PropertyStringList", "NativeTypes", "References", "native structure geometry types")
-    _add_property(obj, "App::PropertyStringList", "ConnectionPointRows", "Connection Points", "structure connection point rows")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "structure validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "structure diagnostics")
     ensure_model_payload_properties(obj, add_property=_add_property)
@@ -193,7 +191,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
     bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
-    connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
     diagnostics = validate_structure_model(structure_model)
 
     obj.Label = label
@@ -234,7 +231,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.ReferenceModes = [str(row.reference_mode) for row in rows]
     obj.GeometrySourceModes = [str(getattr(row, "geometry_source_mode", "") or _geometry_source_mode(row)) for row in rows]
     obj.NativeTypes = [str(getattr(row, "native_type", "") or "") for row in rows]
-    obj.ConnectionPointRows = [_json_row(row) for row in connection_point_rows]
     obj.ValidationStatus = _validation_status(diagnostics)
     obj.DiagnosticRows = diagnostics
     write_model_payload(
@@ -246,7 +242,6 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
             "geometry_spec_rows",
             "bridge_geometry_spec_rows",
             "retaining_wall_geometry_spec_rows",
-            "connection_point_rows",
         ),
         required_refs=("project_id", "structure_model_id"),
     )
@@ -327,10 +322,6 @@ def to_structure_model(obj) -> StructureModel | None:
         RetainingWallGeometrySpec(**row)
         for row in _json_rows(getattr(obj, "RetainingWallGeometrySpecRows", []) or [])
     ]
-    connection_point_rows = [
-        StructureConnectionPoint(**row)
-        for row in _json_rows(getattr(obj, "ConnectionPointRows", []) or [])
-    ]
 
     return StructureModel(
         schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
@@ -342,7 +333,6 @@ def to_structure_model(obj) -> StructureModel | None:
         geometry_spec_rows=geometry_spec_rows,
         bridge_geometry_spec_rows=bridge_geometry_spec_rows,
         retaining_wall_geometry_spec_rows=retaining_wall_geometry_spec_rows,
-        connection_point_rows=connection_point_rows,
     )
 
 
@@ -366,7 +356,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
     geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
     bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
-    connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
     geometry_specs_by_id = {
         str(getattr(row, "geometry_spec_id", "") or ""): row
         for row in geometry_spec_rows
@@ -468,7 +457,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         retained_side = str(getattr(spec, "retained_side", "") or "").strip().lower()
         if retained_side and retained_side not in {"left", "right", "inside", "outside"}:
             diagnostics.append(f"warning|wall_retained_side|{spec_ref}|Retaining wall retained side is not a recommended value.")
-    diagnostics.extend(_connection_point_row_diagnostics(connection_point_rows, structure_ids))
     return diagnostics
 
 
@@ -483,49 +471,6 @@ def _geometry_source_mode(row: StructureRow) -> str:
     return "native"
 
 
-def _connection_point_row_diagnostics(
-    connection_point_rows: list[StructureConnectionPoint],
-    structure_ids: set[str],
-) -> list[str]:
-    diagnostics: list[str] = []
-    seen = set()
-    for index, point in enumerate(connection_point_rows, start=1):
-        point_id = str(getattr(point, "connection_point_id", "") or "").strip()
-        structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
-        if not point_id:
-            diagnostics.append(f"warning|connection_point_id|row:{index}|Connection point id is empty.")
-        elif point_id in seen:
-            diagnostics.append(f"warning|connection_point_id|{point_id}|Connection point id is duplicated.")
-        seen.add(point_id)
-        if structure_ref not in structure_ids:
-            diagnostics.append(f"error|connection_point_structure_ref|{point_id or index}|Connection point references a missing Structure.")
-        role = str(getattr(point, "point_role", "") or "").strip()
-        if not role:
-            diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is empty.")
-        elif not _is_recommended_connection_role(role):
-            diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is not a recommended Structure connection role.")
-        if (
-            getattr(point, "invert_elevation", None) is None
-            and getattr(point, "elevation", None) is None
-            and not _uses_centerline3d_vertical_source(point)
-        ):
-            diagnostics.append(f"warning|connection_point_elevation|{point_id or index}|Connection point should define invert or connection elevation.")
-        shape_kind = str(getattr(point, "shape_kind", "") or "").strip().lower()
-        diameter = float(getattr(point, "diameter", 0.0) or 0.0)
-        width = float(getattr(point, "width", 0.0) or 0.0)
-        height = float(getattr(point, "height", 0.0) or 0.0)
-        if _needs_circular_size(role=role, shape_kind=shape_kind) and diameter <= 0.0:
-            diagnostics.append(f"error|connection_point_diameter|{point_id or index}|Circular pipe connection points must define a positive diameter.")
-        if _needs_box_size(shape_kind=shape_kind) and (width <= 0.0 or height <= 0.0):
-            diagnostics.append(f"error|connection_point_size|{point_id or index}|Box or open-channel connection points must define positive width and height.")
-    return diagnostics
-
-
-def _uses_centerline3d_vertical_source(point: StructureConnectionPoint) -> bool:
-    notes = str(getattr(point, "notes", "") or "").strip().lower()
-    return "vertical_source=centerline3d" in notes or "elevation_source=centerline3d" in notes
-
-
 def _regions_by_id(region_model) -> dict[str, object]:
     rows = list(getattr(region_model, "region_rows", []) or []) if region_model is not None else []
     return {
@@ -533,29 +478,6 @@ def _regions_by_id(region_model) -> dict[str, object]:
         for row in rows
         if str(getattr(row, "region_id", "") or "")
     }
-
-
-def _is_recommended_connection_role(role: str) -> bool:
-    return role in {
-        "inlet",
-        "outlet",
-        "upstream",
-        "downstream",
-        "left_port",
-        "right_port",
-        "pipe_in",
-        "pipe_out",
-        "overflow",
-        "discharge",
-    }
-
-
-def _needs_circular_size(*, role: str, shape_kind: str) -> bool:
-    return shape_kind == "circular" or role in CIRCULAR_CONNECTION_ROLES
-
-
-def _needs_box_size(*, shape_kind: str) -> bool:
-    return shape_kind in {"box", "rectangular", "ditch_inlet", "outfall", "headwall", "open_channel"}
 
 
 def _validation_status(diagnostics: list[str]) -> str:

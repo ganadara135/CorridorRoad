@@ -117,7 +117,6 @@ Recommended primary object families:
 - `StructureRow`
 - `StructurePlacement`
 - `StructureGeometrySpec`
-- `StructureConnectionPoint`
 - `StructureResolutionResult`
 
 ## 9. StructureModel Root
@@ -184,9 +183,7 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 
 `geometry_ref` should point to external, imported, or detailed reference geometry.
 
-Drainage-ready Structures should expose explicit connection points before Drainage Pipeline authoring consumes them.
-
-Connection-point planning is governed by `docsV1/V1_STRUCTURE_CONNECTION_NODE_PLAN.md`.
+Structures carry no connection points: Drainage points and links carry the connectivity (`docsV1/V1_DRAINAGE_STRUCTURE_PLAN.md`).
 
 ## 11. StructurePlacement
 
