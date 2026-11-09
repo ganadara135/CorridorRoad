@@ -788,3 +788,68 @@ def _with_runs(doc, *, enabled: bool) -> DrainageModel:
     model = to_drainage_model(find_v1_drainage_model(doc))
     runs = [DitchRun(run.ditch_run_id, run.side, run.subassembly_ref, run.station_start, run.station_end, run.alignment_ref, enabled) for run in model.ditch_run_rows]
     return DrainageModel(schema_version=1, project_id=model.project_id, policy=model.policy, ditch_run_rows=runs)
+
+
+def test_the_drawing_above_the_tabs_follows_the_unapplied_tables_and_the_selected_row() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageDrawing")
+    try:
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        runs = panel._run_ids()
+        drawn = [panel._drawing_run.itemText(index) for index in range(panel._drawing_run.count())]
+        assert drawn == [row.ditch_run_ref for row in panel._flowlines] and set(drawn) == set(runs)
+        assert panel._drawing._profile is not None and panel._drawing._profile.links == ()
+
+        # points and a pipe typed in but not applied are drawn at once, on the run they sit on
+        first, second = runs[0], runs[1]
+        stations = [row.station for row in next(f for f in panel._flowlines if f.ditch_run_ref == second).station_rows]
+        low, high = stations[1], stations[-2]
+        panel._append_point(DrainagePoint("inlet:a", "inlet", low, ditch_run_ref=second))
+        panel._append_point(DrainagePoint("outfall:a", "outfall", high, ditch_run_ref=second))
+        panel._append_link(DrainageLink("link:a", "inlet:a", "outfall:a", pipe_diameter_m=0.6))
+        assert to_drainage_model(find_v1_drainage_model(doc)).link_rows == []
+
+        # selecting the link draws its run with the link marked; another run's row switches back
+        panel._link_table.selectRow(0)
+        assert panel._drawing_run.currentText() == second
+        profile = panel._drawing._profile
+        assert [link.link_id for link in profile.links] == ["link:a"]
+        assert profile.links[0].selected and profile.links[0].pipe_diameter_m == 0.6
+        assert {marker.label for marker in profile.markers} == {"inlet:a", "outfall:a"}
+
+        panel._table.selectRow(0)
+        assert panel._drawing_run.currentText() == first
+        assert panel._drawing._profile.links == ()
+
+        # a pipe typed into the table shows at once; text that is no number says why it cannot draw
+        panel._link_table.item(0, 3).setText("0.45")
+        panel._drawing_run.setCurrentText(second)
+        assert panel._drawing._profile.links[0].pipe_diameter_m == 0.45
+        panel._link_table.item(0, 3).setText("wide")
+        assert panel._drawing._profile is None and "cannot be drawn" in panel._drawing._message
+        panel._link_table.item(0, 3).setText("0.45")
+
+        # Apply keeps them and the drawing reads the new result
+        assert panel._apply() is True
+        assert panel._drawing._profile.links[0].pipe_diameter_m == 0.45
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_drawing_says_why_there_is_no_flowline_before_the_result_exists() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, _project = _road_with_ditches("V1DrainageDrawingEmpty")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        assert panel._drawing_run.count() == 0
+        assert panel._drawing._profile is None
+        assert "Rebuild Downstream" in panel._drawing._message
+    finally:
+        App.closeDocument(doc.Name)

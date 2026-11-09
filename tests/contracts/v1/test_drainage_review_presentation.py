@@ -25,8 +25,8 @@ RUN = "ditch-run:ditch:left"
 SAG = [(0.0, 10.0), (20.0, 9.8), (40.0, 9.7), (60.0, 9.7), (80.0, 9.9), (100.0, 10.0)]
 
 
-def _output():
-    sections = AppliedSectionSet(
+def _sections():
+    return AppliedSectionSet(
         schema_version=1,
         project_id="p",
         applied_section_set_id="applied:main",
@@ -42,7 +42,10 @@ def _output():
             for station, z in SAG
         ],
     )
-    model = DrainageModel(
+
+
+def _output_model():
+    return DrainageModel(
         schema_version=1,
         project_id="p",
         policy=DrainagePolicy(min_grade_percent=0.3, max_inlet_spacing_m=1000.0),
@@ -53,7 +56,11 @@ def _output():
         ],
         link_rows=[DrainageLink("link:1", "inlet:1", "outfall:1")],
     )
-    result = DrainageEvaluationService().evaluate(model, sections)
+
+
+def _output():
+    model = _output_model()
+    result = DrainageEvaluationService().evaluate(model, _sections())
     return DrainageOutputMapper().map(model, result)
 
 
@@ -141,3 +148,45 @@ def test_the_check_table_lists_warnings_before_info_and_the_runs_have_counts() -
     assert (run["ditch_run_ref"], run["errors"], run["warnings"]) == (RUN, 0, 1)
     assert "1 flowline(s), 2 point(s), 1 link(s); 0 error(s), 1 warning(s)" in drainage_review_summary(output)
     assert "No Drainage result" in drainage_review_summary(None)
+
+
+def test_the_editing_profile_draws_the_points_and_links_of_the_tables_on_the_stored_flowline() -> None:
+    from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation import (
+        drainage_editing_profile,
+        drainage_editing_run_refs,
+        drainage_run_of_link,
+    )
+
+    model = _output_model()
+    result = DrainageEvaluationService().evaluate(model, _sections())
+    flowlines = result.flowline_rows
+    assert drainage_editing_run_refs(flowlines) == [RUN]
+
+    # edits not yet applied: an outfall at STA 60 and a piped link to it
+    points = [
+        DrainagePoint("inlet:1", "inlet", 20.0, ditch_run_ref=RUN),
+        DrainagePoint("outfall:2", "outfall", 60.0, ditch_run_ref=RUN),
+        DrainagePoint("outfall:9", "outfall", 500.0, ditch_run_ref=RUN),
+        DrainagePoint("culvert:1", "culvert", 80.0),
+    ]
+    links = [
+        DrainageLink("link:1", "inlet:1", "outfall:2", pipe_diameter_m=0.6),
+        DrainageLink("link:2", "outfall:2", "outfall:9"),
+        DrainageLink("link:3", "outfall:2", "culvert:1"),
+    ]
+    profile = drainage_editing_profile(flowlines, points, links, RUN, selected_link_id="link:1", selected_point_id="outfall:2")
+
+    # a point past the flowline is not drawn, and a link needs both its points on the run
+    assert [marker.label for marker in profile.markers] == ["inlet:1", "outfall:2", "culvert:1"]
+    assert [marker.selected for marker in profile.markers] == [False, True, False]
+    assert [link.link_id for link in profile.links] == ["link:1", "link:3"]
+    piped = profile.links[0]
+    assert (piped.from_station, piped.to_station, piped.pipe_diameter_m, piped.selected) == (20.0, 60.0, 0.6, True)
+    # the marker sits on the stored flowline
+    assert abs(profile.markers[0].z - 9.8) < 1.0e-9
+
+    assert drainage_editing_profile(flowlines, points, links, "ditch-run:other") is None
+    assert drainage_run_of_link(points, links, "link:1") == RUN
+    # a culvert has no run of its own: the other end's run is drawn
+    assert drainage_run_of_link(points, [DrainageLink("link:4", "culvert:1", "outfall:2")], "link:4") == RUN
+    assert drainage_run_of_link(points, links, "link:missing") == ""

@@ -50,7 +50,7 @@ Use this order:
 19. AI Assist
 20. Watertight Solids (optional compatibility check; development paused)
 
-Drainage opens a source editor with Elements, Policies, and Flow Routes. It is placed after Region and Structures so Drainage Elements can reference Region ownership and Structure connection points before downstream corridor evaluation.
+Drainage opens a source editor with Policy, Ditch Runs, Points, Links and Flow tabs. Its flowline checks are a result stage after Applied Sections: use Rebuild Downstream (Corridor toolbar) to make them current. It is placed after Region and Structures so Drainage can reference Region ownership before downstream corridor evaluation.
 
 Superelevation is optional, but when used it should be applied before Applied Sections.
 
@@ -94,5 +94,5 @@ For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Al
 - Surface Transition `Spacing` and `Sample Count` match the intended transition density.
 - Review panels open without traceback errors.
 - Drainage opens the source editor and can store a `V1DrainageModel`.
-- Structure-backed Drainage Flow Routes can resolve to connection-point based pipe previews.
+- A Drainage link with a pipe diameter shows as a pipe in Drainage Review.
 - Watertight Solids remains gated and compatibility-only; do not treat it as an active development stage.

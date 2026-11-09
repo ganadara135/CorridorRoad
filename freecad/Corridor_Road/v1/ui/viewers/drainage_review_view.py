@@ -7,7 +7,8 @@ double-clicked check is highlighted on the flowline in the 3D view. Nothing here
 
 from __future__ import annotations
 
-from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common.flowline_profile_widget import LEGEND_TEXT, SEVERITY_COLORS, FlowlineProfileWidget
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation import (
     drainage_check_table_rows,
@@ -35,78 +36,6 @@ open_drainage_editor = None
 
 CHECK_COLUMNS = ("Severity", "Check", "Ditch Run", "STA", "Message")
 PIPE_COLUMNS = ("Link", "Route", "Dia (m)", "Length (m)", "Inverts (m)", "Grade (%)", "Volume (m3)")
-SEVERITY_COLORS = {"error": (200, 40, 40), "warning": (220, 140, 20), "info": (90, 90, 90)}
-MARKER_COLORS = {"inlet": (30, 140, 60), "outfall": (20, 60, 170), "culvert": (130, 60, 160)}
-
-
-class _FlowlineProfileWidget(QtWidgets.QWidget):
-    """The flowline elevation along station, with its points and flagged stretches."""
-
-    def __init__(self):
-        super().__init__()
-        self._profile = None
-        self.setMinimumHeight(220)
-
-    def set_profile(self, profile) -> None:
-        self._profile = profile
-        self.update()
-
-    def paintEvent(self, _event):
-        painter = QtGui.QPainter(self)
-        try:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.fillRect(self.rect(), QtGui.QColor(250, 250, 250))
-            profile = self._profile
-            if profile is None or len(profile.points) < 2:
-                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "No flowline to draw.")
-                return
-            stations = [station for station, _z in profile.points]
-            elevations = [z for _station, z in profile.points] + [marker.z for marker in profile.markers]
-            s0, s1 = min(stations), max(stations)
-            z0, z1 = min(elevations), max(elevations)
-            if z1 - z0 < 0.1:
-                # keep a near-flat flowline readable: at least 0.1 m of height
-                middle = (z0 + z1) / 2.0
-                z0, z1 = middle - 0.05, middle + 0.05
-            left, right, top, bottom = 56, 12, 14, 30
-            width = max(self.width() - left - right, 1)
-            height = max(self.height() - top - bottom, 1)
-
-            def at(station: float, z: float) -> QtCore.QPointF:
-                x = left + (station - s0) / max(s1 - s0, 1.0e-9) * width
-                y = top + (z1 - z) / max(z1 - z0, 1.0e-9) * height
-                return QtCore.QPointF(x, y)
-
-            painter.setPen(QtGui.QPen(QtGui.QColor(120, 120, 120), 1))
-            painter.drawText(4, top + 10, f"{z1:.2f}")
-            painter.drawText(4, top + height, f"{z0:.2f}")
-            painter.drawText(left, self.height() - 8, f"STA {s0:.1f}")
-            painter.drawText(left + width - 80, self.height() - 8, f"STA {s1:.1f}")
-
-            painter.setPen(QtGui.QPen(QtGui.QColor(40, 110, 200), 2))
-            painter.drawPolyline(QtGui.QPolygonF([at(station, z) for station, z in profile.points]))
-            for start, end, severity in profile.flagged:
-                stretch = [at(station, z) for station, z in profile.points if start - 1.0e-6 <= station <= end + 1.0e-6]
-                if len(stretch) >= 2:
-                    painter.setPen(QtGui.QPen(QtGui.QColor(*SEVERITY_COLORS.get(severity, (90, 90, 90))), 5))
-                    painter.drawPolyline(QtGui.QPolygonF(stretch))
-
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(QtGui.QColor(40, 110, 200))
-            for station, z in profile.low_points:
-                painter.drawEllipse(at(station, z), 4.0, 4.0)
-            painter.setBrush(QtGui.QColor(150, 150, 150))
-            for station, z in profile.high_points:
-                painter.drawEllipse(at(station, z), 3.0, 3.0)
-            for marker in profile.markers:
-                point = at(marker.station, marker.z)
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.setBrush(QtGui.QColor(*MARKER_COLORS.get(marker.kind, (0, 0, 0))))
-                painter.drawRect(QtCore.QRectF(point.x() - 5.0, point.y() - 5.0, 10.0, 10.0))
-                painter.setPen(QtGui.QPen(QtGui.QColor(30, 30, 30), 1))
-                painter.drawText(point + QtCore.QPointF(6.0, -6.0), marker.label)
-        finally:
-            painter.end()
 
 
 class V1DrainageReviewTaskPanel:
@@ -144,12 +73,9 @@ class V1DrainageReviewTaskPanel:
         self._run_combo = QtWidgets.QComboBox()
         self._run_combo.currentIndexChanged.connect(lambda _index: self._show_run())
         layout.addWidget(self._run_combo)
-        self._profile = _FlowlineProfileWidget()
+        self._profile = FlowlineProfileWidget()
         layout.addWidget(self._profile)
-        legend = QtWidgets.QLabel(
-            "Blue line: flowline. Thick orange or red: a flagged stretch. Blue dots: low points; grey: high points. "
-            "Squares: inlets (green), outfalls (blue), culverts (purple)."
-        )
+        legend = QtWidgets.QLabel(LEGEND_TEXT)
         legend.setWordWrap(True)
         layout.addWidget(legend)
 

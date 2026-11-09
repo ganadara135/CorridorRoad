@@ -22,6 +22,20 @@ class ProfileMarker:
     z: float
     kind: str
     label: str
+    selected: bool = False
+
+
+@dataclass(frozen=True)
+class ProfileLink:
+    """A link drawn between two points of the run; a diameter above 0 makes it a pipe."""
+
+    link_id: str
+    from_station: float
+    from_z: float
+    to_station: float
+    to_z: float
+    pipe_diameter_m: float = 0.0
+    selected: bool = False
 
 
 @dataclass(frozen=True)
@@ -33,6 +47,7 @@ class FlowlineProfile:
     high_points: tuple[tuple[float, float], ...] = ()
     # (station_start, station_end, severity) of the stretches a check flags
     flagged: tuple[tuple[float, float, str], ...] = ()
+    links: tuple[ProfileLink, ...] = ()
     lines: list[str] = field(default_factory=list)
 
 
@@ -80,6 +95,83 @@ def drainage_flowline_profile(output: DrainageOutput, ditch_run_ref: str) -> Flo
         high_points=tuple((station, _z_at(profile, station)) for station in flowline.high_point_stations),
         flagged=flagged,
     )
+
+
+def drainage_editing_run_refs(flowlines) -> list[str]:
+    """The Ditch Runs the stored result has a flowline for, in the result's order."""
+
+    return [str(row.ditch_run_ref) for row in flowlines or []]
+
+
+def drainage_editing_profile(
+    flowlines,
+    points,
+    links,
+    ditch_run_ref: str,
+    *,
+    selected_link_id: str = "",
+    selected_point_id: str = "",
+) -> FlowlineProfile | None:
+    """One run's flowline with the points and links as the editor's tables hold them now.
+
+    The flowline is the stored result's; the points and links are the unapplied edits, so the
+    drawing follows the tables. A point sits on the flowline at its station. A link is drawn only
+    when both its points are on this run.
+    """
+
+    flowline = next((row for row in flowlines or [] if row.ditch_run_ref == ditch_run_ref), None)
+    if flowline is None or len(flowline.station_rows) < 2:
+        return None
+    profile = [(float(row.station), float(row.z)) for row in flowline.station_rows]
+    first, last = profile[0][0], profile[-1][0]
+    on_run = {
+        point.point_id: point
+        for point in points or []
+        if first - 1.0e-6 <= point.station <= last + 1.0e-6
+        and (point.ditch_run_ref == ditch_run_ref or (point.kind == "culvert" and not point.ditch_run_ref))
+    }
+    markers = tuple(
+        ProfileMarker(point.station, _z_at(profile, point.station), point.kind, point.point_id, point.point_id == selected_point_id)
+        for point in on_run.values()
+    )
+    drawn = []
+    for link in links or []:
+        start, end = on_run.get(link.from_ref), on_run.get(link.to_ref)
+        if start is None or end is None:
+            continue
+        drawn.append(
+            ProfileLink(
+                link.link_id,
+                start.station,
+                _z_at(profile, start.station),
+                end.station,
+                _z_at(profile, end.station),
+                float(link.pipe_diameter_m),
+                link.link_id == selected_link_id,
+            )
+        )
+    return FlowlineProfile(
+        ditch_run_ref=ditch_run_ref,
+        points=tuple(profile),
+        markers=markers,
+        low_points=tuple((station, _z_at(profile, station)) for station in flowline.low_point_stations),
+        high_points=tuple((station, _z_at(profile, station)) for station in flowline.high_point_stations),
+        links=tuple(drawn),
+    )
+
+
+def drainage_run_of_link(points, links, link_id: str) -> str:
+    """The Ditch Run a link is drawn on: its from-point's run, else its to-point's (a culvert has none)."""
+
+    link = next((row for row in links or [] if row.link_id == link_id), None)
+    if link is None:
+        return ""
+    by_id = {point.point_id: point for point in points or []}
+    for ref in (link.from_ref, link.to_ref):
+        point = by_id.get(ref)
+        if point is not None and point.ditch_run_ref:
+            return str(point.ditch_run_ref)
+    return ""
 
 
 def drainage_check_table_rows(output: DrainageOutput, ditch_run_ref: str = "") -> list[dict[str, object]]:
@@ -144,7 +236,11 @@ def _z_at(profile: list[tuple[float, float]], station: float) -> float:
 
 __all__ = [
     "FlowlineProfile",
+    "ProfileLink",
     "ProfileMarker",
+    "drainage_editing_profile",
+    "drainage_editing_run_refs",
+    "drainage_run_of_link",
     "drainage_check_table_rows",
     "drainage_flowline_profile",
     "drainage_pipe_table_rows",

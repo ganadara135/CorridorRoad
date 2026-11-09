@@ -146,16 +146,12 @@ For Roundabout, ordinary Design/Subgrade/Slope outputs should stop at roundabout
 
 ## Drainage And Structure Flow
 
-Use Structures before Drainage when the Drainage model needs Structure-backed pipe nodes.
+Culverts and pipes belong to Drainage, not Structures.
 
 1. Apply Regions.
-2. Apply Structures with connection points.
-3. Preview Structures if needed.
-4. Apply Drainage Elements, Policies, and Flow Routes.
-5. Use Drainage `Show Flow Network` or Drainage Review.
-6. Rebuild Applied Sections and Build Corridor when downstream section or surface context must reflect the source changes.
-
-`ditch -> inlet` Flow Routes are capture relationships. They do not create pipe bodies unless a Structure-backed pipe element is explicitly modeled.
+2. Apply Structures (bridge, retaining wall) and preview them if needed.
+3. Apply Drainage: Policy, Ditch Runs, points (inlet, outfall, culvert) and links; give a link a pipe diameter where a pipe is needed.
+4. Use Rebuild Downstream (Corridor toolbar) so the flowline checks are current, then the Flow tab and Drainage Review.
 
 ## Watertight Solid Flow
 

@@ -73,8 +73,8 @@ Available in the v1 release direction:
 - Assembly and Region source editing
 - Intersections starter sources for T Intersection, Cross Intersection, and Roundabout, with multi-alignment Region review and multi-alignment 3D Centerline preview
 - Cross Intersection and Roundabout source-driven surface handoff review, including dedicated intersection/roundabout slope outputs and roundabout ordinary-surface clipping
-- Structure source editing, connection points, native drainage-structure previews, and Structure Output packages
-- Drainage source editing, Flow Routes, Structure-backed pipe network preview, and Drainage Review
+- Structure source editing and Structure Output packages
+- Drainage source editing (Policy, Ditch Runs, points and links with pipes), flow checks, and Drainage Review
 - Applied Sections generation
 - Build Corridor preview surfaces, Region Boundary review, Surface Transitions, and diagnostics
 - Cross Section, Plan/Profile, and Earthwork review surfaces

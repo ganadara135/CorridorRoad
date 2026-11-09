@@ -32,7 +32,13 @@ from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import (
     trace_network,
     walk_flow_nodes,
 )
+from freecad.Corridor_Road.v1.ui.common.flowline_profile_widget import LEGEND_TEXT, FlowlineProfileWidget
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
+from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation import (
+    drainage_editing_profile,
+    drainage_editing_run_refs,
+    drainage_run_of_link,
+)
 from freecad.Corridor_Road.v1.ui.presentation.drainage_flow_tree_presentation import (
     LOOP_GROUP_TITLE,
     flow_group_title,
@@ -85,8 +91,11 @@ class V1DrainageEditorTaskPanel:
         self._suggestions: list = []
         self._trace = None  # the Trace Network proposal while it waits for Accept or Discard
         self._flow_nodes: dict = {}
+        self._flowlines: list = []
+        self._flowline_note = ""
         self.form = fit_task_panel_width(self._build_ui())
         self._load(self._model)
+        self._reload_flowlines()
         self._refresh_flow_tree()
         self._refresh_suggestions()
         if inputs["prefilled"]:
@@ -137,6 +146,15 @@ class V1DrainageEditorTaskPanel:
             self._low_point_rule.addItem(LOW_POINT_LABELS.get(rule, rule), rule)
         policy_form.addRow("Low point:", self._low_point_rule)
 
+        # The drawing stays above the tabs, so a table can be edited with the flowline in view.
+        self._drawing_run = QtWidgets.QComboBox()
+        self._drawing_run.setToolTip("The Ditch Run drawn below; selecting a row in a table switches to its run.")
+        self._drawing_run.currentIndexChanged.connect(self._drawing_run_changed)
+        layout.addWidget(self._drawing_run)
+        self._drawing = FlowlineProfileWidget(minimum_height=170)
+        self._drawing.setToolTip(LEGEND_TEXT)
+        layout.addWidget(self._drawing)
+
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(policy_tab, "Policy")
         runs_tab = QtWidgets.QWidget()
@@ -151,6 +169,8 @@ class V1DrainageEditorTaskPanel:
         except Exception:
             pass
         self._table.setColumnHidden(ROAD_COLUMN, len(self._alignment_ids) <= 1)
+        self._table.itemSelectionChanged.connect(lambda: self._follow_selection(self._table))
+        self._table.itemChanged.connect(lambda _item: self._refresh_drawing())
         runs_layout.addWidget(self._table, 1)
 
         edit_row = QtWidgets.QHBoxLayout()
@@ -177,7 +197,7 @@ class V1DrainageEditorTaskPanel:
 
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
-        self._status.setFixedHeight(160)
+        self._status.setFixedHeight(110)
         layout.addWidget(self._status)
 
         action_row = QtWidgets.QHBoxLayout()
@@ -263,6 +283,73 @@ class V1DrainageEditorTaskPanel:
         self._flow_note.setWordWrap(True)
         layout.addWidget(self._flow_note)
         return tab
+
+    def _reload_flowlines(self) -> None:
+        """Read the stored result's flowlines for the drawing; they are as current as the last Apply."""
+
+        self._flowlines, self._flowline_note = drainage_flowlines(self.document)
+        runs = drainage_editing_run_refs(self._flowlines)
+        current = str(self._drawing_run.currentText() or "")
+        self._drawing_run.blockSignals(True)
+        self._drawing_run.clear()
+        self._drawing_run.addItems(runs)
+        if current in runs:
+            self._drawing_run.setCurrentText(current)
+        self._drawing_run.blockSignals(False)
+        self._refresh_drawing()
+
+    def _refresh_drawing(self) -> None:
+        """Draw the chosen run with the points and links as the tables hold them now, edits included."""
+
+        if not hasattr(self, "_drawing"):
+            return
+        if not self._flowlines:
+            self._drawing.set_profile(None, self._flowline_note or "No flowline to draw.")
+            return
+        try:
+            points, links = self._points(), self._links()
+        except ValueError as exc:
+            self._drawing.set_profile(None, f"The tables cannot be drawn yet: {exc}")
+            return
+        selected_link = self._selected_id(self._link_table, LINK_ID_COLUMN)
+        selected_point = self._selected_id(self._point_table, POINT_ID_COLUMN)
+        profile = drainage_editing_profile(
+            self._flowlines,
+            points,
+            links,
+            str(self._drawing_run.currentText() or ""),
+            selected_link_id=selected_link,
+            selected_point_id=selected_point,
+        )
+        self._drawing.set_profile(profile, "Choose a Ditch Run to draw.")
+
+    def _drawing_run_changed(self, _index: int) -> None:
+        self._refresh_drawing()
+
+    def _selected_id(self, table, column: int) -> str:
+        rows = sorted({index.row() for index in table.selectionModel().selectedRows()})
+        item = table.item(rows[0], column) if rows else None
+        return str(item.text() if item is not None else "").strip()
+
+    def _follow_selection(self, table) -> None:
+        """Draw the run of the row just selected in a table, and mark the row's point or link."""
+
+        run_ref = ""
+        try:
+            if table is self._link_table:
+                run_ref = drainage_run_of_link(self._points(), self._links(), self._selected_id(table, LINK_ID_COLUMN))
+            elif table is self._point_table:
+                rows = sorted({index.row() for index in table.selectionModel().selectedRows()})
+                run_ref = self._point_text(rows[0], POINT_RUN_COLUMN, combo=True) if rows else ""
+            elif table is self._table:
+                run_ref = self._selected_id(table, ID_COLUMN)
+        except ValueError:
+            run_ref = ""
+        if run_ref and self._drawing_run.findText(run_ref) >= 0 and run_ref != self._drawing_run.currentText():
+            self._drawing_run.blockSignals(True)
+            self._drawing_run.setCurrentText(run_ref)
+            self._drawing_run.blockSignals(False)
+        self._refresh_drawing()
 
     def _tab_changed(self, _index: int) -> None:
         # Points name runs and Links name points, and the flow tree reads both tables
@@ -560,6 +647,8 @@ class V1DrainageEditorTaskPanel:
             self._point_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
             pass
+        self._point_table.itemSelectionChanged.connect(lambda: self._follow_selection(self._point_table))
+        self._point_table.itemChanged.connect(lambda _item: self._refresh_drawing())
         layout.addWidget(self._point_table, 1)
         point_row = QtWidgets.QHBoxLayout()
         for label, kind in (("Add Inlet", "inlet"), ("Add Outfall", "outfall"), ("Add Culvert", "culvert")):
@@ -605,6 +694,8 @@ class V1DrainageEditorTaskPanel:
             self._link_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
             pass
+        self._link_table.itemSelectionChanged.connect(lambda: self._follow_selection(self._link_table))
+        self._link_table.itemChanged.connect(lambda _item: self._refresh_drawing())
         layout.addWidget(self._link_table, 1)
         row = QtWidgets.QHBoxLayout()
         add_button = QtWidgets.QPushButton("Add Link")
@@ -633,8 +724,8 @@ class V1DrainageEditorTaskPanel:
         id_item = QtWidgets.QTableWidgetItem(link.link_id)
         id_item.setFlags(id_item.flags() & ~QtCore.Qt.ItemIsEditable)
         self._link_table.setItem(row, LINK_ID_COLUMN, id_item)
-        self._link_table.setCellWidget(row, LINK_FROM_COLUMN, _combo(point_ids, link.from_ref))
-        self._link_table.setCellWidget(row, LINK_TO_COLUMN, _combo(point_ids, link.to_ref))
+        self._link_table.setCellWidget(row, LINK_FROM_COLUMN, _combo(point_ids, link.from_ref, self._refresh_drawing))
+        self._link_table.setCellWidget(row, LINK_TO_COLUMN, _combo(point_ids, link.to_ref, self._refresh_drawing))
         # blank means open flow; a diameter in meters makes the link a circular pipe
         pipe_item = QtWidgets.QTableWidgetItem(f"{link.pipe_diameter_m:g}" if link.pipe_diameter_m > 0.0 else "")
         pipe_item.setToolTip("Pipe diameter in meters; leave blank for open flow.")
@@ -678,7 +769,7 @@ class V1DrainageEditorTaskPanel:
         for row in range(self._link_table.rowCount()):
             for column in (LINK_FROM_COLUMN, LINK_TO_COLUMN):
                 current = self._link_text(row, column, combo=True)
-                self._link_table.setCellWidget(row, column, _combo(point_ids, current))
+                self._link_table.setCellWidget(row, column, _combo(point_ids, current, self._refresh_drawing))
 
     def _append_point(self, point: DrainagePoint | None, *, kind: str = "inlet") -> None:
         if point is None:
@@ -690,8 +781,8 @@ class V1DrainageEditorTaskPanel:
         id_item = QtWidgets.QTableWidgetItem(point.point_id)
         id_item.setFlags(id_item.flags() & ~QtCore.Qt.ItemIsEditable)
         self._point_table.setItem(row, POINT_ID_COLUMN, id_item)
-        self._point_table.setCellWidget(row, POINT_KIND_COLUMN, _combo(list(DRAINAGE_POINT_KINDS), point.kind))
-        self._point_table.setCellWidget(row, POINT_RUN_COLUMN, _combo([CROSSES_ROAD, *self._run_ids()], point.ditch_run_ref))
+        self._point_table.setCellWidget(row, POINT_KIND_COLUMN, _combo(list(DRAINAGE_POINT_KINDS), point.kind, self._refresh_drawing))
+        self._point_table.setCellWidget(row, POINT_RUN_COLUMN, _combo([CROSSES_ROAD, *self._run_ids()], point.ditch_run_ref, self._refresh_drawing))
         self._point_table.setItem(row, POINT_STATION_COLUMN, _station_item(point.station))
 
     def _delete_selected_points(self) -> None:
@@ -702,7 +793,7 @@ class V1DrainageEditorTaskPanel:
         runs = [CROSSES_ROAD, *self._run_ids()]
         for row in range(self._point_table.rowCount()):
             current = self._point_text(row, POINT_RUN_COLUMN, combo=True)
-            self._point_table.setCellWidget(row, POINT_RUN_COLUMN, _combo(runs, current))
+            self._point_table.setCellWidget(row, POINT_RUN_COLUMN, _combo(runs, current, self._refresh_drawing))
 
     def _refresh_suggestions(self) -> None:
         self._suggestions, note = drainage_suggestions(self.document)
@@ -850,6 +941,7 @@ class V1DrainageEditorTaskPanel:
             f"Applied to {obj.Label}: {len(model.ditch_run_rows)} Ditch Run(s), {len(model.point_rows)} point(s), "
             f"{len(model.link_rows)} link(s).\n{evaluation}"
         )
+        self._reload_flowlines()
         self._refresh_suggestions()
         self._refresh_flow_tree()
         if close_after and _gui_available():
@@ -901,7 +993,7 @@ def _descendants(item) -> int:
     return sum(1 + _descendants(item.child(index)) for index in range(item.childCount()))
 
 
-def _combo(values: list[str], current: str):
+def _combo(values: list[str], current: str, on_change=None):
     combo = QtWidgets.QComboBox()
     items = list(values)
     if current and current not in items:
@@ -910,6 +1002,8 @@ def _combo(values: list[str], current: str):
     combo.addItems(items)
     if current:
         combo.setCurrentText(current)
+    if on_change is not None:
+        combo.currentTextChanged.connect(lambda _text: on_change())
     return combo
 
 

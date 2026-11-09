@@ -25,10 +25,8 @@ Missing command registration can happen when an updated command module was not l
 
 Check:
 
-- Drainage Elements reference valid Structure rows where pipe geometry is expected
-- Structure rows have connection points such as `pipe_in`, `pipe_out`, `upstream`, or `downstream`
-- `ditch -> inlet` Flow Routes are capture-only relationships and do not create pipe bodies
-- Apply Structures, then Apply Drainage, then use `Show Flow Network`
+- Drainage points and links are applied, and a link has a pipe diameter where a pipe is expected
+- the drainage result is current: use Rebuild Downstream (Corridor toolbar) after editing Drainage or anything upstream
 - run 3D Centerline first when you want Drainage preview geometry to follow the shared profile frame
 
 ## Applied Sections Cannot Run
@@ -81,11 +79,9 @@ Rebuild Applied Sections, then Build Corridor, and review the Build Corridor dia
 
 Native Structure previews are review geometry.
 
-For drainage-ready previews, check:
+Check:
 
-- Native Type is set to `inlet`, `pipe_culvert`, `outlet`, or `headwall`
-- connection points are present for pipe ports
-- pipe culvert `headwall_type` or `wingwall_type` is set if endpoint headwall/wingwall details should appear
+- Native Type is set to `bridge_deck` or `retaining_wall`
 - run `Apply + Preview` from the Structures panel after editing source rows
 
 ## Surface Transition Spacing Does Not Change The Surface
@@ -166,7 +162,7 @@ Check:
 - Applied Sections were generated
 - Build Corridor was run successfully
 - target rows are available and enabled
-- Structure or Drainage targets have the required source refs and connection point context
+- Structure or Drainage targets have the required source refs
 - `Build Selected` is used for the selected target, or `Build Enabled` is used for enabled rows
 
 ## Review Handoff Error

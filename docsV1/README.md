@@ -98,7 +98,6 @@ Baseline document:
 - [V1_OVERRIDE_MODEL.md](./V1_OVERRIDE_MODEL.md) - historical; removed from code on 2026-10-16
 - [V1_STRUCTURE_MODEL.md](./V1_STRUCTURE_MODEL.md)
 - [V1_STRUCTURE_GEOMETRY_CONTRACT.md](./V1_STRUCTURE_GEOMETRY_CONTRACT.md)
-- [V1_STRUCTURE_CONNECTION_NODE_PLAN.md](./V1_STRUCTURE_CONNECTION_NODE_PLAN.md)
 - [V1_SURFACE_MODEL.md](./V1_SURFACE_MODEL.md)
 - [V1_QUANTITY_MODEL.md](./V1_QUANTITY_MODEL.md)
 - [V1_QUANTITY_OUTPUT_SCHEMA.md](./V1_QUANTITY_OUTPUT_SCHEMA.md)
@@ -194,12 +193,12 @@ Preferred review workflow:
 - model corridor ranges through `Region` as station spans with one base Assembly; Structure and Drainage source models should reference Region from their own panels instead of being authored in the Region table
 - keep the existing `Assembly` editor available during the Subassembly cutover, and introduce `Assembly / Subassembly` as the new source editor for explicit Subassembly rows; opening either panel should not generate corridor geometry until `Apply`
 - order the source-authoring toolbar as `Assembly -> Regions -> Intersection -> Structures -> Drainage`
-- treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
+- treat Drainage as an active v1 source stage with Policy, Ditch Runs, points and links (pipes included), flowline checks, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
 - retain `Watertight Solids` only as a paused compatibility surface; do not expand targets, topology, simulation, UI, or exchange behavior
 - use `Structures` as the v1 source editor for bridge, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
-- continue Structures stabilization as connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, and Drainage/output handoff
+- continue Structures stabilization with explicit Native/External geometry source modes, validation, and output handoff; culverts, pipes and connection points belong to Drainage
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
 - treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical Subassembly bodies with thickness, material, volume, or export identity

@@ -1,8 +1,8 @@
 # Parametric Road V1 Drainage Structure Plan
 
-Status: planned on 2026-11-08, not started. Starts after DR-6 (see `V1_DRAINAGE_REWORK_PLAN.md`).
-Replaces the "Structure rebuild" for drainage that the Drainage plan deferred, and makes
-`V1_STRUCTURE_CONNECTION_NODE_PLAN.md` obsolete.
+Status: DS-1 to DS-3 done on 2026-11-09 (DS-3 step 4, the documents, included); open question Q4 (pipe
+volumes into Quantities) remains. Replaces the "Structure rebuild" for drainage that the Drainage
+plan deferred; `V1_STRUCTURE_CONNECTION_NODE_PLAN.md` was deleted.
 
 ## 1. Purpose
 
@@ -157,7 +157,7 @@ Done on 2026-11-08 (gate pending; GUI check pending):
    connection helpers of the Watertight command. A document saved before still opens: the payload
    keeps its rows unread, and the old `ConnectionPointRows` property goes when the object is next
    written.
-4. **Documents.** Delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 and the
+4. **Documents (done 2026-11-09).** Delete `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`; drop sections 12 and 13 and the
    culvert kind from `V1_STRUCTURE_MODEL.md`; update `V1_STRUCTURE_GEOMETRY_CONTRACT.md`,
    `V1_PERSISTENCE_SCHEMA_INVENTORY.md`, the CHANGELOG, and the line in `AGENTS.md` that says pipes
    wait for the Structure rebuild.

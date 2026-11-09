@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Added
+- The Drainage panel draws the flowline profile above its tabs, so Points and Links can be edited with the drawing in view: the chosen Ditch Run's flowline, its points, and each link as a band (brown for a pipe with its diameter, green for open flow, an arrow toward the point it drains into). The drawing follows the tables as they stand, edits not yet applied included; selecting a row in the Ditch Runs, Points or Links table switches to its run and marks the point or link. Before a Drainage result exists, or when it is stale, the drawing says to run Rebuild Downstream. The profile drawing is shared with Drainage Review.
+
 ### Fixed
 - The Drainage panel wrote back the 3 decimals its tables show: a run ending at STA 174.917228527 was stored as 174.917, which made a Policy-only Apply mark the Applied Sections stale and could leave the last section's ditch without its run, and an outfall suggested at a run's end could land just past it and stay suggested. The tables keep the exact station behind the shown value and use a typed one only when the text changes; a point typed at a run's shown end station still lies on it.
 - The Drainage check for an inlet or outfall that gets no water only looked at points exactly on a section station; a point beside a crest between two sections passed. It now measures the ditch length draining to the point and warns when it is less than one section step.

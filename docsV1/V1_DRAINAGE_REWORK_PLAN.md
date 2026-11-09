@@ -11,7 +11,6 @@ Related:
 - [V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md](./V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md) (done; this plan builds on GR-1 and GR-3)
 - [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md) (the model this plan built; the earlier
   implementation and Flow Route plans were removed in DR-5 and live in git history)
-- [V1_STRUCTURE_CONNECTION_NODE_PLAN.md](./V1_STRUCTURE_CONNECTION_NODE_PLAN.md) (pipe ports; revisited in the Structure rebuild)
 
 ## 1. Purpose
 
@@ -506,3 +505,30 @@ ends by updating section 6 of `V1_DRAINAGE_MODEL.md`; the wiki draft is changed 
   longer uncollected stretch first, and the next press takes the other.
 - Q5 (DR-6): May Trace Network run on a stale result? Proposed: no, as for the suggestions; the
   note says to run Rebuild Downstream.
+
+### DR-7 One panel for Drainage and its review
+
+Asked after the GUI check of DR-6 and DS-1 to DS-3 (2026-11-09): edit the Links with the Drainage
+Review drawing in view, in one panel. Decisions: the drawing is pinned above the tabs, and the
+Drainage Review command stays and opens the combined panel on its Review tab.
+
+#### DR-7a The drawing above the tabs
+
+Done on 2026-11-09 (gate pending; GUI check pending):
+
+- `FlowlineProfileWidget` moved to `ui/common/flowline_profile_widget.py` and draws links as bands
+  (brown pipe with diameter, green open flow, an arrow toward the drain-into point, orange when
+  selected) and a ring on the selected point. Drainage Review uses the same widget.
+- `drainage_editing_profile` (pure) builds the profile from the stored result's flowline and the
+  editor's tables as they stand, so unapplied points, links and pipes are drawn; a link needs both
+  its points on the run. `drainage_run_of_link` names the run a link is drawn on.
+- The panel keeps a run list and the drawing above the tabs; selecting a row of the Ditch Runs,
+  Points or Links table switches to its run; edits to a cell or a combo redraw. A stale or missing
+  result, or a table that cannot be read, shows the reason in place of the drawing.
+
+#### DR-7b Review tab (open)
+
+Move the checks and pipes tables into a Review tab of the panel (double-click highlights a check or
+draws a pipe in 3D; Show All Pipes), draw the flagged stretches from the result's checks, make the
+Drainage Review command and the Build Corridor button open the panel on that tab, and retire the
+separate review panel with its boundary tests.
