@@ -1,7 +1,7 @@
 # Parametric Road Current Release Preparation
 
 Date: 2026-11-15
-Status: `1.1.2` release prepared; tag and GitHub Release not published yet
+Status: `1.1.2` released
 Scope: post-`1.0.0` v1 updates
 
 ## Development Scope After 1.1.2
@@ -22,8 +22,8 @@ Use it to keep documentation, release notes, tutorial links, forum messaging, an
 
 - Release version: `1.1.2`
 - Release date: `2026-11-15`
-- Tag: `v1.1.2` (not pushed yet)
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2 (not published yet)
+- Tag: `v1.1.2`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Previous release: `1.1.1`, `2026-10-11`, https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
@@ -32,7 +32,7 @@ Post-release tasks:
 
 - [x] `package.xml` version/date updated to `1.1.2` / `2026-11-15`.
 - [x] `CHANGELOG.md` carries the `1.1.2` release section.
-- [ ] Merge to `main`, push the `v1.1.2` tag and publish the GitHub Release; the release guard must pass on both.
+- [x] Merged to `main`, `v1.1.2` tag pushed and GitHub Release published on 2026-11-15; the release guard passed on the `main` push and the `v1.1.2` tag push.
 - [ ] FreeCAD manual smoke QA for the published tag. Still open from the session handoff: the Structure Output and Review TIN buttons, a roundabout document from before R7c-3 rebuilding the same ring, and the Drainage low point and `Suggested Inlet` marker.
 - [ ] Forum announcement for `1.1.2`, if wanted; the `1.1.0` thread is linked above.
 - [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
