@@ -4,8 +4,8 @@ This folder contains the Parametric Road v1 redesign documents.
 
 Current public release:
 
-- `Parametric Road 1.1.1`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
+- `Parametric Road 1.1.2`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 

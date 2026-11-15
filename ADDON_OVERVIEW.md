@@ -5,7 +5,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-The current public release is `1.1.1`. This release builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected.
+The current public release is `1.1.2`. It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed.
 
 ## Current V1 Workflow
 
@@ -20,8 +20,8 @@ Typical v1 workflow:
 7. Optionally define Superelevation.
 8. Edit SubAssembly Designer definitions, Assembly rows, and Region definitions.
 9. Define Intersections where multiple Alignments meet.
-10. Prepare Structures and Drainage source rows.
-11. Generate Applied Sections.
+10. Prepare Structures, and the Drainage Policy and Ditch Runs.
+11. Generate Applied Sections, then add the Drainage points, links and pipes and run Rebuild Downstream.
 12. Build Parametric preview surfaces.
 13. Review Cross Sections, Drainage, Plan/Profile, Earthwork, Intersections, and Breakline Audit diagnostics.
 14. Prepare Structure Output and exchange handoff data; Watertight Solid remains compatibility-only while development is paused.
@@ -37,7 +37,8 @@ Typical v1 workflow:
 - Region editor with continuous station spans and Assembly assignment
 - Intersection starter sources, multi-alignment centerline preview, Intersection Slope Face, and Tie Slope review
 - Structure editor for bridge, retaining wall, and related source intent
-- Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
+- Drainage panel: Policy, Ditch Runs, inlets, outfalls and culverts, links with pipes, a Flow tab that continues and fixes the network, the flowline drawing, a Review tab, and the Drainage in the 3D view
+- Rebuild Downstream: results record their inputs and only the stale ones are rebuilt
 - Applied Sections generation and review handoff
 - Build Parametric preview surfaces, Intersection Tie Slope output, shared breakline audit, and diagnostics
 - Cross Section Viewer
@@ -78,7 +79,7 @@ Key references:
 Online project resources:
 
 - Wiki: https://github.com/ganadara135/CorridorRoad/wiki
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Issues: https://github.com/ganadara135/CorridorRoad/issues
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 

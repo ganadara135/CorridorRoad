@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.1.1`. It builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.1.2`. It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -78,13 +78,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.1.1`
-- Release date: `2026-09-20`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
+- Current release: `v1.1.2`
+- Release date: `2026-11-15`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.1.1` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
+`1.1.2` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
 
 ## Main Commands
 
@@ -102,9 +102,10 @@ Important v1 references:
 - `Intersection`
 - `Structures`
 - `Drainage`
-- `Drainage Review`
+- `Drainage Review` (Drainage menu; opens the Drainage panel on its Review tab)
 - `Applied Sections`
 - `Build Parametric`
+- `Rebuild Downstream` (Corridor menu, and a button in the Drainage and Build Parametric panels)
 - `Review Cross Sections`
 - `Review Earthwork`
 - `Outputs & Exchange`
@@ -130,8 +131,9 @@ Current toolbar order is organized around the v1 workflow:
 - Structure editor for bridge, retaining wall, and related source intent
 - Structure Output packages
 - Region editor with continuous station spans and Assembly assignment
-- Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
-- Drainage Review for source rows, pipeline candidates, pipeline segments, networks, and junctions
+- Drainage panel: Policy, Ditch Runs, inlets, outfalls and culverts, links with pipes, a Flow tab that continues and fixes the network, and the flowline drawing above the tabs
+- Drainage Review tab: checks, pipes and flagged stretches; the Drainage is drawn in the 3D view
+- Rebuild Downstream: results record their inputs and only the stale ones are rebuilt
 - Applied Sections result generation
 - Build Corridor preview surfaces and diagnostics
 - Cross Section Viewer

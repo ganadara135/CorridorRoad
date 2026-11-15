@@ -1,10 +1,10 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-10-11
-Status: `1.1.1` release prepared
+Date: 2026-11-15
+Status: `1.1.2` release prepared; tag and GitHub Release not published yet
 Scope: post-`1.0.0` v1 updates
 
-## Development Scope After 1.1.1
+## Development Scope After 1.1.2
 
 - Ramp is removed from the active product and development scope.
 - Watertight Solid behavior shipped in 1.0.9 remains a compatibility surface, but further development is paused.
@@ -16,24 +16,25 @@ Scope: post-`1.0.0` v1 updates
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.1.1` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.1.2` release.
 
 ## Release Status
 
-- Release version: `1.1.1`
-- Release date: `2026-10-11`
-- Tag: `v1.1.1`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
+- Release version: `1.1.2`
+- Release date: `2026-11-15`
+- Tag: `v1.1.2` (not pushed yet)
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2 (not published yet)
+- Previous release: `1.1.1`, `2026-10-11`, https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.1.1` / `2026-10-11`.
-- [x] `CHANGELOG.md` carries the `1.1.1` release section.
-- [x] Git tag and GitHub Release published; the release guard passed on the `main` push and the `v1.1.1` tag push.
+- [x] `package.xml` version/date updated to `1.1.2` / `2026-11-15`.
+- [x] `CHANGELOG.md` carries the `1.1.2` release section.
+- [ ] Merge to `main`, push the `v1.1.2` tag and publish the GitHub Release; the release guard must pass on both.
 - [ ] FreeCAD manual smoke QA for the published tag. Still open from the session handoff: the Structure Output and Review TIN buttons, a roundabout document from before R7c-3 rebuilding the same ring, and the Drainage low point and `Suggested Inlet` marker.
-- [ ] Forum announcement for `1.1.1`, if wanted; the `1.1.0` thread is linked above.
+- [ ] Forum announcement for `1.1.2`, if wanted; the `1.1.0` thread is linked above.
 - [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
 
 ## Current User-Facing Scope
@@ -76,7 +77,8 @@ Keep these listed as future or incremental work:
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
 - [x] CHANGELOG `1.1.1` contains the intersection kernel, the v1 Project Setup panel, the fixed roundabout circulation, the retired legacy objects, panels and commands, and the defect fixes.
-- [x] README and local Wiki drafts now point to the `1.1.1` release.
+- [x] CHANGELOG `1.1.2` contains the Drainage rebuild (Policy, Ditch Runs, points, links, pipes, Flow tab, drawing, Review tab, 3D view), the move of culverts and connection points from Structure to Drainage, result freshness and Rebuild Downstream, the General Road document kind, the removal of Ramp and Override, and the defect fixes.
+- [x] README, ADDON_OVERVIEW and local Wiki drafts now point to the `1.1.2` release.
 
 ## Historical Document Notes
 
@@ -107,6 +109,10 @@ Before tagging the next release:
 
 Suggested short release description:
 
+`Parametric Road 1.1.2: It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed.`
+
+The `1.1.1` description, for reference:
+
 `Parametric Road 1.1.1 builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected.`
 
 Suggested highlights:
@@ -130,5 +136,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.1.1` and date `2026-10-11`.
-- The intended release tag is `v1.1.1`.
+- `package.xml` declares version `1.1.2` and date `2026-11-15`.
+- The intended release tag is `v1.1.2`.

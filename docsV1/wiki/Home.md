@@ -2,7 +2,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-Parametric Road `1.1.1` is the current public v1 release. It builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected.
+Parametric Road `1.1.2` is the current public v1 release. It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed.
 
 The current local FreeCAD runtime for development and manual QA is FreeCAD `1.1.1`.
 
@@ -19,7 +19,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 ## Release And Tutorial
 
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum discussion: https://forum.freecad.org/viewtopic.php?t=103783
 
