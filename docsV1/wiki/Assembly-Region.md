@@ -109,4 +109,4 @@ It should not hide engineering meaning in free-form notes.
 
 ## Drainage Position
 
-Drainage follows Structures in the toolbar because Drainage Elements choose their owning Region and may reference Structure-backed nodes.
+Drainage follows Structures in the toolbar. Its Ditch Runs name the Assembly ditches over the Region spans, so the Regions and the Assembly come first.

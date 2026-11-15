@@ -50,10 +50,10 @@ Main stages:
 - Assembly
 - Region
 - Structures
-- Drainage
-- Drainage Review
+- Drainage (with its Review tab)
 - Applied Sections
 - Build Corridor
+- Rebuild Downstream (Corridor menu, and a button in the Drainage and Build Parametric panels)
 - Cross Section Viewer
 - Earthwork Viewer
 - Structure Output

@@ -41,7 +41,7 @@ Release rule:
 - Superelevation is the source stage after 3D Centerline and before Assembly.
 - SubAssembly Designer owns reusable cross-section behavior; Assembly places those definitions and Applied Sections evaluates them.
 - Intersections can create maintained Preset Sources for T Intersection, Cross Intersection, and Roundabout workflows.
-- Drainage is an active source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review.
+- Drainage is an active source stage with a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (pipes included); its checks are a result stage after Applied Sections, reviewed on the Drainage panel's Review tab.
 - Advanced hydraulic analysis and automatic pipe sizing remain future work.
 - Watertight Solids is the final output stage after AI Assist and is gated on Build Corridor prerequisites.
 - Generated geometry, preview meshes, markers, and reports are outputs, not source truth.

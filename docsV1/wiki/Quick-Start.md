@@ -77,7 +77,7 @@ For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Al
 15. Run Build Corridor.
 16. Review Region Boundaries and Surface Transitions in Build Corridor.
 17. Open Cross Section Viewer.
-18. Open Drainage Review or show the Flow Network if Structure-backed drainage is present.
+18. Open Drainage, press Rebuild Downstream, then add points, links and pipes and check the Review tab.
 19. Open Earthwork Viewer.
 20. Optionally open Watertight Solids only to verify existing compatibility behavior after Build Corridor.
 

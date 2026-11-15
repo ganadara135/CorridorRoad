@@ -52,15 +52,17 @@ If the preview reports `centerline3d_result_fallback`, rebuild or inspect the 3D
 
 ## Drainage Review
 
-Use Drainage Review after authoring Drainage source rows.
+Drainage Review is the Review tab of the Drainage panel; the Drainage Review command (Drainage
+menu) and the Build Parametric button open the panel on it.
 
-It can review:
+It shows:
 
-- Drainage Elements and Flow Routes
-- Structure-backed pipeline candidates and pipeline segments
-- pipeline networks and junctions
-- Region assignment context
-- Applied Section ditch context
+- each Ditch Run's flowline profile with its inlets, outfalls, culverts, links and pipes
+- the checks of the drawn run, each highlighted in the 3D view on a double-click
+- the pipes on the links, drawn as tubes in the 3D view
+- whether the Drainage result is current
+
+See [Drainage](./Drainage.md).
 
 ## Earthwork Viewer
 
