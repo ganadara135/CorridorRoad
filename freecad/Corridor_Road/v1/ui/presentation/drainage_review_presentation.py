@@ -111,12 +111,14 @@ def drainage_editing_profile(
     *,
     selected_link_id: str = "",
     selected_point_id: str = "",
+    checks=(),
 ) -> FlowlineProfile | None:
     """One run's flowline with the points and links as the editor's tables hold them now.
 
     The flowline is the stored result's; the points and links are the unapplied edits, so the
     drawing follows the tables. A point sits on the flowline at its station. A link is drawn only
-    when both its points are on this run.
+    when both its points are on this run. `checks` are the result's checks; the stretches the flat
+    grade and inlet spacing checks flag are drawn over the flowline, as in the review.
     """
 
     flowline = next((row for row in flowlines or [] if row.ditch_run_ref == ditch_run_ref), None)
@@ -156,6 +158,11 @@ def drainage_editing_profile(
         markers=markers,
         low_points=tuple((station, _z_at(profile, station)) for station in flowline.low_point_stations),
         high_points=tuple((station, _z_at(profile, station)) for station in flowline.high_point_stations),
+        flagged=tuple(
+            (row.station_start, row.station_end, row.severity)
+            for row in checks or []
+            if row.ditch_run_ref == ditch_run_ref and row.kind in STRETCH_CHECK_KINDS
+        ),
         links=tuple(drawn),
     )
 

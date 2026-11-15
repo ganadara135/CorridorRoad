@@ -33,6 +33,7 @@ from ..services.editing.drainage_editing_service import (
 from ..services.evaluation.result_freshness_service import APPLIED_SECTIONS, CURRENT, DRAINAGE, MISSING, STALE
 from .cmd_drainage_result import apply_v1_drainage_result, drainage_result_summary
 from ..ui.editors.drainage_editor import V1DrainageEditorTaskPanel, configure_drainage_editor_task_panel_runtime
+from .cmd_drainage_review import drainage_review_state, focus_drainage_check, focus_drainage_pipe, show_drainage_structures
 
 
 class CmdV1DrainageEditor:
@@ -112,6 +113,37 @@ def apply_v1_drainage_model(*, document=None, drainage_model: DrainageModel):
     return create_or_update_v1_drainage_model_object(doc, drainage_model=prepared.model, project=find_project(doc))
 
 
+def drainage_result_gap(document) -> str:
+    """Why there is no current Drainage result and what to do about it; empty when it is current.
+
+    The Drainage result is built from stored Ditch Runs over built Applied Sections, so the first
+    thing missing decides the hint.
+    """
+
+    rows = {row.stage: row for row in document_result_freshness(document)}
+    applied, drainage = rows[APPLIED_SECTIONS], rows[DRAINAGE]
+    model = to_drainage_model(find_v1_drainage_model(document))
+    if model is None or not model.ditch_run_rows:
+        return "No Ditch Runs are applied yet: press Apply in this panel to store them."
+    if applied.status == MISSING:
+        return "Applied Sections are not built yet: build them (Applied Sections, Build Sections), then press Rebuild Downstream here."
+    if applied.status == STALE:
+        return f"Applied Sections are stale ({', '.join(applied.changed_inputs)}): press Rebuild Downstream here to retag the ditches and evaluate the Drainage."
+    if drainage.status == MISSING:
+        return "The Drainage has not been evaluated yet: press Rebuild Downstream here."
+    if drainage.status != CURRENT:
+        return f"The Drainage result is stale ({', '.join(drainage.changed_inputs)}): press Rebuild Downstream here."
+    return ""
+
+
+def open_drainage_rebuild(document, on_finished=None):
+    """Open the Rebuild Downstream window from the Drainage panel; the panel reads the results again after."""
+
+    from .cmd_rebuild_downstream import open_rebuild_downstream_dialog
+
+    return open_rebuild_downstream_dialog(document, on_finished=on_finished)
+
+
 def refresh_drainage_result(document) -> str:
     """After a Drainage write: evaluate it when the Applied Sections are current, else say what to run.
 
@@ -137,11 +169,9 @@ def drainage_suggestions(document) -> tuple[list, str]:
     """
 
     result = to_drainage_result(find_v1_drainage_result_object(document))
-    if result is None:
-        return [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), to get suggestions."
-    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
-    if row.status != CURRENT:
-        return [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) for current suggestions."
+    gap = drainage_result_gap(document)
+    if result is None or gap:
+        return [], f"{gap or 'There is no Drainage result yet.'} Suggestions need a current result."
     if not result.suggestion_rows:
         return [], "No suggestions: every low point is collected and the inlet spacing holds."
     return list(result.suggestion_rows), f"{len(result.suggestion_rows)} suggestion(s)."
@@ -154,11 +184,9 @@ def drainage_flow_result(document) -> tuple[list, list, str]:
     """
 
     result = to_drainage_result(find_v1_drainage_result_object(document))
-    if result is None:
-        return [], [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), to see checks and grades."
-    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
-    if row.status != CURRENT:
-        return [], [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) to see checks and grades."
+    gap = drainage_result_gap(document)
+    if result is None or gap:
+        return [], [], f"{gap or 'There is no Drainage result yet.'} Checks and grades need a current result."
     return list(result.check_rows), list(result.link_rows), "Checks and grades are those of the last evaluation; Apply evaluates your edits."
 
 
@@ -169,11 +197,9 @@ def drainage_flowlines(document) -> tuple[list, str]:
     """
 
     result = to_drainage_result(find_v1_drainage_result_object(document))
-    if result is None:
-        return [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), before continuing the flow."
-    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
-    if row.status != CURRENT:
-        return [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) before continuing the flow."
+    gap = drainage_result_gap(document)
+    if result is None or gap:
+        return [], f"{gap or 'There is no Drainage result yet.'} Continuing the flow needs a current result."
     return list(result.flowline_rows), ""
 
 
@@ -181,23 +207,11 @@ def drainage_downhill_links(document, points: list, links: list) -> tuple[list, 
     """Links from each unlinked inlet to the nearest lower point, from the stored result's flowlines."""
 
     result = to_drainage_result(find_v1_drainage_result_object(document))
-    if result is None:
-        return [], "No Drainage result yet: build Applied Sections, then run Rebuild Downstream (Corridor toolbar), before linking downhill."
-    row = next(row for row in document_result_freshness(document) if row.stage == DRAINAGE)
-    if row.status != CURRENT:
-        return [], "The Drainage result is stale; run Rebuild Downstream (Corridor toolbar) before linking downhill."
+    gap = drainage_result_gap(document)
+    if result is None or gap:
+        return [], f"{gap or 'There is no Drainage result yet.'} Linking downhill needs a current result."
     added = downhill_links(points, links, result.flowline_rows)
     return added, f"{len(added)} link(s) added from inlets to the nearest lower point. Apply to keep them."
-
-
-def open_drainage_review(document):
-    """Close the Drainage panel and open Drainage Review: FreeCAD shows one task panel at a time."""
-
-    from .cmd_drainage_review import run_v1_drainage_review_command
-
-    if _gui_available():
-        Gui.Control.closeDialog()
-    return run_v1_drainage_review_command(document)
 
 
 def drainage_status_text(document) -> str:
@@ -254,9 +268,14 @@ configure_drainage_editor_task_panel_runtime(
         "drainage_downhill_links": drainage_downhill_links,
         "drainage_flow_result": drainage_flow_result,
         "drainage_flowlines": drainage_flowlines,
+        "drainage_result_gap": drainage_result_gap,
+        "open_drainage_rebuild": open_drainage_rebuild,
+        "show_drainage_structures": show_drainage_structures,
         "drainage_status_text": drainage_status_text,
         "drainage_suggestions": drainage_suggestions,
-        "open_drainage_review": open_drainage_review,
+        "drainage_review_state": drainage_review_state,
+        "focus_drainage_check": focus_drainage_check,
+        "focus_drainage_pipe": focus_drainage_pipe,
         "refresh_drainage_result": refresh_drainage_result,
     }
 )

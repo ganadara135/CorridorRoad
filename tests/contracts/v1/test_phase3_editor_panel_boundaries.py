@@ -3,7 +3,6 @@ import FreeCAD as App
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import V1AlignmentEditorTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import V1DrainageEditorTaskPanel
-from freecad.Corridor_Road.v1.commands.cmd_drainage_review import V1DrainageReviewTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_edit_tin import V1TINEditorTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_profile_editor import V1ProfileEditorTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_structure_editor import V1StructureEditorTaskPanel
@@ -25,9 +24,6 @@ from freecad.Corridor_Road.v1.ui.editors.subassembly_editor import (
     V1AssemblySubassemblyEditorTaskPanel as UIAssemblySubassemblyPanel,
 )
 from freecad.Corridor_Road.v1.ui.editors.tin_editor import V1TINEditorTaskPanel as UITINPanel
-from freecad.Corridor_Road.v1.ui.viewers.drainage_review_view import (
-    V1DrainageReviewTaskPanel as UIDrainageReviewPanel,
-)
 
 
 def _ensure_qapp():
@@ -40,7 +36,6 @@ def test_command_exports_are_the_ui_owned_phase3_panel_classes() -> None:
     assert V1SubAssemblyDesignerTaskPanel is UISubAssemblyDesignerPanel
     assert V1AssemblySubassemblyEditorTaskPanel is UIAssemblySubassemblyPanel
     assert V1DrainageEditorTaskPanel is UIDrainagePanel
-    assert V1DrainageReviewTaskPanel is UIDrainageReviewPanel
     assert V1AlignmentEditorTaskPanel is UIAlignmentPanel
     assert V1TINEditorTaskPanel is UITINPanel
 

@@ -993,7 +993,7 @@ class V1AppliedSectionsTaskPanel:
         build_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(build_button)
         rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
-        rebuild_button.setToolTip("Rebuild stale Stations, 3D Centerline and Applied Sections with the options they were last built with.")
+        rebuild_button.setToolTip("Open the Rebuild Downstream window: it rebuilds every stale result in workflow order with the options they were last built with.")
         rebuild_button.clicked.connect(self._rebuild_downstream)
         action_row.addWidget(rebuild_button)
         show_all_button = QtWidgets.QPushButton("Show All")
@@ -1013,16 +1013,9 @@ class V1AppliedSectionsTaskPanel:
 
     def _rebuild_downstream(self) -> None:
         # Imported here: the rebuild command imports this module for the Applied Sections stage.
-        from .cmd_rebuild_downstream import run_v1_rebuild_downstream_command
+        from .cmd_rebuild_downstream import open_rebuild_downstream_dialog
 
-        try:
-            report = run_v1_rebuild_downstream_command(self.document, through=APPLIED_SECTIONS)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(None, "Rebuild Downstream", str(exc))
-            return
-        self._refresh_summary()
-        show = QtWidgets.QMessageBox.warning if report.failed else QtWidgets.QMessageBox.information
-        show(None, "Rebuild Downstream", report.text)
+        open_rebuild_downstream_dialog(self.document, on_finished=self._refresh_summary)
 
     def _refresh_summary(self) -> None:
         try:

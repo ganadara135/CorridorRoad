@@ -13,8 +13,9 @@ STAGE_COLUMNS = ("Stage", "Status", "Changed inputs")
 
 
 class V1RebuildDownstreamDialog(QtWidgets.QDialog):
-    def __init__(self, document, *, parent=None, freshness_rows, run_rebuild, stage_label):
+    def __init__(self, document, *, parent=None, freshness_rows, run_rebuild, stage_label, on_finished=None):
         super().__init__(parent)
+        self._on_finished = on_finished
         self.document = document
         self._freshness_rows = freshness_rows
         self._run_rebuild = run_rebuild
@@ -58,7 +59,7 @@ class V1RebuildDownstreamDialog(QtWidgets.QDialog):
             for column, key in enumerate(("stage", "status", "changed")):
                 self._table.setItem(index, column, QtWidgets.QTableWidgetItem(str(row[key])))
         self._table.resizeColumnsToContents()
-        stale = sum(1 for row in rows if row["status"] == "stale")
+        stale = sum(1 for row in rows if row["status"] in {"stale", "not evaluated"})
         self._stage_text.setText(f"{stale} stale stage(s)." if stale else "Every built result is current.")
 
     def _on_progress(self, done: int, total: int, stage: str) -> None:
@@ -79,3 +80,5 @@ class V1RebuildDownstreamDialog(QtWidgets.QDialog):
         finally:
             self._rebuild_button.setEnabled(True)
             self._refresh()
+            if self._on_finished is not None:
+                self._on_finished()

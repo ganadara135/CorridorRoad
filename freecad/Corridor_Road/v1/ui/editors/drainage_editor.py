@@ -32,11 +32,18 @@ from freecad.Corridor_Road.v1.services.editing.drainage_flow_service import (
     trace_network,
     walk_flow_nodes,
 )
-from freecad.Corridor_Road.v1.ui.common.flowline_profile_widget import LEGEND_TEXT, FlowlineProfileWidget
+from freecad.Corridor_Road.v1.ui.common.flowline_profile_widget import (
+    LEGEND_TEXT,
+    SEVERITY_COLORS,
+    FlowlineProfileWidget,
+)
 from freecad.Corridor_Road.v1.ui.common.panel_width import fit_task_panel_width
 from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation import (
+    drainage_check_table_rows,
     drainage_editing_profile,
     drainage_editing_run_refs,
+    drainage_pipe_table_rows,
+    drainage_review_summary,
     drainage_run_of_link,
 )
 from freecad.Corridor_Road.v1.ui.presentation.drainage_flow_tree_presentation import (
@@ -64,7 +71,12 @@ drainage_flowlines = None
 drainage_editor_inputs = None
 drainage_status_text = None
 drainage_suggestions = None
-open_drainage_review = None
+drainage_result_gap = None
+drainage_review_state = None
+focus_drainage_check = None
+focus_drainage_pipe = None
+open_drainage_rebuild = None
+show_drainage_structures = None
 refresh_drainage_result = None
 
 COLUMNS = ("ID", "Road", "Side", "Ditch", "Start STA", "End STA", "On")
@@ -75,6 +87,8 @@ POINT_ID_COLUMN, POINT_KIND_COLUMN, POINT_RUN_COLUMN, POINT_STATION_COLUMN = ran
 # A culvert crosses the road and collects from every run it meets, so it may name no run.
 CROSSES_ROAD = ""
 LINK_COLUMNS = ("ID", "From", "To", "Pipe (m)")
+CHECK_COLUMNS = ("Severity", "Check", "Ditch Run", "STA", "Message")
+PIPE_COLUMNS = ("Link", "Route", "Dia (m)", "Length (m)", "Inverts (m)", "Grade (%)", "Volume (m3)")
 LINK_ID_COLUMN, LINK_FROM_COLUMN, LINK_TO_COLUMN, LINK_PIPE_COLUMN = range(len(LINK_COLUMNS))
 
 
@@ -93,6 +107,9 @@ class V1DrainageEditorTaskPanel:
         self._flow_nodes: dict = {}
         self._flowlines: list = []
         self._flowline_note = ""
+        self._review_output = None
+        self._check_refs: list = []
+        self._pipe_refs: list = []
         self.form = fit_task_panel_width(self._build_ui())
         self._load(self._model)
         self._reload_flowlines()
@@ -106,7 +123,7 @@ class V1DrainageEditorTaskPanel:
         elif not self._choices:
             self._set_status("The Assembly has no ditch. Add a ditch Subassembly to the Assembly first.")
         else:
-            self._set_status(drainage_status_text(self.document))
+            self._set_status(drainage_status_text(self.document) or drainage_result_gap(self.document))
 
     def getStandardButtons(self):
         return 0
@@ -191,6 +208,8 @@ class V1DrainageEditorTaskPanel:
         self._tabs.addTab(self._flow_tab, "Flow")
         self._tabs.addTab(self._build_points_tab(), "Points")
         self._tabs.addTab(self._build_links_tab(), "Links")
+        self._review_tab = self._build_review_tab()
+        self._tabs.addTab(self._review_tab, "Review")
         # Points name runs and Links name points, so their lists follow the other tabs
         self._tabs.currentChanged.connect(self._tab_changed)
         layout.addWidget(self._tabs, 1)
@@ -204,16 +223,61 @@ class V1DrainageEditorTaskPanel:
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(apply_button)
-        review_button = QtWidgets.QPushButton("Drainage Review")
-        review_button.setToolTip("Close this panel and open Drainage Review. Apply first to keep your edits.")
-        review_button.clicked.connect(lambda: open_drainage_review(self.document))
-        action_row.addWidget(review_button)
+        rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
+        rebuild_button.setToolTip(
+            "Open the Rebuild Downstream window. Apply first: it evaluates the stored Drainage, "
+            "and the drawing, suggestions and Flow tab read that result."
+        )
+        rebuild_button.clicked.connect(self._rebuild_downstream)
+        action_row.addWidget(rebuild_button)
+        show_button = QtWidgets.QPushButton("Show in 3D")
+        show_button.setToolTip(
+            "Draw the stored Drainage in the 3D view: inlets (green), outfalls (blue), culverts (purple), "
+            "pipes (brown tubes) and open-flow links (green lines). Apply first to draw your edits."
+        )
+        show_button.clicked.connect(lambda: self._show_structures())
+        action_row.addWidget(show_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
         action_row.addWidget(close_button)
         layout.addLayout(action_row)
         return widget
+
+    def _rebuild_downstream(self) -> None:
+        open_drainage_rebuild(self.document, on_finished=self._after_rebuild)
+
+    def _after_rebuild(self) -> None:
+        """Read the results again once the Rebuild Downstream window has rebuilt them."""
+
+        self._reload_flowlines()
+        self._refresh_suggestions()
+        self._refresh_flow_tree()
+        self._set_status(drainage_status_text(self.document) or drainage_result_gap(self.document))
+        self._show_structures(report=False)
+
+    def _show_structures(self, *, report: bool = True) -> str:
+        """Draw the stored Drainage in the 3D view; returns the line that says what was drawn."""
+
+        gap = drainage_result_gap(self.document)
+        if gap:
+            text = f"Nothing was drawn in the 3D view. {gap}"
+        else:
+            try:
+                counts = show_drainage_structures(self.document)
+            except RuntimeError as exc:
+                counts, text = {}, f"The Drainage was not drawn in the 3D view: {exc}"
+            else:
+                if any(counts.values()):
+                    text = (
+                        f"Drawn in the 3D view: {counts['inlet']} inlet(s), {counts['outfall']} outfall(s), "
+                        f"{counts['culvert']} culvert(s), {counts['pipe']} pipe(s), {counts['open_link']} open-flow link(s)."
+                    )
+                else:
+                    text = "Nothing to draw in the 3D view yet: the Drainage has no points. Add them in Points or Flow, then Apply."
+        if report:
+            self._set_status(text)
+        return text
 
     def _build_flow_tab(self):
         tab = QtWidgets.QWidget()
@@ -288,6 +352,9 @@ class V1DrainageEditorTaskPanel:
         """Read the stored result's flowlines for the drawing; they are as current as the last Apply."""
 
         self._flowlines, self._flowline_note = drainage_flowlines(self.document)
+        if not self._flowlines:
+            # the drawing says what is missing, without the Flow tab's "needs a current result" tail
+            self._flowline_note = drainage_result_gap(self.document) or self._flowline_note
         runs = drainage_editing_run_refs(self._flowlines)
         current = str(self._drawing_run.currentText() or "")
         self._drawing_run.blockSignals(True)
@@ -296,7 +363,7 @@ class V1DrainageEditorTaskPanel:
         if current in runs:
             self._drawing_run.setCurrentText(current)
         self._drawing_run.blockSignals(False)
-        self._refresh_drawing()
+        self._refresh_review()
 
     def _refresh_drawing(self) -> None:
         """Draw the chosen run with the points and links as the tables hold them now, edits included."""
@@ -320,10 +387,12 @@ class V1DrainageEditorTaskPanel:
             str(self._drawing_run.currentText() or ""),
             selected_link_id=selected_link,
             selected_point_id=selected_point,
+            checks=self._review_output.check_rows if self._review_output is not None else (),
         )
         self._drawing.set_profile(profile, "Choose a Ditch Run to draw.")
 
     def _drawing_run_changed(self, _index: int) -> None:
+        self._show_checks()
         self._refresh_drawing()
 
     def _selected_id(self, table, column: int) -> str:
@@ -349,13 +418,124 @@ class V1DrainageEditorTaskPanel:
             self._drawing_run.blockSignals(True)
             self._drawing_run.setCurrentText(run_ref)
             self._drawing_run.blockSignals(False)
+            self._show_checks()
         self._refresh_drawing()
+
+    def _build_review_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        self._review_summary = QtWidgets.QLabel("")
+        self._review_summary.setWordWrap(True)
+        layout.addWidget(self._review_summary)
+        self._review_freshness = QtWidgets.QLabel("")
+        self._review_freshness.setWordWrap(True)
+        layout.addWidget(self._review_freshness)
+        layout.addWidget(QtWidgets.QLabel("Checks of the drawn Ditch Run (double-click to highlight one in the 3D view)"))
+        self._checks = QtWidgets.QTableWidget(0, len(CHECK_COLUMNS))
+        self._checks.setHorizontalHeaderLabels(list(CHECK_COLUMNS))
+        self._checks.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._checks.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        try:
+            self._checks.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._checks.cellDoubleClicked.connect(lambda row, _column: self._focus_check(row))
+        layout.addWidget(self._checks, 1)
+        layout.addWidget(QtWidgets.QLabel("Pipes on the links (double-click to draw one in the 3D view)"))
+        self._pipes = QtWidgets.QTableWidget(0, len(PIPE_COLUMNS))
+        self._pipes.setHorizontalHeaderLabels(list(PIPE_COLUMNS))
+        self._pipes.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._pipes.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._pipes.setMaximumHeight(130)
+        try:
+            self._pipes.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._pipes.cellDoubleClicked.connect(lambda row, _column: self._focus_pipe(row))
+        layout.addWidget(self._pipes)
+        buttons = QtWidgets.QHBoxLayout()
+        refresh_button = QtWidgets.QPushButton("Refresh")
+        refresh_button.setToolTip("Read the stored Drainage result again. Nothing here edits a source.")
+        refresh_button.clicked.connect(self._refresh_review)
+        buttons.addWidget(refresh_button)
+        self._all_pipes_button = QtWidgets.QPushButton("Show All Pipes")
+        self._all_pipes_button.setToolTip("Draw every pipe as a tube in the 3D view.")
+        self._all_pipes_button.clicked.connect(lambda: self._focus_pipe(-1))
+        buttons.addWidget(self._all_pipes_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        return tab
+
+    def _refresh_review(self) -> None:
+        """Read the stored result for the Review tab and the flagged stretches of the drawing."""
+
+        if not hasattr(self, "_checks"):
+            return
+        self._review_output, freshness = drainage_review_state(self.document)
+        self._review_summary.setText(drainage_review_summary(self._review_output))
+        self._review_freshness.setText(freshness)
+        self._show_checks()
+        self._show_pipes()
+        self._refresh_drawing()
+
+    def _show_checks(self) -> None:
+        if not hasattr(self, "_checks"):
+            return
+        run_ref = str(self._drawing_run.currentText() or "")
+        output = self._review_output
+        rows = drainage_check_table_rows(output, run_ref) if output is not None else []
+        self._check_refs = [row["check_ref"] for row in rows]
+        self._checks.setRowCount(0)
+        for row in rows:
+            index = self._checks.rowCount()
+            self._checks.insertRow(index)
+            for column, key in enumerate(("severity", "kind", "ditch_run_ref", "stations", "message")):
+                item = QtWidgets.QTableWidgetItem(str(row[key]))
+                if key == "severity":
+                    item.setForeground(QtGui.QBrush(QtGui.QColor(*SEVERITY_COLORS.get(row["severity"], (0, 0, 0)))))
+                self._checks.setItem(index, column, item)
+
+    def _show_pipes(self) -> None:
+        output = self._review_output
+        rows = drainage_pipe_table_rows(output) if output is not None else []
+        self._pipe_refs = [row["link_ref"] for row in rows]
+        self._pipes.setRowCount(0)
+        for row in rows:
+            index = self._pipes.rowCount()
+            self._pipes.insertRow(index)
+            for column, key in enumerate(("link_ref", "route", "diameter", "length", "inverts", "grade", "volume")):
+                self._pipes.setItem(index, column, QtWidgets.QTableWidgetItem(str(row[key])))
+        self._all_pipes_button.setEnabled(bool(rows))
+
+    def _focus_pipe(self, row: int) -> None:
+        """Draw the pipe of a table row, or all of them for row -1."""
+
+        if row >= len(self._pipe_refs):
+            return
+        try:
+            obj = focus_drainage_pipe(self.document, self._pipe_refs[row] if row >= 0 else "")
+        except (RuntimeError, ValueError) as exc:
+            self._set_status(f"The pipe was not drawn: {exc}")
+            return
+        self._set_status(f"Drawn in the 3D view: {getattr(obj, 'Label', '')}.")
+
+    def _focus_check(self, row: int) -> None:
+        if row < 0 or row >= len(self._check_refs):
+            return
+        try:
+            obj = focus_drainage_check(self.document, self._check_refs[row])
+        except (RuntimeError, ValueError) as exc:
+            self._set_status(f"The check was not highlighted: {exc}")
+            return
+        self._set_status(f"Highlighted on the flowline: {getattr(obj, 'Label', '')}.")
 
     def _tab_changed(self, _index: int) -> None:
         # Points name runs and Links name points, and the flow tree reads both tables
         self._refresh_reference_choices()
         if self._tabs.currentWidget() is self._flow_tab:
             self._refresh_flow_tree()
+        elif self._tabs.currentWidget() is self._review_tab:
+            self._refresh_review()
 
     def _refresh_flow_tree(self) -> None:
         """Rebuild the tree from the tables as they stand, edits not yet applied included."""
@@ -939,7 +1119,7 @@ class V1DrainageEditorTaskPanel:
             evaluation = f"The Drainage was not evaluated: {exc}"
         self._set_status(
             f"Applied to {obj.Label}: {len(model.ditch_run_rows)} Ditch Run(s), {len(model.point_rows)} point(s), "
-            f"{len(model.link_rows)} link(s).\n{evaluation}"
+            f"{len(model.link_rows)} link(s).\n{evaluation}\n{self._show_structures(report=False)}"
         )
         self._reload_flowlines()
         self._refresh_suggestions()

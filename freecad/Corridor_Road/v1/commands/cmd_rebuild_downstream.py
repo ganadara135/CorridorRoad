@@ -232,6 +232,12 @@ _IS_ACTIVE_TTL_SECONDS = 2.0
 _is_active_cache: dict[str, tuple[float, bool]] = {}
 
 
+def _drainage_awaits_first_evaluation(document, rows) -> bool:
+    freshness = {row.stage: row for row in rows}
+    drainage = freshness.get(DRAINAGE)
+    return bool(drainage is not None and drainage.status == MISSING and _drainage_awaits_evaluation(DRAINAGE, document, freshness))
+
+
 def document_has_stale_results(document) -> bool:
     if document is None:
         return False
@@ -241,7 +247,10 @@ def document_has_stale_results(document) -> bool:
     if cached is not None and now - cached[0] < _IS_ACTIVE_TTL_SECONDS:
         return cached[1]
     try:
-        value = bool(stale_stages(document_result_freshness(document)))
+        rows = document_result_freshness(document)
+        # a Drainage source over built Applied Sections waits for its first evaluation, which
+        # Rebuild Downstream does: the command must be usable then, not only when something is stale
+        value = bool(stale_stages(rows)) or _drainage_awaits_first_evaluation(document, rows)
     except Exception as exc:
         # A freshness check that cannot read the document leaves the command available; running
         # it reports the error.
@@ -281,19 +290,28 @@ class CmdV1RebuildDownstream:
 def freshness_table_rows(document) -> list[dict[str, str]]:
     """One row per result stage for the Rebuild Downstream window."""
 
+    rows = document_result_freshness(document)
+    awaiting = _drainage_awaits_first_evaluation(document, rows)
     return [
-        {"stage": row.label, "status": row.status, "changed": ", ".join(row.changed_inputs)}
-        for row in document_result_freshness(document)
+        {
+            "stage": row.label,
+            # the first evaluation of an applied Drainage is rebuilt like a stale stage
+            "status": "not evaluated" if awaiting and row.stage == DRAINAGE else row.status,
+            "changed": "Drainage applied" if awaiting and row.stage == DRAINAGE else ", ".join(row.changed_inputs),
+        }
+        for row in rows
     ]
 
 
 _open_dialogs: dict[str, object] = {}
 
 
-def open_rebuild_downstream_dialog(document=None):
+def open_rebuild_downstream_dialog(document=None, *, on_finished=None):
     """Show the Rebuild Downstream window: the stages, their freshness and a progress bar.
 
-    It is a separate window, not a task panel, so a task panel already open stays open.
+    It is a separate window, not a task panel, so a task panel already open stays open. The panels
+    that need fresh results (Applied Sections, Drainage, Build Parametric) open this same window;
+    `on_finished` lets the one that opened it read the results again after a rebuild.
     """
 
     from ..ui.viewers.rebuild_downstream_view import V1RebuildDownstreamDialog
@@ -306,6 +324,7 @@ def open_rebuild_downstream_dialog(document=None):
         freshness_rows=freshness_table_rows,
         run_rebuild=lambda document, progress: run_v1_rebuild_downstream_command(document, progress=progress),
         stage_label=lambda stage: STAGE_LABELS.get(stage, stage),
+        on_finished=on_finished,
     )
     # keep a reference: a parentless Qt window is closed when Python drops it
     _open_dialogs[str(getattr(doc, "Name", "") or "")] = dialog

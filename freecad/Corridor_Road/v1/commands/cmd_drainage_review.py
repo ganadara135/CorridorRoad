@@ -19,7 +19,6 @@ from ..objects.project_document_adapter import route_object_to_project_tree
 from ..objects.result_freshness import document_result_freshness
 from ..services.evaluation.result_freshness_service import CURRENT, DRAINAGE
 from ..services.mapping.drainage_output_mapper import DrainageOutputMapper
-from ..ui.viewers.drainage_review_view import V1DrainageReviewTaskPanel, configure_drainage_review_task_panel_runtime
 
 HIGHLIGHT_OBJECT_NAME = "ReviewDrainageCheckHighlight"
 PIPE_OBJECT_NAME = "ReviewDrainagePipes"
@@ -51,12 +50,17 @@ class CmdV1DrainageReview:
 
 
 def run_v1_drainage_review_command(document=None):
-    """Open the v1 Drainage Review task panel."""
+    """Open the Drainage panel on its Review tab: the review and the editing share one panel."""
+
+    from .cmd_drainage_editor import V1DrainageEditorTaskPanel
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
-    panel = V1DrainageReviewTaskPanel(document=doc)
+    if _gui_available() and hasattr(Gui, "Control"):
+        Gui.Control.closeDialog()
+    panel = V1DrainageEditorTaskPanel(document=doc)
+    panel._tabs.setCurrentWidget(panel._review_tab)
     if _gui_available() and hasattr(Gui, "Control"):
         Gui.Control.showDialog(panel)
     return panel
@@ -177,30 +181,115 @@ def focus_drainage_pipe(document, link_ref: str = ""):
     return obj
 
 
-def open_drainage_editor(document):
-    """Close Drainage Review and open the Drainage panel."""
+# The Drainage shown in the 3D view: one object per kind, so each kind has its colour. The bodies
+# are review markers at the points' places on the flowlines (meters, the model's units); their
+# sizes say "a point is here", they are not the dimensions of a real inlet or headwall. A pipe is
+# its real diameter and length.
+STRUCTURE_OBJECT_NAMES = {
+    "inlet": "DrainageInlets",
+    "outfall": "DrainageOutfalls",
+    "culvert": "DrainageCulverts",
+    "pipe": "DrainagePipes",
+    "open_link": "DrainageOpenLinks",
+}
+_STRUCTURE_LABELS = {
+    "inlet": "Drainage inlets",
+    "outfall": "Drainage outfalls",
+    "culvert": "Drainage culverts",
+    "pipe": "Drainage pipes",
+    "open_link": "Drainage open-flow links",
+}
+_STRUCTURE_COLORS = {
+    "inlet": (0.12, 0.55, 0.24),
+    "outfall": (0.08, 0.24, 0.67),
+    "culvert": (0.51, 0.24, 0.63),
+    "pipe": (0.59, 0.39, 0.20),
+    "open_link": (0.30, 0.60, 0.30),
+}
+_INLET_SIZE_M = (1.0, 1.0, 0.8)  # plan x plan x height; the top stands 0.2 m above the flowline
+_INLET_TOP_ABOVE_M = 0.2
+_OUTFALL_RADIUS_M = 0.6
+_OUTFALL_HEIGHT_M = 0.5
+_CULVERT_SIZE_M = (1.4, 1.4, 1.2)
 
-    from .cmd_drainage_editor import run_v1_drainage_editor_command
 
-    if _gui_available():
-        Gui.Control.closeDialog()
-    return run_v1_drainage_editor_command(document)
+def show_drainage_structures(document, *, only_existing: bool = False) -> dict[str, int]:
+    """Draw the stored Drainage in the 3D view and return how many of each kind were drawn.
+
+    Inlets, outfalls and culverts are markers at their places on the flowlines, a piped link is a
+    tube between its ends, and an open-flow link a line. They are a presentation of the stored
+    result, replaced each time; nothing reads them back. With `only_existing`, objects already in
+    the document are brought up to date and none is created, so a rebuild keeps a shown Drainage
+    true without drawing one nobody asked for.
+    """
+
+    if document is None:
+        return {}
+    if only_existing and not any(document.getObject(name) is not None for name in STRUCTURE_OBJECT_NAMES.values()):
+        return {}
+    import Part
+
+    output = build_drainage_output(document)
+    shapes: dict[str, list] = {kind: [] for kind in STRUCTURE_OBJECT_NAMES}
+    places = {}
+    for point in output.point_rows if output is not None else []:
+        if point.x is None or point.y is None or point.z is None:
+            continue
+        places[point.point_ref] = App.Vector(point.x, point.y, point.z)
+        if point.kind == "inlet":
+            dx, dy, dz = _INLET_SIZE_M
+            shapes["inlet"].append(Part.makeBox(dx, dy, dz, App.Vector(point.x - dx / 2.0, point.y - dy / 2.0, point.z + _INLET_TOP_ABOVE_M - dz)))
+        elif point.kind == "outfall":
+            shapes["outfall"].append(
+                Part.makeCylinder(_OUTFALL_RADIUS_M, _OUTFALL_HEIGHT_M, App.Vector(point.x, point.y, point.z - _OUTFALL_HEIGHT_M / 2.0))
+            )
+        elif point.kind == "culvert":
+            dx, dy, dz = _CULVERT_SIZE_M
+            shapes["culvert"].append(Part.makeBox(dx, dy, dz, App.Vector(point.x - dx / 2.0, point.y - dy / 2.0, point.z - dz / 2.0)))
+    piped = set()
+    for pipe in output.pipe_rows if output is not None else []:
+        start = App.Vector(*pipe.from_xyz)
+        axis = App.Vector(*pipe.to_xyz) - start
+        if axis.Length <= 0.0:
+            continue
+        piped.add(pipe.link_ref)
+        shapes["pipe"].append(Part.makeCylinder(pipe.diameter_m / 2.0, axis.Length, start, axis))
+    lift = App.Vector(0.0, 0.0, _STRETCH_LIFT_M)
+    for link in output.link_rows if output is not None else []:
+        start, end = places.get(link.from_ref), places.get(link.to_ref)
+        if link.link_ref in piped or start is None or end is None or (end - start).Length <= 0.0:
+            continue
+        shapes["open_link"].append(Part.makeLine(start + lift, end + lift))
+
+    project = find_project(document)
+    for kind, name in STRUCTURE_OBJECT_NAMES.items():
+        obj = document.getObject(name)
+        if not shapes[kind]:
+            if obj is not None:
+                document.removeObject(name)
+            continue
+        if obj is None:
+            obj = document.addObject("Part::Feature", name)
+        obj.Shape = Part.makeCompound(shapes[kind])
+        obj.Label = f"{_STRUCTURE_LABELS[kind]} ({len(shapes[kind])})"
+        for prop, value in (("CRRecordKind", "v1_drainage_preview"), ("PreviewKind", kind)):
+            if not hasattr(obj, prop):
+                obj.addProperty("App::PropertyString", prop, "Review", prop)
+            setattr(obj, prop, value)
+        if project is not None:
+            route_object_to_project_tree(project, obj)
+        view = getattr(obj, "ViewObject", None)
+        if view is not None:
+            view.ShapeColor = _STRUCTURE_COLORS[kind]
+            view.LineColor = _STRUCTURE_COLORS[kind]
+            if kind == "open_link":
+                view.LineWidth = 3.0
+            view.Visibility = True
+    return {kind: len(rows) for kind, rows in shapes.items()}
 
 
 def _gui_available() -> bool:
     return bool(Gui is not None and getattr(App, "GuiUp", False))
-
-
-configure_drainage_review_task_panel_runtime(
-    {
-        "App": App,
-        "Gui": Gui,
-        "drainage_review_state": drainage_review_state,
-        "focus_drainage_check": focus_drainage_check,
-        "focus_drainage_pipe": focus_drainage_pipe,
-        "open_drainage_editor": open_drainage_editor,
-    }
-)
 
 
 if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.

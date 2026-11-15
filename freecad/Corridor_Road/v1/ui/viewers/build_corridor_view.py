@@ -170,7 +170,7 @@ document_result_freshness = None
 corridor_drainage_review_summary = None
 open_drainage_review_panel = None
 freshness_text = None
-run_v1_rebuild_downstream_command = None
+open_rebuild_downstream_dialog = None
 corridor_region_boundary_rows = None
 corridor_shared_breakline_audit_rows = None
 corridor_shared_breakline_audit_summary = None
@@ -617,7 +617,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         row.addWidget(apply_button)
         rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
         rebuild_button.setToolTip(
-            "Rebuild stale Stations, 3D Centerline, Applied Sections, Drainage and Build Parametric results with the options they were last built with."
+            "Open the Rebuild Downstream window: it rebuilds every stale result in workflow order with the options they were last built with."
         )
         rebuild_button.clicked.connect(self._rebuild_downstream)
         row.addWidget(rebuild_button)
@@ -750,14 +750,7 @@ class V1BuildCorridorTaskPanel(BuildCorridorTaskPanelPresentation):
         self._sync_tabs_height_later()
 
     def _rebuild_downstream(self) -> None:
-        try:
-            report = run_v1_rebuild_downstream_command(self.document)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(None, "Rebuild Downstream", str(exc))
-            return
-        self._refresh_summary()
-        show = QtWidgets.QMessageBox.warning if report.failed else QtWidgets.QMessageBox.information
-        show(None, "Rebuild Downstream", report.text)
+        open_rebuild_downstream_dialog(self.document, on_finished=self._refresh_summary)
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:

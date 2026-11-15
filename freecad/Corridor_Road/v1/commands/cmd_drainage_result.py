@@ -38,6 +38,10 @@ def apply_v1_drainage_result(document):
     project = find_project(document)
     if project is not None:
         route_object_to_project_tree(project, obj)
+    # a Drainage already shown in the 3D view follows the new result; none is drawn unasked
+    from .cmd_drainage_review import show_drainage_structures
+
+    show_drainage_structures(document, only_existing=True)
     return obj
 
 

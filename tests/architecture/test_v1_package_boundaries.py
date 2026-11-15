@@ -388,7 +388,6 @@ def test_phase3_task_panel_owners_are_outside_command_modules() -> None:
             {"_AssemblyTableComboBox", "V1AssemblySubassemblyEditorTaskPanel", "_AssemblySectionPreviewView"},
         ),
         "cmd_drainage_editor.py": ("ui/editors/drainage_editor.py", {"V1DrainageEditorTaskPanel"}),
-        "cmd_drainage_review.py": ("ui/viewers/drainage_review_view.py", {"V1DrainageReviewTaskPanel"}),
         "cmd_alignment_editor.py": (
             "ui/editors/alignment_editor.py",
             {"_AlignmentCurvePreviewWidget", "V1AlignmentEditorTaskPanel"},

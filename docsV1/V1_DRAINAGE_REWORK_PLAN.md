@@ -119,7 +119,7 @@ Drainage refs.
   - Links table with from/to pickers listing the points.
   - Nothing is written until Apply; Cancel writes nothing; opening the editor never creates sample
     data.
-- **Drainage Review** (`ui/viewers/drainage_review_view.py`, rewritten): a flowline profile per
+- **Drainage Review** (`ui/viewers/drainage_review_view.py`, rewritten; folded into the Drainage panel's Review tab by DR-7b): a flowline profile per
   run with points, low points and failing segments marked, a checks table that focuses the 3D view
   on a row, and the GR-3 freshness line. It edits nothing.
 - **Build Parametric** keeps one Drainage line: the result's status and check count, with a button
@@ -526,9 +526,36 @@ Done on 2026-11-09 (gate pending; GUI check pending):
   Points or Links table switches to its run; edits to a cell or a combo redraw. A stale or missing
   result, or a table that cannot be read, shows the reason in place of the drawing.
 
-#### DR-7b Review tab (open)
+#### DR-7b Review tab
 
-Move the checks and pipes tables into a Review tab of the panel (double-click highlights a check or
-draws a pipe in 3D; Show All Pipes), draw the flagged stretches from the result's checks, make the
-Drainage Review command and the Build Corridor button open the panel on that tab, and retire the
-separate review panel with its boundary tests.
+Done on 2026-11-09 (gate pending; GUI check pending):
+
+- The checks table, the pipes table, the summary and the freshness line of Drainage Review are a
+  Review tab of the Drainage panel. The checks listed follow the Ditch Run drawn above the tabs
+  (the run's checks and the run-less ones); double-clicking a check highlights it in the 3D view and
+  double-clicking a pipe, or Show All Pipes, draws pipes as tubes, as the review did. Nothing on the
+  tab edits a source.
+- The stretches the flat grade and inlet spacing checks flag are drawn over the flowline in the
+  pinned drawing, from the result's checks.
+- `CorridorRoad_V1DrainageReview` and the Build Parametric button open the Drainage panel on the
+  Review tab. The separate review panel (`ui/viewers/drainage_review_view.py`), its Drainage button,
+  the panel's Drainage Review button and their boundary tests were removed. The review's pure rows
+  stay in `drainage_review_presentation.py`, and the check and pipe focus helpers in
+  `commands/cmd_drainage_review.py`.
+
+#### DR-7c Rebuild Downstream from the panel, and the Drainage in the 3D view
+
+Done on 2026-11-10 after the GUI check of DR-7a and DR-7b:
+
+- The Rebuild Downstream command was unusable while the only work left was the first evaluation of
+  an applied Drainage, so the panel stayed empty. It is usable then; the window lists the stage as
+  "not evaluated". `drainage_result_gap` says what is missing first (Apply the Ditch Runs, build
+  Applied Sections, or Rebuild Downstream), and the panel has a Rebuild Downstream button.
+- The Applied Sections and Build Parametric panels open the same Rebuild Downstream window instead
+  of running their own rebuild; the window tells the panel that opened it when it has finished.
+- `show_drainage_structures` draws the Drainage output in the 3D view: one object per kind
+  (`DrainageInlets`, `DrainageOutfalls`, `DrainageCulverts`, `DrainagePipes`,
+  `DrainageOpenLinks`, record kind `v1_drainage_preview`, in the Drainage tree folder). Point
+  bodies are markers, not engineering dimensions; pipes are their real diameter and length. The
+  panel's Apply and Show in 3D draw it; a later evaluation updates objects that exist and creates
+  none.

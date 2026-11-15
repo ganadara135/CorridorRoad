@@ -11,7 +11,7 @@ from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensur
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import corridor_drainage_review_summary
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
-from freecad.Corridor_Road.v1.commands.cmd_drainage_review import V1DrainageReviewTaskPanel, focus_drainage_pipe
+from freecad.Corridor_Road.v1.commands.cmd_drainage_review import focus_drainage_pipe, run_v1_drainage_review_command
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
     V1DrainageEditorTaskPanel,
     apply_v1_drainage_model,
@@ -425,8 +425,8 @@ def test_the_flow_tab_continues_the_network_upstream_and_downstream_from_the_sel
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
         apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
-        # no result yet: the flowlines wait for Rebuild Downstream, and the note says so
-        assert drainage_flowlines(doc)[0] == [] and "Rebuild Downstream" in drainage_flowlines(doc)[1]
+        # no result yet: the note says what comes first (here the Ditch Runs are not stored)
+        assert drainage_flowlines(doc)[0] == [] and "No Ditch Runs are applied" in drainage_flowlines(doc)[1]
         apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
         assert not rebuild_downstream(doc).failed
         flowlines, note = drainage_flowlines(doc)
@@ -587,17 +587,17 @@ def test_drainage_review_lists_the_pipes_and_draws_them_as_tubes() -> None:
 
         # no pipe yet: the list is empty and there is nothing to draw
         _apply_points_and_links(doc, [DrainagePoint("inlet:1", "inlet", high, ditch_run_ref=run)], [])
-        panel = V1DrainageReviewTaskPanel(document=doc)
+        panel = run_v1_drainage_review_command(doc)
         assert panel._pipes.rowCount() == 0 and not panel._all_pipes_button.isEnabled()
         with pytest.raises(ValueError, match="no pipes"):
             focus_drainage_pipe(doc)
 
         points = [DrainagePoint("inlet:1", "inlet", high, ditch_run_ref=run), DrainagePoint("outfall:1", "outfall", low, ditch_run_ref=run)]
         _apply_points_and_links(doc, points, [DrainageLink("link:1", "inlet:1", "outfall:1", pipe_diameter_m=0.6)])
-        panel = V1DrainageReviewTaskPanel(document=doc)
+        panel = run_v1_drainage_review_command(doc)
         assert panel._pipes.rowCount() == 1 and panel._pipes.item(0, 0).text() == "link:1"
         assert panel._pipes.item(0, 2).text() == "0.60" and panel._all_pipes_button.isEnabled()
-        assert "1 pipe(s)" in panel._summary.text()
+        assert "1 pipe(s)" in panel._review_summary.text()
 
         pipe = to_drainage_result(find_v1_drainage_result_object(doc)).pipe_rows[0]
         obj = focus_drainage_pipe(doc, "link:1")
@@ -606,9 +606,9 @@ def test_drainage_review_lists_the_pipes_and_draws_them_as_tubes() -> None:
         assert obj.Shape.Volume == pytest.approx(3.141592653589793 * 0.3**2 * pipe.length_m, rel=1.0e-3)
 
         panel._focus_pipe(0)
-        assert panel._status.text().startswith("Drawn in the 3D view: Drainage pipe: link:1")
+        assert panel._status.toPlainText().startswith("Drawn in the 3D view: Drainage pipe: link:1")
         panel._focus_pipe(-1)
-        assert panel._status.text().startswith("Drawn in the 3D view: Drainage pipes (1)")
+        assert panel._status.toPlainText().startswith("Drawn in the 3D view: Drainage pipes (1)")
         with pytest.raises(ValueError, match="No Drainage pipe link:9"):
             focus_drainage_pipe(doc, "link:9")
     finally:
@@ -699,12 +699,21 @@ def test_drainage_review_shows_the_result_and_highlights_a_check() -> None:
         apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
         assert not rebuild_downstream(doc).failed
 
-        panel = V1DrainageReviewTaskPanel(document=doc)
+        panel = run_v1_drainage_review_command(doc)
 
-        assert panel._run_combo.count() == 2
-        assert "The Drainage result is current." == panel._freshness.text()
+        # the command opens the combined panel on its Review tab
+        assert panel._tabs.currentWidget() is panel._review_tab
+        assert panel._drawing_run.count() == 2
+        assert "The Drainage result is current." == panel._review_freshness.text()
         assert panel._checks.rowCount() > 0
-        assert panel._profile._profile is not None and len(panel._profile._profile.points) >= 10
+        assert panel._drawing._profile is not None and len(panel._drawing._profile.points) >= 10
+        # the checks listed are those of the drawn run and the run-less ones
+        assert {panel._checks.item(row, 2).text() for row in range(panel._checks.rowCount())} <= {panel._drawing_run.currentText(), ""}
+        # a flat or sparse stretch a check flags is drawn over the flowline, as the review did
+        flagged_kinds = {"flat_grade", "inlet_spacing"}
+        run = panel._drawing_run.currentText()
+        expected = [row for row in panel._review_output.check_rows if row.ditch_run_ref == run and row.kind in flagged_kinds]
+        assert len(panel._drawing._profile.flagged) == len(expected)
         panel._focus_check(0)
         highlight = doc.getObject("ReviewDrainageCheckHighlight")
         assert highlight is not None and not highlight.Shape.isNull()
@@ -740,16 +749,21 @@ def test_the_panel_keeps_exact_stations_behind_its_three_decimals() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_drainage_and_drainage_review_open_each_other() -> None:
+def test_drainage_and_its_review_are_one_panel() -> None:
     global _QAPP
     _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     doc, project = _road_with_ditches("V1DrainageOpenEachOther")
     try:
-        from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import open_drainage_review
-        from freecad.Corridor_Road.v1.commands.cmd_drainage_review import open_drainage_editor
-
-        assert isinstance(open_drainage_review(doc), V1DrainageReviewTaskPanel)
-        assert isinstance(open_drainage_editor(doc), V1DrainageEditorTaskPanel)
+        panel = run_v1_drainage_review_command(doc)
+        assert isinstance(panel, V1DrainageEditorTaskPanel)
+        assert panel._tabs.currentWidget() is panel._review_tab
+        # the editing tabs are there too, with the drawing above them
+        assert [panel._tabs.tabText(index) for index in range(panel._tabs.count())] == [
+            "Policy", "Ditch Runs", "Flow", "Points", "Links", "Review",
+        ]
+        assert panel._drawing is not None
+        # opening the review writes nothing
+        assert find_v1_drainage_model(doc) is None
     finally:
         App.closeDocument(doc.Name)
 
@@ -850,6 +864,107 @@ def test_the_drawing_says_why_there_is_no_flowline_before_the_result_exists() ->
         panel = V1DrainageEditorTaskPanel(document=doc)
         assert panel._drawing_run.count() == 0
         assert panel._drawing._profile is None
-        assert "Rebuild Downstream" in panel._drawing._message
+        # a road with no stored Ditch Runs is told to Apply first
+        assert panel._drawing._message.startswith("No Ditch Runs are applied yet: press Apply")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_rebuild_downstream_is_usable_before_the_first_drainage_evaluation_and_the_panel_opens_it() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageFirstEvaluation")
+    try:
+        from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import drainage_result_gap
+        from freecad.Corridor_Road.v1.commands.cmd_rebuild_downstream import (
+            document_has_stale_results,
+            freshness_table_rows,
+            open_rebuild_downstream_dialog,
+        )
+
+        show_v1_centerline3d_preview_object(doc, project=project)
+        # no Ditch Runs stored, Applied Sections not built: each says what comes first
+        assert "No Ditch Runs are applied" in drainage_result_gap(doc)
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert "Applied Sections are not built" in drainage_result_gap(doc)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+
+        # Ditch Runs over built Applied Sections wait for their first evaluation, and the command that
+        # does it must not be greyed out then (it only was while something else was stale)
+        assert to_drainage_result(find_v1_drainage_result_object(doc)) is None
+        assert document_has_stale_results(doc) is True
+        drainage_row = next(row for row in freshness_table_rows(doc) if row["stage"].startswith("Drainage"))
+        assert drainage_row["status"] == "not evaluated"
+        assert "Rebuild Downstream" in drainage_result_gap(doc)
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        assert panel._flowlines == [] and "Rebuild Downstream" in panel._drawing._message
+        assert "Rebuild Downstream" in panel._status.toPlainText()
+
+        # the panel's button opens the same window; after the rebuild the panel reads the result
+        dialog = open_rebuild_downstream_dialog(doc, on_finished=panel._after_rebuild)
+        assert "1 stale" in dialog._stage_text.text() or "stale stage" in dialog._stage_text.text()
+        dialog._rebuild()
+        assert to_drainage_result(find_v1_drainage_result_object(doc)) is not None
+        assert panel._flowlines and panel._drawing._profile is not None
+        assert drainage_result_gap(doc) == ""
+        assert document_has_stale_results(doc) is False
+        dialog.close()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_the_drainage_is_drawn_in_the_3d_view_and_follows_the_result() -> None:
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    doc, project = _road_with_ditches("V1DrainageStructures3D")
+    try:
+        from freecad.Corridor_Road.v1.commands.cmd_drainage_review import STRUCTURE_OBJECT_NAMES, show_drainage_structures
+
+        show_v1_centerline3d_preview_object(doc, project=project)
+        apply_v1_applied_section_set(document=doc, project=project, applied_section_set=build_document_applied_section_set(doc, project=project))
+        apply_v1_drainage_model(document=doc, drainage_model=drainage_editor_inputs(doc)["model"])
+        assert not rebuild_downstream(doc).failed
+        # a rebuild draws nothing nobody asked for
+        assert all(doc.getObject(name) is None for name in STRUCTURE_OBJECT_NAMES.values())
+
+        line = drainage_flowlines(doc)[0][0]
+        run = line.ditch_run_ref
+        low, high = line.low_point_stations[0], round(line.high_point_stations[0], 3)
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        # no points yet: the button says so and draws nothing
+        assert "has no points" in panel._show_structures()
+        assert all(doc.getObject(name) is None for name in STRUCTURE_OBJECT_NAMES.values())
+
+        panel._append_point(DrainagePoint("inlet:1", "inlet", high, ditch_run_ref=run))
+        panel._append_point(DrainagePoint("inlet:2", "inlet", (low + high) / 2.0, ditch_run_ref=run))
+        panel._append_point(DrainagePoint("outfall:1", "outfall", low, ditch_run_ref=run))
+        panel._append_link(DrainageLink("link:1", "inlet:1", "inlet:2"))
+        panel._append_link(DrainageLink("link:2", "inlet:2", "outfall:1", pipe_diameter_m=0.6))
+        # Apply stores, evaluates and draws: two inlets, an outfall, one pipe and one open-flow link
+        assert panel._apply() is True
+        assert "Drawn in the 3D view: 2 inlet(s), 1 outfall(s), 0 culvert(s), 1 pipe(s), 1 open-flow link(s)." in panel._status.toPlainText()
+        inlets, outfalls = doc.getObject("DrainageInlets"), doc.getObject("DrainageOutfalls")
+        pipes, links = doc.getObject("DrainagePipes"), doc.getObject("DrainageOpenLinks")
+        assert doc.getObject("DrainageCulverts") is None
+        assert len(inlets.Shape.Solids) == 2 and len(outfalls.Shape.Solids) == 1 and len(links.Shape.Edges) == 1
+        assert inlets.CRRecordKind == "v1_drainage_preview" and inlets.Label == "Drainage inlets (2)"
+        # the inlet marker stands at the point's place on the flowline
+        result = to_drainage_result(find_v1_drainage_result_object(doc))
+        pipe = result.pipe_rows[0]
+        assert pipes.Shape.Volume == pytest.approx(3.141592653589793 * 0.3**2 * pipe.length_m, rel=1.0e-3)
+        box = outfalls.Shape.BoundBox
+        assert box.XMin <= pipe.to_x <= box.XMax and box.YMin <= pipe.to_y <= box.YMax and box.ZMin <= pipe.to_z <= box.ZMax
+
+        # a later evaluation keeps what is shown true: the pipe gone, its link drawn as open flow
+        _apply_points_and_links(
+            doc,
+            [DrainagePoint("inlet:1", "inlet", high, ditch_run_ref=run), DrainagePoint("outfall:1", "outfall", low, ditch_run_ref=run)],
+            [DrainageLink("link:1", "inlet:1", "outfall:1")],
+        )
+        assert doc.getObject("DrainagePipes") is None
+        assert len(doc.getObject("DrainageInlets").Shape.Solids) == 1 and len(doc.getObject("DrainageOpenLinks").Shape.Edges) == 1
+        assert show_drainage_structures(doc) == {"inlet": 1, "outfall": 1, "culvert": 0, "pipe": 0, "open_link": 1}
     finally:
         App.closeDocument(doc.Name)

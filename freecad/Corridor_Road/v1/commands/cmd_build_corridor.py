@@ -31,7 +31,7 @@ from ..objects.obj_centerline3d import find_v1_centerline3d_object, to_centerlin
 from ..objects.result_freshness import build_parametric_inputs, document_result_freshness  # noqa: F401 - runtime-injected UI collaborator
 from ..objects.stage_inputs import record_stage_inputs
 from ..services.evaluation.result_freshness_service import freshness_text  # noqa: F401 - runtime-injected UI collaborator
-from .cmd_rebuild_downstream import run_v1_rebuild_downstream_command  # noqa: F401 - runtime-injected UI collaborator
+from .cmd_rebuild_downstream import open_rebuild_downstream_dialog  # noqa: F401 - runtime-injected UI collaborator
 from ..objects.obj_alignment import to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model, to_corridor_model
