@@ -992,10 +992,6 @@ class V1AppliedSectionsTaskPanel:
         build_button = QtWidgets.QPushButton("Build Sections")
         build_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(build_button)
-        rebuild_button = QtWidgets.QPushButton("Rebuild Downstream")
-        rebuild_button.setToolTip("Open the Rebuild Downstream window: it rebuilds every stale result in workflow order with the options they were last built with.")
-        rebuild_button.clicked.connect(self._rebuild_downstream)
-        action_row.addWidget(rebuild_button)
         show_all_button = QtWidgets.QPushButton("Show All")
         show_all_button.setToolTip("Show every generated Applied Section in the 3D View.")
         show_all_button.clicked.connect(self._show_all_review_rows)
@@ -1010,12 +1006,6 @@ class V1AppliedSectionsTaskPanel:
         action_row.addWidget(close_button)
         layout.addLayout(action_row)
         return widget
-
-    def _rebuild_downstream(self) -> None:
-        # Imported here: the rebuild command imports this module for the Applied Sections stage.
-        from .cmd_rebuild_downstream import open_rebuild_downstream_dialog
-
-        open_rebuild_downstream_dialog(self.document, on_finished=self._refresh_summary)
 
     def _refresh_summary(self) -> None:
         try:

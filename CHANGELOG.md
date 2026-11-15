@@ -10,7 +10,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Changed
-- Rebuild Downstream is one window now. The Applied Sections and Build Parametric panels each ran their own rebuild with a message box (the first only through Applied Sections); their buttons, and a new one in the Drainage panel, open the same window as the toolbar command, which shows each stage, a progress bar and the report, and tells the panel that opened it to read the results again. The command left the toolbar; it stays in the Corridor menu.
+- Rebuild Downstream is one window now. The Applied Sections and Build Parametric panels each ran their own rebuild with a message box (the first only through Applied Sections); the Build Parametric button and a new one in the Drainage panel open the same window as the menu command (the Applied Sections panel's button was removed), which shows each stage, a progress bar and the report, and tells the panel that opened it to read the results again. The command left the toolbar; it stays in the Corridor menu.
 
 ### Fixed
 - The Rebuild Downstream command was greyed out when the only thing left to do was the first evaluation of an applied Drainage (Ditch Runs stored over built Applied Sections, no result yet), so the Drainage panel's drawing, suggestions and Flow tab stayed empty with no way forward. The command is usable then, the window lists the Drainage as "not evaluated", and the Drainage panel says what is missing first: Apply the Ditch Runs, build Applied Sections, or press Rebuild Downstream.

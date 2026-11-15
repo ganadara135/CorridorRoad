@@ -310,7 +310,7 @@ def open_rebuild_downstream_dialog(document=None, *, on_finished=None):
     """Show the Rebuild Downstream window: the stages, their freshness and a progress bar.
 
     It is a separate window, not a task panel, so a task panel already open stays open. The panels
-    that need fresh results (Applied Sections, Drainage, Build Parametric) open this same window;
+    that need fresh results (Drainage, Build Parametric) open this same window;
     `on_finished` lets the one that opened it read the results again after a rebuild.
     """
 

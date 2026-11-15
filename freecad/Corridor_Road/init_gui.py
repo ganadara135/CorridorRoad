@@ -18,7 +18,7 @@ _WORKBENCH_BASE = getattr(Gui, "Workbench", object)
 
 
 # Commands the menu offers but the toolbar does not. Rebuild Downstream is opened from the panels
-# that need fresh results (Applied Sections, Drainage, Build Parametric); the Corridor menu keeps
+# that need fresh results (Drainage, Build Parametric); the Corridor menu keeps
 # it for when no panel is open.
 MENU_ONLY_COMMANDS = ("CorridorRoad_RebuildDownstream",)
 
