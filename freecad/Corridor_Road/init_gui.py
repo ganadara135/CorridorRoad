@@ -19,8 +19,9 @@ _WORKBENCH_BASE = getattr(Gui, "Workbench", object)
 
 # Commands the menu offers but the toolbar does not. Rebuild Downstream is opened from the panels
 # that need fresh results (Drainage, Build Parametric); the Corridor menu keeps
-# it for when no panel is open.
-MENU_ONLY_COMMANDS = ("CorridorRoad_RebuildDownstream",)
+# it for when no panel is open. Drainage Review opens the Drainage panel on its Review tab, so the
+# Drainage button already reaches it.
+MENU_ONLY_COMMANDS = ("CorridorRoad_RebuildDownstream", "CorridorRoad_V1DrainageReview")
 
 
 def corridorroad_workflow_command_groups():

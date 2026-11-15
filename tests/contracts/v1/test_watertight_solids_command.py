@@ -565,6 +565,15 @@ def test_rebuild_downstream_is_in_the_corridor_menu_but_not_on_the_toolbar() -> 
     assert "CorridorRoad_RebuildDownstream" not in corridorroad_workflow_toolbar_commands()
 
 
+def test_drainage_review_is_in_the_drainage_menu_but_not_on_the_toolbar() -> None:
+    from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups
+
+    # it opens the Drainage panel on its Review tab, which the Drainage button already reaches
+    assert corridorroad_workflow_command_groups()["drainage"] == ["CorridorRoad_V1EditDrainage", "CorridorRoad_V1DrainageReview"]
+    toolbar = corridorroad_workflow_toolbar_commands()
+    assert "CorridorRoad_V1EditDrainage" in toolbar and "CorridorRoad_V1DrainageReview" not in toolbar
+
+
 def test_watertight_solids_prerequisites_block_without_build_corridor() -> None:
     doc = App.newDocument("V1WatertightSolidsMissingPrereqTest")
     try:
