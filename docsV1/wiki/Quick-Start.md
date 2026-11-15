@@ -50,7 +50,7 @@ Use this order:
 19. AI Assist
 20. Watertight Solids (optional compatibility check; development paused)
 
-Drainage opens a source editor with Policy, Ditch Runs, Points, Links and Flow tabs. Its flowline checks are a result stage after Applied Sections: use Rebuild Downstream (Corridor toolbar) to make them current. It is placed after Region and Structures so Drainage can reference Region ownership before downstream corridor evaluation.
+Drainage opens a source editor with Policy, Ditch Runs, Points, Links and Flow tabs. Its flowline checks are a result stage after Applied Sections: use Rebuild Downstream (the button in the Drainage panel, or the Corridor menu) to make them current. It is placed after Region and Structures so Drainage can reference Region ownership before downstream corridor evaluation.
 
 Superelevation is optional, but when used it should be applied before Applied Sections.
 

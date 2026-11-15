@@ -557,6 +557,14 @@ def test_watertight_solids_is_not_on_the_toolbar() -> None:
     assert commands[-1] == "CorridorRoad_AIAssist"
 
 
+def test_rebuild_downstream_is_in_the_corridor_menu_but_not_on_the_toolbar() -> None:
+    from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups
+
+    # the panels that need fresh results open it; the menu keeps it for when none is open
+    assert "CorridorRoad_RebuildDownstream" in corridorroad_workflow_command_groups()["corridor"]
+    assert "CorridorRoad_RebuildDownstream" not in corridorroad_workflow_toolbar_commands()
+
+
 def test_watertight_solids_prerequisites_block_without_build_corridor() -> None:
     doc = App.newDocument("V1WatertightSolidsMissingPrereqTest")
     try:

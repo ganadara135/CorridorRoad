@@ -26,7 +26,7 @@ Missing command registration can happen when an updated command module was not l
 Check:
 
 - Drainage points and links are applied, and a link has a pipe diameter where a pipe is expected
-- the drainage result is current: use Rebuild Downstream (Corridor toolbar) after editing Drainage or anything upstream
+- the drainage result is current: use Rebuild Downstream (the button in the Drainage panel, or the Corridor menu) after editing Drainage or anything upstream
 - run 3D Centerline first when you want Drainage preview geometry to follow the shared profile frame
 
 ## Applied Sections Cannot Run

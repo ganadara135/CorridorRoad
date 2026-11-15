@@ -151,7 +151,7 @@ Culverts and pipes belong to Drainage, not Structures.
 1. Apply Regions.
 2. Apply Structures (bridge, retaining wall) and preview them if needed.
 3. Apply Drainage: Policy, Ditch Runs, points (inlet, outfall, culvert) and links; give a link a pipe diameter where a pipe is needed.
-4. Use Rebuild Downstream (Corridor toolbar) so the flowline checks are current, then the Flow tab and Drainage Review.
+4. Use Rebuild Downstream (the button in the Drainage panel, or the Corridor menu) so the flowline checks are current, then the Flow tab and Drainage Review.
 
 ## Watertight Solid Flow
 

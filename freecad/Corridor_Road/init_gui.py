@@ -17,6 +17,12 @@ _WB_ICON_PATH = icon_path("corridorroad_workbench.svg")
 _WORKBENCH_BASE = getattr(Gui, "Workbench", object)
 
 
+# Commands the menu offers but the toolbar does not. Rebuild Downstream is opened from the panels
+# that need fresh results (Applied Sections, Drainage, Build Parametric); the Corridor menu keeps
+# it for when no panel is open.
+MENU_ONLY_COMMANDS = ("CorridorRoad_RebuildDownstream",)
+
+
 def corridorroad_workflow_command_groups():
     """Return the v1-oriented top-level command groups used by the workbench."""
 
@@ -72,7 +78,7 @@ def corridorroad_workflow_toolbar_commands():
     """Return toolbar command ids in the intended workflow order."""
 
     groups = corridorroad_workflow_command_groups()
-    return (
+    commands = (
         groups["project"]
         + groups["terrain"]
         + groups["alignment"]
@@ -84,6 +90,7 @@ def corridorroad_workflow_toolbar_commands():
         + groups["output"]
         + groups["ai"]
     )
+    return [command for command in commands if command not in MENU_ONLY_COMMANDS]
 
 
 class CorridorRoadWorkbench(_WORKBENCH_BASE):
