@@ -138,10 +138,3 @@ def test_station_offset_to_xy_rejects_invalid_station() -> None:
         assert "outside" in str(exc)
     else:
         raise AssertionError("Expected invalid station to be rejected.")
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 alignment evaluation service contract tests completed.")

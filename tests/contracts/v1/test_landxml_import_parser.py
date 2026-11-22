@@ -46,10 +46,3 @@ def test_scan_invalid_landxml_file_returns_parse_diagnostic() -> None:
     assert result.alignments == ()
     assert result.diagnostics[0].severity == "error"
     assert result.diagnostics[0].code == "landxml_parse_failed"
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] LandXML import parser tests completed.")

@@ -100,10 +100,3 @@ def test_alignment_curve_preview_reports_missing_geometry() -> None:
     assert any(row.kind == "alignment_curve_missing_geometry" for row in result.diagnostic_rows)
     assert any(row.kind == "alignment_curve_pc_pi_pt_estimated" for row in result.diagnostic_rows)
     assert any(row.status == "warning" for row in result.element_rows)
-
-
-if __name__ == "__main__":
-    test_alignment_curve_preview_returns_evaluated_and_source_points()
-    test_alignment_curve_preview_reports_curve_direction_and_boundaries()
-    test_alignment_curve_preview_reports_missing_geometry()
-    print("PASS Alignment curve preview service contract validation")

@@ -301,10 +301,3 @@ def _minimal_applied_section_set() -> AppliedSectionSet:
         ],
         sections=sections,
     )
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 earthwork review handoff contract tests completed.")

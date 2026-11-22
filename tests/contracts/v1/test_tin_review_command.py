@@ -411,10 +411,3 @@ def test_show_v1_tin_review_routes_source_result_and_diagnostics_records_to_v1_t
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(obj, "Name", "") or "") for obj in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 TIN review contract tests completed.")

@@ -78,10 +78,3 @@ def test_create_or_update_surface_from_landxml_candidate_routes_result_and_previ
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] LandXML surface mapper tests completed.")

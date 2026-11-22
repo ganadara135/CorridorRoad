@@ -143,10 +143,3 @@ def test_create_or_update_v1_surface_transition_model_object_updates_existing_ob
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 surface transition source object contract tests completed.")

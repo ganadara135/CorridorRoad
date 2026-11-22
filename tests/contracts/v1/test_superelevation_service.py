@@ -135,10 +135,3 @@ def test_superelevation_validation_allows_display_rounded_boundary_stations() ->
 
     assert "control_station_outside_station_range" not in kinds
     assert "transition_shorter_than_minimum" not in kinds
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 superelevation service contract tests completed.")

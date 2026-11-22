@@ -83,10 +83,3 @@ def test_plan_profile_preview_prefers_v1_alignment_and_profile_sources() -> None
         )
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 profile source object contract tests completed.")

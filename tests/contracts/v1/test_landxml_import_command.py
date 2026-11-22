@@ -100,10 +100,3 @@ def test_landxml_import_function_blocks_unsupported_producer() -> None:
             raise AssertionError("Unsupported LandXML producer should be blocked.")
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] LandXML import command tests completed.")

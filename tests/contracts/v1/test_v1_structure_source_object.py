@@ -467,10 +467,3 @@ def test_a_structure_saved_with_rules_and_zones_restores_without_them_and_drops_
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 structure source object contract tests completed.")

@@ -127,10 +127,3 @@ def test_incomplete_lattice_is_rejected_explicitly() -> None:
         assert "complete regular point lattice" in str(exc)
     else:
         raise AssertionError("Expected incomplete lattice to be rejected.")
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 TIN build service contract tests completed.")

@@ -119,10 +119,3 @@ def test_superelevation_source_routes_under_alignment_profile_superelevation_fol
         assert obj.Name in _group_names(tree[V1_TREE_SUPERELEVATION])
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 superelevation source object contract tests completed.")

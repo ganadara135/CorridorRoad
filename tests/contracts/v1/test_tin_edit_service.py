@@ -166,10 +166,3 @@ def test_apply_operations_accepts_dict_operations() -> None:
 
     assert len(result.surface.triangle_rows) == 6
     assert result.operation_reports[0].operation_id == "op:dict-delete"
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 TIN edit service contract tests completed.")

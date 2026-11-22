@@ -187,10 +187,3 @@ def test_sample_station_offset_without_adapter_is_explicit_error() -> None:
     assert result.found is False
     assert result.status == "error"
     assert result.query_kind == "station_offset"
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 TIN sampling contract tests completed.")

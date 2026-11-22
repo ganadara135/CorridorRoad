@@ -1036,13 +1036,6 @@ def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
 
 
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 structure editor command contract tests completed.")
-
-
 def test_structure_editor_leaves_out_culverts_saved_before_drainage_took_them_over() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()

@@ -151,10 +151,3 @@ def test_earthwork_analysis_service_reports_missing_design_polyline() -> None:
     assert result.status == "empty"
     assert result.area_fragment_rows == []
     assert [row.kind for row in result.diagnostic_rows] == ["missing_design_section_polyline"]
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 earthwork analysis service contract tests completed.")

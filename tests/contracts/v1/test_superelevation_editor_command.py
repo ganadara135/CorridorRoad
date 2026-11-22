@@ -141,10 +141,3 @@ def test_show_v1_superelevation_review_object_creates_crossfall_bars() -> None:
         assert not obj.Shape.isNull()
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 superelevation editor command tests completed.")

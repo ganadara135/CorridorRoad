@@ -388,10 +388,3 @@ def test_an_applied_section_set_drops_the_rule_and_zone_properties_it_was_saved_
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 applied section set object contract tests completed.")

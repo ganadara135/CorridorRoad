@@ -121,10 +121,3 @@ def test_build_document_earthwork_report_keeps_missing_eg_diagnostics_visible() 
     assert report is not None
     assert "missing_existing_ground_tin" in {row.kind for row in report["diagnostic_rows"]}
     assert "missing_existing_ground_tin" in {row.kind for row in report["earthwork_output"].diagnostic_rows}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 earthwork command report contract tests completed.")

@@ -113,10 +113,3 @@ def test_profile_earthwork_area_hint_service_ignores_unrelated_rows() -> None:
 
     assert result.status == "missing_input"
     assert result.rows == []
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 profile earthwork area hint service contract tests completed.")

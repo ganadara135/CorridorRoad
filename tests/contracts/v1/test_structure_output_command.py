@@ -860,10 +860,3 @@ def test_structure_output_panel_can_build_structure_output_package() -> None:
     finally:
         structure_output_command._show_message = original_show_message
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 structure output command contract tests completed.")

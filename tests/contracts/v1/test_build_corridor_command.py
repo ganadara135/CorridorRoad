@@ -4243,10 +4243,3 @@ def test_corridor_build_review_warns_when_centerline_consumer_uses_fallback() ->
         assert "expected=centerline3d_source_geometry" in str(centerline_row["notes"])
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 build corridor command contract tests completed.")

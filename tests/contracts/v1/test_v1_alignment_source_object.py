@@ -99,10 +99,3 @@ def test_plan_profile_preview_prefers_v1_alignment_source_object() -> None:
         assert preview["profile_model"] is None
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 alignment source object contract tests completed.")

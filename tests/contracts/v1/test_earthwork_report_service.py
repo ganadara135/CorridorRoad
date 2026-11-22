@@ -140,10 +140,3 @@ def test_earthwork_report_service_propagates_missing_input_diagnostics_to_output
     assert result.earthwork_model.balance_rows[0].fill_value == 0.0
     assert "missing_existing_ground_tin" in {row.kind for row in result.earthwork_output.diagnostic_rows}
     assert "missing_existing_ground_tin" in {row.kind for row in result.mass_haul_output.diagnostic_rows}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 earthwork report service contract tests completed.")

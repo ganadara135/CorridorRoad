@@ -91,10 +91,3 @@ def test_sample_alignment_without_geometry_returns_empty() -> None:
 
     assert result.status == "empty"
     assert result.rows == []
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 alignment station sampling service contract tests completed.")

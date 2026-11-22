@@ -48,8 +48,3 @@ def test_alignment_editor_rows_feed_curve_preview_service() -> None:
     assert any(row.kind == "Radius" and row.value for row in result.annotation_rows)
     assert any(row.kind == "Delta Angle" and row.value for row in result.annotation_rows)
     assert any(row.kind == "alignment_curve_pc_pi_pt_estimated" for row in result.diagnostic_rows)
-
-
-if __name__ == "__main__":
-    test_alignment_editor_rows_feed_curve_preview_service()
-    print("PASS Alignment editor curve preview wiring validation")

@@ -239,12 +239,3 @@ def test_applied_section_origins_follow_centerline_frame_on_strong_vertical_curv
     assert abs(float(middle.frame.z) - (-10.0)) <= 1.0e-9
     assert abs(float(middle.frame.z) - 0.0) > 1.0
     assert "source=centerline3d_result" in str(middle.frame.notes)
-
-
-if __name__ == "__main__":
-    test_applied_sections_create_curve_supplemental_sections_with_centerline_result_fallback_payload()
-    test_applied_sections_do_not_densify_straight_centerline_by_spacing_only()
-    test_applied_sections_supplemental_option_can_be_disabled()
-    test_applied_sections_create_vertical_curve_supplemental_sections_on_straight_centerline()
-    test_applied_section_origins_follow_centerline_frame_on_strong_vertical_curve()
-    print("PASS: applied section supplemental sampling contract validation")

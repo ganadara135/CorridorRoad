@@ -220,10 +220,3 @@ def test_earthwork_quantity_service_preserves_area_rows_when_volume_station_pair
     assert [row.quantity_kind for row in area_rows] == ["fill_area"]
     assert volume_rows == []
     assert "earthwork_volume_missing_input" in {row.kind for row in quantity_model.diagnostic_rows}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 earthwork quantity service contract tests completed.")

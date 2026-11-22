@@ -64,10 +64,3 @@ def test_create_or_update_alignment_from_landxml_candidate_routes_to_v1_tree() -
         assert len([o for o in doc.Objects if str(getattr(o, "AlignmentId", "") or "") == "alignment:Main-Road-CL"]) == 1
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] LandXML alignment mapper tests completed.")

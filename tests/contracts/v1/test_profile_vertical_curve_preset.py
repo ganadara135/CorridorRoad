@@ -73,10 +73,3 @@ def test_vertical_curve_showcase_preview_exposes_crest_and_sag_curves() -> None:
     assert "LP" in kinds
     assert any(row.kind == "BVC" for row in result.annotation_rows)
     assert any(row.kind == "EVC" for row in result.annotation_rows)
-
-
-if __name__ == "__main__":
-    test_vertical_curve_showcase_preset_provides_control_and_curve_rows()
-    test_vertical_curve_showcase_scales_to_current_station_rows()
-    test_vertical_curve_showcase_preview_exposes_crest_and_sag_curves()
-    print("PASS Profile vertical curve preset validation")

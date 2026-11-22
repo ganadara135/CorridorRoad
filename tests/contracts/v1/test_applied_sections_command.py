@@ -605,10 +605,3 @@ def test_applied_sections_supplemental_density_default_is_less_dense() -> None:
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 applied sections command contract tests completed.")

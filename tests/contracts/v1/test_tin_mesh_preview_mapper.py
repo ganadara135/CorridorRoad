@@ -325,10 +325,3 @@ def test_edited_tin_preview_routes_to_existing_ground_mesh_preview_tree() -> Non
         }
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 TIN mesh preview mapper contract tests completed.")

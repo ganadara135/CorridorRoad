@@ -105,12 +105,3 @@ def test_k_value_auto_preview_exposes_crest_and_sag() -> None:
     assert result.status == "ready"
     assert "HP" in kinds
     assert "LP" in kinds
-
-
-if __name__ == "__main__":
-    test_profile_vertical_curve_k_value_lookup_uses_nearest_speed_and_type()
-    test_k_value_auto_generates_crest_and_sag_lengths()
-    test_k_value_auto_clamps_by_spacing_and_reports_warning()
-    test_k_value_auto_uses_selected_design_standard()
-    test_k_value_auto_preview_exposes_crest_and_sag()
-    print("PASS Profile vertical curve K-value auto validation")

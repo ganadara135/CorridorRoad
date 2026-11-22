@@ -92,10 +92,3 @@ def test_profile_tin_sampling_preserves_no_hit_as_none() -> None:
     assert [row.status for row in result.rows] == ["ok", "ok", "no_hit"]
     assert result.rows[-1].elevation is None
     assert result.rows[-1].elevation != 0.0
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 profile TIN sampling service contract tests completed.")

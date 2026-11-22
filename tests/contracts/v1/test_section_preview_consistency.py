@@ -300,10 +300,3 @@ def test_section_preview_matches_applied_sections_for_side_slope_bench_breaks() 
     _assert_point_matches(topline[1], (-5.5, _point(section, role="side_slope_surface", offset=-5.5).z))
     _assert_point_matches(topline[2], (-6.5, _point(section, role="bench_surface", offset=-6.5).z))
     _assert_point_matches(topline[3], (-8.5, _point(section, role="side_slope_surface", offset=-8.5).z))
-
-
-if __name__ == "__main__":
-    test_urban_preset_preview_keeps_side_chains_connected()
-    test_section_preview_matches_applied_sections_for_ordinary_subassembly_endpoints()
-    test_section_preview_matches_applied_sections_for_side_slope_bench_breaks()
-    print("[PASS] section preview consistency contract tests completed.")

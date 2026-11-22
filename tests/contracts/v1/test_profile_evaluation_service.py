@@ -136,10 +136,3 @@ def test_profile_evaluation_reports_no_controls() -> None:
     )
 
     assert result.status == "no_controls"
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 profile evaluation service contract tests completed.")

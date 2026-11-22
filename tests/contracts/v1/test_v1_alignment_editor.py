@@ -391,10 +391,3 @@ def test_selection_context_resolves_v1_alignment_selection() -> None:
         assert len(alignment_element_rows(alignment)) == 3
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 alignment editor contract tests completed.")

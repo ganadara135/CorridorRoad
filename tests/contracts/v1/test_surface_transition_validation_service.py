@@ -116,10 +116,3 @@ def test_surface_transition_validation_warns_for_missing_boundary_refs() -> None
 
     assert result.status == "warning"
     assert [row.kind for row in result.diagnostic_rows] == ["missing_region_boundary_refs"]
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] surface transition validation service tests completed.")

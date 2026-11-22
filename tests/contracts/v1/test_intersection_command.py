@@ -574,10 +574,3 @@ def test_intersection_command_is_active_only_with_document() -> None:
         assert command.IsActive() is True
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] intersection command tests completed.")

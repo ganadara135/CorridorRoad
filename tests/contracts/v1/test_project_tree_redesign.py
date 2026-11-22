@@ -544,10 +544,3 @@ def test_resolve_v1_target_container_routes_ai_assist_objects() -> None:
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(obj, "Name", "") or "") for obj in list(getattr(folder, "Group", []) or [])}
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 project tree redesign contract tests completed.")

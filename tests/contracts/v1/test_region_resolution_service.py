@@ -174,10 +174,3 @@ def test_region_validation_reports_bad_range_and_equal_priority_overlap() -> Non
     assert result.status == "error"
     assert any(row.kind == "invalid_station_range" for row in result.diagnostic_rows)
     assert any(row.kind == "equal_priority_overlap" for row in result.diagnostic_rows)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 region resolution service contract tests completed.")

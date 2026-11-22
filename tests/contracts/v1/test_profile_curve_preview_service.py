@@ -67,10 +67,3 @@ def test_profile_curve_preview_reports_missing_pvi_and_linear_fallback() -> None
     assert "profile_vertical_curve_missing_pvi" in diagnostic_kinds
     assert "profile_vertical_curve_linear_fallback" in diagnostic_kinds
     assert result.curve_rows[0].status == "warning"
-
-
-if __name__ == "__main__":
-    test_profile_curve_preview_returns_evaluated_and_source_tangent_points()
-    test_profile_curve_preview_labels_required_vertical_curve_annotations()
-    test_profile_curve_preview_reports_missing_pvi_and_linear_fallback()
-    print("PASS Profile curve preview service contract validation")

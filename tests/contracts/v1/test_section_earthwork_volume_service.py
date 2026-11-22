@@ -65,10 +65,3 @@ def test_section_earthwork_volume_service_requires_area_fragments() -> None:
 
     assert result.status == "missing_input"
     assert result.rows == []
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 section earthwork volume service contract tests completed.")

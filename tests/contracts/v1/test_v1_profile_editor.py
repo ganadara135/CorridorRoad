@@ -820,10 +820,3 @@ def test_blank_profile_can_be_created_and_applied_from_rows() -> None:
         assert list(profile.ControlStations) == [0.0, 120.0]
     finally:
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 profile editor contract tests completed.")

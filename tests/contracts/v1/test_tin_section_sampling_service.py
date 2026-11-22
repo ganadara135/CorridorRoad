@@ -124,10 +124,3 @@ def test_sample_offsets_empty_offsets_is_explicit_empty_result() -> None:
     assert result.status == "empty"
     assert result.rows == []
     assert "At least one" in result.notes
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-    print("[PASS] v1 TIN section sampling contract tests completed.")

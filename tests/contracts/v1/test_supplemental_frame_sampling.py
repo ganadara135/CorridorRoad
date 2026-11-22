@@ -355,15 +355,3 @@ def test_build_corridor_supplemental_frame_marker_preview() -> None:
         cmd._corridor_supplemental_frame_resolver = original_resolver
         cmd.find_project = original_project
         App.closeDocument(doc.Name)
-
-
-if __name__ == "__main__":
-    test_supplemental_sampling_recursively_follows_centerline_frame()
-    test_supplemental_sampling_does_not_densify_straight_centerline_by_spacing_only()
-    test_supplemental_sampling_summary_reports_source_and_density()
-    test_supplemental_sampling_summary_treats_source_geometry_as_centerline_source()
-    test_supplemental_sections_preserve_subassembly_surface_ownership()
-    test_applied_section_overlap_guard_clips_overlapping_regular_and_supplemental_sections()
-    test_design_surface_uses_supplemental_frame_series()
-    test_build_corridor_supplemental_frame_marker_preview()
-    print("PASS: supplemental frame sampling contract validation")
