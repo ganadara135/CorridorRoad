@@ -1,7 +1,7 @@
 # Parametric Road Current Release Preparation
 
 Date: 2026-11-23
-Status: `1.1.3` prepared, not merged, tagged or published
+Status: `1.1.3` released
 Scope: post-`1.0.0` v1 updates
 
 ## Development Scope After 1.1.3
@@ -21,20 +21,20 @@ Use it to keep documentation, release notes, tutorial links, forum messaging, an
 ## Release Status
 
 - Release version: `1.1.3`
-- Intended release date: `2026-11-23` (update `package.xml`, CHANGELOG and this document if the tag lands on another day)
-- Intended tag: `v1.1.3`
-- GitHub Release, once published: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.3
+- Release date: `2026-11-23` (KST; GitHub stores the publish time as 2026-11-22 15:34 UTC)
+- Tag: `v1.1.3`, on commit `6c334fe`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.3
 - Previous release: `1.1.2`, `2026-11-15`, https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
-Release tasks:
+Post-release tasks:
 
 - [x] `package.xml` version/date updated to `1.1.3` / `2026-11-23`.
 - [x] `CHANGELOG.md` carries the `1.1.3` release section.
 - [x] GUI checked by the user on 2026-11-22: stations past the Profile, Overlap clipping, curve sampling.
 - [x] GUI checked by the user on 2026-11-23: intersection low points on the Drainage Review tab, the sample Alignment curve.
-- [ ] Merge to `main`, push the `v1.1.3` tag and publish the GitHub Release; confirm the release guard on both pushes.
+- [x] Merged to `main`, `v1.1.3` tag pushed and GitHub Release published on 2026-11-23; the release guard passed on the `main` push and the `v1.1.3` tag push.
 - [ ] FreeCAD manual smoke QA for the published tag.
 - [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
 - [ ] Forum announcement for `1.1.2` or `1.1.3`, if wanted; the `1.1.0` thread is linked above.
@@ -152,4 +152,4 @@ For future release work, do not tag the next release until:
 Current packaging state:
 
 - `package.xml` declares version `1.1.3` and date `2026-11-23`.
-- The intended release tag is `v1.1.3`.
+- The release tag is `v1.1.3`.
