@@ -1,10 +1,10 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-11-15
-Status: `1.1.2` released
+Date: 2026-11-23
+Status: `1.1.3` prepared, not merged, tagged or published
 Scope: post-`1.0.0` v1 updates
 
-## Development Scope After 1.1.2
+## Development Scope After 1.1.3
 
 - Ramp is removed from the active product and development scope.
 - Watertight Solid behavior shipped in 1.0.9 remains a compatibility surface, but further development is paused.
@@ -16,26 +16,28 @@ Scope: post-`1.0.0` v1 updates
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.1.2` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned for the `1.1.3` release.
 
 ## Release Status
 
-- Release version: `1.1.2`
-- Release date: `2026-11-15`
-- Tag: `v1.1.2`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
-- Previous release: `1.1.1`, `2026-10-11`, https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.1
+- Release version: `1.1.3`
+- Intended release date: `2026-11-23` (update `package.xml`, CHANGELOG and this document if the tag lands on another day)
+- Intended tag: `v1.1.3`
+- GitHub Release, once published: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.3
+- Previous release: `1.1.2`, `2026-11-15`, https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
-Post-release tasks:
+Release tasks:
 
-- [x] `package.xml` version/date updated to `1.1.2` / `2026-11-15`.
-- [x] `CHANGELOG.md` carries the `1.1.2` release section.
-- [x] Merged to `main`, `v1.1.2` tag pushed and GitHub Release published on 2026-11-15; the release guard passed on the `main` push and the `v1.1.2` tag push.
-- [x] FreeCAD manual smoke QA for the published tag, marked complete by the user on 2026-11-22: New/Project Setup, the Review TIN and Structure Output buttons, the Drainage low point and its suggested inlet, save and reopen, and a roundabout document from before R7c-3 rebuilding the same ring.
-- [ ] Forum announcement for `1.1.2`, if wanted; the `1.1.0` thread is linked above.
-- [x] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
+- [x] `package.xml` version/date updated to `1.1.3` / `2026-11-23`.
+- [x] `CHANGELOG.md` carries the `1.1.3` release section.
+- [x] GUI checked by the user on 2026-11-22: stations past the Profile, Overlap clipping, curve sampling.
+- [x] GUI checked by the user on 2026-11-23: intersection low points on the Drainage Review tab, the sample Alignment curve.
+- [ ] Merge to `main`, push the `v1.1.3` tag and publish the GitHub Release; confirm the release guard on both pushes.
+- [ ] FreeCAD manual smoke QA for the published tag.
+- [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
+- [ ] Forum announcement for `1.1.2` or `1.1.3`, if wanted; the `1.1.0` thread is linked above.
 
 ## Current User-Facing Scope
 
@@ -78,7 +80,8 @@ Keep these listed as future or incremental work:
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
 - [x] CHANGELOG `1.1.1` contains the intersection kernel, the v1 Project Setup panel, the fixed roundabout circulation, the retired legacy objects, panels and commands, and the defect fixes.
 - [x] CHANGELOG `1.1.2` contains the Drainage rebuild (Policy, Ditch Runs, points, links, pipes, Flow tab, drawing, Review tab, 3D view), the move of culverts and connection points from Structure to Drainage, result freshness and Rebuild Downstream, the General Road document kind, the removal of Ramp and Override, and the defect fixes.
-- [x] README, ADDON_OVERVIEW and local Wiki drafts now point to the `1.1.2` release.
+- [x] CHANGELOG `1.1.3` contains the intersection low points on the Review tab, the sample Alignment, Profile-end station, Overlap clipping and curve sampling fixes, and the removed sample CSVs.
+- [x] README, ADDON_OVERVIEW and local Wiki drafts now point to the `1.1.3` release.
 
 ## Historical Document Notes
 
@@ -98,8 +101,8 @@ Before tagging the next release:
 5. Run a minimal Alignment -> Stations -> Profile -> 3D Centerline path.
 6. Optionally apply Superelevation and confirm sample preview.
 7. Apply Assembly and Regions.
-8. Apply Structures `Drainage Structures` preset and preview it.
-9. Apply Drainage `Drainage Structures Flow` preset and show Flow Network.
+8. Optionally apply a Structure and preview it.
+9. Open Drainage, let it fill the Ditch Runs from the Regions and Assembly, and Apply.
 10. Run Applied Sections.
 11. Run Build Corridor.
 12. Optionally open Watertight Solids as a compatibility-only check; do not expand targets or workflow coverage.
@@ -109,6 +112,10 @@ Before tagging the next release:
 
 Suggested short release description:
 
+`Parametric Road 1.1.3: It corrects corridor geometry: PI curves stay within 1 cm of the true curve, stations past the Profile keep their plan position, and clipped sections on sharp turns no longer fold the Daylight surface. The Drainage Review tab also lists the intersection low points.`
+
+The `1.1.2` description, for reference:
+
 `Parametric Road 1.1.2: It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed.`
 
 The `1.1.1` description, for reference:
@@ -116,6 +123,14 @@ The `1.1.1` description, for reference:
 `Parametric Road 1.1.1 builds every intersection (T, Cross and Roundabout) with one parametric kernel from a stored spec, moves Project Setup to a v1 panel, and retires the legacy (v0) object types and panels. Documents made with v0 are no longer supported; documents made with the v1 workflow are unaffected.`
 
 Suggested highlights:
+
+- PI curves stay within 1 cm of the true curve. Saved Alignments change only when Apply is pressed in the panel, and stations after a curve can then move by a few centimetres.
+- Stations before or past the Profile keep their true plan position and are reported as fallback frames.
+- Clipped sections on sharp turns no longer fold the Daylight surface. Rebuild the Applied Sections of an existing document to apply this.
+- The Drainage Review tab lists the low points the intersection kernel reports.
+- The sample Alignment's curve is tangent to its straights.
+
+The `1.1.1` highlights, for reference:
 
 - One parametric intersection kernel builds T, Cross and Roundabout from a stored spec and the roads' Applied Sections; the Intersection panel loads, checks and applies the spec.
 - Project Setup is a v1 panel with the same fields; Apply no longer recomputes the whole document, and a stored Coordinate Workflow is kept.
@@ -136,5 +151,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.1.2` and date `2026-11-15`.
-- The intended release tag is `v1.1.2`.
+- `package.xml` declares version `1.1.3` and date `2026-11-23`.
+- The intended release tag is `v1.1.3`.

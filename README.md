@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.1.2`. It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.1.3`. It corrects corridor geometry: PI curves stay within 1 cm of the true curve, stations past the Profile keep their plan position, and clipped sections on sharp turns no longer fold the Daylight surface. The Drainage Review tab also lists the intersection low points. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -78,13 +78,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.1.2`
-- Release date: `2026-11-15`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
+- Current release: `v1.1.3`
+- Release date: `2026-11-23`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.3
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.1.2` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
+`1.1.3` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
 
 ## Main Commands
 

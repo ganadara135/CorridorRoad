@@ -9,6 +9,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-11-23
+
 ### Added
 - The Review tab of the Drainage panel lists the low points the intersection kernel reports, one row per nearest road with its stations, elevation and number of places; a double-click marks them in the 3D view. They are shown for review: they add no check or suggestion and change no source.
 
@@ -17,6 +19,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - A station on the Alignment but before the start or past the end of the Profile keeps its true plan position and heading. All such sections used to pile up at the Profile's end point with a heading taken across the whole road. Their elevation is held level at the nearest Profile control, and they are reported as fallback frames with a warning to extend the Profile.
 - On the inside of a sharp turn, the slope of a clipped Applied Section now ends on its own slope line instead of stacking its outer points into a vertical face. A section is also clipped against an earlier section it still crosses, and the Daylight surface no longer has folded or zero-area facets there. Rebuild the Applied Sections of an existing document to apply this.
 - A PI curve in the Alignment panel is compiled with enough points to stay within 1 cm of the true curve. Its point count used to follow the deflection angle alone, so a 60 m arc of radius 180 m was four 15 m chords, about 16 cm off the curve. Saved Alignments keep their stored points until Apply is pressed in the panel; the curve length and the stations after it can then change by a few centimetres.
+
+### Removed
+- The Structure and Typical Section sample CSVs are gone from `tests/samples`; no current panel can import them.
 
 ## [1.1.2] - 2026-11-15
 

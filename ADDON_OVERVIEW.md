@@ -5,7 +5,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-The current public release is `1.1.2`. It rebuilds Drainage: the Drainage panel edits a Policy, Ditch Runs, points (inlets, outfalls, culverts) and links (a link with a diameter is a pipe), draws the flowline with them above its tabs, checks the flow, reviews it on a Review tab and shows it in the 3D view. Culverts and connection points moved from Structure to Drainage, results record what they were built from so Rebuild Downstream rebuilds only the stale ones, and Ramp and Override are removed.
+The current public release is `1.1.3`. It corrects corridor geometry: PI curves stay within 1 cm of the true curve, stations past the Profile keep their plan position, and clipped sections on sharp turns no longer fold the Daylight surface. The Drainage Review tab also lists the intersection low points.
 
 ## Current V1 Workflow
 
@@ -79,7 +79,7 @@ Key references:
 Online project resources:
 
 - Wiki: https://github.com/ganadara135/CorridorRoad/wiki
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.2
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.3
 - Issues: https://github.com/ganadara135/CorridorRoad/issues
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 
