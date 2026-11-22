@@ -24,7 +24,7 @@ Short-term regression pass:
 powershell -ExecutionPolicy Bypass -File tests/regression/run_short_term_smokes.ps1
 ```
 
-It includes `smoke_v1_workflow.py`, which takes one document through Project, Alignment, Stations, Profile, Assembly, Region, Applied Sections and Build Parametric, checks each result's project tree folder and the corridor surfaces, then saves, reopens and rebuilds and expects the same surfaces.
+It includes `smoke_v1_workflow.py`, which takes one document through Project, Alignment, Stations, Profile, Assembly, Region, Applied Sections and Build Parametric, checks each result's project tree folder and the corridor surfaces, then saves, reopens and rebuilds and expects the same surfaces. The runner's three unit-policy smokes check the Project unit settings, the Project Setup panel, and Alignment CSV import and export.
 
 Practical engineering scope:
 

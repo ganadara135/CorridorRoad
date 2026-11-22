@@ -10,7 +10,10 @@ Set-Location $repoRoot
 
 $tests = @(
     "tests/regression/smoke_tree_schema.py",
-    "tests/regression/smoke_v1_workflow.py"
+    "tests/regression/smoke_v1_workflow.py",
+    "tests/regression/smoke_unit_policy_project_settings.py",
+    "tests/regression/smoke_project_setup_unit_policy.py",
+    "tests/regression/smoke_alignment_csv_unit_policy.py"
 )
 
 foreach ($test in $tests) {
