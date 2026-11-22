@@ -84,12 +84,12 @@ Current operational release status:
 
 Special classifications:
 
-- `V1_RAMP_MODEL.md`, `V1_OVERRIDE_MODEL.md` and Ramp- or Override-related plan content are historical; neither model exists in code since 2026-10-16.
-- every other `V1_INTERSECTION_*_PLAN.md`, `V1_CROSS_INTERSECTION_*_PLAN.md` and `V1_ROUNDABOUT_*_PLAN.md` is a historical proposal since 2026-10-08; `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md` supersedes them where they disagree.
+- Ramp- or Override-related plan content is historical; neither model exists in code since 2026-10-16, and their model documents were removed on 2026-11-22 (git history keeps them).
+- the earlier Intersection, Cross Intersection and Roundabout plans were superseded by `V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md` on 2026-10-08 and removed on 2026-11-22 (git history keeps them).
 - `V1_WATERTIGHT_SOLID_*.md` documents preserve existing compatibility behavior but are not active development plans while the pause is in effect.
 - the v0 documents were removed on 2026-09-24 and are reachable only through git history.
 - `V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md` records which legacy `commands` modules are still registered, which are stable-id bridges to v1 engines, and which are retirement candidates. It is an inventory record: no command is retired and the retirement decision itself remains open.
 
 ## Phase 5 Manual QA
 
-Use `V1_PHASE5_SUPPORTED_DOMAIN_MANUAL_QA.md` for the final FreeCAD 1.1.1 acceptance pass. Automated validation is necessary but does not replace the listed GUI checks.
+The Phase 5 FreeCAD 1.1.1 acceptance pass was accepted on 2026-07-13; its checklist is in git history. Automated validation is necessary but does not replace the listed GUI checks.

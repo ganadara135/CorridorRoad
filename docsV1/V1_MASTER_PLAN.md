@@ -1230,18 +1230,17 @@ If a later v1 document conflicts with this master plan, one of the following mus
 The next recommended v1 documents are:
 
 1. `docsV1/V1_ARCHITECTURE.md`
-2. `docsV1/V1_RAMP_MODEL.md`
-3. `docsV1/V1_INTERSECTION_MODEL.md`
-4. `docsV1/V1_DRAINAGE_MODEL.md`
-5. `docsV1/V1_SECTION_MODEL.md`
-6. `docsV1/V1_TIN_ENGINE_PLAN.md`
-7. `docsV1/V1_VIEWER_PLAN.md`
-8. `docsV1/V1_UX_RESET_PLAN.md`
-9. `docsV1/V1_OUTPUT_STRATEGY.md`
-10. `docsV1/V1_EARTHWORK_BALANCE_PLAN.md`
-11. `docsV1/V1_EXCHANGE_PLAN.md`
-12. `docsV1/V1_AI_ASSIST_PLAN.md`
-13. `docsV1/V1_WATERTIGHT_SOLID_PLAN.md`
+2. `docsV1/V1_INTERSECTION_MODEL.md`
+3. `docsV1/V1_DRAINAGE_MODEL.md`
+4. `docsV1/V1_SECTION_MODEL.md`
+5. `docsV1/V1_TIN_ENGINE_PLAN.md`
+6. `docsV1/V1_VIEWER_PLAN.md`
+7. `docsV1/V1_UX_RESET_PLAN.md`
+8. `docsV1/V1_OUTPUT_STRATEGY.md`
+9. `docsV1/V1_EARTHWORK_BALANCE_PLAN.md`
+10. `docsV1/V1_EXCHANGE_PLAN.md`
+11. `docsV1/V1_AI_ASSIST_PLAN.md`
+12. `docsV1/V1_WATERTIGHT_SOLID_PLAN.md`
 
 ## 23. Immediate Next Implementation Priorities
 

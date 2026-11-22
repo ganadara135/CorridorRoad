@@ -6,7 +6,6 @@ Scope: move supplemental sampling ownership from Build Corridor to Applied Secti
 
 Supersedes:
 
-- [V1_SUPPLEMENTAL_FRAME_SAMPLING_PLAN.md](./V1_SUPPLEMENTAL_FRAME_SAMPLING_PLAN.md)
 
 ## Purpose
 

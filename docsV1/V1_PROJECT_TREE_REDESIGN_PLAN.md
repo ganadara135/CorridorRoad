@@ -10,7 +10,6 @@ Depends on:
 - `docsV1/V1_TIN_CORE_IMPLEMENTATION_PLAN.md`
 - `docsV1/V1_TIN_REVIEW_NEXT_STEP_PLAN.md`
 - `docsV1/V1_DRAINAGE_MODEL.md`
-- `docsV1/V1_RAMP_MODEL.md`
 - `docsV1/V1_INTERSECTION_MODEL.md`
 
 ## 1. Purpose

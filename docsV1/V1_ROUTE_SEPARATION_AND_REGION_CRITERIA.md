@@ -6,9 +6,7 @@ Status: Decision record. No code is changed by this document.
 Depends on:
 
 - `docsV1/V1_REGION_MODEL.md`
-- `docsV1/V1_REGION_APPLICATION_FLOW_PLAN.md`
 - `docsV1/V1_REGION_DOMAIN_OWNERSHIP_REDESIGN_PLAN.md`
-- `docsV1/V1_INTERSECTION_IMPLEMENTATION_PLAN.md`
 - `docsV1/V1_ALIGNMENT_MODEL.md`
 - `docsV1/V1_PROJECT_TREE_REDESIGN_PLAN.md`
 
@@ -49,8 +47,8 @@ Three layers, and they are not interchangeable:
 | `AlignmentModel` | one road axis | roads that meet |
 | `RegionRow` | one station span | policy inside one road axis |
 
-`V1_INTERSECTION_IMPLEMENTATION_PLAN.md` section 4.1 already fixes the middle
-row: each road axis remains its own `AlignmentModel`. A Region is a station span
+The Intersection implementation plan of that time (section 4.1, now in git
+history) fixed the middle row: each road axis remains its own `AlignmentModel`. A Region is a station span
 on one such axis, so it can never stand in for a second road.
 
 ## 4. What the Code Supports Today

@@ -6,7 +6,6 @@ Status: Manual QA procedure. Execution is a FreeCAD GUI activity and is not cove
 Depends on:
 
 - `CHANGELOG.md`, the `[Unreleased]` block this procedure verifies
-- `docsV1/V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md`
 - `docsV1/V1_PROJECT_TREE_REDESIGN_PLAN.md`
 - `docsV1/V1_LEGACY_COMMAND_RETIREMENT_BOUNDARY.md`
 

@@ -13,7 +13,6 @@ Depends on:
 - `docsV1/V1_SUPERELEVATION_MODEL.md`
 - `docsV1/V1_DRAINAGE_MODEL.md`
 - `docsV1/V1_STRUCTURE_MODEL.md`
-- `docsV1/V1_RAMP_MODEL.md`
 - `docsV1/V1_INTERSECTION_MODEL.md`
 
 ## 1. Purpose
@@ -92,9 +91,7 @@ Regions are the station-range organizer for corridor behavior.
 
 They may reference structures, drainage elements, ramp contexts, or intersection contexts, but they do not own those domain meanings.
 
-For the planned Region application workflow, use `V1_REGION_APPLICATION_FLOW_PLAN.md`.
-
-That plan keeps the authoring order as `Assembly -> Structure -> Region`.
+The Region authoring order is `Assembly -> Structure -> Region`.
 
 It treats each `RegionRow` as the station-range application layer for one Assembly and zero or one Structure.
 

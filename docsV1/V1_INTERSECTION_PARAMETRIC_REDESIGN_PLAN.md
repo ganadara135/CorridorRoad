@@ -2,9 +2,9 @@
 
 Date: 2026-10-08
 Branch: `ganada_0902` (starting head `f8543bd`)
-Status: **active**. This is the single specification for Intersection work. Every other
-`V1_INTERSECTION_*_PLAN.md`, `V1_CROSS_INTERSECTION_*_PLAN.md` and `V1_ROUNDABOUT_*_PLAN.md` is a
-historical proposal (see `V1_SUPPORTED_DOMAIN_STATUS.md`, Document Classification).
+Status: **active**. This is the single specification for Intersection work. The earlier
+Intersection, Cross Intersection and Roundabout plans were removed on 2026-11-22; git history keeps
+them (see `V1_SUPPORTED_DOMAIN_STATUS.md`, Document Classification).
 
 ## 1. Purpose
 

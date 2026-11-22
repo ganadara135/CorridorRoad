@@ -8,7 +8,6 @@ Depends on:
 - `docsV1/V1_MASTER_PLAN.md`
 - `docsV1/V1_ARCHITECTURE.md`
 - `docsV1/V1_SECTION_MODEL.md`
-- `docsV1/V1_RAMP_MODEL.md`
 - `docsV1/V1_INTERSECTION_MODEL.md`
 - `docsV1/V1_DRAINAGE_MODEL.md`
 - `docsV1/V1_OUTPUT_STRATEGY.md`

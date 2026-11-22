@@ -12,7 +12,6 @@ Depends on:
 - `docsV1/V1_CORRIDOR_MODEL.md`
 - `docsV1/V1_STRUCTURE_MODEL.md`
 - `docsV1/V1_DRAINAGE_MODEL.md`
-- `docsV1/V1_RAMP_MODEL.md`
 - `docsV1/V1_INTERSECTION_MODEL.md`
 
 ## 1. Purpose

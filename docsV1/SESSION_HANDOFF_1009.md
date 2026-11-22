@@ -18,7 +18,7 @@ The authoritative specification of intersections is
 [V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md](./V1_INTERSECTION_PARAMETRIC_REDESIGN_PLAN.md). Its
 section 8 records every phase (R1 to R7c-3) with its measurements and validation. The earlier
 intersection plans, including
-[V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md](./V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md),
+`V1_INTERSECTION_SCOPE_AND_IMPROVEMENT_PLAN.md`,
 are historical. Where this document and the plan disagree, the plan is right.
 
 ## 2. State of the intersection work

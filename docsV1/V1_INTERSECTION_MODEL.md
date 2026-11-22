@@ -18,7 +18,6 @@ Depends on:
 - `docsV1/V1_ALIGNMENT_MODEL.md`
 - `docsV1/V1_PROFILE_MODEL.md`
 - `docsV1/V1_SECTION_MODEL.md`
-- `docsV1/V1_RAMP_MODEL.md`
 
 ## 1. Purpose
 

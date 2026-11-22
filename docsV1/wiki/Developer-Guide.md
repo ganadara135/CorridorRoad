@@ -50,6 +50,3 @@ Prefer focused contract and service tests over UI-only manual checking.
 
 For `1.0.0`, see:
 
-- `docsV1/V1_RELEASE_1_0_0_PLAN.md`
-- `docsV1/V1_RELEASE_1_0_0_VALIDATION_RECORD.md`
-- `docsV1/V1_WIKI_1_0_0_UPDATE_CHECKLIST.md`
