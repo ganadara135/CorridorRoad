@@ -33,9 +33,9 @@ Post-release tasks:
 - [x] `package.xml` version/date updated to `1.1.2` / `2026-11-15`.
 - [x] `CHANGELOG.md` carries the `1.1.2` release section.
 - [x] Merged to `main`, `v1.1.2` tag pushed and GitHub Release published on 2026-11-15; the release guard passed on the `main` push and the `v1.1.2` tag push.
-- [ ] FreeCAD manual smoke QA for the published tag. Still open from the session handoff: the Structure Output and Review TIN buttons, a roundabout document from before R7c-3 rebuilding the same ring, and the Drainage low point and `Suggested Inlet` marker.
+- [x] FreeCAD manual smoke QA for the published tag, marked complete by the user on 2026-11-22: New/Project Setup, the Review TIN and Structure Output buttons, the Drainage low point and its suggested inlet, save and reopen, and a roundabout document from before R7c-3 rebuilding the same ring.
 - [ ] Forum announcement for `1.1.2`, if wanted; the `1.1.0` thread is linked above.
-- [ ] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
+- [x] GitHub Wiki pages updated from the local `docsV1/wiki/` drafts.
 
 ## Current User-Facing Scope
 
