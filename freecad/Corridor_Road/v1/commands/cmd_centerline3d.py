@@ -751,9 +751,9 @@ def _make_centerline3d_preview_shape(
                     f"{int(source_summary.get('interval_count', 0))} source intervals "
                     f"(line={int(source_summary.get('line_count', 0))}, "
                     f"arc-fit={int(source_summary.get('arc_fit_count', 0))}, "
-                f"sampled={int(source_summary.get('sampled_curve_count', 0))})."
-            ),
-            source_summary,
+                    f"sampled={int(source_summary.get('sampled_curve_count', 0))})."
+                ),
+                source_summary,
             )
         except Exception as exc:
             shape, curve_kind = _make_centerline3d_compound_curve_shape(point_groups, display_mode="bspline")

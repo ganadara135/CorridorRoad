@@ -395,5 +395,3 @@ def test_watertight_simulation_qa_blocks_road_outside_terrain_domain() -> None:
     assert output.terrain_domain_status == "check"
     assert output.terrain_issue_count == 2
     assert "solid_outside_terrain_domain" in {row.kind for row in output.diagnostic_rows}
-
-

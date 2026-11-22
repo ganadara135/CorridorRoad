@@ -341,6 +341,7 @@ def _build_source_inspector(
         "quantity_count": int(len(list(getattr(section_output, "quantity_rows", []) or []))),
     }
 
+
 def _build_intersection_context_rows(
     document,
     *,

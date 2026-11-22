@@ -3495,7 +3495,6 @@ def test_corridor_surface_geometry_service_uses_superelevation_resolved_section_
             surface_id="cor-1:design",
         )
     )
-    vertices = result.vertex_map()
 
     assert "superelevation:main" in result.source_refs
     assert result.provenance_rows[0].source_kind == "applied_section_points"

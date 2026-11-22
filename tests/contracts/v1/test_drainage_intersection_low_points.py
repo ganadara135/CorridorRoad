@@ -80,8 +80,18 @@ def test_every_kernel_low_vertex_is_in_a_row(label) -> None:
         App.closeDocument(doc.Name)
 
 
-def test_the_review_tab_lists_them_and_marks_one_without_touching_the_source() -> None:
+_QAPP = None
+
+
+def _ensure_qapp():
+    # held at module level: Qt aborts if the application is collected while a panel is alive
+    global _QAPP
     _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
+
+
+def test_the_review_tab_lists_them_and_marks_one_without_touching_the_source() -> None:
+    _ensure_qapp()
     doc = _preset_doc()
     try:
         before = {obj.Name for obj in doc.Objects}
@@ -103,7 +113,7 @@ def test_the_review_tab_lists_them_and_marks_one_without_touching_the_source() -
 
 
 def test_the_review_tab_hides_the_table_without_an_intersection() -> None:
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    _ensure_qapp()
     doc = App.newDocument("CRV1DrainageNoIntersectionPanel")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)

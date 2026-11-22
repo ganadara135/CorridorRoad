@@ -16,14 +16,11 @@ from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree, find_project
 from ..common.model_fields import (
-    intersection_row_by_id,
     section_float_attr,
     section_region_id,
     section_station,
-    section_structure_values,
     surface_point_role_counts,
     unique_join,
-    unique_refs,
 )
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
 from ..objects.document_kind import is_general_road_document
@@ -88,14 +85,6 @@ from ..services.builders.intersection_kernel_surface_service import (
     kernel_tin_surface,
 )
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
-from ..services.evaluation.region_boundary_continuity_evaluation_service import (
-    region_boundary_diagnostic_summary,
-    region_boundary_diagnostics,
-    region_boundary_status,
-    region_intersection_context_diagnostics,
-    region_sample_coverage_diagnostics,
-    region_source_range_diagnostics,
-)
 from ..services.evaluation.shared_breakline_audit_service import SharedBreaklineAuditService  # noqa: F401 - tests build results through this module
 from ..services.builders.shared_breakline_tin_builder_service import (
     tin_surface_with_shared_breakline_constraint_edges,

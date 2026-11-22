@@ -138,7 +138,6 @@ def install_virtual_path_mappings(*, eager: bool = False) -> None:
         # Preload proxy-bearing object modules in canonical namespace.
         _preload_proxy_modules()
 
-
     # Map legacy package roots to canonical package roots.
     _alias_loaded_subtree("CorridorRoad.freecad.Corridor_Road", CANONICAL_ROOT)
     _alias_loaded_subtree("CorridorRoad.freecad", CANONICAL_ROOT)

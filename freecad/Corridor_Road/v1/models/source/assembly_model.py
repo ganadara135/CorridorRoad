@@ -228,7 +228,6 @@ def normalize_bench_rows(value: object) -> list[dict[str, object]]:
     return rows
 
 
-
 def subassembly_bench_validation_messages(subassembly: TemplateSubassembly) -> list[str]:
     """Return warning strings for side-slope bench parameters on subassemblies."""
 

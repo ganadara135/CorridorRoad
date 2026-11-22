@@ -344,6 +344,8 @@ def _side_from_ref(value: str) -> str:
     if "left" in text:
         return "left"
     return ""
+
+
 def _profile_path_source(profile_set: AppliedSectionSolidProfileSet) -> str:
     profiles = list(getattr(profile_set, "profile_rows", []) or [])
     if any("path_source=centerline3d_result" in str(getattr(profile, "notes", "") or "") for profile in profiles):

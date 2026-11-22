@@ -85,6 +85,7 @@ def _resolve_project(doc_or_project):
             return obj
     return None
 
+
 def resolve_project_unit_settings(doc_or_project):
     project = _resolve_project(doc_or_project)
     defaults = {

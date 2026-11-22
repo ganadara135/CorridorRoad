@@ -796,7 +796,6 @@ def applied_section_preview_shape(section):
     if frame is None:
         raise ValueError("Applied Section preview requires a station frame.")
     polylines = _applied_section_preview_polylines(section, frame)
-    all_points = [point for _role, points in polylines for point in points]
     shapes = []
     for _role, points in polylines:
         wire = _make_applied_section_wire(points)
@@ -1246,7 +1245,6 @@ class V1AppliedSectionsTaskPanel:
             if applied is None:
                 applied = build_document_applied_section_set(self.document)
             preview = show_applied_section_preview_object(self.document, applied, int(row_index))
-            marker = self.document.getObject("V1AppliedSectionStationMarker") if self.document is not None else None
             if Gui is not None:
                 try:
                     Gui.Selection.clearSelection()
@@ -1544,7 +1542,6 @@ def _applied_sections_preset_source_diagnostics(document) -> list[str]:
                 subassembly_id = str(getattr(subassembly, "subassembly_id", "") or "").strip()
                 preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
                 preset_version = str(getattr(subassembly, "preset_version", "") or "").strip()
-                preset_status = str(getattr(subassembly, "preset_status", "") or "").strip()
                 if not preset_ref:
                     continue
                 if preset_ref not in preset_ids:

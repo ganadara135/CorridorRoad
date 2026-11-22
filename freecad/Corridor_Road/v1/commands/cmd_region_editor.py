@@ -789,7 +789,8 @@ class V1RegionEditorTaskPanel:
             item.setText(f"{from_ref} -> {to_ref}" if from_ref or to_ref else "outside every Region")
 
     def _set_status(self, text: str) -> None:
-            self._status.setPlainText(str(text or ""))
+        self._status.setPlainText(str(text or ""))
+
 
 class CmdV1RegionEditor:
     """Open the v1 Region source editor."""

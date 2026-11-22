@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from ..models.source.assembly_model import ASSEMBLY_BENCH_MODES, ASSEMBLY_DAYLIGHT_MODES
+from ..models.source.assembly_model import (  # noqa: F401 - cmd_subassembly_editor imports them from here
+    ASSEMBLY_BENCH_MODES,
+    ASSEMBLY_DAYLIGHT_MODES,
+)
 
 
 DITCH_SHAPES = ("trapezoid", "u", "l", "rectangular", "v", "custom_polyline")

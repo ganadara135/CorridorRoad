@@ -459,4 +459,3 @@ def _diagnostic(severity: str, kind: str, message: str, notes: str = "") -> Diag
         message=str(message or ""),
         notes=str(notes or ""),
     )
-

@@ -133,7 +133,6 @@ class CorridorSurfaceGeometryService:
             ny = math.cos(angle_rad)
             x = float(getattr(frame, "x", 0.0) or 0.0)
             y = float(getattr(frame, "y", 0.0) or 0.0)
-            z = float(getattr(frame, "z", 0.0) or 0.0)
             left_edge, right_edge = edge_rows[index]
             left_daylight_width, right_daylight_width, left_slope, right_slope = daylight_rows[index]
             if left_daylight_width > 0.0:

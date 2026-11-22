@@ -22,4 +22,3 @@ class OutputModelBase:
     source_refs: list[str] = field(default_factory=list)
     result_refs: list[str] = field(default_factory=list)
     diagnostic_rows: list[DiagnosticMessage] = field(default_factory=list)
-

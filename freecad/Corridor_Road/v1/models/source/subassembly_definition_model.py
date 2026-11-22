@@ -230,4 +230,3 @@ def _string_tuple(values: object) -> tuple[str, ...]:
     else:
         raw_values = list(values or [])
     return tuple(str(value or "").strip() for value in raw_values if str(value or "").strip())
-

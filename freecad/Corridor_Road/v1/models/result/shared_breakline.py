@@ -62,4 +62,3 @@ class SharedBreaklineResult(ResultModelBase):
     diagnostic_rows: list[str] = field(default_factory=list)
     breakline_rows: list[SharedBreaklineRow] = field(default_factory=list)
     point_rows: list[SharedBreaklinePointRow] = field(default_factory=list)
-

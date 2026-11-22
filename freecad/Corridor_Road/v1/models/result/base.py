@@ -20,4 +20,3 @@ class ResultModelBase:
     coordinate_context: CoordinateContext = field(default_factory=CoordinateContext)
     source_refs: list[str] = field(default_factory=list)
     diagnostic_rows: list[DiagnosticMessage] = field(default_factory=list)
-
