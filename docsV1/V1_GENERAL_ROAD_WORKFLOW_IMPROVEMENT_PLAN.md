@@ -417,7 +417,9 @@ Done on 2026-10-16:
   - the sample Alignment's three-point "curve" is fitted as an arc that is not tangent to its
     straights, so its frames jump at both ends; it is demo data, and the smoke no longer uses it
     (fixed on 2026-11-22: the sample's curve is a tangent arc that its PI rows compile to);
-  - a station past the Profile's end falls back to the coarse 3D Centerline interpolation too.
+  - a station past the Profile's end falls back to the coarse 3D Centerline interpolation too
+    (fixed on 2026-11-22: such a station keeps its true Alignment position and heading, holds the
+    nearest Profile control elevation level, and is reported as a fallback frame).
 
 ## 6. Order and relation to Drainage
 

@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ### Fixed
 - The sample Alignment's curve is now a circular arc tangent to both straights. Its old curve turned about 31 degrees at once at station 60, so the section frames jumped there, and its PI rows described a different, longer road than its stored elements. Documents already saved keep their Alignment.
+- A station on the Alignment but before the start or past the end of the Profile keeps its true plan position and heading. All such sections used to pile up at the Profile's end point with a heading taken across the whole road. Their elevation is held level at the nearest Profile control, and they are reported as fallback frames with a warning to extend the Profile.
 
 ## [1.1.2] - 2026-11-15
 

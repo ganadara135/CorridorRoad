@@ -69,7 +69,8 @@ class Centerline3DSourceGeometryService:
         profile_result = self.profile_service.evaluate_station(profile, active_station)
         if xy is None:
             return _blocked_result(active_station, "alignment_source_not_resolved", "Station could not be resolved from Alignment source geometry.")
-        if str(getattr(profile_result, "status", "") or "") != "ok":
+        profile_status = str(getattr(profile_result, "status", "") or "")
+        if profile_status not in {"ok", "out_of_range"}:
             return _blocked_result(active_station, "profile_source_not_resolved", str(getattr(profile_result, "notes", "") or "Station could not be resolved from Profile source geometry."))
         tangent = _horizontal_source_tangent_deg(
             alignment,
@@ -78,6 +79,26 @@ class Centerline3DSourceGeometryService:
             arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
             arc_fit_relative_tolerance=arc_fit_relative_tolerance,
         )
+        if profile_status == "out_of_range":
+            # The Alignment is valid here, so the plan position and heading stay true.
+            # The Profile has no design grade here: its nearest control elevation is held
+            # level (grade 0) rather than extrapolated, and the frame is marked a fallback.
+            held_elevation = float(getattr(profile_result, "elevation", 0.0) or 0.0)
+            return Centerline3DSourceStationResult(
+                station=active_station,
+                x=float(xy[0]),
+                y=float(xy[1]),
+                z=held_elevation,
+                tangent_direction_deg=float(tangent),
+                grade=float(getattr(profile_result, "grade", 0.0) or 0.0),
+                status="warning",
+                source_mode="alignment_profile_fallback",
+                diagnostic_rows=(
+                    f"warning|profile_station_out_of_range|{active_station:.3f}|"
+                    f"Station is outside the Profile; elevation {held_elevation:.3f} is held from the nearest "
+                    "Profile control. Extend the Profile to cover this station.",
+                ),
+            )
         diagnostics = (
             f"info|centerline3d_source_geometry_frame|{active_station:.3f}|Frame resolved from Alignment/Profile source geometry.",
         )
