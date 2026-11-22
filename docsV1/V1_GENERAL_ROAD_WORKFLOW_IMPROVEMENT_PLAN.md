@@ -415,7 +415,8 @@ Done on 2026-10-16:
     a vertical face wherever sections still cross; with continuous frames the smoke no longer
     reaches it, and the Daylight strip join is the place to fix it;
   - the sample Alignment's three-point "curve" is fitted as an arc that is not tangent to its
-    straights, so its frames jump at both ends; it is demo data, and the smoke no longer uses it;
+    straights, so its frames jump at both ends; it is demo data, and the smoke no longer uses it
+    (fixed on 2026-11-22: the sample's curve is a tangent arc that its PI rows compile to);
   - a station past the Profile's end falls back to the coarse 3D Centerline interpolation too.
 
 ## 6. Order and relation to Drainage

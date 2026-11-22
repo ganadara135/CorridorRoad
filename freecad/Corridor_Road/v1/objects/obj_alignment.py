@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 try:
     import FreeCAD as App
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
@@ -130,6 +132,36 @@ def ensure_v1_alignment_properties(obj) -> None:
         obj.CompiledGeometryStatus = "pending"
 
 
+# The sample road, in meters: 60 m straight, a 60 m circular curve, 60 m straight. The curve is
+# tangent to both straights, and the road's one PI compiles to the same three elements when the
+# Alignment panel applies it.
+_SAMPLE_ELEMENT_LENGTH_M = 60.0
+_SAMPLE_CURVE_RADIUS_M = 180.0  # above the 170 m KDS minimum at the sample's 60 km/h
+_SAMPLE_CURVE_SEGMENTS = 32
+
+
+def _sample_curve() -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """The sampled curve from the end of the first straight, and the road's three PI points."""
+
+    start_x = _SAMPLE_ELEMENT_LENGTH_M
+    radius = _SAMPLE_CURVE_RADIUS_M
+    turn = _SAMPLE_ELEMENT_LENGTH_M / radius
+    curve = [
+        (start_x + radius * math.sin(turn * i / _SAMPLE_CURVE_SEGMENTS), radius * (1.0 - math.cos(turn * i / _SAMPLE_CURVE_SEGMENTS)))
+        for i in range(_SAMPLE_CURVE_SEGMENTS + 1)
+    ]
+    pi_point = (start_x + radius * math.tan(0.5 * turn), 0.0)
+    end = (
+        curve[-1][0] + _SAMPLE_ELEMENT_LENGTH_M * math.cos(turn),
+        curve[-1][1] + _SAMPLE_ELEMENT_LENGTH_M * math.sin(turn),
+    )
+    return curve, [(0.0, 0.0), pi_point, end]
+
+
+def _csv_row(values) -> str:
+    return ",".join(f"{float(value):.6f}" for value in values)
+
+
 def create_sample_v1_alignment(document=None, *, project=None, label: str = "Main Alignment"):
     """Create a practical sample v1 alignment source object."""
 
@@ -165,24 +197,20 @@ def create_sample_v1_alignment(document=None, *, project=None, label: str = "Mai
     obj.StationStarts = [0.0, 60.0, 120.0]
     obj.StationEnds = [60.0, 120.0, 180.0]
     obj.ElementLengths = [60.0, 60.0, 60.0]
+    curve, pi_points = _sample_curve()
     obj.XValueRows = [
-        "0.0,60.0",
-        "60.0,90.0,120.0",
-        "120.0,180.0",
+        _csv_row((0.0, curve[0][0])),
+        _csv_row(x for x, _y in curve),
+        _csv_row((curve[-1][0], pi_points[-1][0])),
     ]
     obj.YValueRows = [
-        "0.0,0.0",
-        "0.0,18.0,18.0",
-        "18.0,18.0",
+        _csv_row((0.0, 0.0)),
+        _csv_row(y for _x, y in curve),
+        _csv_row((curve[-1][1], pi_points[-1][1])),
     ]
-    obj.IPPoints = [
-        App.Vector(0.0, 0.0, 0.0),
-        App.Vector(60.0, 0.0, 0.0),
-        App.Vector(120.0, 18.0, 0.0),
-        App.Vector(180.0, 18.0, 0.0),
-    ]
-    obj.CurveRadii = [0.0, 120.0, 120.0, 0.0]
-    obj.TransitionLengths = [0.0, 20.0, 20.0, 0.0]
+    obj.IPPoints = [App.Vector(x, y, 0.0) for x, y in pi_points]
+    obj.CurveRadii = [0.0, _SAMPLE_CURVE_RADIUS_M, 0.0]
+    obj.TransitionLengths = [0.0, 0.0, 0.0]
     obj.UseTransitionCurves = True
     obj.SpiralSegments = 16
     obj.DesignSpeedKph = 60.0

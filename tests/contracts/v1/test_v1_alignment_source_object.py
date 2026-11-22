@@ -57,7 +57,8 @@ def test_create_sample_v1_alignment_builds_display_shape() -> None:
 
         assert shape is not None
         assert not shape.isNull()
-        assert int(alignment.CompiledPointCount) == 7
+        # two per straight and the 33 of the sampled curve
+        assert int(alignment.CompiledPointCount) == 37
         assert int(alignment.CompiledEdgeCount) == 1
         assert int(alignment.CompiledCurveElementCount) == 1
         assert int(alignment.CompiledTransitionElementCount) == 0

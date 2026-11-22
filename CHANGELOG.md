@@ -12,6 +12,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ### Added
 - The Review tab of the Drainage panel lists the low points the intersection kernel reports, one row per nearest road with its stations, elevation and number of places; a double-click marks them in the 3D view. They are shown for review: they add no check or suggestion and change no source.
 
+### Fixed
+- The sample Alignment's curve is now a circular arc tangent to both straights. Its old curve turned about 31 degrees at once at station 60, so the section frames jumped there, and its PI rows described a different, longer road than its stored elements. Documents already saved keep their Alignment.
+
 ## [1.1.2] - 2026-11-15
 
 ### Added

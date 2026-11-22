@@ -549,7 +549,8 @@ def test_profile_show_preview_builds_framed_sheet_objects_away_from_model() -> N
         assert len(doc.getObject("FinishedGradeFG_ShowPreview_Frame").Shape.Faces) > 0
         assert len(obj.Shape.Faces) > 0
         assert int(obj.DisplayPointCount) >= 2
-        assert round(preview["origin"][0] + 0.5 * preview["plot_width"], 6) == 90.0
+        # the sheet is centred on the model, which here is the Alignment
+        assert round(preview["origin"][0] + 0.5 * preview["plot_width"], 6) == round(alignment.Shape.BoundBox.Center.x, 6)
         assert preview["origin"][2] > 0.0
         assert preview["plot_height"] > 0.0
     finally:

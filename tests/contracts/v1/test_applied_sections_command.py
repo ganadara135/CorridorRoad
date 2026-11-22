@@ -74,11 +74,14 @@ def test_build_document_applied_section_set_uses_v1_sources() -> None:
         result = build_document_applied_section_set(doc, project=project)
 
         # Applied Sections owns supplemental density, so the set holds the five
-        # source stations plus curve and vertical-curve supplemental rows.
+        # source stations plus supplemental rows. The sample's vertical curve lies on its horizontal
+        # curve and names the rows there; the supplemental spacing still holds over the whole arc.
         source_rows = [row for row in result.station_rows if row.kind == "regular_sample"]
         assert len(source_rows) == 5
         assert len(result.station_rows) > len(source_rows)
-        assert {row.kind for row in result.station_rows} >= {"regular_sample", "curve_supplemental", "vertical_curve_supplemental"}
+        assert {row.kind for row in result.station_rows} >= {"regular_sample", "vertical_curve_supplemental"}
+        on_curve = sorted(row.station for row in result.station_rows if 60.0 <= row.station <= 120.0)
+        assert max(b - a for a, b in zip(on_curve, on_curve[1:])) <= 5.0 + 1.0e-6
         assert result.sections[0].assembly_id == "assembly:basic-road"
         assert result.sections[0].template_id == "template:basic-road"
         assert result.sections[0].region_id == "region:normal-01"
