@@ -27,7 +27,7 @@ Baseline document:
 - [V1_UNRELEASED_CHANGES_MANUAL_QA.md](./V1_UNRELEASED_CHANGES_MANUAL_QA.md) - FreeCAD GUI checks for the unreleased changelog block, including the one change that touches saved documents
 - [V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md](./V1_GENERAL_ROAD_WORKFLOW_IMPROVEMENT_PLAN.md) - the ordinary road workflow fixes done before the Drainage rework (GR-1 to GR-8, 2026-10-16): one source object per concern, dead-path removal, result freshness, 3D Centerline ownership, Surface Transition authoring in Regions
 - [V1_DRAINAGE_REWORK_PLAN.md](./V1_DRAINAGE_REWORK_PLAN.md) - the Drainage rewrite, done on 2026-10-16 (DR-1 to DR-5): Ditch Runs prefilled from the Assembly, flowline checks against a Policy, suggested inlets and outfalls, links, Drainage Review
-- [SESSION_HANDOFF_1123.md](./SESSION_HANDOFF_1123.md) - current handoff for continuing `ganada_0902` on another PC: setup, the state after the 1.1.2 follow-up fixes and test cleanup, what is left, traps, the validation gate and the plan
+- [SESSION_HANDOFF_1123.md](./SESSION_HANDOFF_1123.md) - current handoff for continuing `ganada_1123` on another PC: setup, the published 1.1.3 state, what is left, traps, the validation gate and the plan
 - [SESSION_HANDOFF_1017.md](./SESSION_HANDOFF_1017.md) - previous handoff, the record of the general road plan and the Drainage rework
 - [SESSION_HANDOFF_1014.md](./SESSION_HANDOFF_1014.md) - previous handoff, the record of the branch up to `e8532e5`
 - [SESSION_HANDOFF_1011.md](./SESSION_HANDOFF_1011.md) - previous handoff, the record of the branch up to `06fe861`

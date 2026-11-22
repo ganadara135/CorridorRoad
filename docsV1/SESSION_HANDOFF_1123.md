@@ -1,8 +1,8 @@
 # V1 Session Handoff
 
 Date: 2026-11-23
-Branch: `ganada_0902`
-Head: the commit that adds this document (the one after `33a89a0`)
+Branch: `ganada_1123`, created from `main` at the `1.1.3` release
+Head: the commit that updates this document for `1.1.3` (the one after `56cd7ac`)
 Supersedes: [SESSION_HANDOFF_1017.md](./SESSION_HANDOFF_1017.md), which stays as the record of the
 general road plan and the Drainage rework. Its section 4.2 leftovers are resolved here except
 Outputs/Exchange and AI Assist.
@@ -32,12 +32,9 @@ active architecture plan in
 
 ### Get the branch
 
-**The first PC must push first.** `origin/ganada_0902` is still at `0839a79`; the 15 commits of
-section 3 and this document exist only on the first PC until then:
-
-```powershell
-git push origin ganada_0902
-```
+Work continues on `ganada_1123`. Do not continue on `ganada_0902`: it holds nothing that
+`ganada_1123` lacks. Its remote copy is at `6c334fe`, and its local copy on the first PC is at
+`56cd7ac`.
 
 The workbench must sit in FreeCAD's user `Mod` folder under the name `CorridorRoad`.
 
@@ -48,7 +45,7 @@ cd "$env:APPDATA\FreeCAD\v1-1\Mod"
 git clone https://github.com/ganadara135/CorridorRoad.git CorridorRoad
 cd CorridorRoad
 git config core.autocrlf true
-git checkout ganada_0902
+git checkout ganada_1123
 ```
 
 Existing folder:
@@ -56,18 +53,19 @@ Existing folder:
 ```powershell
 cd "$env:APPDATA\FreeCAD\v1-1\Mod\CorridorRoad"
 git fetch origin
-git checkout ganada_0902
+git checkout ganada_1123
 git pull --ff-only
 ```
 
-Check that `docsV1/SESSION_HANDOFF_1123.md` exists and `git log --oneline -2` shows `33a89a0`
-directly under the commit that adds it (or later work). If the head is `0839a79`, the first PC has
-not pushed.
+Check that `git log --oneline -2` shows `56cd7ac` directly under the commit that updates this
+document (or later work). If the head is `56cd7ac`, the first PC has not pushed this update.
 
 ### Environment
 
 - FreeCAD 1.1 at `C:\Program Files\FreeCAD 1.1`. Every Python command (tests, flake8, helper
   scripts, pip) uses `C:\Program Files\FreeCAD 1.1\bin\python.exe`. Never `python`, `py` or a venv.
+  On the first PC its API reported version `1.1.4` when the `1.1.3` gate ran. Check yours with
+  `FreeCAD.Version()` and report it with test results.
 - Development tools, once:
   `& "C:\Program Files\FreeCAD 1.1\bin\python.exe" -m pip install -r requirements-dev.txt`
 - Run `scripts\check_freecad_environment.ps1`, then the gate of section 7. It stops if more than one
@@ -90,16 +88,22 @@ and clipping fixes below reach their results.
 
 ## 3. State of the branch
 
-- Public release: `1.1.2`, tag `v1.1.2` at `2d033ef`. `main` and `origin/main` are at `0839a79`.
-- `ganada_0902` is ahead of `origin/ganada_0902` by the 15 commits below plus this document.
-- User-visible changes are under CHANGELOG `[Unreleased]` and reach `main` with the next release.
+- Public release: `1.1.3`, published 2026-11-23 (KST). Tag `v1.1.3` and `main` are at `6c334fe`.
+  The release guard passed on the `main` push and on the tag push.
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.1.3
+- `ganada_1123` is `main` plus `56cd7ac` (the record of the published release) and this update.
+- `package.xml` has `branch = 'main'` for its repository, so a push to `main` can reach Addon
+  Manager users. Do not move `main` outside a release without the user's decision.
+- CHANGELOG `[Unreleased]` is empty. Add a line for each new user-visible change.
+
+The tables list what `1.1.3` added since `1.1.2`, plus the commits around the release.
 
 ### Product fixes
 
 | Commit | Change | GUI checked by user |
 | --- | --- | --- |
-| `8dcf3ef` | Intersection low points on the Drainage Review tab | **not yet** |
-| `1c8a3c2` | Sample Alignment curve is tangent to its straights | **not yet** |
+| `8dcf3ef` | Intersection low points on the Drainage Review tab | yes |
+| `1c8a3c2` | Sample Alignment curve is tangent to its straights | yes |
 | `e84b395` | Stations past the Profile keep their plan frame: held elevation, grade 0, status warning, source mode `alignment_profile_fallback`, diagnostic `profile_station_out_of_range` (`centerline3d_source_geometry_service.py`) | yes |
 | `03e6b99` | Overlap clipping no longer folds the Daylight surface (`applied_section_service.py`: `_nearest_crossing_sections`, `_section_elevation_at_clip`; `corridor_surface_geometry_service.py`: `_strip_triangle_faces_up`) | yes |
 | `c69991b` | Compiled PI curves stay within 1 cm of the true curve (`cmd_alignment_editor.py`: `MAX_CURVE_CHORD_ERROR_M`, `MAX_CURVE_CHORDS_PER_PART`, `_chord_steps_for_curve`) | yes |
@@ -117,6 +121,9 @@ and clipping fixes below reach their results.
 | `b639442` | The three unit-policy smokes joined the short-term regression set |
 | `6a947c0` | 15 sample CSVs no feature can read removed (8 Structure, 7 Typical Section) |
 | `a299042`, `33a89a0` | One QApplication helper: `ensure_qapp` in `tests/qt_app_support.py` |
+| `33a4421` | This handoff, first version |
+| `6c334fe` | 1.1.3 release preparation: version, date, CHANGELOG and release documents |
+| `56cd7ac` | Record of the published 1.1.3 tag and release (not on `main`) |
 
 ### Rules that came out of this work
 
@@ -136,32 +143,36 @@ and clipping fixes below reach their results.
 - **Stations past the Profile** use a held elevation by design and report a warning. They are not
   a designed grade.
 - **Stations outside the Alignment** are still held at the end point with a warning. Whether to
-  block them is an open decision (section 5, item 6).
+  block them is an open decision (section 5, item 5).
 
 ## 5. What is next
 
-The numbering matches the last list given to the user.
+Renumbered after the `1.1.3` release. The user picks work by these numbers.
 
-### Check and release
+### After the release
 
-1. **FreeCAD GUI check:** the intersection low points on the Drainage Review tab, and the sample
-   Alignment curve. Both have passed headless tests only.
-2. **Push** the 15 commits and this document (section 2).
-3. **Wiki sync:** `docsV1/wiki/Developer-Guide.md` lost three links to deleted documents and that
-   edit had not reached the GitHub Wiki when last checked. The Wiki's Menu Reference also needs an
-   update. The Wiki is a separate repository whose branch is `master`.
-4. **Forum announcement** of 1.1.2. This is outward-facing: only the user decides when and what.
+1. **FreeCAD smoke QA of the published tag,** including an Addon Manager install or update. Only
+   the user can confirm it. The checklist is in
+   [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md).
+2. **Wiki sync.** Publish the `1.1.3` drafts from `docsV1/wiki/` (`Home.md`, `WIKI_TOC.md`). Also,
+   `Developer-Guide.md` lost three links to deleted documents and that edit had not reached the
+   GitHub Wiki when last checked, and the Wiki's Menu Reference needs an update. The Wiki is a
+   separate repository whose branch is `master`.
+3. **Forum announcement** of `1.1.2` or `1.1.3`. This is outward-facing: only the user decides when
+   and what.
 
 ### Defects and decisions
 
-5. **Clipped slope tie-in to the ground** (section 4). The next recommended code task, because it
+4. **Clipped slope tie-in to the ground** (section 4). The next recommended code task, because it
    affects real surface quality. Start from `_section_elevation_at_clip` and the Daylight strip
    join in `corridor_surface_geometry_service.py`.
-6. **Stations outside the Alignment:** keep the held fallback with a warning, or block. The user
+5. **Stations outside the Alignment:** keep the held fallback with a warning, or block. The user
    decides.
-7. **`V1_LEGACY_PROXY_MIGRATION_DESIGN.md`** points to `tests/legacy_proxy_corpus.py` and
+6. **`V1_LEGACY_PROXY_MIGRATION_DESIGN.md`** points to `tests/legacy_proxy_corpus.py` and
    `tests/samples/legacy_proxy_corpus/`, and neither exists. Check the history and correct the
    document.
+7. **`V1_RELEASE_CURRENT_PREP.md`, "Current User-Facing Scope"** still lists features removed in
+   `1.1.2`, such as Drainage Elements and Structure connection points. Correct the list.
 
 ### Tests
 
@@ -177,7 +188,7 @@ The numbering matches the last list given to the user.
 10. **Outputs/Exchange and AI Assist** are still legacy commands. Decide whether they move to v1.
 11. **Q4 pipe volumes:** excluded by the user for now.
 
-Recommended order: 1, 2, then 5.
+Recommended order: 1, 2, then 4.
 
 ## 6. Traps
 
@@ -195,6 +206,10 @@ If the numbers differ, restore the original endings line by line. A file whose c
 CRLF lines (for example `docsV1/README.md`) can show as fully changed after commit. Stage and
 commit it with `git -c core.autocrlf=false add <file>` and `git -c core.autocrlf=false commit`,
 then check `git diff --numstat HEAD~1 HEAD` against `--ignore-cr-at-eol`.
+
+Use that only for files `git ls-files --eol <file>` reports as `i/mixed` or `i/crlf`. A file
+reported as `i/lf` with `w/crlf` takes a plain `git add`; with `autocrlf=false` it would be stored
+with CRLF and show as fully changed. Compare the two `--cached --numstat` outputs before a commit.
 
 ### 6.2 Helper scripts to rebuild
 
@@ -251,7 +266,7 @@ Run from the repository root:
 .\tests\regression\run_loft_retirement_gate_smokes.ps1
 ```
 
-Expected at `33a89a0`: **1,219 passed / 11 skipped / 0 failed** (about 6 minutes), and all three
+Expected at `6c334fe`: **1,219 passed / 11 skipped / 0 failed** (about 6 minutes), and all three
 runners PASS. The 11 skips are the paused Watertight tests.
 
 Local tiers are also available:
@@ -265,7 +280,7 @@ The tiers are `Compile`, `Lint`, `Architecture`, `Fast`, `Contracts`, `Contracts
 
 ## 8. Plan
 
-1. Push `ganada_0902` from the first PC and pull on the other (section 2).
+1. Check out `ganada_1123` on the other PC (section 2).
 2. Run the gate there.
-3. Ask the user to make the two open GUI checks (section 5, item 1).
-4. Continue with what the user picks. The recommended code task is item 5.
+3. Ask the user about the smoke QA of the published tag (section 5, item 1).
+4. Continue with what the user picks. The recommended code task is item 4.
