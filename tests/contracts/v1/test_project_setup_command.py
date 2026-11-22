@@ -1,15 +1,7 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.commands import cmd_project_setup
-from freecad.Corridor_Road.qt_compat import QtWidgets
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
+from qt_app_support import ensure_qapp
 
 
 def _project_roots(doc):
@@ -29,7 +21,7 @@ class _CapturedControl:
 
 
 def _install_control():
-    _ensure_qapp()
+    ensure_qapp()
     original_control = getattr(cmd_project_setup.Gui, "Control", None)
     original_had_control = hasattr(cmd_project_setup.Gui, "Control")
     control = _CapturedControl()

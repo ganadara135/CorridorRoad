@@ -4,6 +4,7 @@ import os
 import tempfile
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     CmdV1ProfileEditor,
@@ -41,8 +42,6 @@ from freecad.Corridor_Road.v1.objects.obj_profile import (
 )
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 
-_QAPP = None
-
 
 class _Selection:
     def __init__(self, objects):
@@ -64,12 +63,6 @@ def _new_project_doc():
     project.Label = "CorridorRoad Project"
     ensure_project_tree(project, include_references=False)
     return doc, project
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _add_existing_ground_mesh(doc):
@@ -185,7 +178,7 @@ def test_auto_interpolate_profile_elevation_rows_requires_bounded_controls() -> 
 
 
 def test_profile_editor_uses_auto_interpolate_without_random_elevation_button() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)

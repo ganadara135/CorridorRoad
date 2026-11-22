@@ -1,6 +1,6 @@
 import FreeCAD as App
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import V1AlignmentEditorTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import V1DrainageEditorTaskPanel
 from freecad.Corridor_Road.v1.commands.cmd_edit_tin import V1TINEditorTaskPanel
@@ -26,10 +26,6 @@ from freecad.Corridor_Road.v1.ui.editors.subassembly_editor import (
 from freecad.Corridor_Road.v1.ui.editors.tin_editor import V1TINEditorTaskPanel as UITINPanel
 
 
-def _ensure_qapp():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
 def test_command_exports_are_the_ui_owned_phase3_panel_classes() -> None:
     assert V1StructureEditorTaskPanel is UIStructurePanel
     assert V1ProfileEditorTaskPanel is UIProfilePanel
@@ -41,7 +37,7 @@ def test_command_exports_are_the_ui_owned_phase3_panel_classes() -> None:
 
 
 def test_subassembly_designer_open_and_close_does_not_persist_source() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     document = App.newDocument("CRPhase3SubAssemblyDesignerBoundary")
     try:
         assert find_v1_subassembly_library(document) is None

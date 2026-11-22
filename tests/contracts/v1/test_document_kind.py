@@ -14,6 +14,7 @@ import pytest
 
 from freecad.Corridor_Road.objects.obj_project import find_project
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import create_blank_v1_alignment
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
@@ -39,14 +40,6 @@ from freecad.Corridor_Road.v1.services.editing.project_setup_service import (
     inferred_document_kind,
 )
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import build_source_inspector_owner_rows
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _visible_review_tabs(panel) -> list[str]:
@@ -196,7 +189,7 @@ def test_a_general_road_document_with_an_intersection_source_does_not_build() ->
 
 
 def test_build_parametric_offers_no_intersection_review_in_a_general_road_document() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     road_doc, _road_project = _project_doc("CRV1DocumentKindBuildRoad", "general_road")
     unset_doc, _unset_project = _project_doc("CRV1DocumentKindBuildIntersection", "intersection")
     try:

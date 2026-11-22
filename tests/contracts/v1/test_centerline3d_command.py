@@ -3,6 +3,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_CENTERLINE3D, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import (
     CENTERLINE3D_COMMAND_ID,
     CmdV1Centerline3D,
@@ -39,10 +40,6 @@ def _new_project_doc():
     CorridorRoadProject(project)
     tree = ensure_project_tree(project, include_references=False)
     return doc, project, tree
-
-
-def _ensure_qapp():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
 def test_centerline3d_display_mode_normalization_supports_three_modes() -> None:
@@ -515,7 +512,7 @@ def test_centerline3d_result_uses_profile_curve_when_pvi_is_not_exact_curve_midp
 
 
 def test_centerline3d_panel_buttons_use_apply_before_close_without_refresh() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project, _tree = _new_project_doc()
     try:
         panel = V1Centerline3DTaskPanel(document=doc)
@@ -537,7 +534,7 @@ def test_centerline3d_panel_buttons_use_apply_before_close_without_refresh() -> 
 
 
 def test_centerline3d_panel_summary_reports_source_geometry_counts() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)

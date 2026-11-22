@@ -1,6 +1,7 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.objects import design_standards as _ds
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import (
@@ -24,17 +25,6 @@ from freecad.Corridor_Road.v1.objects.obj_alignment import (
     find_v1_alignment,
     to_alignment_model,
 )
-
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    # Qt aborts the process if a widget is built with no QApplication; the panels below need one
-    # of their own so that this file also runs alone.
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 class _Selection:
@@ -162,7 +152,7 @@ def test_alignment_editor_reads_design_standard_from_project_setup_without_edito
         project.DesignStandard = "AASHTO"
         alignment = create_sample_v1_alignment(doc, project=project)
         alignment.CriteriaStandard = "KDS"
-        _ensure_qapp()
+        ensure_qapp()
         panel = V1AlignmentEditorTaskPanel(alignment=alignment, document=doc)
         standard_combos = [
             combo
@@ -183,7 +173,7 @@ def test_alignment_editor_apply_snapshots_project_design_standard() -> None:
         project.DesignStandard = "AASHTO"
         alignment = create_sample_v1_alignment(doc, project=project)
         alignment.CriteriaStandard = "KDS"
-        _ensure_qapp()
+        ensure_qapp()
         panel = V1AlignmentEditorTaskPanel(alignment=alignment, document=doc)
         panel._show_apply_complete_message = lambda _count: None
 

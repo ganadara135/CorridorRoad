@@ -3,7 +3,6 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.v1.commands.cmd_project_setup import create_corridorroad_project
-from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     V1_TREE_INTERSECTIONS,
@@ -56,14 +55,6 @@ from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionModel,
     IntersectionRow,
 )
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def test_intersection_command_is_between_regions_and_structures() -> None:

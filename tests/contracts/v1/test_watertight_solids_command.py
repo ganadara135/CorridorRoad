@@ -17,7 +17,8 @@ from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_tree,
 )
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_toolbar_commands
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionSubassemblyRow,
@@ -87,14 +88,6 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     export_document_simulation_package_json,
     watertight_solid_prerequisite_status,
 )
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _new_project_doc(name: str):
@@ -506,7 +499,7 @@ def test_watertight_solids_resources_are_final_v1_stage() -> None:
 
 
 def test_watertight_solids_panel_routes_existing_output_objects_to_tree() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsExistingOutputTreeRouteTest")
     try:
         output = WatertightSolidOutput(
@@ -610,7 +603,7 @@ def test_watertight_solids_prerequisites_ready_after_build_corridor_objects_exis
 
 
 def test_watertight_solids_discovers_blocked_intersection_patch_body_target() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchTargetTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -658,7 +651,7 @@ def test_watertight_solids_discovers_blocked_intersection_patch_body_target() ->
 
 
 def test_watertight_solids_discovers_intersection_surface_zone_target_handoff_rows() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionZoneTargetHandoffTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -757,7 +750,7 @@ def test_watertight_target_discovery_blocks_intersection_zone_when_shared_breakl
 
 
 def test_watertight_solids_builds_intersection_patch_body_target() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchBuildTest")
     try:
         create_or_update_v1_applied_section_set_object(
@@ -810,7 +803,7 @@ def test_watertight_solids_builds_intersection_patch_body_target() -> None:
 
 
 def test_watertight_solids_blocks_degenerate_intersection_patch_boundary() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchDegenerateTest")
     try:
         create_or_update_v1_applied_section_set_object(
@@ -839,7 +832,7 @@ def test_watertight_solids_blocks_degenerate_intersection_patch_boundary() -> No
 
 
 def test_watertight_solids_blocks_open_refined_intersection_patch_boundary() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsOpenRefinedPatchBoundaryTest")
     try:
         create_or_update_v1_applied_section_set_object(
@@ -881,7 +874,7 @@ def test_watertight_solids_blocks_open_refined_intersection_patch_boundary() -> 
 
 
 def test_watertight_solids_builds_intersection_patch_from_closed_refined_preview_boundary() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsRefinedPatchBoundaryBuildTest")
     try:
         create_or_update_v1_applied_section_set_object(
@@ -938,7 +931,7 @@ def test_watertight_solids_reports_intersection_practical_boundary_handoff(monke
     monkeypatch.setattr(
         "freecad.Corridor_Road.v1.services.builders.solid_target_discovery_service._INTERSECTION_ZONE_TARGETS", ()
     )
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsIntersectionPracticalHandoffTest")
     try:
         create_or_update_v1_applied_section_set_object(
@@ -1431,7 +1424,7 @@ def test_watertight_solids_prerequisites_block_on_build_parametric_error_diagnos
 
 
 def test_watertight_solids_panel_shows_blocked_state_and_disables_build_buttons() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc = App.newDocument("V1WatertightSolidsPanelBlockedTest")
     try:
         panel = V1WatertightSolidsTaskPanel(document=doc)
@@ -1497,7 +1490,7 @@ def test_watertight_solid_profiles_are_reprojected_to_centerline3d_frame() -> No
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_selects_available_target_and_tracks_enabled_state() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelTargetSelectionTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -1524,7 +1517,7 @@ def test_watertight_solids_panel_selects_available_target_and_tracks_enabled_sta
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_validate_builds_profile_and_edge_network_counts() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelValidateTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -1552,7 +1545,7 @@ def test_watertight_solids_panel_validate_builds_profile_and_edge_network_counts
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelBuildSelectedTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -1671,7 +1664,7 @@ def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_simulation_package_records_actual_terrain_shape_context() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsTerrainShapePackageTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -2063,7 +2056,7 @@ def test_watertight_solids_creates_intersection_trim_candidate_preview_object() 
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_show_hide_focus_controls_built_output_object() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelShowHideFocusTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -2106,7 +2099,7 @@ def test_watertight_solids_panel_show_hide_focus_controls_built_output_object() 
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_context() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelLinedDitchFocusTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True)
@@ -2150,7 +2143,7 @@ def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_cont
 
 
 def test_watertight_solids_lined_ditch_target_carries_the_ditch_run_of_its_points() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelDitchRunTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True, ditch_run_ref="ditch-run:right")
@@ -2167,7 +2160,7 @@ def test_watertight_solids_lined_ditch_target_carries_the_ditch_run_of_its_point
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsStructureBodyBuildTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -2208,7 +2201,7 @@ def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec(
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_reuses_external_structure_body_shape() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsExternalStructureBodyBuildTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project)
@@ -2260,7 +2253,7 @@ def _target_table_row(panel, target_id: str) -> int:
 
 @pytest.mark.skip(reason="Watertight Solid development is paused; see docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md milestone M8")
 def test_watertight_solids_panel_build_enabled_builds_each_enabled_target_independently() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelBuildEnabledTest")
     try:
         _populate_ready_build_corridor_outputs(doc, project, include_subassembly=True)

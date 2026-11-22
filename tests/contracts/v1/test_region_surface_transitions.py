@@ -7,7 +7,8 @@ Build Parametric only reviews them.
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import apply_v1_corridor_model
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import apply_v1_applied_section_set
@@ -31,17 +32,10 @@ from freecad.Corridor_Road.v1.services.editing.surface_transition_editing_servic
     transition_draft_problems,
 )
 
-_QAPP = None
 ROWS = [
     RegionRow(region_id="region:1", region_index=1, station_start=0.0, station_end=20.0),
     RegionRow(region_id="region:2", region_index=2, station_start=20.0, station_end=40.0),
 ]
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _source_doc(name: str):
@@ -120,7 +114,7 @@ def test_a_road_replaces_only_its_own_ranges_and_keeps_the_mode_of_a_kept_statio
 
 
 def test_the_regions_panel_round_trips_transition_rows() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project, alignment = _source_doc("CRV1RegionTransitions")
     try:
         panel = V1RegionEditorTaskPanel(document=doc, alignment=alignment)
@@ -150,7 +144,7 @@ def test_the_regions_panel_round_trips_transition_rows() -> None:
 
 
 def test_a_transition_follows_its_station_when_regions_are_renumbered() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project, alignment = _source_doc("CRV1RegionTransitionsRenumber")
     try:
         panel = V1RegionEditorTaskPanel(document=doc, alignment=alignment)

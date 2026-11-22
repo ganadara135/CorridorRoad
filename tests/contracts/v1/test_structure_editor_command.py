@@ -6,6 +6,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_tree,
 )
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     CmdV1StructureEditor,
     V1StructureEditorTaskPanel,
@@ -33,14 +34,6 @@ from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_updat
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import find_v1_structure_model, to_structure_model
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _new_project_doc():
@@ -101,7 +94,7 @@ def test_structure_presets_offer_practical_structure_sets() -> None:
 
 
 def test_structure_editor_hides_structure_prefix_in_structure_id_rows() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -121,7 +114,7 @@ def test_structure_editor_hides_structure_prefix_in_structure_id_rows() -> None:
 
 
 def test_structure_editor_moves_geometry_ref_to_selected_detail() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -178,7 +171,7 @@ def test_structure_editor_moves_geometry_ref_to_selected_detail() -> None:
 
 
 def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -261,7 +254,7 @@ def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
 
 
 def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         create_sample_v1_alignment(doc, project=project)
@@ -306,7 +299,7 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
 
 
 def test_structure_editor_double_click_loads_selected_structure_detail() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -380,7 +373,7 @@ def test_structure_editor_double_click_loads_selected_structure_detail() -> None
 
 
 def test_structure_editor_single_click_loads_selected_structure_detail() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -461,7 +454,7 @@ def test_structure_editor_single_click_loads_selected_structure_detail() -> None
 
 
 def test_structure_editor_selected_detail_shows_structure_validation_summary() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -513,7 +506,7 @@ def test_structure_editor_selected_detail_shows_structure_validation_summary() -
 
 
 def test_structure_editor_filters_detail_fields_by_native_type() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         model = StructureModel(
@@ -666,7 +659,7 @@ def test_structure_model_roundtrips_geometry_source_and_native_type() -> None:
 
 
 def test_structure_editor_selected_detail_edits_geometry_source() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         panel = V1StructureEditorTaskPanel(document=doc)
@@ -686,7 +679,7 @@ def test_structure_editor_selected_detail_edits_geometry_source() -> None:
 
 
 def test_structure_editor_native_type_apply_sets_practical_defaults() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         panel = V1StructureEditorTaskPanel(document=doc)
@@ -1037,7 +1030,7 @@ def _group_names(folder) -> set[str]:
 
 
 def test_structure_editor_leaves_out_culverts_saved_before_drainage_took_them_over() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         create_sample_v1_alignment(doc, project=project)

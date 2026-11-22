@@ -11,7 +11,7 @@ import FreeCAD as App
 import pytest
 
 from freecad.Corridor_Road.objects.obj_project import find_project
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import build_document_applied_section_set
 from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import create_intersection_preset_sources
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import V1RegionEditorTaskPanel, apply_v1_region_model
@@ -37,14 +37,6 @@ from freecad.Corridor_Road.v1.objects.source_identity import duplicate_source_ro
 PRIMARY = "alignment:intersection-primary"
 SECONDARY = "alignment:intersection-secondary"
 PRESETS = ("T Intersection - Basic", "Cross Intersection - Basic", "Roundabout - Single Lane")
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _preset_doc(name: str, preset: str = "T Intersection - Basic"):
@@ -85,7 +77,7 @@ def test_applying_a_road_region_updates_the_object_the_build_reads() -> None:
 
 
 def test_region_editor_opens_the_selected_road_source() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc = _preset_doc("CRV1SourceIdentityRegionPanel")
     try:
         panel = V1RegionEditorTaskPanel(document=doc, alignment=find_v1_alignment(doc, alignment_id=SECONDARY))
@@ -97,7 +89,7 @@ def test_region_editor_opens_the_selected_road_source() -> None:
 
 
 def test_superelevation_editor_writes_the_selected_road_source() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc = _preset_doc("CRV1SourceIdentitySuperelevationPanel")
     try:
         before = _names(list_v1_superelevation_sources(doc))
@@ -131,7 +123,7 @@ def test_generating_stations_again_resamples_the_road_stationing() -> None:
 
 
 def test_stations_panel_pairs_a_stationing_with_its_own_alignment() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc = _preset_doc("CRV1SourceIdentityStationsPanel")
     try:
         secondary_alignment = find_v1_alignment(doc, alignment_id=SECONDARY)

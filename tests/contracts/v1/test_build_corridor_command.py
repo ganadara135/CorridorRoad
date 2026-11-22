@@ -6,6 +6,7 @@ import Part
 
 from freecad.Corridor_Road.v1.common.diagnostics import DiagnosticMessage
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
     CorridorRoadProject,
@@ -104,8 +105,6 @@ from freecad.Corridor_Road.v1.ui.presentation import (
     shared_breakline_audit_presentation,
 )
 
-_QAPP = None
-
 
 def test_intersection_surface_replacement_blocker_kind_contract() -> None:
     assert intersection_surface_replacement_blocker_kind("review_only", "transitional_patch_fallback") == "intersection_replacement_gate_review_required"
@@ -150,12 +149,6 @@ def _new_project_doc():
     CorridorRoadProject(project)
     ensure_project_tree(project, include_references=False)
     return doc, project
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _sample_sections() -> AppliedSectionSet:
@@ -1120,7 +1113,7 @@ def test_corridor_region_boundary_rows_use_station_context_resolver_for_domain_s
 
 
 def test_build_corridor_panel_populates_intersection_contract_table() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_intersection_model_object(
@@ -2734,7 +2727,7 @@ def test_region_surface_preview_rebuild_removes_stale_region_objects() -> None:
 
 
 def test_build_corridor_panel_shows_progress_bar() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project = _new_project_doc()
     try:
         panel = V1BuildCorridorTaskPanel(document=doc)
@@ -2748,7 +2741,7 @@ def test_build_corridor_panel_shows_progress_bar() -> None:
 
 
 def test_build_corridor_panel_has_region_boundaries_table() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
@@ -2767,7 +2760,7 @@ def test_build_corridor_panel_has_region_boundaries_table() -> None:
 
 
 def test_build_corridor_panel_reviews_surface_transitions_without_authoring_them() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
@@ -2799,7 +2792,7 @@ def test_build_corridor_hides_applied_section_set_review_shape() -> None:
 
 
 def test_build_corridor_panel_has_daylight_contact_marker_checkbox() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project = _new_project_doc()
     try:
         panel = V1BuildCorridorTaskPanel(document=doc)
@@ -2825,7 +2818,7 @@ def test_build_corridor_panel_delegates_supplemental_sampling_to_applied_section
     that the panel carried a checked "Supplemental Sampling" checkbox.
     """
 
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project = _new_project_doc()
     try:
         panel = V1BuildCorridorTaskPanel(document=doc)

@@ -5,15 +5,12 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from freecad.Corridor_Road.qt_compat import QtWidgets  # noqa: E402
+from qt_app_support import ensure_qapp  # noqa: E402
 from freecad.Corridor_Road.v1.ui.common.panel_width import (  # noqa: E402
     FlowLayout,
     fit_task_panel_width,
     task_panel_width_limit,
 )
-
-
-def _ensure_qapp():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
 def _wide_panel():
@@ -41,7 +38,7 @@ def _wide_panel():
 
 
 def test_wide_rows_wrap_within_the_task_panel_width() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     form, buttons, group_buttons, _short_row = _wide_panel()
     limit = task_panel_width_limit(form)
     assert form.minimumSizeHint().width() > limit
@@ -54,7 +51,7 @@ def test_wide_rows_wrap_within_the_task_panel_width() -> None:
 
 
 def test_every_button_is_inside_the_panel_at_its_narrowest() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     form, buttons, group_buttons, _short_row = _wide_panel()
     fit_task_panel_width(form)
     width = form.minimumSizeHint().width()
@@ -70,7 +67,7 @@ def test_every_button_is_inside_the_panel_at_its_narrowest() -> None:
 
 
 def test_a_label_stays_with_the_field_after_it_and_short_rows_stay_as_they_are() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     form, buttons, _group_buttons, short_row = _wide_panel()
     fit_task_panel_width(form)
 

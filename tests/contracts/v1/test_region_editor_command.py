@@ -14,14 +14,13 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     region_preset_names,
 )
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import assembly_subassembly_preset_model_from_document
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import create_or_update_v1_assembly_subassembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model, to_region_model
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
-
-_QAPP = None
 
 
 def _new_project_doc():
@@ -30,12 +29,6 @@ def _new_project_doc():
     CorridorRoadProject(project)
     tree = ensure_project_tree(project, include_references=False)
     return doc, project, tree
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def test_basic_road_region_preset_uses_generated_station_range() -> None:
@@ -111,7 +104,7 @@ def test_basic_road_region_preset_uses_existing_v1_assembly_ref() -> None:
 
 
 def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -141,7 +134,7 @@ def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() ->
 
 
 def test_region_editor_table_is_assembly_only_region_authoring() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -169,7 +162,7 @@ def test_region_editor_table_is_assembly_only_region_authoring() -> None:
 
 
 def test_region_editor_validate_and_apply_reject_station_values_missing_from_stationing() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)

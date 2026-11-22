@@ -5,7 +5,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_SUPERELEVATION,
     ensure_project_tree,
 )
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_superelevation_editor import (
     CmdV1SuperelevationEditor,
     V1SuperelevationEditorTaskPanel,
@@ -17,14 +17,6 @@ from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alig
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_superelevation import find_v1_superelevation_source, to_superelevation_model
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _new_project_doc(name: str = "V1SuperelevationEditorCommandTest"):
@@ -56,7 +48,7 @@ def test_starter_superelevation_model_is_empty_source_intent() -> None:
 
 
 def test_superelevation_editor_auto_calculate_fills_rows_without_applying() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project, _tree = _new_project_doc("V1SuperelevationEditorPresetEmptyTest")
     try:
         alignment = create_sample_v1_alignment(doc)
@@ -75,7 +67,7 @@ def test_superelevation_editor_auto_calculate_fills_rows_without_applying() -> N
 
 
 def test_superelevation_editor_apply_persists_source_object_and_routes_tree() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, tree = _new_project_doc("V1SuperelevationEditorApplyTest")
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -96,7 +88,7 @@ def test_superelevation_editor_apply_persists_source_object_and_routes_tree() ->
 
 
 def test_apply_v1_superelevation_model_routes_source_object() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, tree = _new_project_doc("V1SuperelevationApplyFunctionTest")
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -115,7 +107,7 @@ def test_apply_v1_superelevation_model_routes_source_object() -> None:
 
 
 def test_show_v1_superelevation_review_object_creates_crossfall_bars() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project, tree = _new_project_doc("V1SuperelevationReviewObjectTest")
     try:
         alignment = create_sample_v1_alignment(doc, project=project)

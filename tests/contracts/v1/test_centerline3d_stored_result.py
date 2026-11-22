@@ -12,7 +12,7 @@ import FreeCAD as App
 import pytest
 
 import freecad.Corridor_Road.v1.commands.cmd_centerline3d as centerline_command
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     V1AppliedSectionsTaskPanel,
@@ -39,14 +39,6 @@ from freecad.Corridor_Road.v1.services.builders.applied_section_service import (
     AppliedSectionBuildRequest,
     AppliedSectionService,
 )
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _source_doc(name: str, *, centerline: bool = True):
@@ -120,7 +112,7 @@ def test_applied_sections_read_the_stored_result_and_evaluate_none_of_their_own(
 
 
 def test_a_missing_3d_centerline_stops_applied_sections() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _source_doc("CRV1StoredCenterlineMissing", centerline=False)
     try:
         with pytest.raises(RuntimeError, match="3D Centerline, which has not been generated"):

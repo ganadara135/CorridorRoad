@@ -2,6 +2,7 @@ import FreeCAD as App
 import Mesh
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS,
     V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
@@ -31,7 +32,6 @@ from freecad.Corridor_Road.v1.services.mapping import TINMeshPreviewMapper
 
 
 SAMPLE_PATH = r"tests\samples\pointcloud_utm_realistic_hilly.csv"
-_QAPP = None
 
 
 class _Selection:
@@ -138,12 +138,6 @@ def _new_project_doc():
     return doc, project, tree
 
 
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
-
-
 def test_apply_tin_editor_operations_creates_edited_preview_and_routes_to_tree() -> None:
     doc, _project, tree = _new_project_doc()
     try:
@@ -220,7 +214,7 @@ def test_build_tin_source_from_csv_creates_base_preview_for_editor_source_tab() 
 
 
 def test_tin_editor_uses_apply_as_single_write_button() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project, _tree = _new_project_doc()
     try:
         panel = V1TINEditorTaskPanel(document=doc, base_surface=_small_surface(), gui_module=None)
@@ -237,7 +231,7 @@ def test_tin_editor_uses_apply_as_single_write_button() -> None:
 
 
 def test_tin_editor_apply_applies_current_editor_state_without_rebuilding_source() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, _project, _tree = _new_project_doc()
     original_show_message = cmd_edit_tin._show_message
     cmd_edit_tin._show_message = lambda *args, **kwargs: None

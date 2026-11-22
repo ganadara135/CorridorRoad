@@ -5,6 +5,7 @@ from pathlib import Path
 import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_project_setup import (
     V1ProjectSetupTaskPanel,
     apply_v1_project_setup,
@@ -16,14 +17,6 @@ from freecad.Corridor_Road.v1.objects.project_setup_adapter import (
     write_project_setup,
 )
 from freecad.Corridor_Road.v1.services.editing.project_setup_service import ProjectSetupDraft
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _new_project_doc(name: str):
@@ -113,7 +106,7 @@ def test_apply_refuses_coordinate_changes_to_a_locked_setup_and_writes_nothing()
 def test_panel_shows_the_stored_workflow_and_apply_keeps_it(monkeypatch) -> None:
     # The v0 panel replaced a stored Local-first with the CRS recommendation on load, so a locked
     # project with a CRS could not apply any change.
-    _ensure_qapp()
+    ensure_qapp()
     _silence_message_boxes(monkeypatch)
     doc, project = _new_project_doc("CRV1ProjectSetupWorkflow")
     try:
@@ -133,7 +126,7 @@ def test_panel_shows_the_stored_workflow_and_apply_keeps_it(monkeypatch) -> None
 
 
 def test_editing_the_crs_follows_the_recommended_workflow_until_custom() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("CRV1ProjectSetupCrsEdit")
     try:
         panel = V1ProjectSetupTaskPanel(document=doc, preferred_project=project)
@@ -150,7 +143,7 @@ def test_editing_the_crs_follows_the_recommended_workflow_until_custom() -> None
 
 
 def test_opening_and_closing_the_panel_writes_nothing() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc("CRV1ProjectSetupNoWrite")
     try:
         write_project_setup(project, _WORLD_SETUP)

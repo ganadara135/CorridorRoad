@@ -13,7 +13,7 @@ import FreeCAD as App
 import pytest
 
 from freecad.Corridor_Road.objects.obj_project import find_project
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
@@ -43,14 +43,6 @@ from freecad.Corridor_Road.v1.services.editing.intersection_spec_editing_service
     form_from_spec,
     spec_from_form,
 )
-
-_QAPP = None
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def _section_stations(doc, road):
@@ -140,7 +132,7 @@ def test_the_stored_spec_decides_the_geometry() -> None:
 
 
 def test_the_panel_loads_checks_and_applies_the_spec() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc = App.newDocument("CRV1SpecPanel")
     try:
         create_intersection_preset_sources(doc, preset_label="T Intersection - Basic")
@@ -176,7 +168,7 @@ def test_the_panel_loads_checks_and_applies_the_spec() -> None:
 
 
 def test_the_spec_kind_follows_the_preset_and_then_the_created_source(monkeypatch) -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc = App.newDocument("CRV1SpecPanelPreset")
     try:
         panel = V1IntersectionPresetsTaskPanel(document=doc)

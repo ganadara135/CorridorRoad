@@ -1,6 +1,6 @@
 import FreeCAD as App
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_APPLIED_SECTIONS, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     apply_v1_assembly_subassembly_model,
@@ -41,8 +41,6 @@ from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_regi
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_superelevation import create_or_update_v1_superelevation_source_object
 
-_QAPP = None
-
 
 def _new_project_doc():
     doc = App.newDocument("V1AppliedSectionsCommandTest")
@@ -50,12 +48,6 @@ def _new_project_doc():
     CorridorRoadProject(project)
     ensure_project_tree(project, include_references=False)
     return doc, project
-
-
-def _ensure_qapp():
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    return _QAPP
 
 
 def test_build_document_applied_section_set_uses_v1_sources() -> None:
@@ -387,7 +379,7 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
 
 
 def test_applied_sections_validate_requires_centerline3d_ready_sources() -> None:
-    _ensure_qapp()
+    ensure_qapp()
     doc, project = _new_project_doc()
     original_show_message = applied_sections_command._show_message
     applied_sections_command._show_message = lambda *_args, **_kwargs: None
