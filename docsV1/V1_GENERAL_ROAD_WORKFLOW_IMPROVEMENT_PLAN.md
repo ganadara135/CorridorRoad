@@ -422,7 +422,9 @@ Done on 2026-10-16:
     (fixed on 2026-11-22: the sample's curve is a tangent arc that its PI rows compile to);
   - a station past the Profile's end falls back to the coarse 3D Centerline interpolation too
     (fixed on 2026-11-22: such a station keeps its true Alignment position and heading, holds the
-    nearest Profile control elevation level, and is reported as a fallback frame).
+    nearest Profile control elevation level, and is reported as a fallback frame);
+  - a PI curve was compiled with chords set by its deflection alone, up to about 19 cm off the curve
+    (fixed on 2026-11-22: the radius now also bounds the chords, to 1 cm of chord error).
 
 ## 6. Order and relation to Drainage
 

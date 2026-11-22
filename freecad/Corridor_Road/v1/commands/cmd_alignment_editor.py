@@ -390,6 +390,13 @@ def alignment_pi_review_rows(alignment) -> list[dict[str, object]]:
     return review_rows
 
 
+# Largest distance between a compiled chord and its curve: 1 cm, a setting-out tolerance, so the
+# stored polyline is the road to well within what the section and surface sampling can resolve.
+MAX_CURVE_CHORD_ERROR_M = 0.01
+# Bound on the stored row of one spiral or arc, the same limit 3D Centerline uses per span.
+MAX_CURVE_CHORDS_PER_PART = 512
+
+
 def apply_alignment_ip_rows(
     alignment,
     rows: list[dict[str, object]],
@@ -755,6 +762,21 @@ def _sample_scs_or_arc_points(
     )
 
 
+def _chord_steps_for_curve(length: float, radius: float) -> int:
+    """Return the chords that keep a curve of this length and radius within the chord error.
+
+    A chord c on radius R stands off the curve by e = R - sqrt(R^2 - c^2 / 4), so c = 2 sqrt(2Re - e^2).
+    """
+
+    radius = float(radius)
+    length = float(length)
+    if radius <= 1.0e-9 or length <= 1.0e-9:
+        return 0
+    error = min(MAX_CURVE_CHORD_ERROR_M, radius)
+    chord = 2.0 * math.sqrt(2.0 * radius * error - error * error)
+    return min(int(math.ceil(length / chord)), MAX_CURVE_CHORDS_PER_PART)
+
+
 def _sample_arc_points(
     in_point: tuple[float, float],
     out_point: tuple[float, float],
@@ -772,7 +794,11 @@ def _sample_arc_points(
     )
     start_angle = math.atan2(in_point[1] - center[1], in_point[0] - center[0])
     end_angle = start_angle + turn_sign * abs_delta
-    samples = max(4, int(math.ceil(sample_count_base * abs_delta / (0.5 * math.pi))))
+    samples = max(
+        4,
+        int(math.ceil(sample_count_base * abs_delta / (0.5 * math.pi))),
+        _chord_steps_for_curve(radius * abs_delta, radius),
+    )
     points = []
     for sample_index in range(samples + 1):
         ratio = float(sample_index) / float(samples)
@@ -818,8 +844,17 @@ def _sample_scs_points(
             heading += d_heading
             points.append((x, y))
 
-    spiral_steps = max(4, int(sample_count_base))
-    circular_steps = max(2, int(math.ceil(sample_count_base * circular_angle / (0.5 * math.pi)))) if circular_length > 1.0e-9 else 0
+    # A spiral is sharpest at its circular end, so the radius there bounds its chords too.
+    spiral_steps = max(4, int(sample_count_base), _chord_steps_for_curve(transition_length, radius))
+    circular_steps = (
+        max(
+            2,
+            int(math.ceil(sample_count_base * circular_angle / (0.5 * math.pi))),
+            _chord_steps_for_curve(circular_length, radius),
+        )
+        if circular_length > 1.0e-9
+        else 0
+    )
     full_curvature = 1.0 / float(radius)
     _advance(transition_length, 0.0, full_curvature, spiral_steps)
     _advance(circular_length, full_curvature, full_curvature, circular_steps)
