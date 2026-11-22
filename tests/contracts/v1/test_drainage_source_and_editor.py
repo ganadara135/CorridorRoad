@@ -8,7 +8,8 @@ import FreeCAD as App
 import pytest
 
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import corridor_drainage_review_summary
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import show_v1_centerline3d_preview_object
 from freecad.Corridor_Road.v1.commands.cmd_drainage_review import focus_drainage_pipe, run_v1_drainage_review_command
@@ -51,8 +52,6 @@ from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profil
 from freecad.Corridor_Road.v1.objects.result_freshness import document_result_freshness
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.persistence_payload_adapter import write_model_payload
-
-_QAPP = None
 
 
 def _new_project_doc(name: str):
@@ -152,8 +151,7 @@ def test_a_link_stored_before_pipes_restores_as_open_flow() -> None:
 
 
 def test_the_links_tab_keeps_a_pipe_diameter_blank_for_open_flow_and_refuses_text() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageLinkPipe")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
@@ -207,8 +205,7 @@ def test_a_drainage_object_from_before_the_rework_restores_empty_and_drops_its_o
 
 
 def test_the_editor_prefills_ditch_runs_without_writing_and_apply_tags_the_ditch_points() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageEditorPrefill")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
@@ -303,8 +300,7 @@ def test_the_drainage_result_is_a_stage_after_applied_sections() -> None:
 
 
 def test_the_panel_adds_the_suggested_points_and_apply_settles_the_checks() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageSuggestions")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -364,8 +360,7 @@ def _flow_items(panel) -> list[tuple[str, int, str]]:
 
 
 def test_the_flow_tab_shows_the_points_under_what_they_drain_into_and_selects_their_rows() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageFlowTab")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -419,8 +414,7 @@ def test_the_flow_tab_shows_the_points_under_what_they_drain_into_and_selects_th
 
 
 def test_the_flow_tab_continues_the_network_upstream_and_downstream_from_the_selected_point() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageFlowContinue")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -472,8 +466,7 @@ def test_the_flow_tab_continues_the_network_upstream_and_downstream_from_the_sel
 
 
 def test_trace_network_proposes_then_accepts_or_discards_and_leaves_the_sample_road_clean() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageTrace")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -573,8 +566,7 @@ def _select_check(panel, point_id: str, kind: str):
 
 
 def test_drainage_review_lists_the_pipes_and_draws_them_as_tubes() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainagePipeReview")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -616,8 +608,7 @@ def test_drainage_review_lists_the_pipes_and_draws_them_as_tubes() -> None:
 
 
 def test_the_flow_tab_fixes_a_check_and_apply_clears_it() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageFlowFix")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -690,8 +681,7 @@ def test_the_flow_tab_fixes_a_check_and_apply_clears_it() -> None:
 
 
 def test_drainage_review_shows_the_result_and_highlights_a_check() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageReview")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -726,8 +716,7 @@ def test_drainage_review_shows_the_result_and_highlights_a_check() -> None:
 
 
 def test_the_panel_keeps_exact_stations_behind_its_three_decimals() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageExactStations")
     try:
         # a run ending at a station with more decimals than the table shows
@@ -750,8 +739,7 @@ def test_the_panel_keeps_exact_stations_behind_its_three_decimals() -> None:
 
 
 def test_drainage_and_its_review_are_one_panel() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageOpenEachOther")
     try:
         panel = run_v1_drainage_review_command(doc)
@@ -769,8 +757,7 @@ def test_drainage_and_its_review_are_one_panel() -> None:
 
 
 def test_the_rebuild_downstream_window_rebuilds_with_a_progress_bar() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1RebuildDownstreamWindow")
     try:
         from freecad.Corridor_Road.v1.commands.cmd_rebuild_downstream import open_rebuild_downstream_dialog
@@ -805,8 +792,7 @@ def _with_runs(doc, *, enabled: bool) -> DrainageModel:
 
 
 def test_the_drawing_above_the_tabs_follows_the_unapplied_tables_and_the_selected_row() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageDrawing")
     try:
         show_v1_centerline3d_preview_object(doc, project=project)
@@ -857,8 +843,7 @@ def test_the_drawing_above_the_tabs_follows_the_unapplied_tables_and_the_selecte
 
 
 def test_the_drawing_says_why_there_is_no_flowline_before_the_result_exists() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, _project = _road_with_ditches("V1DrainageDrawingEmpty")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
@@ -871,8 +856,7 @@ def test_the_drawing_says_why_there_is_no_flowline_before_the_result_exists() ->
 
 
 def test_rebuild_downstream_is_usable_before_the_first_drainage_evaluation_and_the_panel_opens_it() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageFirstEvaluation")
     try:
         from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import drainage_result_gap
@@ -916,8 +900,7 @@ def test_rebuild_downstream_is_usable_before_the_first_drainage_evaluation_and_t
 
 
 def test_the_drainage_is_drawn_in_the_3d_view_and_follows_the_result() -> None:
-    global _QAPP
-    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ensure_qapp()
     doc, project = _road_with_ditches("V1DrainageStructures3D")
     try:
         from freecad.Corridor_Road.v1.commands.cmd_drainage_review import STRUCTURE_OBJECT_NAMES, show_drainage_structures

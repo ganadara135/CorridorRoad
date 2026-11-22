@@ -1,6 +1,6 @@
 import FreeCAD as App
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from qt_app_support import ensure_qapp
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     CmdV1AssemblySubassemblyEditor,
@@ -25,7 +25,7 @@ from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
 )
 
 
-_QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+ensure_qapp()
 
 
 def _new_project_doc():

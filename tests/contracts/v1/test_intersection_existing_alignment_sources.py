@@ -296,15 +296,14 @@ def test_the_overlay_refuses_what_it_would_have_to_invent() -> None:
 
 
 def test_the_panel_reports_what_applying_existing_alignments_created(monkeypatch) -> None:
-    from freecad.Corridor_Road.qt_compat import QtWidgets
+    from qt_app_support import ensure_qapp
     from freecad.Corridor_Road.v1.commands import cmd_intersection_presets
     from freecad.Corridor_Road.v1.commands.cmd_intersection_presets import V1IntersectionPresetsTaskPanel
 
     messages: list[str] = []
     # a real QMessageBox is modal and would wait for a click that never comes
     monkeypatch.setattr(cmd_intersection_presets, "_show_message", lambda parent, title, text: messages.append(text))
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    assert app is not None
+    ensure_qapp()
     doc = App.newDocument("CRV1ExistingAlignmentPanel")
     try:
         _user_route(doc)
