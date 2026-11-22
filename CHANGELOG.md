@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Added
+- The Review tab of the Drainage panel lists the low points the intersection kernel reports, one row per nearest road with its stations, elevation and number of places; a double-click marks them in the 3D view. They are shown for review: they add no check or suggestion and change no source.
+
 ## [1.1.2] - 2026-11-15
 
 ### Added

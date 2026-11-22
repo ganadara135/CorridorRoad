@@ -174,7 +174,7 @@ def test_the_intersections_tab_reads_the_kernel_result(kernel_doc) -> None:
 
 
 def test_the_guided_review_reads_the_kernel_result(kernel_doc) -> None:
-    # the kernel's drainage candidates (its low points) wait for the Drainage rework's review (DR-5)
+    # the kernel's drainage candidates (its low points) are listed on the Drainage panel's Review tab
     doc, result = kernel_doc
     summary = build.corridor_intersection_review_summary(doc)
     assert summary["status"] == "ready", summary

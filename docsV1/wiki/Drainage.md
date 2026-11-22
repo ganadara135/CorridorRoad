@@ -111,6 +111,11 @@ inverts, grade, volume), and says whether the result is current; when it is stal
 Downstream. Double-click a check to highlight it on the flowline in the 3D view; double-click a
 pipe, or press **Show All Pipes**, to draw pipes as tubes.
 
+In a document with an Intersection, the tab also lists the **intersection low points**: where water
+standing on the intersection surface collects, one row per nearest road. Double-click a row to mark
+those places in the 3D view. The list is for review: it adds no check or suggestion, so decide
+yourself whether a point is needed there.
+
 The **Drainage Review** command (Drainage menu) and the Drainage Review button of Build Parametric
 open this same panel on the Review tab.
 

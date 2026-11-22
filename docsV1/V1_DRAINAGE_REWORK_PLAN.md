@@ -559,3 +559,14 @@ Done on 2026-11-10 after the GUI check of DR-7a and DR-7b:
   bodies are markers, not engineering dimensions; pipes are their real diameter and length. The
   panel's Apply and Show in 3D draw it; a later evaluation updates objects that exist and creates
   none.
+
+### DR-8 Intersection low points on the Review tab
+
+Done on 2026-11-22 (GUI check pending):
+
+- The Review tab lists the intersection kernel's `drainage_candidates`, one row per nearest road,
+  since a level curb return is many vertices of one low place (21 on the starter Cross). A
+  double-click marks the places in the 3D view (`ReviewDrainageIntersectionLowPoint`).
+- The kernel is evaluated only while the Review tab is in view, and nothing is stored.
+- They add no check or suggestion and are not compared with the Drainage points: a flowline in a
+  ditch and a low point on the pavement are different places, and no rule relates them yet.

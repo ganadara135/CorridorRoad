@@ -1,7 +1,7 @@
 # Parametric Road V1 Drainage Model
 
 Date: 2026-10-16
-Status: Current; the model built by the Drainage rework (DR-1 to DR-5)
+Status: Current; the model built by the Drainage rework (DR-1 to DR-8) and the Drainage Structure plan (DS-1 to DS-3)
 Related:
 
 - [V1_DRAINAGE_REWORK_PLAN.md](./V1_DRAINAGE_REWORK_PLAN.md) (how it was built, phase by phase)
@@ -21,7 +21,7 @@ Drainage source ----------------------^          |
         |                                        v
         +------------------------------> Drainage evaluation -> DrainageResult -> DrainageOutput
                                                                      |              |
-                                                     Build Parametric line     Drainage Review
+                                                     Build Parametric line     Review tab
 ```
 
 ## 2. Source: `DrainageModel` (`models/source/drainage_model.py`)
@@ -105,8 +105,9 @@ model and its result refs the Drainage result and the Applied Sections
 
 ## 6. User surfaces
 
-- **Drainage panel** (`CorridorRoad_V1EditDrainage`): Policy, Ditch Runs, Flow, Points and Links
-  tabs. Fill from Assembly prefills the runs, Add Selected Suggestions / Add All Suggestions take
+- **Drainage panel** (`CorridorRoad_V1EditDrainage`): Policy, Ditch Runs, Flow, Points, Links and
+  Review tabs under one Ditch Run's flowline drawing, which follows the tables, unapplied edits
+  included. Its buttons are Apply, Rebuild Downstream, Show in 3D and Close. Fill from Assembly prefills the runs, Add Selected Suggestions / Add All Suggestions take
   suggestions, Link Downhill links every inlet that drains nowhere to the nearest lower point.
   The Flow tab is a view of the Points and Links, not a second source: each point sits under the
   point it drains into, with the link grade and the checks of the current result. From a selected
@@ -115,18 +116,25 @@ model and its result refs the Drainage result and the Applied Sections
   selected check offers its fix (Add Downstream, Add Suggested, Reconnect To, Delete Link, Delete
   Extra Links, Delete Point). All of these need a current result for the flowlines and change the
   tables only. Nothing is written until Apply.
-- **Drainage Review** (`CorridorRoad_V1DrainageReview`): read-only. Per run the flowline profile
-  with points, low and high points and flagged stretches; the checks table, whose double-click
-  highlights a check on the flowline in the 3D view; the pipes table, whose double-click (or Show
-  All Pipes) draws the tubes in the 3D view as a review preview, not a source; whether the result
-  is current.
+- **Review tab** (the `CorridorRoad_V1DrainageReview` command in the Drainage menu opens the panel
+  on it): read-only. The checks table, whose double-click highlights a check on the flowline in
+  the 3D view; the pipes table, whose double-click (or Show All Pipes) draws the tubes in the 3D
+  view as a review preview, not a source; the intersection low points; whether the result is
+  current. The low points are the intersection kernel's `drainage_candidates`, evaluated when the
+  tab is shown and stored nowhere, one row per nearest road; a double-click marks their places in
+  the 3D view. They add no check or suggestion and are not compared with the Drainage points.
+- **3D view:** Apply and Show in 3D draw the stored Drainage as one object per kind in the Drainage
+  folder: markers for inlets, outfalls and culverts, tubes for pipes, lines for open-flow links.
+  They are a presentation of the result; nothing reads them back.
 - **Build Parametric:** the Drainage line in the summary and Guided Review "6. Drainage Surface"
-  (ditch points without a run, and the result's status and counts), and a Drainage Review button.
+  (ditch points without a run, and the result's status and counts), and a Drainage Review button
+  that opens the Drainage panel on its Review tab.
 
 ## 7. Not in this model
 
 - Hydraulics: catchments, runoff, capacity and pipe sizing.
-- Pipe bodies, manholes and Structure ports; links are checked lines until the Structure rebuild.
+- Manholes, headwalls, pipe bends and junctions. A pipe is a straight circular tube, an attribute
+  of its link; a culvert's barrel is the pipe of its outgoing link.
 - Watertight Solids and the Simulation package read no Drainage source; lined ditch bodies are
   Assembly ditch solids and carry their Ditch Run id.
-- Intersection drainage beyond the low point the intersection kernel reports.
+- Intersection drainage beyond showing the low points the intersection kernel reports.

@@ -22,6 +22,7 @@ from ..services.mapping.drainage_output_mapper import DrainageOutputMapper
 
 HIGHLIGHT_OBJECT_NAME = "ReviewDrainageCheckHighlight"
 PIPE_OBJECT_NAME = "ReviewDrainagePipes"
+INTERSECTION_LOW_OBJECT_NAME = "ReviewDrainageIntersectionLowPoint"
 _PIPE_COLOR = (0.25, 0.45, 0.75)
 # The flowline lies on the ditch surface, so a marker drawn on it shares its faces and shows
 # through them in pieces. The stretch is drawn this far above the flowline, the station marker on a
@@ -86,6 +87,67 @@ def drainage_review_state(document) -> tuple[DrainageOutput | None, str]:
     if row.status == CURRENT:
         return output, "The Drainage result is current."
     return output, f"The Drainage result is stale ({', '.join(row.changed_inputs)}); run Rebuild Downstream."
+
+
+def drainage_intersection_low_state(document):
+    """The intersection kernel's result for its low points, and one line on what it shows.
+
+    The kernel evaluates the stored Intersection on the current Applied Sections and nothing is
+    stored; a document without an Intersection gives (None, "").
+    """
+
+    # Imported here: the Build Parametric command opens this review.
+    from .cmd_build_corridor import _document_has_intersection, _document_intersection_kernel_result
+
+    if not _document_has_intersection(document):
+        return None, ""
+    result = _document_intersection_kernel_result(document)
+    if result is None:
+        return None, "No intersection result: check the Intersection spec and build Applied Sections."
+    if result.status == "blocked":
+        codes = ", ".join(sorted({row.code for row in result.diagnostics if row.effect == "blocked"}))
+        return None, f"{result.intersection_id} is blocked ({codes}), so it has no low points. Inspect the Intersection panel."
+    if not result.drainage_candidates:
+        return result, f"{result.intersection_id} ({result.status}) reports no low point."
+    partial = " The intersection result is partial." if result.status == "partial" else ""
+    return result, f"Where water standing on the intersection surface collects. Not checked against the Drainage points.{partial}"
+
+
+def focus_drainage_intersection_low(document, label: str, places):
+    """Mark the places of one intersection low point in the 3D view (meters, a review preview)."""
+
+    if not places:
+        raise ValueError("The intersection low point has no place; refresh the review.")
+    import Part
+
+    shapes = []
+    for x, y, z in places:
+        head = App.Vector(x, y, z + _MARKER_LIFT_M)
+        shapes += [Part.makeLine(App.Vector(x, y, z), head), Part.makeSphere(_MARKER_RADIUS_M, head)]
+    obj = document.getObject(INTERSECTION_LOW_OBJECT_NAME) or document.addObject("Part::Feature", INTERSECTION_LOW_OBJECT_NAME)
+    obj.Shape = Part.makeCompound(shapes)
+    obj.Label = f"Intersection low point: {label}"
+    for name, value in (("CRRecordKind", "v1_review_issue"), ("IssueKind", "drainage_intersection_low")):
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyString", name, "Review", name)
+        setattr(obj, name, value)
+    project = find_project(document)
+    if project is not None:
+        route_object_to_project_tree(project, obj)
+    view = getattr(obj, "ViewObject", None)
+    if view is not None:
+        color = _HIGHLIGHT_COLORS["info"]
+        view.ShapeColor = color
+        view.LineColor = color
+        view.LineWidth = 4.0
+        if hasattr(view, "Deviation"):
+            view.Deviation = 0.05
+        view.Visibility = True
+    if _gui_available():
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+        Gui.SendMsgToActiveView("ViewSelection")
+    return obj
 
 
 def focus_drainage_check(document, check_ref: str):

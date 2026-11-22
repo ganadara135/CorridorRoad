@@ -33,7 +33,14 @@ from ..services.editing.drainage_editing_service import (
 from ..services.evaluation.result_freshness_service import APPLIED_SECTIONS, CURRENT, DRAINAGE, MISSING, STALE
 from .cmd_drainage_result import apply_v1_drainage_result, drainage_result_summary
 from ..ui.editors.drainage_editor import V1DrainageEditorTaskPanel, configure_drainage_editor_task_panel_runtime
-from .cmd_drainage_review import drainage_review_state, focus_drainage_check, focus_drainage_pipe, show_drainage_structures
+from .cmd_drainage_review import (
+    drainage_intersection_low_state,
+    drainage_review_state,
+    focus_drainage_check,
+    focus_drainage_intersection_low,
+    focus_drainage_pipe,
+    show_drainage_structures,
+)
 
 
 class CmdV1DrainageEditor:
@@ -276,6 +283,8 @@ configure_drainage_editor_task_panel_runtime(
         "drainage_review_state": drainage_review_state,
         "focus_drainage_check": focus_drainage_check,
         "focus_drainage_pipe": focus_drainage_pipe,
+        "drainage_intersection_low_state": drainage_intersection_low_state,
+        "focus_drainage_intersection_low": focus_drainage_intersection_low,
         "refresh_drainage_result": refresh_drainage_result,
     }
 )

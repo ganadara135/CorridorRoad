@@ -220,6 +220,34 @@ def drainage_pipe_table_rows(output: DrainageOutput) -> list[dict[str, object]]:
     ]
 
 
+def drainage_intersection_low_rows(result) -> list[dict[str, object]]:
+    """The intersection kernel's low points, one row per nearest road.
+
+    The kernel lists every surface vertex within its low point tolerance, so a level curb return is
+    many vertices of one low place; a row gathers those of a road and keeps their places for the
+    3D view. Nothing is judged here: the kernel found them.
+    """
+
+    grouped: dict[str, list] = {}
+    for candidate in getattr(result, "drainage_candidates", ()) or ():
+        grouped.setdefault(str(candidate.road_ref), []).append(candidate)
+    rows = []
+    for road_ref in sorted(grouped):
+        group = grouped[road_ref]
+        first, last = min(row.station for row in group), max(row.station for row in group)
+        rows.append(
+            {
+                "intersection_ref": str(result.intersection_id),
+                "road_ref": road_ref,
+                "stations": f"{first:.3f}" if abs(last - first) < 1.0e-9 else f"{first:.3f}-{last:.3f}",
+                "elevation": f"{min(row.z for row in group):.3f}",
+                "places": len(group),
+                "xyz": tuple((row.x, row.y, row.z) for row in group),
+            }
+        )
+    return rows
+
+
 def drainage_review_summary(output: DrainageOutput | None) -> str:
     if output is None:
         return "No Drainage result. Add Ditch Runs in the Drainage panel, then Apply or run Rebuild Downstream."
@@ -250,6 +278,7 @@ __all__ = [
     "drainage_run_of_link",
     "drainage_check_table_rows",
     "drainage_flowline_profile",
+    "drainage_intersection_low_rows",
     "drainage_pipe_table_rows",
     "drainage_review_run_rows",
     "drainage_review_summary",

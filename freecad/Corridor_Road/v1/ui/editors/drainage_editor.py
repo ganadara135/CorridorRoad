@@ -42,6 +42,7 @@ from freecad.Corridor_Road.v1.ui.presentation.drainage_review_presentation impor
     drainage_check_table_rows,
     drainage_editing_profile,
     drainage_editing_run_refs,
+    drainage_intersection_low_rows,
     drainage_pipe_table_rows,
     drainage_review_summary,
     drainage_run_of_link,
@@ -75,6 +76,8 @@ drainage_result_gap = None
 drainage_review_state = None
 focus_drainage_check = None
 focus_drainage_pipe = None
+drainage_intersection_low_state = None
+focus_drainage_intersection_low = None
 open_drainage_rebuild = None
 show_drainage_structures = None
 refresh_drainage_result = None
@@ -89,6 +92,7 @@ CROSSES_ROAD = ""
 LINK_COLUMNS = ("ID", "From", "To", "Pipe (m)")
 CHECK_COLUMNS = ("Severity", "Check", "Ditch Run", "STA", "Message")
 PIPE_COLUMNS = ("Link", "Route", "Dia (m)", "Length (m)", "Inverts (m)", "Grade (%)", "Volume (m3)")
+INTERSECTION_LOW_COLUMNS = ("Intersection", "Nearest Road", "STA", "Elevation (m)", "Places")
 LINK_ID_COLUMN, LINK_FROM_COLUMN, LINK_TO_COLUMN, LINK_PIPE_COLUMN = range(len(LINK_COLUMNS))
 
 
@@ -453,6 +457,24 @@ class V1DrainageEditorTaskPanel:
             pass
         self._pipes.cellDoubleClicked.connect(lambda row, _column: self._focus_pipe(row))
         layout.addWidget(self._pipes)
+        self._intersection_low_title = QtWidgets.QLabel("Intersection low points (double-click to mark one in the 3D view)")
+        layout.addWidget(self._intersection_low_title)
+        self._intersection_low_note = QtWidgets.QLabel("")
+        self._intersection_low_note.setWordWrap(True)
+        layout.addWidget(self._intersection_low_note)
+        self._intersection_lows = QtWidgets.QTableWidget(0, len(INTERSECTION_LOW_COLUMNS))
+        self._intersection_lows.setHorizontalHeaderLabels(list(INTERSECTION_LOW_COLUMNS))
+        self._intersection_lows.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._intersection_lows.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._intersection_lows.setMaximumHeight(110)
+        try:
+            self._intersection_lows.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._intersection_lows.cellDoubleClicked.connect(lambda row, _column: self._focus_intersection_low(row))
+        layout.addWidget(self._intersection_lows)
+        self._intersection_low_rows = []
+        self._set_intersection_lows_visible(False)
         buttons = QtWidgets.QHBoxLayout()
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.setToolTip("Read the stored Drainage result again. Nothing here edits a source.")
@@ -476,7 +498,45 @@ class V1DrainageEditorTaskPanel:
         self._review_freshness.setText(freshness)
         self._show_checks()
         self._show_pipes()
+        # The kernel is evaluated for this table, so only while the Review tab is in view
+        if self._tabs.currentWidget() is self._review_tab:
+            self._show_intersection_lows()
         self._refresh_drawing()
+
+    def _set_intersection_lows_visible(self, visible: bool) -> None:
+        for widget in (self._intersection_low_title, self._intersection_low_note, self._intersection_lows):
+            widget.setVisible(visible)
+
+    def _show_intersection_lows(self) -> None:
+        """List the intersection kernel's low points; a document without an Intersection hides them."""
+
+        try:
+            result, note = drainage_intersection_low_state(self.document)
+        except (RuntimeError, ValueError) as exc:
+            result, note = None, f"The intersection low points were not read: {exc}"
+        rows = drainage_intersection_low_rows(result) if result is not None else []
+        self._intersection_low_rows = rows
+        self._intersection_low_note.setText(note)
+        self._intersection_lows.setRowCount(0)
+        for row in rows:
+            index = self._intersection_lows.rowCount()
+            self._intersection_lows.insertRow(index)
+            for column, key in enumerate(("intersection_ref", "road_ref", "stations", "elevation", "places")):
+                self._intersection_lows.setItem(index, column, QtWidgets.QTableWidgetItem(str(row[key])))
+        self._intersection_lows.setVisible(bool(rows))
+        self._intersection_low_title.setVisible(bool(note))
+        self._intersection_low_note.setVisible(bool(note))
+
+    def _focus_intersection_low(self, row: int) -> None:
+        if row < 0 or row >= len(self._intersection_low_rows):
+            return
+        target = self._intersection_low_rows[row]
+        try:
+            obj = focus_drainage_intersection_low(self.document, f"{target['intersection_ref']} STA {target['stations']}", target["xyz"])
+        except (RuntimeError, ValueError) as exc:
+            self._set_status(f"The intersection low point was not marked: {exc}")
+            return
+        self._set_status(f"Marked in the 3D view: {getattr(obj, 'Label', '')}.")
 
     def _show_checks(self) -> None:
         if not hasattr(self, "_checks"):
