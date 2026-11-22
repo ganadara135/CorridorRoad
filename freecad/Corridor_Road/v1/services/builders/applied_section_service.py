@@ -1082,10 +1082,48 @@ def _clip_overlapping_applied_sections(
     clipped_sections: list[AppliedSection] = []
     for section in list(sections or []):
         clipped = section
-        if clipped_sections:
-            clipped = _clip_applied_section_against_previous(clipped_sections[-1], clipped)
+        for previous in _nearest_crossing_sections(clipped_sections, section):
+            clipped = _clip_applied_section_against_previous(previous, clipped)
         clipped_sections.append(clipped)
     return clipped_sections, station_rows
+
+
+def _nearest_crossing_sections(earlier_sections: list[AppliedSection], section: AppliedSection) -> list[AppliedSection]:
+    """Return, per side, the earlier section whose line cuts this section's line closest to the centerline.
+
+    On the inside of a sharp turn a section can clear its neighbour and still cross the one before
+    it. The search stops once the two lines cannot reach each other, or the road has turned 90
+    degrees or more: past that, a nearby section belongs to another leg of a hairpin.
+    """
+
+    current_line = _applied_section_plan_line(section)
+    frame = getattr(section, "frame", None)
+    if current_line is None or frame is None:
+        return []
+    angle = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x, normal_y = -math.sin(angle), math.cos(angle)
+    base_x, base_y = float(getattr(frame, "x", 0.0) or 0.0), float(getattr(frame, "y", 0.0) or 0.0)
+    reach = max(_applied_section_lateral_extents(section))
+    nearest: dict[str, tuple[float, AppliedSection]] = {}
+    for previous in reversed(earlier_sections):
+        previous_frame = getattr(previous, "frame", None)
+        if previous_frame is None:
+            break
+        turned = (float(getattr(previous_frame, "tangent_direction_deg", 0.0) or 0.0) - math.degrees(angle) + 180.0) % 360.0 - 180.0
+        separation = math.hypot(float(getattr(previous_frame, "x", 0.0) or 0.0) - base_x, float(getattr(previous_frame, "y", 0.0) or 0.0) - base_y)
+        if abs(turned) >= 90.0 or separation > reach + max(_applied_section_lateral_extents(previous)):
+            break
+        previous_line = _applied_section_plan_line(previous)
+        if previous_line is None:
+            continue
+        crossing = _plan_segment_intersection_point(previous_line[0], previous_line[1], current_line[0], current_line[1])
+        if crossing is None:
+            continue
+        offset = (float(crossing[0]) - base_x) * normal_x + (float(crossing[1]) - base_y) * normal_y
+        side = "left" if offset >= 0.0 else "right"
+        if side not in nearest or abs(offset) < nearest[side][0]:
+            nearest[side] = (abs(offset), previous)
+    return [row[1] for row in nearest.values()]
 
 
 def _clip_applied_section_against_previous(previous: AppliedSection, section: AppliedSection) -> AppliedSection:
@@ -1183,8 +1221,9 @@ def _clip_section_points_to_lateral_extent(
     base_y = float(getattr(frame, "y", 0.0) or 0.0)
     left_limit = max(float(left_cap or 0.0), 0.0)
     right_limit = -max(float(right_cap or 0.0), 0.0)
+    source_points = list(points or [])
     clipped = []
-    for point in list(points or []):
+    for point in source_points:
         try:
             offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
         except Exception:
@@ -1199,10 +1238,52 @@ def _clip_section_points_to_lateral_extent(
                 point,
                 x=base_x + normal_x * new_offset,
                 y=base_y + normal_y * new_offset,
+                z=_section_elevation_at_clip(point, source_points, frame=frame, clipped_offset=new_offset),
                 lateral_offset=new_offset,
             )
         )
     return clipped
+
+
+def _section_elevation_at_clip(point, points: list, *, frame: AppliedSectionFrame, clipped_offset: float) -> float:
+    """Return the elevation of this point's own section line at the clip offset.
+
+    A clipped point moves in along its section line, so it takes the line's elevation there.
+    Keeping its own elevation would stack the points beyond the cap into a vertical face.
+    The line starts at the centerline and the road edge (FG or ditch), since a slope chain
+    in the section's point rows does not repeat the edge it starts from.
+    """
+
+    direction = 1.0 if float(clipped_offset) >= 0.0 else -1.0
+    cap = abs(float(clipped_offset))
+    chain_key = _section_clip_chain_key(point)
+    chain = [(0.0, float(getattr(frame, "z", 0.0) or 0.0))]
+    for other in points:
+        offset = float(getattr(other, "lateral_offset", 0.0) or 0.0) * direction
+        if offset < 0.0:
+            continue
+        role = _section_point_role(other)
+        is_inner_edge = role in {"fg_surface", "ditch_surface"} and offset <= cap
+        if is_inner_edge or _section_clip_chain_key(other) == chain_key:
+            chain.append((offset, float(getattr(other, "z", 0.0) or 0.0)))
+    chain.sort()
+    inner = [row for row in chain if row[0] <= cap][-1]
+    outer = next((row for row in chain if row[0] > cap), None)
+    if outer is None:
+        return inner[1]
+    return _lerp(inner[1], outer[1], (cap - inner[0]) / (outer[0] - inner[0]))
+
+
+def _section_point_role(point) -> str:
+    return str(getattr(point, "point_role", "") or getattr(point, "point_code", "") or "").strip()
+
+
+def _section_clip_chain_key(point) -> tuple[str, str]:
+    role = _section_point_role(point)
+    subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
+    if role in {"side_slope_surface", "bench_surface", "daylight_marker", "daylight"}:
+        return "slope_face", subassembly_ref
+    return role, subassembly_ref
 
 
 def _section_overlap_clip_diagnostic(

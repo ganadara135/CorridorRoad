@@ -413,7 +413,10 @@ Done on 2026-10-16:
 - Left for later:
   - overlap clipping moves the points beyond the cap onto it at their own elevations, which makes
     a vertical face wherever sections still cross; with continuous frames the smoke no longer
-    reaches it, and the Daylight strip join is the place to fix it;
+    reaches it, and the Daylight strip join is the place to fix it
+    (fixed on 2026-11-22: a clipped point takes its slope's elevation at the cap, a section is
+    clipped against the nearest earlier section it crosses within a 90-degree turn, and the
+    Daylight strip leaves out triangles with no area in plan or folded back);
   - the sample Alignment's three-point "curve" is fitted as an arc that is not tangent to its
     straights, so its frames jump at both ends; it is demo data, and the smoke no longer uses it
     (fixed on 2026-11-22: the sample's curve is a tangent arc that its PI rows compile to);

@@ -15,6 +15,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ### Fixed
 - The sample Alignment's curve is now a circular arc tangent to both straights. Its old curve turned about 31 degrees at once at station 60, so the section frames jumped there, and its PI rows described a different, longer road than its stored elements. Documents already saved keep their Alignment.
 - A station on the Alignment but before the start or past the end of the Profile keeps its true plan position and heading. All such sections used to pile up at the Profile's end point with a heading taken across the whole road. Their elevation is held level at the nearest Profile control, and they are reported as fallback frames with a warning to extend the Profile.
+- On the inside of a sharp turn, the slope of a clipped Applied Section now ends on its own slope line instead of stacking its outer points into a vertical face. A section is also clipped against an earlier section it still crosses, and the Daylight surface no longer has folded or zero-area facets there. Rebuild the Applied Sections of an existing document to apply this.
 
 ## [1.1.2] - 2026-11-15
 

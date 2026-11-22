@@ -1129,10 +1129,11 @@ def _build_daylight_surface_from_side_slope_points(
                     p01 = f"v{section_index}:{side_label}:r{row_index}:p{point_index + 1}"
                     p10 = f"v{section_index}:{side_label}:r{row_index + 1}:p{point_index}"
                     p11 = f"v{section_index}:{side_label}:r{row_index + 1}:p{point_index + 1}"
-                    if _same_section_point_xy(mesh_rows[row_index][point_index], mesh_rows[row_index][point_index + 1]):
+                    if _same_section_point_xy(mesh_rows[row_index][point_index], mesh_rows[row_index][point_index + 1]) and (
+                        _same_section_point_xy(mesh_rows[row_index + 1][point_index], mesh_rows[row_index + 1][point_index + 1])
+                    ):
                         continue
-                    if _same_section_point_xy(mesh_rows[row_index + 1][point_index], mesh_rows[row_index + 1][point_index + 1]):
-                        continue
+                    first_new_triangle = len(triangles)
                     _append_side_slope_strip_triangles(
                         triangles,
                         triangle_id_prefix=f"span:{section_index}:{side_label}:r{row_index}:p{point_index}",
@@ -1143,6 +1144,19 @@ def _build_daylight_surface_from_side_slope_points(
                         p11=p11,
                         triangle_kind="corridor_daylight_bench_strip",
                     )
+                    # Where overlap clipping gathered a row into a point, or the cap lies on the
+                    # neighbouring section line, part of the quad has no area in plan or folds back.
+                    corners = {
+                        p00: mesh_rows[row_index][point_index],
+                        p01: mesh_rows[row_index][point_index + 1],
+                        p10: mesh_rows[row_index + 1][point_index],
+                        p11: mesh_rows[row_index + 1][point_index + 1],
+                    }
+                    triangles[first_new_triangle:] = [
+                        triangle
+                        for triangle in triangles[first_new_triangle:]
+                        if _strip_triangle_faces_up(corners[triangle.v1], corners[triangle.v2], corners[triangle.v3])
+                    ]
     if not vertices or not triangles:
         return None
     source_summary = _side_slope_grid_source_summary(side_grids)
@@ -1214,6 +1228,20 @@ def _append_side_slope_strip_triangles(
         return
     triangles.append(TINTriangle(f"{triangle_id_prefix}:a", p00, p01, p11, triangle_kind=triangle_kind))
     triangles.append(TINTriangle(f"{triangle_id_prefix}:b", p00, p11, p10, triangle_kind=triangle_kind))
+
+
+def _strip_triangle_faces_up(
+    first: _SectionPointLite,
+    second: _SectionPointLite,
+    third: _SectionPointLite,
+    minimum_plan_area: float = 1.0e-9,
+) -> bool:
+    """Strip triangles wind counterclockwise in plan; 1e-9 m2 is rounding noise of a collinear cap."""
+
+    doubled_area = (float(second.x) - float(first.x)) * (float(third.y) - float(first.y)) - (
+        float(second.y) - float(first.y)
+    ) * (float(third.x) - float(first.x))
+    return 0.5 * doubled_area > minimum_plan_area
 
 
 def _same_section_point_xy(first: _SectionPointLite, second: _SectionPointLite, tolerance: float = 1.0e-8) -> bool:
