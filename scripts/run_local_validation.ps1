@@ -4,16 +4,16 @@ param(
     [string]$FreeCADBin = ""
 )
 
-# Four contract modules account for roughly three quarters of the full contract
-# run. Measured on 2026-09-02: the complete suite is 1462 tests in 390s, and the
-# 60 slowest tests alone consume 286s, of which these modules contribute 267s.
+# These contract modules account for most of the full contract run. Measured on
+# 2026-09-02, with the old Drainage editor module (removed on 2026-10-16) as a fourth:
+# the complete suite was 1462 tests in 390s, and the 60 slowest tests alone consumed
+# 286s, of which the four modules contributed 267s.
 # The Contracts tier skips them so it stays usable as a routine gate; the
 # ContractsFull tier runs everything and is the release-facing level.
 # See docsV1/V1_ARCHITECTURE_DEBT_EXECUTION_PLAN.md section 5.1.
 $HeavyContractModules = @(
     "tests/contracts/v1/test_intersection_command.py",
     "tests/contracts/v1/test_build_corridor_command.py",
-    "tests/contracts/v1/test_drainage_editor_command.py",
     "tests/contracts/v1/test_tin_review_command.py"
 )
 
@@ -101,18 +101,13 @@ function Invoke-FastValidation {
             "tests/contracts/v1/test_v1_profile_editor.py::test_profile_editor_uses_auto_interpolate_without_random_elevation_button" `
             "tests/contracts/v1/test_v1_alignment_editor.py::test_alignment_editor_apply_snapshots_project_design_standard" `
             "tests/contracts/v1/test_subassembly_editor_command.py::test_subassembly_detail_changes_only_on_table_row_click" `
-            "tests/contracts/v1/test_drainage_editor_command.py::test_drainage_editor_apply_blocks_error_validation" `
-            "tests/contracts/v1/test_drainage_review_command.py::test_drainage_review_panel_loads_document_context" `
+            "tests/contracts/v1/test_drainage_source_and_editor.py::test_apply_refuses_a_run_on_a_ditch_the_assembly_does_not_have" `
+            "tests/contracts/v1/test_drainage_source_and_editor.py::test_drainage_review_shows_the_result_and_highlights_a_check" `
             "tests/contracts/v1/test_tin_editor_command.py::test_tin_editor_uses_apply_as_single_write_button" `
             "tests/contracts/v1/test_tin_editor_command.py::test_tin_editor_apply_applies_current_editor_state_without_rebuilding_source" `
             "tests/contracts/v1/test_tin_editor_command.py::test_tin_face_pick_observer_forwards_selection_events_to_panel" `
             tests/contracts/v1/test_xy_geometry_primitives.py `
-            tests/contracts/v1/test_polygon_triangulation_service.py `
-            tests/contracts/v1/test_convex_polygon_clipping_service.py `
-            tests/contracts/v1/test_segment_geometry_service.py `
             tests/contracts/v1/test_polygon_relations_service.py `
-            tests/contracts/v1/test_polygon_topology_service.py `
-            tests/contracts/v1/test_polygon_boundary_service.py `
             tests/contracts/v1/test_corridor_surface_orchestration_service.py `
             tests/contracts/v1/test_shared_breakline_audit_service.py `
             tests/contracts/v1/test_intersection_kernel.py `
@@ -132,9 +127,7 @@ function Invoke-FastValidation {
             "tests/contracts/v1/test_centerline3d_command.py::test_centerline3d_source_geometry_rejects_poor_arc_fit" `
             "tests/contracts/v1/test_centerline3d_command.py::test_centerline3d_source_geometry_uses_part_arc_when_z_is_constant" `
             "tests/contracts/v1/test_centerline3d_command.py::test_centerline3d_source_geometry_curve_sampling_is_dense_and_unsmoothed" `
-            "tests/contracts/v1/test_centerline3d_command.py::test_centerline3d_frame_service_prefers_source_geometry_when_sources_are_available" `
-            "tests/contracts/v1/test_build_corridor_command.py::test_intersection_tie_in_generated_section_projects_to_nearest_alignment_span" `
-            "tests/contracts/v1/test_applied_sections_command.py::test_intersection_supplemental_stations_are_added_to_applied_sections"
+            "tests/contracts/v1/test_centerline3d_command.py::test_centerline3d_frame_service_prefers_source_geometry_when_sources_are_available"
     }
 }
 
