@@ -15,6 +15,17 @@ from freecad.Corridor_Road.v1.models.result import TINSurface
 from freecad.Corridor_Road.v1.models.result.tin_surface import TINTriangle, TINVertex
 
 
+_QAPP = None
+
+
+def _ensure_qapp():
+    # Qt aborts the process if a widget is built with no QApplication; the panels below need one
+    # of their own so that this file also runs alone.
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
+
+
 def _demo_tin_surface() -> TINSurface:
     return TINSurface(
         schema_version=1,
@@ -354,6 +365,7 @@ def test_plan_profile_station_connection_row_colors_reflect_status_severity() ->
 
 
 def test_plan_profile_station_connection_styles_are_readable_on_dark_mode() -> None:
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
 
     item = panel._connection_table.item(0, 0)
@@ -463,6 +475,7 @@ def test_plan_profile_diagnostic_row_double_click_opens_tin_panel() -> None:
     fake_gui = _FakeGui()
     original_gui = profile_review_view.Gui
     profile_review_view.Gui = fake_gui
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
     try:
         rows = [
@@ -481,6 +494,7 @@ def test_plan_profile_diagnostic_row_double_click_opens_tin_panel() -> None:
 
 
 def test_plan_profile_viewer_uses_tabs_for_review_detail_sections() -> None:
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
 
     tabs = panel.form.findChildren(QtWidgets.QTabWidget)
@@ -490,6 +504,7 @@ def test_plan_profile_viewer_uses_tabs_for_review_detail_sections() -> None:
 
 
 def test_plan_profile_navigation_station_labels_explain_selection_reason() -> None:
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
 
     label = panel._station_combo.itemText(0)
@@ -516,6 +531,7 @@ def test_plan_profile_focus_next_reopens_without_touching_deleted_status_label()
     fake_gui = _FakeGui()
     original_gui = profile_review_view.Gui
     profile_review_view.Gui = fake_gui
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
     try:
         panel._open_adjacent_station(1)
@@ -569,6 +585,7 @@ def test_plan_profile_open_stations_handoff_runs_unified_station_command() -> No
 
 def test_plan_profile_viewer_highlights_station_from_evaluation_row() -> None:
     doc = App.newDocument("PlanProfileStationHighlightTest")
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
     try:
         row = panel._station_highlight_row(40.0)
@@ -590,6 +607,7 @@ def test_plan_profile_viewer_highlights_station_from_evaluation_row() -> None:
 
 
 def test_plan_profile_geometry_range_start_station_parser() -> None:
+    _ensure_qapp()
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
 
     plan_station = panel._range_start_station_from_table_row(panel._plan_geometry_table, 0, 1)
